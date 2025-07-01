@@ -4,7 +4,7 @@ This is a collection of free command-line tools I made in an attempt to learn Ru
 We currently have the following tools:
 1. A tool to read the [public info on JWT tokens](#-jwt---readme);
 2. A high-performance tool to [read messages from EventHub](#-eh-read---readme), 
-3. and another to [export the messages](#eh-export);
+3. and another is to [export the messages](#-eh-export---readme);
 4. A [CSV data normalizer](#-csvn---readme) tool;
 5. A tool that [splits large files](#-split---readme) (including CSV) into smaller ones;
 6. A tool [that searches for multiple terms](#-get-lines---readme) inside a text file and creates one output file per search term;
