@@ -23,6 +23,8 @@ character visualization, and formatting features.
 # Show a file with line numbers and visible tabs/line endings
 cat -nA config.txt
 ```
+
+Output:
 ```
      1	server_host=localhost^I# Main server$
      2	port=8080$
