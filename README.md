@@ -203,11 +203,22 @@ By the time I'm writing this, we have about 8.2 billion people in the world. Bei
 chances of someone wanting to contribute (or maybe even use the tools here) are about `1:8,200,000,000` (that one 
 person being me).
 
-Even so, I've created the [contributing readme](./contributing.md) so future-me can remember how to organize things
+Even so, I've created the [contributing readme](CONTRIBUTING.md) so future-me can remember how to organize things
 when I come back to this project after a while. 
 
 ## License
-That license that allows any use and improvements, as long as it still free and you mention the source.
+Everything under [GNU Public License V3](LICENSE.md). 
+
+TL;DR:
+1. Anyone can copy, modify, and distribute this software.
+2. You have to include the license and copyright notice with every distribution.
+3. You can use this software privately.
+4. You can use this software for commercial purposes.
+5. If you dare to build your business solely from this code, you risk open-sourcing the whole code base.
+6. If you modify it, you have to indicate changes made to the code.
+7. Any modifications of this code base MUST be distributed with the same license, GPLv3.
+8. This software is provided without a warranty.
+9. The software author or license cannot be held liable for any damage inflicted by the software.
 
 ## Todo
 - **#1**: Change this to avoid needing the full connection string just to export messages.
