@@ -193,10 +193,10 @@ If you're on a MacOs, you can use the `convenience-build-macos.sh` which will:
 
 Running this script again will update the tools (but not Rust).
 
+Convenience command:
 ```bash
-
+curl -sSL https://raw.githubusercontent.com/brenordv/rusted-toolbox/refs/heads/master/convenience-build-macos.sh | bash
 ```
-
 
 ## Contributing
 By the time I'm writing this, we have about 8.2 billion people in the world. Being optimistic, this means that the 

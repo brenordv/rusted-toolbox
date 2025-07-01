@@ -5,7 +5,7 @@
 # Usage:
 #   chmod +x install-macos.sh && ./install-macos.sh
 #   Or via curl: --update this--
-#     curl -sSL https://raw.githubusercontent.com/brenordv/rusted-toolbox/main/install-macos.sh | bash
+#     curl -sSL https://raw.githubusercontent.com/brenordv/rusted-toolbox/refs/heads/master/convenience-build-macos.sh | bash
 #
 # This script will:
 # 1. Check/install Xcode CLI tools and Git
