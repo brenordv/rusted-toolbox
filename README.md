@@ -203,7 +203,7 @@ By the time I'm writing this, we have about 8.2 billion people in the world. Bei
 chances of someone wanting to contribute (or maybe even use the tools here) are about `1:8,200,000,000` (that one 
 person being me).
 
-Even so, I've created the [contributing readme](CONTRIBUTING.md) so future-me can remember how to organize things
+Even so, I've created the [contributing readme](CONTRIBUTING) so future-me can remember how to organize things
 when I come back to this project after a while. 
 
 ## License
