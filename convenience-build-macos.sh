@@ -103,16 +103,8 @@ setup_repository() {
 
 # Build project
 build_project() {
-  if [ ! -x ./build.sh ]; then
-    if [ -f build.sh ]; then
-      chmod +x build.sh
-    else
-      print_error "build.sh not found"
-      exit 1
-    fi
-  fi
-  print_status "Running build.sh"
-  ./build.sh
+  print_status "Building project"
+  cargo build --release
   print_success "Build succeeded"
 }
 
@@ -130,6 +122,9 @@ install_tools() {
       print_success "Installed $(basename "$tool")"
     fi
   done
+  # Removing tools that already exit in MacOS
+  rm "$INSTALL_DIR/cat"
+  rm "$INSTALL_DIR/touch"
 }
 
 # Main
