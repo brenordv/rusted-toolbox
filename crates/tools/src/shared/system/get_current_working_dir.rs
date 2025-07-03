@@ -25,7 +25,7 @@ use std::path::PathBuf;
 /// println!("Current working directory: {:?}", cwd);
 /// ```
 pub fn get_current_working_dir() -> PathBuf {
-    env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    env::current_dir().unwrap_or_else(|_| PathBuf::from("../../../../.."))
 }
 
 #[cfg(test)]
@@ -44,7 +44,7 @@ mod tests {
             assert_eq!(result, expected);
         } else {
             // If env::current_dir() fails, our function should return "."
-            assert_eq!(result, PathBuf::from("."));
+            assert_eq!(result, PathBuf::from("../../../../.."));
         }
     }
 
@@ -87,7 +87,7 @@ mod tests {
 
         // When env::current_dir() succeeds, it always returns an absolute path
         // Our function should preserve this behavior
-        if result != PathBuf::from(".") {
+        if result != PathBuf::from("../../../../..") {
             assert!(
                 result.is_absolute(),
                 "Should return absolute path when possible: {:?}",
@@ -103,7 +103,7 @@ mod tests {
         let result = get_current_working_dir();
 
         // The function should never panic and always return a valid PathBuf
-        assert!(result == PathBuf::from(".") || result.is_absolute());
+        assert!(result == PathBuf::from("../../../../..") || result.is_absolute());
     }
 
     #[test]
@@ -172,7 +172,7 @@ mod tests {
     fn test_get_current_working_dir_path_components() {
         let result = get_current_working_dir();
 
-        if result != PathBuf::from(".") {
+        if result != PathBuf::from("../../../../..") {
             // Should be able to iterate over components without panicking
             let components: Vec<_> = result.components().collect();
             assert!(
