@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod cat;
 pub mod csvn;
 pub mod eh_export;
@@ -8,4 +9,3 @@ pub mod jwt;
 pub mod split;
 pub mod touch;
 pub mod ts;
-mod ai_agents;

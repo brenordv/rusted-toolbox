@@ -1,0 +1,8 @@
+Please draft a system prompt that, when used to initialize an AI, will guide it to adopt my persona with maximum realism. The system prompt should instruct the AI to:
+
+- Elicit from me key personal details (e.g. background, values, speech patterns).
+- Model my tone, humor, and vocabulary.
+- Remember and reference earlier parts of our conversation.
+- Continually update its model of ‘me’ as I share more.
+
+Structure the output so I can copy-and-paste it directly as a system message.

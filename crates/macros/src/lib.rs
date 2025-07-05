@@ -45,18 +45,15 @@ use syn::{parse_macro_input, ItemFn};
 ///    - a hidden, `dead_code`‐allowed function that calls `stringify!` on those tokens,
 ///      yielding a compile‐time `&'static str`.
 #[proc_macro_attribute]
-pub fn ai_function(
-    _attr: TokenStream,
-    item: TokenStream,        // <-- must be proc_macro::TokenStream
-) -> TokenStream {            // <-- must return proc_macro::TokenStream
+pub fn ai_function(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Convert the incoming TokenStream into proc_macro2 for quoting:
     let original_ts: TokenStream2 = item.clone().into();
 
     // Parse into a syn::ItemFn so we can grab `vis` and `ident`:
     let input_fn: ItemFn = parse_macro_input!(item as ItemFn);
-    let vis     = &input_fn.vis;
-    let name    = &input_fn.sig.ident;
-    let helper  = format_ident!("{}_as_string", name, span = name.span());
+    let vis = &input_fn.vis;
+    let name = &input_fn.sig.ident;
+    let helper = format_ident!("{}_as_string", name, span = name.span());
 
     // Re-emit the original fn + hidden `*_as_string` helper:
     let expanded = quote! {

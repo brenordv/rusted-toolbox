@@ -1,5 +1,7 @@
 [workspace]
-members = [ "crates/macros",
-    "crates/tools",
-    "crates/macros"
+resolver = "2"
+
+members = [
+    "crates/macros",
+    "crates/tools"
 ]
