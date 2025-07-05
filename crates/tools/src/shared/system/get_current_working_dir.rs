@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::env;
 use std::path::PathBuf;
 
@@ -26,6 +27,15 @@ use std::path::PathBuf;
 /// ```
 pub fn get_current_working_dir() -> PathBuf {
     env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+pub fn get_current_working_dir_str() -> Result<String> {
+    match get_current_working_dir().to_str() {
+        Some(cwd) => Ok(cwd.to_string()),
+        None => Err(anyhow::anyhow!(
+            "Failed to convert current working directory to string"
+        )),
+    }
 }
 
 #[cfg(test)]

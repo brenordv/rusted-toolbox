@@ -1,8 +1,11 @@
+use crate::shared::utils::datetime_utc_utils::DateTimeUtilsExt;
 use crate::tools::ai::models::models::AiResponse;
 use crate::tools::ai::models::open_ai::{ApiResponse, ChatCompletion, Message};
 use crate::tools::ai::requesters::requester_traits::{AiRequesterTraits, MessageVecExt};
+use crate::tools::ai::utils::request_logger::RequestLogger;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use chrono::Local;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
 
@@ -16,11 +19,20 @@ pub struct AiRequester {
     api_org: Option<String>,
     headers: HeaderMap,
     user_role: String,
+    request_logger: RequestLogger,
 }
 
 impl AiRequester {
-    pub fn new(api_url: String, api_key: String, api_org: Option<String>) -> Self {
-        Self {
+    pub fn new(
+        api_url: String,
+        api_key: String,
+        api_org: Option<String>,
+        request_history_path: Option<String>,
+    ) -> Result<Self> {
+        let resolved_request_history_path =
+            request_history_path.unwrap_or_else(|| ".request_history".to_string());
+
+        Ok(Self {
             system_message: None,
             message_history: vec![],
             current_payload: vec![],
@@ -30,7 +42,8 @@ impl AiRequester {
             api_org,
             headers: Default::default(),
             user_role: "user".to_string(),
-        }
+            request_logger: RequestLogger::new(resolved_request_history_path)?,
+        })
     }
 }
 
@@ -85,6 +98,9 @@ impl AiRequesterTraits for AiRequester {
             content: system_message,
         });
 
+        self.message_history
+            .push(self.system_message.clone().unwrap());
+
         Ok(self)
     }
 
@@ -100,7 +116,7 @@ impl AiRequesterTraits for AiRequester {
             content: new_message,
         };
 
-        self.current_payload.push(message.clone());
+        self.message_history.push(message.clone());
 
         self.current_payload.push(message);
 
@@ -112,11 +128,16 @@ impl AiRequesterTraits for AiRequester {
 
         let client = Client::builder().default_headers(headers).build()?;
 
+        self.request_logger
+            .set_request_timestamp(Local::now().get_datetime_as_filename_safe_string());
+
         let chat_completion = ChatCompletion {
             model: self.current_model.clone(),
             messages: self.current_payload.clone(),
             temperature: 0.1,
         };
+
+        self.request_logger.save_request(&chat_completion)?;
 
         let api_response = client
             .post(&self.api_url)
@@ -129,22 +150,20 @@ impl AiRequesterTraits for AiRequester {
 
         let success = status_code == 200;
 
-        if !success {
-            let error_text = api_response
-                .text()
-                .await
-                .context("Failed to parse error response")?;
-
-            anyhow::bail!("Error [{}]: {}", status_code, error_text);
-        }
-
         let raw_text = api_response
             .text()
             .await
             .context("Failed to parse error response")?;
 
-        let api_response_obj: ApiResponse = serde_json::from_str(&raw_text)
-            .context("Failed to parse response")?;
+        self.request_logger
+            .save_response(&raw_text, status_code.as_u16())?;
+
+        if !success {
+            anyhow::bail!("Error [{}]: {}", status_code, raw_text);
+        }
+
+        let api_response_obj: ApiResponse =
+            serde_json::from_str(&raw_text).context("Failed to parse response")?;
 
         let ai_response = api_response_obj
             .choices
