@@ -13,11 +13,13 @@ pub struct RolePrinter {
 }
 
 impl RolePrinter {
-    pub fn new(role: Role, name: String, max_padding: usize) -> Self {
+    pub fn new(role: Role, name: String, max_padding: Option<usize>) -> Self {
+        let padding = max_padding.unwrap_or(name.len());
+
         Self {
             color: role.get_tag_color(),
             name,
-            max_padding,
+            max_padding: padding,
         }
     }
 
