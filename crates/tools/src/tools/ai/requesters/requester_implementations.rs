@@ -134,7 +134,7 @@ impl AiRequesterTraits for AiRequester {
         let chat_completion = ChatCompletion {
             model: self.current_model.clone(),
             messages: self.current_payload.clone(),
-            temperature: 0.1,
+            temperature: 2.0,
         };
 
         self.request_logger.save_request(&chat_completion)?;

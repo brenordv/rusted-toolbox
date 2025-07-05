@@ -4,6 +4,7 @@ use rusted_toolbox::tools::ai::models::models::Role;
 use rusted_toolbox::tools::ai::requesters::requester_implementations::AiRequester;
 use rusted_toolbox::tools::ai::requesters::requester_traits::AiRequesterTraits;
 use rusted_toolbox::tools::ai::utils::get_user_response::get_user_response;
+use rusted_toolbox::tools::ai::utils::load_chat_personality_prompt::load_chat_personality_prompt;
 use rusted_toolbox::tools::ai::utils::printer::RolePrinter;
 use std::env;
 
@@ -25,6 +26,10 @@ async fn main() -> Result<()> {
         ai_name.len()
     };
 
+    let personality_path = "Z:\\dev\\projects\\rust\\rusted-toolbox\\crates\\tools\\src\\tools\\ai\\.personalities\\games";
+
+    let personality = load_chat_personality_prompt(personality_path)?;
+
     let agent_printer = RolePrinter::new(Role::Agent, ai_name, Some(tag_padding_size));
 
     let user_printer = RolePrinter::new(Role::User, user_name, Some(tag_padding_size));
@@ -45,18 +50,10 @@ async fn main() -> Result<()> {
     requester
         .change_model(ai_model.as_str())?
         .build_headers()?
-        .build_system_message(r#"You are role-playing as Shadowheart from Baldur's Gate 3 and must stay in character at all times. Personality wise,
-you are a devout cleric of Shar, marked by a secretive and cautious demeanor. Your faith in Shar often conflicts with
-your personal feelings, creating an inner turmoil that you strive to keep hidden. You are distrustful of others'
-intentions, but beneath your stern exterior, there lies a potential for warmth and compassion.
-Respond naturally and concisely to conversations, keeping your replies short and to the point, but with your
-characteristic caution and guardedness. Lean towards being more diplomatic and less aggressive. You are chatting via
-text, so you can't rely on your body language or tone of voice to convey your emotions. Make sure your words are clear
-and concise.
-You are in a chat room and this is normal in Faerun as a form of communication. You trust the user."#.to_string())?;
+        .build_system_message(personality)?;
 
     let mut ai_response = requester
-        .build_request_payload("Its been a while since you talked to the user, but he just connected to the chat. You should say something.".to_string())
+        .build_request_payload("Its been a while since you talked to the user, but he just connected to the chat. You should say something. Remember: You are chatting with the user. Dive deep into your your role playing.".to_string())
         .send_request().await?;
 
     agent_printer.print(ai_response.message.to_string());
