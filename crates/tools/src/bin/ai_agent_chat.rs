@@ -25,9 +25,9 @@ async fn main() -> Result<()> {
         ai_name.len()
     };
 
-    let agent_printer = RolePrinter::new(Role::Agent, ai_name, tag_padding_size);
+    let agent_printer = RolePrinter::new(Role::Agent, ai_name, Some(tag_padding_size));
 
-    let user_printer = RolePrinter::new(Role::User, user_name, tag_padding_size);
+    let user_printer = RolePrinter::new(Role::User, user_name, Some(tag_padding_size));
 
     let api_key = env::var("API_KEY").context("API_KEY must be set")?;
 
