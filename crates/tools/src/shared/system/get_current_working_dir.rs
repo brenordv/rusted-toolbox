@@ -25,7 +25,7 @@ use std::path::PathBuf;
 /// println!("Current working directory: {:?}", cwd);
 /// ```
 pub fn get_current_working_dir() -> PathBuf {
-    env::current_dir().unwrap_or_else(|_| PathBuf::from("../../../../.."))
+    env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 #[cfg(test)]
