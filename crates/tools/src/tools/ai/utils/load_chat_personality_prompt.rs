@@ -10,6 +10,9 @@ pub fn load_chat_personality_prompt(personalities_path: &str) -> Result<(String,
         .split('_')
         .last()
         .unwrap_or("")
+        .split(".")
+        .next()
+        .unwrap_or("")
         .to_string();
 
     let personality_file_fullpath =
