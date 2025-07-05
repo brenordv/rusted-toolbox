@@ -13,22 +13,28 @@ async fn main() -> Result<()> {
     dotenv().ok();
 
     println!("Rusted Agents: Chat");
+    let user_name = env::var("AI_CHAT_USER_NAME").unwrap_or_else(|_| {
+        println!("What is your name?");
+        get_user_response(true)
+    });
 
-    println!("What is your name?");
-    let user_name = get_user_response(true);
+    let personality_path = env::var("AI_CHAT_PERSONALITIES_FOLDER")
+        .context("AI_CHAT_PERSONALITIES_FOLDER must be set")?;
 
-    println!("What is the AI's name?");
-    let ai_name = get_user_response(true);
+    let (personality, personality_name) = load_chat_personality_prompt(personality_path.as_str())?;
+
+    let ai_name = if personality_name.is_empty() {
+        println!("What is the AI's name?");
+        get_user_response(true)
+    } else {
+        personality_name.to_string()
+    };
 
     let tag_padding_size = if user_name.len() > ai_name.len() {
         user_name.len()
     } else {
         ai_name.len()
     };
-
-    let personality_path = "Z:\\dev\\projects\\rust\\rusted-toolbox\\crates\\tools\\src\\tools\\ai\\.personalities\\games";
-
-    let personality = load_chat_personality_prompt(personality_path)?;
 
     let agent_printer = RolePrinter::new(Role::Agent, ai_name, Some(tag_padding_size));
 
