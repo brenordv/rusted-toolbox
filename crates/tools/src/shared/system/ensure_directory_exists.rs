@@ -12,15 +12,6 @@ impl EnsureDirectoryExists for PathBuf {
             return Ok(());
         }
 
-        if self.is_dir() {
-            return Ok(fs::create_dir_all(&self).context("Failed to create directory")?);
-        }
-
-        // If it is a file, we make sure
-        if let Some(parent) = self.parent() {
-            Ok(fs::create_dir_all(parent).context("Failed to create directory")?)
-        } else {
-            Ok(())
-        }
+        Ok(fs::create_dir_all(&self).context("Failed to create directory")?)
     }
 }
