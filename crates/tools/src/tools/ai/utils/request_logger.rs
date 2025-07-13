@@ -1,3 +1,4 @@
+use crate::shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use crate::shared::system::get_current_working_dir::get_current_working_dir_str;
 use crate::shared::system::resolve_path_with_base::resolve_path_with_base;
 use crate::shared::utils::datetime_utc_utils::DateTimeUtilsExt;
@@ -18,6 +19,8 @@ impl RequestLogger {
         let cwd = get_current_working_dir_str()?;
 
         let runtime_history_path = resolve_path_with_base(&cwd, request_history_path.as_str());
+
+        runtime_history_path.ensure_directory_exists()?;
 
         Ok(Self {
             runtime_history_path,

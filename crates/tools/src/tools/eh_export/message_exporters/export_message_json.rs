@@ -27,7 +27,7 @@ pub async fn export_message_json(
     condense_output: bool,
     entity_path: &String,
 ) -> Result<()> {
-    file_path.ensure_directory_exists().await?;
+    file_path.ensure_directory_exists()?;
 
     let message_obj = if include_metadata {
         // The entity_path is required here since we're working with export of a specific entity

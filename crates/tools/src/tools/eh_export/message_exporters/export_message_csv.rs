@@ -28,7 +28,7 @@ pub async fn export_message_csv(
     condense_output: bool,
     entity_path: &String,
 ) -> Result<()> {
-    file_path.ensure_directory_exists().await?;
+    file_path.ensure_directory_exists()?;
 
     let file_exists = file_path.exists();
 

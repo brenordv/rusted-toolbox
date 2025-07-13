@@ -27,7 +27,7 @@ pub async fn export_message_txt(
     include_metadata: bool,
     condense_output: bool,
 ) -> Result<()> {
-    file_path.ensure_directory_exists().await?;
+    file_path.ensure_directory_exists()?;
 
     let content = if include_metadata {
         message.format_full_message_to_string()
