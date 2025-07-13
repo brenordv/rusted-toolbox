@@ -1,7 +1,9 @@
 use crate::shared::system::get_current_working_dir::get_current_working_dir_str;
 use crate::shared::system::resolve_path_with_base::resolve_path_with_base;
+use crate::shared::utils::datetime_utc_utils::DateTimeUtilsExt;
 use crate::tools::ai::models::open_ai::ChatCompletion;
 use anyhow::{Context, Result};
+use chrono::Local;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -23,8 +25,8 @@ impl RequestLogger {
         })
     }
 
-    pub fn set_request_timestamp(&mut self, request_timestamp: String) {
-        self.request_timestamp = request_timestamp;
+    pub fn set_request_timestamp_local(&mut self) {
+        self.request_timestamp = Local::now().get_datetime_as_filename_safe_string();
     }
 
     pub fn save_request(&self, new_request: &ChatCompletion) -> Result<()> {

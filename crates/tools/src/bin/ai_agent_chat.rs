@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use dotenv::dotenv;
 use rusted_toolbox::tools::ai::models::models::Role;
-use rusted_toolbox::tools::ai::requesters::requester_implementations::AiRequester;
-use rusted_toolbox::tools::ai::requesters::requester_traits::AiRequesterTraits;
+use rusted_toolbox::tools::ai::requesters::requester_implementations::OpenAiRequester;
+use rusted_toolbox::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
 use rusted_toolbox::tools::ai::utils::get_user_response::get_user_response;
 use rusted_toolbox::tools::ai::utils::load_chat_personality_prompt::load_chat_personality_prompt;
 use rusted_toolbox::tools::ai::utils::printer::RolePrinter;
@@ -17,6 +17,11 @@ async fn main() -> Result<()> {
         println!("What is your name?");
         get_user_response(true)
     });
+
+    let request_history_path = match env::var("AI_CHAT_REQUEST_HISTORY_PATH") {
+        Ok(path) => Some(path),
+        Err(_) => None,
+    };
 
     let personality_path = env::var("AI_CHAT_PERSONALITIES_FOLDER")
         .context("AI_CHAT_PERSONALITIES_FOLDER must be set")?;
@@ -46,21 +51,17 @@ async fn main() -> Result<()> {
 
     let api_url = env::var("API_URL").context("API_URL must be set")?;
 
-    let mut requester = AiRequester::new(
-        api_url,
-        api_key,
-        None,
-        Some("Z:\\dev\\projects\\rust\\rusted-toolbox\\.test-files\\.request_history".to_string()),
-    )?;
+    let mut requester = OpenAiRequester::new(api_url, api_key, None, None, request_history_path)?;
 
     requester
-        .change_model(ai_model.as_str())?
-        .build_headers()?
-        .build_system_message(personality)?;
+        .set_model(ai_model.as_str())?
+        .set_temperature(&1.0)?
+        .initialize_api_client()?
+        .set_system_message(personality)?;
 
     let mut ai_response = requester
-        .build_request_payload("Its been a while since you talked to the user, but he just connected to the chat. You should say something. Remember: You are chatting with the user. Dive deep into your your role playing.".to_string())
-        .send_request().await?;
+        .send_request("Its been a while since you talked to the user, but he just connected to the chat. You should say something. Remember: You are chatting with the user. Dive deep into your your role playing.".to_string(), true)
+        .await?;
 
     agent_printer.print(ai_response.message.to_string());
 
@@ -69,8 +70,7 @@ async fn main() -> Result<()> {
         let user_request = get_user_response(true);
 
         ai_response = requester
-            .build_request_payload(format!("The user replied: {}", user_request))
-            .send_request()
+            .send_request(format!("The user replied: {}", user_request), true)
             .await?;
 
         if !ai_response.success {
