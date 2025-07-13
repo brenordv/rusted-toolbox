@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use dotenv::dotenv;
 use rusted_toolbox::tools::ai::models::models::Role;
-use rusted_toolbox::tools::ai::requesters::requester_implementations::OpenAiRequester;
+use rusted_toolbox::tools::ai::requesters::requester_builders::build_requester_for_open_router;
 use rusted_toolbox::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
 use rusted_toolbox::tools::ai::utils::get_user_response::get_user_response;
 use rusted_toolbox::tools::ai::utils::load_chat_personality_prompt::load_chat_personality_prompt;
@@ -17,11 +17,6 @@ async fn main() -> Result<()> {
         println!("What is your name?");
         get_user_response(true)
     });
-
-    let request_history_path = match env::var("AI_CHAT_REQUEST_HISTORY_PATH") {
-        Ok(path) => Some(path),
-        Err(_) => None,
-    };
 
     let personality_path = env::var("AI_CHAT_PERSONALITIES_FOLDER")
         .context("AI_CHAT_PERSONALITIES_FOLDER must be set")?;
@@ -45,17 +40,9 @@ async fn main() -> Result<()> {
 
     let user_printer = RolePrinter::new(Role::User, user_name, Some(tag_padding_size));
 
-    let api_key = env::var("API_KEY").context("API_KEY must be set")?;
-
-    let ai_model = env::var("AI_MODEL").context("AI_MODEL must be set")?;
-
-    let api_url = env::var("API_URL").context("API_URL must be set")?;
-
-    let mut requester = OpenAiRequester::new(api_url, api_key, None, None, request_history_path)?;
+    let mut requester = build_requester_for_open_router()?;
 
     requester
-        .set_model(ai_model.as_str())?
-        .set_temperature(&1.0)?
         .initialize_api_client()?
         .set_system_message(personality)?;
 
