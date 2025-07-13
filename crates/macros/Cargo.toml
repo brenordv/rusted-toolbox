@@ -1,5 +1,5 @@
 [package]
-name = "rusted-toolbox-macros"
+name = "rusted_toolbox_macros"
 version = "1.0.0"
 edition = "2021"
 authors = ["Breno RdV"]

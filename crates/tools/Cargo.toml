@@ -11,6 +11,10 @@ name = "ai-agent-chat"
 path = "src/bin/ai_agent_chat.rs"
 
 [[bin]]
+name = "ai-agent-media-sorter"
+path = "src/bin/ai_agent_media_sorter.rs"
+
+[[bin]]
 name = "guid"
 path = "src/bin/guid.rs"
 
@@ -92,6 +96,11 @@ memmap2="0.9.5"
 string-interner="0.19.0"
 reqwest = { version = "0.12.22", features = ["json"] }
 dialoguer = "0.11.0"
+notify="8.1.0"
+decompress = "0.6.0"
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+rusted_toolbox_macros = { path = "../macros" }
+
 
 [dev-dependencies]
 tempfile = "3.8"
