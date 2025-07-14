@@ -283,14 +283,17 @@ pub fn extract_season_episode_from_filename(_input_filename: &str) -> &str {
 
 #[ai_function]
 pub fn extract_episode_title_from_filename(_input_filename: &str) -> &str {
+    /// IMPORTANT: You must extract the episode title *only* if it is present in the input filename itself.
+    /// Do not infer, deduce, or guess the episode title based on the show name, episode number, or outside information.
+    /// You are strictly forbidden from using external knowledge, prior memory, or any context other than the filename string itself.
+    /// If no explicit episode title is present as a distinct segment in the filename, you must return "unknown".
     /// Input: Takes in a filename string that is known to represent a TV show episode.
-    /// Function: If an explicit episode title is present, extracts and returns it, cleaned and formatted with spaces and proper capitalization. Otherwise, return "unknown".
-    /// Important:
-    /// - Return only the episode title, not the show name, season/episode numbers, quality, no context, no explanation, or other info.
+    /// Function: If an explicit episode title is present in the input filename, extract and return it, cleaned and formatted with spaces and proper capitalization. Otherwise, return "unknown".
+    /// - Return only the episode title, not the show name, season/episode numbers, quality, or any extra info.
     /// - Remove dots, dashes, and underscores that separate title words.
     /// - Episode title is often found after season/episode info, or before quality tags (e.g., S01E01.Pilot, .Chapter.One., .The.Finale., etc.).
     /// - If you cannot reasonably extract a clear episode title, return "unknown" (this must be your last resort).
-    /// - The output must be a single line, with no extra spaces at the start or end.
+    /// - Output must be a single line, with no extra spaces at the start or end.
     /// Examples:
     /// - "Stranger.Things.S04E01.Chapter.One.720p.NF.WEB-DL.DDP5.1.x264-NTb.mkv" -> Chapter One
     /// - "Lost.S01E01.Pilot.1080p.BluRay.x264-ROVERS.mkv" -> Pilot
@@ -299,9 +302,13 @@ pub fn extract_episode_title_from_filename(_input_filename: &str) -> &str {
     /// - "Game.of.Thrones.S01E09.Baelor.1080p.BluRay.x264-ROVERS.mkv" -> Baelor
     /// - "ShowName_S06_E12_The_Surprise_HDTV.mp4" -> The Surprise
     /// - "Rick.and.Morty.S05E01.Mort.Dinner.Rick_Andre.720p.WEBRip.x264-ION10.mkv" -> Mort Dinner Rick Andre
+    /// - "Friends.S05E14.720p.HDTV.x264-IMMERSE.mkv" -> unknown
+    /// - "Game.of.Thrones.S01E09.1080p.BluRay.x264-ROVERS.mkv" -> unknown
+    /// - "Lost.S01E04.avi" -> unknown
     /// - "The.Office.US.S07E17.720p.NF.WEB-DL.DDP5.1.x264-NTb.mkv" -> unknown
     /// - "Better.Call.Saul.S03E05.1080p.AMZN.WEBRip.DDP5.1.x264-NTb.mkv" -> unknown
     /// - "Seinfeld.821.720p.HDTV.x264-GROUP.mkv" -> unknown
     /// - "README.txt" -> unknown
     OUTPUT
 }
+
