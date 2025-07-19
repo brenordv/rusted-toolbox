@@ -3,6 +3,39 @@ use crate::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
 use anyhow::{Context, Result};
 use std::env;
 
+pub fn build_requester_for_openwebui() -> Result<OpenAiRequester> {
+    let request_history_path = match env::var("LOCAL_OPENWEBUI_REQUEST_HISTORY_PATH") {
+        Ok(path) => Some(path),
+        Err(_) => None,
+    };
+
+    let api_key =
+        env::var("LOCAL_OPENWEBUI_API_KEY").context("LOCAL_OPENWEBUI_API_KEY must be set")?;
+
+    let ai_model =
+        env::var("LOCAL_OPENWEBUI_MODEL").context("LOCAL_OPENWEBUI_MODEL must be set")?;
+
+    let api_url = env::var("LOCAL_OPENWEBUI_URL").context("LOCAL_OPENWEBUI_URL must be set")?;
+
+    let temperature = match env::var("LOCAL_OPENWEBUI_TEMPERATURE") {
+        Ok(temperature) => Some(
+            temperature
+                .parse::<f32>()
+                .context("LOCAL_OPENWEBUI_TEMPERATURE must be a float")?,
+        ),
+        Err(_) => None,
+    };
+
+    let mut requester =
+        OpenAiRequester::new(api_url, api_key, None, temperature, request_history_path)?;
+
+    requester
+        .set_model(ai_model.as_str())?
+        .initialize_api_client()?;
+
+    Ok(requester)
+}
+
 pub fn build_requester_for_openai() -> Result<OpenAiRequester> {
     let request_history_path = match env::var("OPEN_AI_CHAT_REQUEST_HISTORY_PATH") {
         Ok(path) => Some(path),

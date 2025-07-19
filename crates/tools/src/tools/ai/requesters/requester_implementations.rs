@@ -100,7 +100,7 @@ impl OpenAiRequester {
         ChatCompletion {
             model: self.current_model.clone(),
             messages: payload,
-            temperature: self.temperature,
+            temperature: format!("{:.1}", self.temperature),
         }
     }
 
