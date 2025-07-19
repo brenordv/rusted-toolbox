@@ -1,4 +1,4 @@
-use crate::shared::sqlite::dictionary_db::{DictionaryDb, DictionaryDbItem};
+use crate::shared::sqlite::dictionary_db::{DictionaryDb};
 use crate::shared::system::pathbuf_extensions::PathBufExtensions;
 use crate::tools::ai::ai_functions::media_sorter_functions::{
     extract_movie_title_from_filename_as_string, extract_season_episode_from_filename_as_string,
@@ -215,11 +215,6 @@ async fn identify_file(
             .update::<FileProcessItem>(&file.file_path, &file.update_title(tv_show_title))?;
 
         info!("Extracting title of the TV Show...");
-        let request = build_rust_ai_function_user_message(
-            extract_season_episode_from_filename_as_string,
-            file_name,
-        );
-
         let response = ai_requester
             .send_request(
                 build_rust_ai_function_user_message(
@@ -277,7 +272,7 @@ async fn identify_file(
                     &file.update_is_main_archive_file(b),
                 )?;
             }
-            Err(e) => {
+            Err(_) => {
                 anyhow::bail!(
                     "Failed to identify if file is the main archive file: {}",
                     file_name
