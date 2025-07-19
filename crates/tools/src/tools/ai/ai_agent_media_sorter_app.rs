@@ -150,7 +150,7 @@ async fn identify_file(
     file: &FileProcessItem,
     files_read_db: &DictionaryDb,
     ai_requester: &mut OpenAiRequester,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     files_read_db.update::<FileProcessItem>(&file.file_path, &file.update_status(Identifying))?;
 
     let file_name = file.file.to_str().unwrap();
@@ -294,7 +294,7 @@ async fn handle_new_file(
     files_read_db: &DictionaryDb,
     ai_requester: &mut OpenAiRequester,
     max_retries: &usize,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     info!("File: {:?} / {:?}", file.file_name(), file);
 
     let file_str = file.absolute_to_string()?;
