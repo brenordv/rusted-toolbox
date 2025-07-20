@@ -1,3 +1,4 @@
+pub mod control_file_wrapper;
 pub mod get_user_response;
 pub mod load_chat_personality_prompt;
 pub mod monitor_folder;
