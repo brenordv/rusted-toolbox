@@ -14,18 +14,19 @@ use crate::tools::ai::models::models::FileProcessResult::{
 };
 use crate::tools::ai::models::models::MediaType::{Movie, TvShow};
 use crate::tools::ai::models::models::{
-    FileProcessItem, FileProcessResult, RecursiveDirWalkControl, TvShowSeasonEpisodeInfo,
+    FileProcessItem, FileProcessResult, TvShowSeasonEpisodeInfo,
 };
 use crate::tools::ai::requesters::requester_builders::build_requester_for_openai;
 use crate::tools::ai::requesters::requester_implementations::OpenAiRequester;
 use crate::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
 use anyhow::{Context, Result};
 use decompress::ExtractOptsBuilder;
-use log::{error, info, warn};
+use log::{info, warn};
 use notify::Event;
 use std::path::PathBuf;
 use std::process::Command;
-use std::{env, fs};
+use std::{env};
+use crate::shared::system::folder_walkthrough::list_all_files_recursively;
 
 pub async fn handle_event_created(event: Event) -> Result<()> {
     let data_folder_name =
@@ -48,73 +49,17 @@ pub async fn handle_event_created(event: Event) -> Result<()> {
         .set_system_message(build_rust_ai_function_system_message())?
         .set_temperature(&0.0)?;
 
-    let files = &event.paths;
+    let created_entries = &event.paths;
 
-    for file_or_folder in files {
-        if file_or_folder.is_dir() {
-            walk_through_new_folder(
-                file_or_folder,
+    for entry in created_entries {
+        for file in list_all_files_recursively(entry) {
+            handle_new_file(
+                &file,
                 &files_read_db,
                 &mut ai_requester,
                 &max_attempts,
             )
-            .await?;
-            continue;
-        }
-
-        handle_new_file(
-            file_or_folder,
-            &files_read_db,
-            &mut ai_requester,
-            &max_attempts,
-        )
-        .await?;
-    }
-
-    Ok(())
-}
-
-async fn walk_through_new_folder(
-    folder: &PathBuf,
-    files_read_db: &DictionaryDb,
-    ai_requester: &mut OpenAiRequester,
-    max_retries: &usize,
-) -> Result<()> {
-    let root_entries = match fs::read_dir(folder) {
-        Ok(e) => e,
-        Err(e) => {
-            error!("Failed to read root entry directory {:?}: {}", folder, e);
-            return Err(anyhow::anyhow!(
-                "Failed to read root entry directory {:?}: {}",
-                folder,
-                e
-            ));
-        }
-    };
-
-    let mut folder_walkthrough_control = RecursiveDirWalkControl::new();
-
-    for entry in root_entries {
-        let entry = entry.context("Failed to read directory entry")?.path();
-
-        if entry.is_file() {
-            handle_new_file(&entry, files_read_db, ai_requester, max_retries).await?;
-            continue;
-        }
-
-        folder_walkthrough_control.add_folder(&entry);
-    }
-
-    // Walk through everything, treating ever file we found.
-    // Created this control to avoid having to use recursion to deal with folder recursively.
-    while folder_walkthrough_control.has_next() {
-        if let Some(entry) = folder_walkthrough_control.next() {
-            if entry.is_file() {
-                handle_new_file(&entry, files_read_db, ai_requester, max_retries).await?;
-                continue;
-            }
-
-            folder_walkthrough_control.add_folder(&entry);
+                .await?;
         }
     }
 
@@ -146,11 +91,8 @@ fn handle_decompress(control: &FileProcessItem, files_read_db: &DictionaryDb) ->
     Ok(())
 }
 
-async fn identify_file(
-    file: &FileProcessItem,
-    files_read_db: &DictionaryDb,
-    ai_requester: &mut OpenAiRequester,
-) -> Result<()> {
+async fn identify_file(file: &FileProcessItem, files_read_db: &DictionaryDb,
+                       ai_requester: &mut OpenAiRequester) -> Result<()> {
     files_read_db.update::<FileProcessItem>(&file.file_path, &file.update_status(Identifying))?;
 
     let file_name = file.file.to_str().unwrap();
