@@ -1,6 +1,8 @@
 use crate::shared::sqlite::dictionary_db::{DictionaryDb, DictionaryDbItem};
+use crate::shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use crate::shared::system::folder_walkthrough::list_all_files_recursively;
 use crate::shared::system::pathbuf_extensions::PathBufExtensions;
+use crate::shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
 use crate::tools::ai::ai_functions::media_sorter_functions::{
     extract_movie_title_from_filename_as_string, extract_season_episode_from_filename_as_string,
     extract_tv_show_title_from_filename_as_string, identify_media_format_from_filename_as_string,
@@ -25,13 +27,11 @@ use anyhow::{Context, Result};
 use decompress::ExtractOptsBuilder;
 use log::{info, warn};
 use notify::Event;
-use std::{env, fs};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
-use crate::shared::system::ensure_directory_exists::EnsureDirectoryExists;
-use crate::shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
+use std::{env, fs};
 
 pub async fn handle_event_created(event: Event) -> Result<()> {
     let data_folder_name =
@@ -176,11 +176,11 @@ fn copy_files(target_folder: PathBuf, files_to_copy: Vec<PathBuf>) -> Result<()>
         print!("Copying file: {}...", file.display());
 
         // Determine a relative path to preserve folder structure
-        let rel_path = file.strip_prefix(
-            file.ancestors()
-                .last()
-                .unwrap_or_else(|| Path::new("")) // fallback to the empty prefix if necessary
-        ).unwrap_or(&file);
+        let rel_path = file
+            .strip_prefix(
+                file.ancestors().last().unwrap_or_else(|| Path::new("")), // fallback to the empty prefix if necessary
+            )
+            .unwrap_or(&file);
 
         // Compose the destination path
         let destination = target_folder.join(rel_path);
@@ -188,13 +188,11 @@ fn copy_files(target_folder: PathBuf, files_to_copy: Vec<PathBuf>) -> Result<()>
         destination.ensure_directory_exists()?;
 
         // Actually copy the file
-        fs::copy(&file, &destination)
-            .context(format!(
-                "Failed to copy file from {} to {}",
-                file.display(),
-                destination.display())
-            )?;
-
+        fs::copy(&file, &destination).context(format!(
+            "Failed to copy file from {} to {}",
+            file.display(),
+            destination.display()
+        ))?;
 
         println!("Done!");
     }
@@ -207,7 +205,8 @@ fn list_files_to_copy(control: Arc<ControlFileWrapper>) -> Vec<PathBuf> {
 
     for file in list_all_files_recursively(&control.get_file()) {
         // Check if file has an extension
-        let ext_opt = file.extension()
+        let ext_opt = file
+            .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_lowercase());
 
@@ -219,18 +218,15 @@ fn list_files_to_copy(control: Arc<ControlFileWrapper>) -> Vec<PathBuf> {
 
         let skip_exts = [
             // Scripts
-            "sh", "bat", "ps1", "py", "js", "rb", "pl", "php", "lua",
-            // Executables
-            "exe", "dll", "bin", "so", "out",
-            // Compressed
+            "sh", "bat", "ps1", "py", "js", "rb", "pl", "php", "lua", // Executables
+            "exe", "dll", "bin", "so", "out", // Compressed
             "zip", "rar", "7z", "gz", "bz2", "xz", "tar",
         ];
 
         // Skip multi-part archive and split file extensions: .001-.099, .r01-.r99, etc.
-        let is_multipart = (ext.len() == 3 || ext.len() == 4) && (
-            (ext.starts_with('r') && ext[1..].chars().all(|c| c.is_ascii_digit()))
-                || ext.chars().all(|c| c.is_ascii_digit())
-        );
+        let is_multipart = (ext.len() == 3 || ext.len() == 4)
+            && ((ext.starts_with('r') && ext[1..].chars().all(|c| c.is_ascii_digit()))
+                || ext.chars().all(|c| c.is_ascii_digit()));
 
         if skip_exts.contains(&ext.as_str()) || is_multipart {
             continue;
@@ -418,7 +414,10 @@ fn define_target_folder(control: Arc<ControlFileWrapper>) -> Result<PathBuf> {
     let title = match control.get_title() {
         Some(t) => sanitize_string_for_filename(&t),
         None => {
-            anyhow::bail!("Failed to get title from file: {}", control.get_file().display());
+            anyhow::bail!(
+                "Failed to get title from file: {}",
+                control.get_file().display()
+            );
         }
     };
 
@@ -430,7 +429,10 @@ fn define_target_folder(control: Arc<ControlFileWrapper>) -> Result<PathBuf> {
             let episode_info = match control.get_episode_info() {
                 Some(e_info) => e_info,
                 None => {
-                    anyhow::bail!("Failed to get episode info from file: {}", control.get_file().display());
+                    anyhow::bail!(
+                        "Failed to get episode info from file: {}",
+                        control.get_file().display()
+                    );
                 }
             };
 

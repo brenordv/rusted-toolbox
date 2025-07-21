@@ -1,5 +1,6 @@
 #![allow(dead_code, unused_imports)] // I'll remove this later.
 use anyhow::Context;
+use anyhow::Result;
 use dotenv::dotenv;
 use rusted_toolbox::tools::ai::ai_agent_media_sorter_app::handle_event_created;
 use rusted_toolbox::tools::ai::ai_functions::media_sorter_functions::{
@@ -17,7 +18,6 @@ use rusted_toolbox::tools::ai::requesters::requester_builders::{
 use rusted_toolbox::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
 use rusted_toolbox::tools::ai::utils::monitor_folder::monitor_folder_for_new_files;
 use std::env;
-use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,9 +27,8 @@ async fn main() -> Result<()> {
 
     let folder_to_watch = env::var("AI_MEDIA_SORTER_WATCH_FOLDER")
         .context("AI_MEDIA_SORTER_WATCH_FOLDER is not set")?;
-    
-    monitor_folder_for_new_files(folder_to_watch.as_str(), Some(handle_event_created))
-        .await?;
+
+    monitor_folder_for_new_files(folder_to_watch.as_str(), Some(handle_event_created)).await?;
 
     Ok(())
 }

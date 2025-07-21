@@ -1,8 +1,8 @@
-use std::future::Future;
+use anyhow::Result;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
+use std::future::Future;
 use std::path::Path;
 use std::sync::mpsc;
-use anyhow::Result;
 
 pub async fn monitor_folder_for_new_files<Fut, F>(
     folder_to_watch: &str,
@@ -20,7 +20,8 @@ where
         None,
         None,
         None,
-    ).await?;
+    )
+    .await?;
 
     Ok(())
 }
