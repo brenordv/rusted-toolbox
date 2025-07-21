@@ -1,8 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use crossterm::style::Color;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FileProcessResult {

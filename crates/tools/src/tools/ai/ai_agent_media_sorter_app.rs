@@ -27,7 +27,6 @@ use anyhow::{Context, Result};
 use decompress::ExtractOptsBuilder;
 use log::{info, warn};
 use notify::Event;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -82,14 +81,14 @@ async fn handle_new_file(
 
     let file_str = file.absolute_to_string()?;
 
-    let mut control_db_item = ensure_control_item(file, files_read_db.clone(), &file_str)?;
+    let control_db_item = ensure_control_item(file, files_read_db.clone(), &file_str)?;
 
     let db_item = control_db_item.value;
 
     let ref_file = &db_item.file_path.clone();
 
     let file_control = ControlFileWrapper::new(files_read_db.clone(), db_item)?;
-    let mut file_control = Arc::new(file_control);
+    let file_control = Arc::new(file_control);
 
     while file_control.get_current_attempts() < *max_retries {
         match file_control.get_current_status() {
