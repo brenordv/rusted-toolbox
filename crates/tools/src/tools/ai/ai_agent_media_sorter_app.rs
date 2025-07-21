@@ -16,7 +16,7 @@ use crate::tools::ai::models::models::FileProcessResult::{
     Ignored,
 };
 use crate::tools::ai::models::models::MediaType::{Movie, TvShow};
-use crate::tools::ai::models::models::{FileProcessResult, TvShowSeasonEpisodeInfo};
+use crate::tools::ai::models::models::{FileProcessResult, MediaType, TvShowSeasonEpisodeInfo};
 use crate::tools::ai::requesters::requester_builders::build_requester_for_openai;
 use crate::tools::ai::requesters::requester_implementations::OpenAiRequester;
 use crate::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
@@ -25,10 +25,13 @@ use anyhow::{Context, Result};
 use decompress::ExtractOptsBuilder;
 use log::{info, warn};
 use notify::Event;
-use std::env;
-use std::path::PathBuf;
+use std::{env, fs};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
+use crate::shared::system::ensure_directory_exists::EnsureDirectoryExists;
+use crate::shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
 
 pub async fn handle_event_created(event: Event) -> Result<()> {
     let data_folder_name =
@@ -55,6 +58,7 @@ pub async fn handle_event_created(event: Event) -> Result<()> {
 
     for entry in created_entries {
         for file in list_all_files_recursively(entry) {
+            println!("File: {:?}", file);
             handle_new_file(
                 &file,
                 files_read_db.clone(),
@@ -126,9 +130,11 @@ async fn handle_new_file(
                 // All good so far.
                 // now we need to:
                 // 1. Figure out where to copy the files
-                //let target_folder = define_target_folder(&file_control);
+                let target_folder = define_target_folder(file_control.clone())?;
                 // 2. Gather a list of files to copy
+                let target_files = list_files_to_copy(file_control.clone());
                 // 3. Copy
+                copy_files(target_folder, target_files)?;
             }
             FileProcessResult::IdentifiedFailed => {
                 // Failed to identify the media. Maybe try again.
@@ -138,14 +144,14 @@ async fn handle_new_file(
             }
             FileProcessResult::DecompressedFailed => {
                 // Failed to decompress. Maybe try again.
-                &file_control.update_attempt()?;
+                file_control.update_attempt()?;
 
                 handle_decompress(file_control.clone())?;
                 continue;
             }
             FileProcessResult::CopiedFailed => {
                 // Failed to copy. Try again.
-                &file_control.update_attempt()?;
+                file_control.update_attempt()?;
 
                 //TODO: Add copy method here
                 continue;
@@ -163,6 +169,77 @@ async fn handle_new_file(
     }
 
     Ok(())
+}
+
+fn copy_files(target_folder: PathBuf, files_to_copy: Vec<PathBuf>) -> Result<()> {
+    for file in files_to_copy {
+        print!("Copying file: {}...", file.display());
+
+        // Determine a relative path to preserve folder structure
+        let rel_path = file.strip_prefix(
+            file.ancestors()
+                .last()
+                .unwrap_or_else(|| Path::new("")) // fallback to the empty prefix if necessary
+        ).unwrap_or(&file);
+
+        // Compose the destination path
+        let destination = target_folder.join(rel_path);
+
+        destination.ensure_directory_exists()?;
+
+        // Actually copy the file
+        fs::copy(&file, &destination)
+            .context(format!(
+                "Failed to copy file from {} to {}",
+                file.display(),
+                destination.display())
+            )?;
+
+
+        println!("Done!");
+    }
+
+    Ok(())
+}
+
+fn list_files_to_copy(control: Arc<ControlFileWrapper>) -> Vec<PathBuf> {
+    let mut files_to_copy = vec![];
+
+    for file in list_all_files_recursively(&control.get_file()) {
+        // Check if file has an extension
+        let ext_opt = file.extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase());
+
+        // Skip files with no extension
+        let ext = match ext_opt {
+            Some(ref e) if !e.is_empty() => e,
+            _ => continue,
+        };
+
+        let skip_exts = [
+            // Scripts
+            "sh", "bat", "ps1", "py", "js", "rb", "pl", "php", "lua",
+            // Executables
+            "exe", "dll", "bin", "so", "out",
+            // Compressed
+            "zip", "rar", "7z", "gz", "bz2", "xz", "tar",
+        ];
+
+        // Skip multi-part archive and split file extensions: .001-.099, .r01-.r99, etc.
+        let is_multipart = (ext.len() == 3 || ext.len() == 4) && (
+            (ext.starts_with('r') && ext[1..].chars().all(|c| c.is_ascii_digit()))
+                || ext.chars().all(|c| c.is_ascii_digit())
+        );
+
+        if skip_exts.contains(&ext.as_str()) || is_multipart {
+            continue;
+        }
+
+        files_to_copy.push(file);
+    }
+
+    files_to_copy
 }
 
 fn ensure_control_item(
@@ -337,8 +414,52 @@ async fn identify_file(
     Ok(())
 }
 
-fn define_target_folder(item: &mut FileProcessItem) -> PathBuf {
-    todo!()
+fn define_target_folder(control: Arc<ControlFileWrapper>) -> Result<PathBuf> {
+    let title = match control.get_title() {
+        Some(t) => sanitize_string_for_filename(&t),
+        None => {
+            anyhow::bail!("Failed to get title from file: {}", control.get_file().display());
+        }
+    };
+
+    match control.get_media_type() {
+        TvShow => {
+            let base_path = env::var("AI_MEDIA_SORTER_WATCH_BASE_TVSHOW_FOLDER")
+                .context("AI_MEDIA_SORTER_WATCH_BASE_TVSHOW_FOLDER not found in .env file")?;
+
+            let episode_info = match control.get_episode_info() {
+                Some(e_info) => e_info,
+                None => {
+                    anyhow::bail!("Failed to get episode info from file: {}", control.get_file().display());
+                }
+            };
+
+            let mut path = PathBuf::from(base_path);
+
+            path.push(title);
+
+            path.push(format!("Season{:02}", episode_info.season));
+
+            path.ensure_directory_exists()?;
+
+            return Ok(path);
+        }
+        Movie => {
+            let base_path = env::var("AI_MEDIA_SORTER_WATCH_BASE_MOVIE_FOLDER")
+                .context("AI_MEDIA_SORTER_WATCH_BASE_MOVIE_FOLDER not found in .env file")?;
+
+            let mut path = PathBuf::from(base_path);
+
+            path.push(title);
+
+            path.ensure_directory_exists()?;
+
+            return Ok(path);
+        }
+        MediaType::Unknown => {
+            anyhow::bail!("Unknown media type. Cannot define target folder.");
+        }
+    };
 }
 
 fn decompress_file(file: &PathBuf) -> Result<bool> {

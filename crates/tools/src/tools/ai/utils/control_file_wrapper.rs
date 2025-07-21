@@ -53,6 +53,21 @@ impl ControlFileWrapper {
         let item = self.item.lock().unwrap();
         item.file.clone()
     }
+
+    pub fn get_media_type(&self) -> MediaType {
+        let item = self.item.lock().unwrap();
+        item.media_type.clone().unwrap_or(MediaType::Unknown)
+    }
+
+    pub fn get_title(&self) -> Option<String> {
+        let item = self.item.lock().unwrap();
+        item.title.clone()
+    }
+
+    pub fn get_episode_info(&self) -> Option<TvShowSeasonEpisodeInfo> {
+        let item = self.item.lock().unwrap();
+        item.season_episode_info.clone()
+    }
 }
 
 impl FileProcessItemTraits for ControlFileWrapper {

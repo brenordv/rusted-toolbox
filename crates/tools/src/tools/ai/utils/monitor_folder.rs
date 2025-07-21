@@ -1,11 +1,17 @@
+use std::future::Future;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::path::Path;
 use std::sync::mpsc;
+use anyhow::Result;
 
-pub fn monitor_folder_for_new_files(
+pub async fn monitor_folder_for_new_files<Fut, F>(
     folder_to_watch: &str,
-    on_created_handler: Option<fn(Event) -> anyhow::Result<()>>,
-) -> anyhow::Result<()> {
+    on_created_handler: Option<F>,
+) -> anyhow::Result<()>
+where
+    F: Fn(Event) -> Fut,
+    Fut: Future<Output = Result<()>>,
+{
     monitor_folder(
         folder_to_watch,
         None,
@@ -14,20 +20,24 @@ pub fn monitor_folder_for_new_files(
         None,
         None,
         None,
-    )?;
+    ).await?;
 
     Ok(())
 }
 
-pub fn monitor_folder(
+pub async fn monitor_folder<Fut, F>(
     folder_to_watch: &str,
     on_any_handler: Option<fn(Event) -> anyhow::Result<()>>,
     on_access_handler: Option<fn(Event) -> anyhow::Result<()>>,
-    on_created_handler: Option<fn(Event) -> anyhow::Result<()>>,
+    on_created_handler: Option<F>,
     on_modify_handler: Option<fn(Event) -> anyhow::Result<()>>,
     on_remove_handler: Option<fn(Event) -> anyhow::Result<()>>,
     on_other_handler: Option<fn(Event) -> anyhow::Result<()>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    F: Fn(Event) -> Fut,
+    Fut: Future<Output = Result<()>>,
+{
     let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
 
     let mut watcher = notify::recommended_watcher(tx)?;
@@ -48,8 +58,8 @@ pub fn monitor_folder(
                     }
                 }
                 EventKind::Create(_) => {
-                    if let Some(handler) = on_created_handler {
-                        handler(event)?;
+                    if let Some(handler) = on_created_handler.as_ref() {
+                        handler(event).await?;
                     }
                 }
                 EventKind::Modify(_) => {
