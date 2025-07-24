@@ -44,6 +44,21 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
+    /// Converts the current `LogLevel` instance to its corresponding tracing log level.
+    ///
+    /// # Returns
+    /// A `String` that contains the log level compatible with tracing.
+    pub fn to_tracing_level(&self) -> String {
+        match self {
+            LogLevel::Trace => "trace".to_string(),
+            LogLevel::Debug => "debug".to_string(),
+            LogLevel::Info => "info".to_string(),
+            LogLevel::Warn => "warn".to_string(),
+            LogLevel::Error => "error".to_string(),
+            LogLevel::Fatal => "error".to_string(), // Map Fatal to error since tracing doesn't have fatal
+        }
+    }
+
     /// Converts the current `LogLevel` instance to its corresponding default log level for a
     /// specific application and returns the formatted string.
     ///
@@ -54,17 +69,10 @@ impl LogLevel {
     /// A `String` that contains the application name and the log level in the
     /// format `<app_name>=<log_level>`.
     pub fn to_default_log_level_for_app(&self, app_name: &String) -> String {
-        let log_level = match self {
-            LogLevel::Trace => "trace".to_string(),
-            LogLevel::Debug => "debug".to_string(),
-            LogLevel::Info => "info".to_string(),
-            LogLevel::Warn => "warn".to_string(),
-            LogLevel::Error => "error".to_string(),
-            LogLevel::Fatal => "fatal".to_string(),
-        };
-
+        let log_level = self.to_tracing_level();
         format!("{}={}", app_name, log_level)
     }
+
 }
 
 /// The `AppLogger` struct is a customizable logging utility designed to manage
@@ -274,10 +282,16 @@ impl AppLogger {
             return;
         }
 
-        let default_log_level = self.log_level.to_default_log_level_for_app(&self.app_name);
-
         let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| default_log_level.into());
+            .or_else(|_| {
+                // If no environment variable is set, create a filter with the specified log level
+                let level = self.log_level.to_tracing_level();
+                tracing_subscriber::EnvFilter::try_new(&level)
+            })
+            .unwrap_or_else(|_| {
+                // Final fallback to info level
+                tracing_subscriber::EnvFilter::new("info")
+            });
 
         let mut layers = Vec::new();
 
@@ -309,7 +323,7 @@ impl AppLogger {
                 {
                     let file_layer = tracing_subscriber::fmt::layer()
                         .with_writer(file)
-                        .with_ansi(false) // Disable ANSI colors for file output
+                        .with_ansi(false) // Disabling ANSI colors for file output
                         .boxed();
                     layers.push(file_layer);
                 }

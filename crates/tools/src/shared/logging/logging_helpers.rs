@@ -1,3 +1,4 @@
+use tracing::{debug, error, info, warn};
 use crate::shared::logging::app_logger::{AppLogger, LogLevel};
 
 /// Initializes the logging system for the application with the specified settings.
@@ -26,4 +27,5 @@ pub fn initialize_log(app_name: &str, log_level: LogLevel) {
         .app_name(app_name)
         .log_to_console(true)
         .init();
+
 }

@@ -97,10 +97,13 @@ impl OpenAiRequester {
     }
 
     fn build_openai_request(&mut self, payload: Vec<Message>) -> ChatCompletion {
+        let temperature_str = format!("{:.1}", self.temperature);
+        let temp_float = temperature_str.parse::<f32>().unwrap();
+        
         ChatCompletion {
             model: self.current_model.clone(),
             messages: payload,
-            temperature: format!("{:.1}", self.temperature),
+            temperature: temp_float,
         }
     }
 

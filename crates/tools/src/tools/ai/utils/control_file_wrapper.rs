@@ -5,6 +5,7 @@ use crate::tools::ai::models::models::{FileProcessResult, MediaType, TvShowSeaso
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use log::{debug, info};
 
 pub struct ControlFileWrapper {
     db: Arc<DictionaryDb>,
@@ -24,8 +25,10 @@ impl ControlFileWrapper {
     }
 
     fn save(&self) -> Result<()> {
+        info!("Saving changes to control file: {:?}", self.key);
         self.db.update(self.key.as_ref(), &self.item)?;
-
+        
+        info!("Changes saved to control file: {:?}", self.key);
         Ok(())
     }
 
@@ -72,38 +75,55 @@ impl ControlFileWrapper {
 
 impl FileProcessItemTraits for ControlFileWrapper {
     fn update_status(&self, status: FileProcessResult) -> Result<()> {
-        let mut item = self.item.lock().unwrap();
-        item.status = status;
+        {
+            debug!("Getting access to control file to update status to: {:?}", status);
+            let mut item = self.item.lock().unwrap();
+            debug!("Got access to control file to update status to: {:?}", status);
+            item.status = status;
+            debug!("Status changed in the control file object...");
+        }
+
+        debug!("Saving changes to control file: {:?}", self.key);
         self.save()
     }
 
     fn update_attempt(&self) -> Result<()> {
-        let mut item = self.item.lock().unwrap();
-        item.attempt += 1;
+        {
+            let mut item = self.item.lock().unwrap();
+            item.attempt += 1;
+        }
         self.save()
     }
 
     fn update_media_type(&self, media_type: MediaType) -> Result<()> {
-        let mut item = self.item.lock().unwrap();
-        item.media_type = Some(media_type);
+        {
+            let mut item = self.item.lock().unwrap();
+            item.media_type = Some(media_type);
+        }
         self.save()
     }
 
     fn update_title(&self, title: String) -> Result<()> {
-        let mut item = self.item.lock().unwrap();
-        item.title = Some(title);
+        {
+            let mut item = self.item.lock().unwrap();
+            item.title = Some(title);
+        }
         self.save()
     }
 
     fn update_is_archived(&self, is_archived: bool) -> Result<()> {
-        let mut item = self.item.lock().unwrap();
-        item.is_archive = Some(is_archived);
+        {
+            let mut item = self.item.lock().unwrap();
+            item.is_archive = Some(is_archived);
+        }
         self.save()
     }
 
     fn update_is_main_archive_file(&self, is_main_archive_file: bool) -> Result<()> {
-        let mut item = self.item.lock().unwrap();
-        item.is_main_archive_file = Some(is_main_archive_file);
+        {
+            let mut item = self.item.lock().unwrap();
+            item.is_main_archive_file = Some(is_main_archive_file);
+        }
         self.save()
     }
 
@@ -111,14 +131,18 @@ impl FileProcessItemTraits for ControlFileWrapper {
         &self,
         season_episode_info: TvShowSeasonEpisodeInfo,
     ) -> Result<()> {
-        let mut item = self.item.lock().unwrap();
-        item.season_episode_info = Some(season_episode_info);
+        {
+            let mut item = self.item.lock().unwrap();
+            item.season_episode_info = Some(season_episode_info);
+        }
         self.save()
     }
 
     fn update_target_path(&self, target_path: PathBuf) -> Result<()> {
-        let mut item = self.item.lock().unwrap();
-        item.target_path = Some(target_path);
+        {
+            let mut item = self.item.lock().unwrap();
+            item.target_path = Some(target_path);
+        }
         self.save()
     }
 }

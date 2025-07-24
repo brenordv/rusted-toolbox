@@ -1,6 +1,8 @@
+use std::path::PathBuf;
 use crate::shared::sqlite::generic_db::GenericDb;
 use crate::shared::utils::sanitize_string_for_table_name::sanitize_string_for_table_name;
 use serde::{Deserialize, Serialize};
+use crate::shared::system::ensure_directory_exists::EnsureDirectoryExists;
 
 #[derive(Serialize, Deserialize)]
 pub struct DictionaryDbItem<T> {
@@ -16,6 +18,9 @@ pub struct DictionaryDb {
 
 impl DictionaryDb {
     pub fn new(db_path: String, dict_name: String) -> anyhow::Result<Self> {
+        let path = PathBuf::from(&db_path);
+        path.ensure_parent_exists()?;
+        
         let db = GenericDb::new(db_path)?;
         let dict_name = sanitize_string_for_table_name(&dict_name)?;
         Self::create_dictionary(&db, &dict_name)?;

@@ -26,13 +26,11 @@ impl GenericDb {
                 pathbuf = cwd.join(pathbuf);
             }
 
-            if pathbuf.is_file() {
-                Connection::open(&pathbuf)?
-            } else if pathbuf.is_dir() {
+            if pathbuf.is_dir() {
                 let db_file = pathbuf.join("data.db");
                 Connection::open(db_file)?
             } else {
-                anyhow::bail!("Invalid database path: {}", path);
+                Connection::open(&pathbuf)?
             }
         };
 

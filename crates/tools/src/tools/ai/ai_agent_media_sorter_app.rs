@@ -13,10 +13,7 @@ use crate::tools::ai::message_builders::system_message_builders::{
 };
 use crate::tools::ai::models::file_process_item_model::FileProcessItem;
 use crate::tools::ai::models::file_process_item_traits::FileProcessItemTraits;
-use crate::tools::ai::models::models::FileProcessResult::{
-    DecompressedFailed, DecompressedOk, Decompressing, IdentifiedFailed, IdentifiedOk, Identifying,
-    Ignored,
-};
+use crate::tools::ai::models::models::FileProcessResult::{CopiedOk, DecompressedFailed, DecompressedOk, Decompressing, IdentifiedFailed, IdentifiedOk, Identifying, Ignored, Undefined};
 use crate::tools::ai::models::models::MediaType::{Movie, TvShow};
 use crate::tools::ai::models::models::{FileProcessResult, MediaType, TvShowSeasonEpisodeInfo};
 use crate::tools::ai::requesters::requester_builders::build_requester_for_openai;
@@ -25,14 +22,18 @@ use crate::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
 use crate::tools::ai::utils::control_file_wrapper::ControlFileWrapper;
 use anyhow::{Context, Result};
 use decompress::ExtractOptsBuilder;
-use log::{info, warn};
+use tracing::{debug, error, info, warn};
 use notify::Event;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::{env, fs};
+use tracing::field::debug;
 
 pub async fn handle_event_created(event: Event) -> Result<()> {
+    debug!("File created event triggered with event: {:?}", event);
+
+    debug!("Loading environment variables...");
     let data_folder_name =
         env::var("AI_MEDIA_SORTER_DATA_FOLDER").unwrap_or_else(|_| ".data".to_string());
 
@@ -41,6 +42,7 @@ pub async fn handle_event_created(event: Event) -> Result<()> {
         .parse::<usize>()
         .context("AI_MEDIA_SORTER_MAX_RETRIES must be a number")?;
 
+    debug!("Initializing control database...");
     let db_path = PathBuf::from(data_folder_name)
         .join("files_read.db")
         .absolute_to_string()?;
@@ -49,15 +51,19 @@ pub async fn handle_event_created(event: Event) -> Result<()> {
 
     let files_read_db = Arc::new(db);
 
+    debug!("Initializing AI requester...");
     let mut ai_requester = build_requester_for_openai()?;
 
     ai_requester.set_system_message(build_rust_ai_function_system_message())?;
 
     let created_entries = &event.paths;
 
+    debug!("Preparing to process {} files...", created_entries.len());
+
     for entry in created_entries {
         for file in list_all_files_recursively(entry) {
-            println!("File: {:?}", file);
+            debug!("Working on file: {:?}", file.display());
+
             handle_new_file(
                 &file,
                 files_read_db.clone(),
@@ -77,9 +83,9 @@ async fn handle_new_file(
     ai_requester: &mut OpenAiRequester,
     max_retries: &usize,
 ) -> Result<()> {
-    info!("File: {:?} / {:?}", file.file_name(), file);
-
     let file_str = file.absolute_to_string()?;
+
+    debug!("Loading control item for file...");
 
     let control_db_item = ensure_control_item(file, files_read_db.clone(), &file_str)?;
 
@@ -87,15 +93,28 @@ async fn handle_new_file(
 
     let ref_file = &db_item.file_path.clone();
 
+    debug!("Adding wrapper to control item...");
+
     let file_control = ControlFileWrapper::new(files_read_db.clone(), db_item)?;
     let file_control = Arc::new(file_control);
+
+    debug!("Processing file...");
 
     while file_control.get_current_attempts() < *max_retries {
         match file_control.get_current_status() {
             FileProcessResult::Undefined => {
+                debug!("File is currently unknown. Identifying...");
+
                 // No work done yet. Let's decompress the file. Let's identify the file.
-                identify_file(file_control.clone(), ai_requester).await?;
-                continue;
+                match identify_file(file_control.clone(), ai_requester).await {
+                    Ok(_) => {
+                        continue;
+                    }
+                    Err(e) => {
+                        error!("Identify file failed: {}", e);
+                        file_control.update_status(IdentifiedFailed)?;
+                    }
+                }
             }
             FileProcessResult::Decompressing
             | FileProcessResult::Identifying
@@ -108,51 +127,76 @@ async fn handle_new_file(
                     file.display(),
                     &ref_file
                 );
-                continue;
+                break;
             }
             FileProcessResult::IdentifiedOk => {
                 if !file_control.get_is_archived() {
                     // If it is not compressed, we just need to copy it.
                     // So let's consider the file as decompressed.
+                    debug!("File is not compressed. Skipping decompression...");
                     file_control.update_status(DecompressedOk)?;
                     continue;
                 }
 
                 if !file_control.get_is_main_archive_file() {
+                    debug!("File is compressed, but is not the main archive file. Ignoring file...");
                     file_control.update_status(Ignored)?;
-                    continue;
+                    break;
                 }
 
+                debug!("Decompressing file...");
                 handle_decompress(file_control.clone())?;
+                continue;
             }
             FileProcessResult::DecompressedOk => {
                 // All good so far.
                 // now we need to:
                 // 1. Figure out where to copy the files
+
+                debug!("Preparing to copy file...");
+
                 let target_folder = define_target_folder(file_control.clone())?;
+
+                debug!("Files will be copied to the folder: {}", target_folder.display());
+
                 // 2. Gather a list of files to copy
+
+                debug!("Gathering list of files to copy...");
+
                 let target_files = list_files_to_copy(file_control.clone());
+
+                debug!("Found {} files to copy", target_files.len());
+
                 // 3. Copy
+
+                debug!("Copying files...");
+
                 copy_files(target_folder, target_files)?;
+
+                file_control.update_status(CopiedOk)?;
+
+                continue;
             }
             FileProcessResult::IdentifiedFailed => {
                 // Failed to identify the media. Maybe try again.
+                debug!("Failed to identify media type. Trying again...");
+
                 file_control.update_attempt()?;
-                identify_file(file_control.clone(), ai_requester).await?;
+                file_control.update_status(Undefined)?;
                 continue;
             }
             FileProcessResult::DecompressedFailed => {
                 // Failed to decompress. Maybe try again.
+                debug!("Failed to decompress file. Trying again...");
                 file_control.update_attempt()?;
-
-                handle_decompress(file_control.clone())?;
+                file_control.update_status(IdentifiedOk)?;
                 continue;
             }
             FileProcessResult::CopiedFailed => {
                 // Failed to copy. Try again.
+                debug!("Failed to copy file. Trying again...");
                 file_control.update_attempt()?;
-
-                //TODO: Add copy method here
+                file_control.update_status(DecompressedOk)?;
                 continue;
             }
             FileProcessResult::Ignored => {
@@ -167,24 +211,22 @@ async fn handle_new_file(
         }
     }
 
+    debug!("Finished processing file: {}", file.display());
+
     Ok(())
 }
 
 fn copy_files(target_folder: PathBuf, files_to_copy: Vec<PathBuf>) -> Result<()> {
+    let mut file_count: usize = 1;
+
     for file in files_to_copy {
-        print!("Copying file: {}...", file.display());
+        debug!("Copying file: [{:0>3}] {}...", file_count, file.display());
 
-        // Determine a relative path to preserve folder structure
-        let rel_path = file
-            .strip_prefix(
-                file.ancestors().last().unwrap_or_else(|| Path::new("")), // fallback to the empty prefix if necessary
-            )
-            .unwrap_or(&file);
-
-        // Compose the destination path
-        let destination = target_folder.join(rel_path);
-
-        destination.ensure_directory_exists()?;
+        // Copy as just the filename into the target folder
+        let destination = target_folder.join(
+            file.file_name()
+                .ok_or_else(|| anyhow::anyhow!("Could not determine file name for {}", file.display()))?,
+        );
 
         // Actually copy the file
         fs::copy(&file, &destination).context(format!(
@@ -193,8 +235,10 @@ fn copy_files(target_folder: PathBuf, files_to_copy: Vec<PathBuf>) -> Result<()>
             destination.display()
         ))?;
 
-        println!("Done!");
+        file_count += 1;
     }
+
+    debug!("Finished copying files...");
 
     Ok(())
 }
@@ -203,34 +247,45 @@ fn list_files_to_copy(control: Arc<ControlFileWrapper>) -> Vec<PathBuf> {
     let mut files_to_copy = vec![];
 
     for file in list_all_files_recursively(&control.get_file()) {
-        // Check if file has an extension
+
+        // Don't care about sample files.
+        if file.to_string_lossy().to_lowercase().contains("sample") {
+            continue;
+        }
+
+        // Get file extension, we need to check that.
         let ext_opt = file
             .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_lowercase());
 
-        // Skip files with no extension
+        // Also don't care about files without an extension.
         let ext = match ext_opt {
             Some(ref e) if !e.is_empty() => e,
             _ => continue,
         };
 
+        // For this use case, I also don't want to copy any of those files.
         let skip_exts = [
             // Scripts
-            "sh", "bat", "ps1", "py", "js", "rb", "pl", "php", "lua", // Executables
-            "exe", "dll", "bin", "so", "out", // Compressed
+            "sh", "bat", "ps1", "py", "js", "rb", "pl", "php", "lua",
+            // Executables
+            "exe", "dll", "bin", "so", "out",
+            // Compressed
             "zip", "rar", "7z", "gz", "bz2", "xz", "tar",
         ];
 
-        // Skip multi-part archive and split file extensions: .001-.099, .r01-.r99, etc.
+        // Including files that are part of a multi-file archive
         let is_multipart = (ext.len() == 3 || ext.len() == 4)
             && ((ext.starts_with('r') && ext[1..].chars().all(|c| c.is_ascii_digit()))
                 || ext.chars().all(|c| c.is_ascii_digit()));
+
 
         if skip_exts.contains(&ext.as_str()) || is_multipart {
             continue;
         }
 
+        // If the file made it this far, we'll copy it.
         files_to_copy.push(file);
     }
 
@@ -242,15 +297,21 @@ fn ensure_control_item(
     files_read_db: Arc<DictionaryDb>,
     file_str: &String,
 ) -> Result<DictionaryDbItem<FileProcessItem>> {
-    Ok(files_read_db
-        .get::<FileProcessItem>(&file_str)
-        .unwrap_or({
-            let file_control = FileProcessItem::new(file_str.clone(), file.clone());
+    let item = files_read_db.get::<FileProcessItem>(&file_str)?;
+    
+    if let Some(item) = item {
+        return Ok(item);
+    }
 
-            files_read_db.add::<FileProcessItem>(&file_str, &file_control)?;
-            files_read_db.get::<FileProcessItem>(&file_str)?
-        })
-        .unwrap())
+    let file_control = FileProcessItem::new(file_str.clone(), file.clone());
+    files_read_db.add::<FileProcessItem>(&file_str, &file_control)?;
+    let new_item = files_read_db.get::<FileProcessItem>(&file_str)?;
+    
+    if let Some(new_item) = new_item {
+        return Ok(new_item);
+    }
+    
+    anyhow::bail!("Failed to add file to control db: {}", file.display());
 }
 
 fn handle_decompress(control: Arc<ControlFileWrapper>) -> Result<()> {
@@ -280,8 +341,6 @@ async fn identify_file(
     let file = control.get_file();
 
     let file_name = file.to_str().unwrap();
-
-    info!("Identifying file: {}", file_name);
 
     info!("Guessing media type...");
 
@@ -334,11 +393,11 @@ async fn identify_file(
 
         let tv_show_title = response.message;
 
-        println!("TV Show name?: {:?}", tv_show_title);
+        info!("TV Show name?: {:?}", tv_show_title);
 
         control.update_title(tv_show_title)?;
 
-        info!("Extracting title of the TV Show...");
+        info!("Extracting season and episode numbers of the TV Show...");
 
         let response = ai_requester
             .send_request(
@@ -350,7 +409,7 @@ async fn identify_file(
             )
             .await?;
 
-        println!("Season and Episode numbers?: {:?}", response.message);
+        info!("Season and Episode numbers?: {:?}", response.message);
 
         let season_episode_info = TvShowSeasonEpisodeInfo::new(response.message)?;
 
@@ -373,7 +432,7 @@ async fn identify_file(
         .await?;
 
     let file_type = response.message.as_str();
-    println!("Is file compressed or decompressed?: {:?}", file_type);
+    info!("Is file compressed or decompressed?: {:?}", file_type);
 
     if file_type == "compressed" {
         control.update_is_archived(true)?;

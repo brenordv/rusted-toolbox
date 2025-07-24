@@ -101,6 +101,7 @@ decompress = "0.6.0"
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 rusted_toolbox_macros = { path = "../macros" }
 walkdir = "2.5.0"
+tracing-log = "0.2.0"
 
 
 [dev-dependencies]
