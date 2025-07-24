@@ -55,3 +55,4 @@ target/
 .test-files/*
 dist/
 own_Luna.txt
+.data/
