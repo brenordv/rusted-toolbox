@@ -1,9 +1,9 @@
+use crate::shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use anyhow::Result;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use crate::shared::system::ensure_directory_exists::EnsureDirectoryExists;
 
 pub async fn monitor_folder_for_new_files<Fut, F>(
     folder_to_watch: &str,
@@ -26,7 +26,7 @@ where
         None,
         None,
     )
-        .await?;
+    .await?;
 
     Ok(())
 }

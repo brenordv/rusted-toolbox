@@ -13,7 +13,10 @@ use crate::tools::ai::message_builders::system_message_builders::{
 };
 use crate::tools::ai::models::file_process_item_model::FileProcessItem;
 use crate::tools::ai::models::file_process_item_traits::FileProcessItemTraits;
-use crate::tools::ai::models::models::FileProcessResult::{CopiedOk, DecompressedFailed, DecompressedOk, Decompressing, IdentifiedFailed, IdentifiedOk, Identifying, Ignored, Undefined};
+use crate::tools::ai::models::models::FileProcessResult::{
+    CopiedOk, DecompressedFailed, DecompressedOk, Decompressing, IdentifiedFailed, IdentifiedOk,
+    Identifying, Ignored, Undefined,
+};
 use crate::tools::ai::models::models::MediaType::{Movie, TvShow};
 use crate::tools::ai::models::models::{FileProcessResult, MediaType, TvShowSeasonEpisodeInfo};
 use crate::tools::ai::requesters::requester_builders::build_requester_for_openai;
@@ -22,13 +25,12 @@ use crate::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
 use crate::tools::ai::utils::control_file_wrapper::ControlFileWrapper;
 use anyhow::{Context, Result};
 use decompress::ExtractOptsBuilder;
-use tracing::{debug, error, info, warn};
 use notify::Event;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::{env, fs};
-use tracing::field::debug;
+use tracing::{debug, error, info, warn};
 
 pub async fn handle_event_created(event: Event) -> Result<()> {
     debug!("File created event triggered with event: {:?}", event);
@@ -139,7 +141,9 @@ async fn handle_new_file(
                 }
 
                 if !file_control.get_is_main_archive_file() {
-                    debug!("File is compressed, but is not the main archive file. Ignoring file...");
+                    debug!(
+                        "File is compressed, but is not the main archive file. Ignoring file..."
+                    );
                     file_control.update_status(Ignored)?;
                     break;
                 }
@@ -157,7 +161,10 @@ async fn handle_new_file(
 
                 let target_folder = define_target_folder(file_control.clone())?;
 
-                debug!("Files will be copied to the folder: {}", target_folder.display());
+                debug!(
+                    "Files will be copied to the folder: {}",
+                    target_folder.display()
+                );
 
                 // 2. Gather a list of files to copy
 
@@ -223,10 +230,9 @@ fn copy_files(target_folder: PathBuf, files_to_copy: Vec<PathBuf>) -> Result<()>
         debug!("Copying file: [{:0>3}] {}...", file_count, file.display());
 
         // Copy as just the filename into the target folder
-        let destination = target_folder.join(
-            file.file_name()
-                .ok_or_else(|| anyhow::anyhow!("Could not determine file name for {}", file.display()))?,
-        );
+        let destination = target_folder.join(file.file_name().ok_or_else(|| {
+            anyhow::anyhow!("Could not determine file name for {}", file.display())
+        })?);
 
         // Actually copy the file
         fs::copy(&file, &destination).context(format!(
@@ -247,7 +253,6 @@ fn list_files_to_copy(control: Arc<ControlFileWrapper>) -> Vec<PathBuf> {
     let mut files_to_copy = vec![];
 
     for file in list_all_files_recursively(&control.get_file()) {
-
         // Don't care about sample files.
         if file.to_string_lossy().to_lowercase().contains("sample") {
             continue;
@@ -268,10 +273,8 @@ fn list_files_to_copy(control: Arc<ControlFileWrapper>) -> Vec<PathBuf> {
         // For this use case, I also don't want to copy any of those files.
         let skip_exts = [
             // Scripts
-            "sh", "bat", "ps1", "py", "js", "rb", "pl", "php", "lua",
-            // Executables
-            "exe", "dll", "bin", "so", "out",
-            // Compressed
+            "sh", "bat", "ps1", "py", "js", "rb", "pl", "php", "lua", // Executables
+            "exe", "dll", "bin", "so", "out", // Compressed
             "zip", "rar", "7z", "gz", "bz2", "xz", "tar",
         ];
 
@@ -279,7 +282,6 @@ fn list_files_to_copy(control: Arc<ControlFileWrapper>) -> Vec<PathBuf> {
         let is_multipart = (ext.len() == 3 || ext.len() == 4)
             && ((ext.starts_with('r') && ext[1..].chars().all(|c| c.is_ascii_digit()))
                 || ext.chars().all(|c| c.is_ascii_digit()));
-
 
         if skip_exts.contains(&ext.as_str()) || is_multipart {
             continue;
@@ -298,7 +300,7 @@ fn ensure_control_item(
     file_str: &String,
 ) -> Result<DictionaryDbItem<FileProcessItem>> {
     let item = files_read_db.get::<FileProcessItem>(&file_str)?;
-    
+
     if let Some(item) = item {
         return Ok(item);
     }
@@ -306,11 +308,11 @@ fn ensure_control_item(
     let file_control = FileProcessItem::new(file_str.clone(), file.clone());
     files_read_db.add::<FileProcessItem>(&file_str, &file_control)?;
     let new_item = files_read_db.get::<FileProcessItem>(&file_str)?;
-    
+
     if let Some(new_item) = new_item {
         return Ok(new_item);
     }
-    
+
     anyhow::bail!("Failed to add file to control db: {}", file.display());
 }
 

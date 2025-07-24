@@ -72,7 +72,6 @@ impl LogLevel {
         let log_level = self.to_tracing_level();
         format!("{}={}", app_name, log_level)
     }
-
 }
 
 /// The `AppLogger` struct is a customizable logging utility designed to manage

@@ -3,9 +3,9 @@ use crate::tools::ai::models::file_process_item_model::FileProcessItem;
 use crate::tools::ai::models::file_process_item_traits::FileProcessItemTraits;
 use crate::tools::ai::models::models::{FileProcessResult, MediaType, TvShowSeasonEpisodeInfo};
 use anyhow::Result;
+use log::{debug, info};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use log::{debug, info};
 
 pub struct ControlFileWrapper {
     db: Arc<DictionaryDb>,
@@ -27,7 +27,7 @@ impl ControlFileWrapper {
     fn save(&self) -> Result<()> {
         info!("Saving changes to control file: {:?}", self.key);
         self.db.update(self.key.as_ref(), &self.item)?;
-        
+
         info!("Changes saved to control file: {:?}", self.key);
         Ok(())
     }
@@ -76,9 +76,15 @@ impl ControlFileWrapper {
 impl FileProcessItemTraits for ControlFileWrapper {
     fn update_status(&self, status: FileProcessResult) -> Result<()> {
         {
-            debug!("Getting access to control file to update status to: {:?}", status);
+            debug!(
+                "Getting access to control file to update status to: {:?}",
+                status
+            );
             let mut item = self.item.lock().unwrap();
-            debug!("Got access to control file to update status to: {:?}", status);
+            debug!(
+                "Got access to control file to update status to: {:?}",
+                status
+            );
             item.status = status;
             debug!("Status changed in the control file object...");
         }

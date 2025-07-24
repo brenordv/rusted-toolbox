@@ -2,6 +2,8 @@
 use anyhow::Context;
 use anyhow::Result;
 use dotenv::dotenv;
+use rusted_toolbox::shared::logging::app_logger::LogLevel;
+use rusted_toolbox::shared::logging::logging_helpers::initialize_log;
 use rusted_toolbox::tools::ai::ai_agent_media_sorter_app::handle_event_created;
 use rusted_toolbox::tools::ai::ai_functions::media_sorter_functions::{
     extract_episode_title_from_filename_as_string, extract_movie_title_from_filename_as_string,
@@ -19,11 +21,9 @@ use rusted_toolbox::tools::ai::requesters::requester_traits::OpenAiRequesterTrai
 use rusted_toolbox::tools::ai::utils::monitor_folder::monitor_folder_for_new_files;
 use std::env;
 use tracing::{debug, error, info, warn};
-use rusted_toolbox::shared::logging::app_logger::LogLevel;
-use rusted_toolbox::shared::logging::logging_helpers::initialize_log;
 
 #[tokio::main]
-async fn main() -> Result<()> {    
+async fn main() -> Result<()> {
     initialize_log("MEDIA_SORTER", LogLevel::Debug);
     dotenv().ok();
 
@@ -31,7 +31,6 @@ async fn main() -> Result<()> {
     info!("Starting");
     warn!("asdasdasd");
     error!("Starting");
-
 
     println!("Rusted Agents: Media sorter");
 
