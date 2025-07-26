@@ -1,7 +1,6 @@
 use crate::shared::sqlite::dictionary_db::{DictionaryDb, DictionaryDbItem};
 use crate::shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use crate::shared::system::folder_walkthrough::list_all_files_recursively;
-use crate::shared::system::pathbuf_extensions::PathBufExtensions;
 use crate::shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
 use crate::tools::ai::ai_functions::media_sorter_functions::{
     extract_movie_title_from_filename_as_string, extract_season_episode_from_filename_as_string,
@@ -32,7 +31,7 @@ use std::sync::Arc;
 use std::{env, fs};
 use tracing::{debug, error, info, warn};
 
-pub async fn handle_event_created(event: Event) -> Result<()> {
+pub async fn handle_event_created(event: Event, watch_folder: PathBuf) -> Result<()> {
     debug!("File created event triggered with event: {:?}", event);
 
     debug!("Loading environment variables...");
@@ -47,7 +46,8 @@ pub async fn handle_event_created(event: Event) -> Result<()> {
     debug!("Initializing control database...");
     let db_path = PathBuf::from(data_folder_name)
         .join("files_read.db")
-        .absolute_to_string()?;
+        .to_string_lossy()
+        .to_string();
 
     let db = DictionaryDb::new(db_path, "files_read".to_string())?;
 
@@ -64,9 +64,15 @@ pub async fn handle_event_created(event: Event) -> Result<()> {
 
     for entry in created_entries {
         for file in list_all_files_recursively(entry) {
-            debug!("Working on file: {:?}", file.display());
+            let file_rel_path = file
+                .strip_prefix(&watch_folder)?
+                .to_string_lossy()
+                .to_string();
+
+            debug!("Working on file: {:?}", &file_rel_path);
 
             handle_new_file(
+                file_rel_path,
                 &file,
                 files_read_db.clone(),
                 &mut ai_requester,
@@ -80,16 +86,15 @@ pub async fn handle_event_created(event: Event) -> Result<()> {
 }
 
 async fn handle_new_file(
+    file_rel_path: String,
     file: &PathBuf,
     files_read_db: Arc<DictionaryDb>,
     ai_requester: &mut OpenAiRequester,
     max_retries: &usize,
 ) -> Result<()> {
-    let file_str = file.absolute_to_string()?;
-
     debug!("Loading control item for file...");
 
-    let control_db_item = ensure_control_item(file, files_read_db.clone(), &file_str)?;
+    let control_db_item = ensure_control_item(file, files_read_db.clone(), &file_rel_path)?;
 
     let db_item = control_db_item.value;
 
@@ -340,9 +345,67 @@ async fn identify_file(
 ) -> Result<()> {
     control.update_status(Identifying)?;
 
-    let file = control.get_file();
+    let file_name = control.get_file_path();
 
-    let file_name = file.to_str().unwrap();
+    let file_name_lower = file_name.to_lowercase();
+
+    let ignored_extensions = vec![".nfo", ".sfv", ".jpg", ".png", ".gif"];
+
+    for ext in &ignored_extensions {
+        if file_name_lower.ends_with(ext) {
+            control.update_status(Ignored)?;
+            return Ok(());
+        }
+    }
+
+    info!("Checking if file is an archive...");
+    let response = ai_requester
+        .send_request(
+            build_rust_ai_function_user_message(
+                identify_media_format_from_filename_as_string,
+                file_name.as_str(),
+            ),
+            false,
+        )
+        .await?;
+
+    let file_type = response.message.as_str();
+    info!("Is file compressed or decompressed?: {:?}", file_type);
+
+    if file_type == "compressed" {
+        control.update_is_archived(true)?;
+
+        info!("Identifying if it is the main archive file...");
+
+        let request =
+            build_rust_ai_function_user_message(is_main_archive_file_as_string, file_name.as_str());
+
+        let response = ai_requester.send_request(request, false).await?;
+
+        let is_main_file = response.message.as_str();
+
+        info!("Is file the main archive file?: {:?}", is_main_file);
+
+        match is_main_file.parse::<bool>() {
+            Ok(b) => {
+                control.update_is_main_archive_file(b)?;
+                if !b {
+                    // If the file is compressed, and it's not the main one, no point in
+                    // keeping analyzing it.
+                    control.update_status(Ignored)?;
+                    return Ok(());
+                }
+            }
+            Err(_) => {
+                anyhow::bail!(
+                    "Failed to identify if file is the main archive file: {}",
+                    file_name
+                );
+            }
+        };
+    } else if file_type == "decompressed" {
+        control.update_is_archived(false)?;
+    }
 
     info!("Guessing media type...");
 
@@ -350,7 +413,7 @@ async fn identify_file(
         .send_request(
             build_rust_ai_function_user_message(
                 identify_media_type_from_filename_as_string,
-                file_name,
+                file_name.as_str(),
             ),
             false,
         )
@@ -367,7 +430,7 @@ async fn identify_file(
             .send_request(
                 build_rust_ai_function_user_message(
                     extract_movie_title_from_filename_as_string,
-                    file_name,
+                    file_name.as_str(),
                 ),
                 false,
             )
@@ -387,7 +450,7 @@ async fn identify_file(
             .send_request(
                 build_rust_ai_function_user_message(
                     extract_tv_show_title_from_filename_as_string,
-                    file_name,
+                    file_name.as_str(),
                 ),
                 false,
             )
@@ -405,7 +468,7 @@ async fn identify_file(
             .send_request(
                 build_rust_ai_function_user_message(
                     extract_season_episode_from_filename_as_string,
-                    file_name,
+                    file_name.as_str(),
                 ),
                 false,
             )
@@ -421,49 +484,6 @@ async fn identify_file(
 
         anyhow::bail!("Failed to identify media type for file: {}", file_name);
     };
-
-    info!("Checking if file is an archive...");
-    let response = ai_requester
-        .send_request(
-            build_rust_ai_function_user_message(
-                identify_media_format_from_filename_as_string,
-                file_name,
-            ),
-            false,
-        )
-        .await?;
-
-    let file_type = response.message.as_str();
-    info!("Is file compressed or decompressed?: {:?}", file_type);
-
-    if file_type == "compressed" {
-        control.update_is_archived(true)?;
-
-        info!("Identifying if it is the main archive file...");
-
-        let request =
-            build_rust_ai_function_user_message(is_main_archive_file_as_string, file_name);
-
-        let response = ai_requester.send_request(request, false).await?;
-
-        let is_main_file = response.message.as_str();
-
-        info!("Is file the main archive file?: {:?}", is_main_file);
-
-        match is_main_file.parse::<bool>() {
-            Ok(b) => {
-                control.update_is_main_archive_file(b)?;
-            }
-            Err(_) => {
-                anyhow::bail!(
-                    "Failed to identify if file is the main archive file: {}",
-                    file_name
-                );
-            }
-        };
-    } else if file_type == "decompressed" {
-        control.update_is_archived(false)?;
-    }
 
     control.update_status(IdentifiedOk)?;
 
@@ -567,7 +587,7 @@ fn decompress_file(file: &PathBuf) -> Result<bool> {
     // For .rar files, try using `unrar` command-line tool
     if ext == "rar" {
         // Try invoking `unrar` if available
-        let status = Command::new("unrar")
+        let status = Command::new("Z:\\dev\\projects\\rust\\rusted-toolbox\\UnRAR.exe")
             .arg("x")
             .arg("-y") // auto-yes for prompts
             .arg(file)

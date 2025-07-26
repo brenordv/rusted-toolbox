@@ -1,3 +1,4 @@
+use anyhow::Context;
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -61,7 +62,11 @@ impl PathBufExtensions for Path {
     }
 
     fn absolute_to_string(&self) -> anyhow::Result<String> {
-        match self.to_str() {
+        match self
+            .canonicalize()
+            .context("Failed to canonicalize path")?
+            .to_str()
+        {
             Some(path) => Ok(path.to_string()),
             None => Err(anyhow::anyhow!("Path is not valid UTF-8")),
         }

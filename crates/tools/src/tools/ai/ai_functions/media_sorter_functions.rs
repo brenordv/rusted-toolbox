@@ -88,6 +88,22 @@ pub fn identify_media_type_from_filename(_input_filename: &str) -> &str {
     /// - "Room.104.2017.1080p.WEBRip.x264-STRiFE.mkv" -> tvshow
     /// - "The.Number.23.2007.DVDRip.x264.avi" -> movie
     /// - "Friday.the.13th.2009.BluRay.avi" -> movie
+    /// - "Stephen King\The.Lawnmower.Man.1992.DVDRiP.XviD.iNTERNAL-JUSTRiP\CD1\jrp-tlma.r05" -> movie
+    /// - "Pulp.Fiction.1994.DVDRip.XviD.AC3\DISC2\pulpfict-ac3.r03" -> movie
+    /// - "Gladiator.2000.720p.BluRay.x264-YIFY\CD2\glad-yify.mkv" -> movie
+    /// - "Inception.2010.1080p.BluRay.x264.YIFY\Part2\incept-yify.avi" -> movie
+    /// - "classics/Jaws.1975.720p.BluRay.x264.YIFY\CD1\jaws1975-yify.mp4" -> movie
+    /// - "Blade.Runner.2049.2017.2160p.UHD.BluRay.x265\CD1\blade2049-gp.avi" -> movie
+    /// - "sci-fi/Avatar.2.2022.2160p.UHD.BluRay.x265\CD2\avat2-uhd.r05" -> movie
+    /// - "Mad.Max.Fury.Road.2015.720p.BluRay.x264-YIFY\CD1\madmax-yify.avi" -> movie
+    /// - "best/King.Kong.1933.REMASTERED.720p.BluRay.x264\CD2\kong1933-remast.mp4" -> movie
+    /// - "Breaking.Bad.S05E14.720p.HDTV.x264-IMMERSE\CD1\bb-s05e14.r11" -> tvshow
+    /// - "shows/Game.of.Thrones.S08E03.1080p.WEB.H264-MEMENTO\DISC1\got-s08e03.mkv" -> tvshow
+    /// - "Stranger.Things.S04E01.Chapter.One.720p.NF.WEB-DL.DDP5.1.x264-NTb\CD2\st-s04e01.r10" -> tvshow
+    /// - "The.Office.US.S07E17.720p.NF.WEB-DL.DDP5.1.x264-NTb\PART1\office-s07e17.avi" -> tvshow
+    /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.r06" -> tvshow
+    /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> tvshow
+    /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> tvshow
     /// - "readme.md" -> unknown
     OUTPUT
 }
@@ -105,7 +121,7 @@ pub fn identify_media_format_from_filename(_input_filename: &str) -> &str {
     /// - Ignore the letter case when analyzing the filename.
     /// Output:
     /// - If the filename string contains extensions that indicate the file is compressed, return "compressed";
-    /// - If the filename string does not contains extensions that indicate the file is compressed, return "decompressed";
+    /// - If the filename string does not contain extensions that indicate the file is compressed, return "decompressed";
     /// - If you cannot reasonably classify, return "unknown" as a last resort.
     /// Examples:
     /// - "The.Matrix.1999.1080p.BluRay.x264.DTS-FGT.mkv" -> decompressed
@@ -121,6 +137,32 @@ pub fn identify_media_format_from_filename(_input_filename: &str) -> &str {
     /// - "Show.Name.backup.tar.gz" -> compressed
     /// - "Series.S01E01.avi" -> decompressed
     /// - "Season1_Episode1_showname.mkv" -> decompressed
+    /// - "home.mkv" -> decompressed
+    /// - "home.rar" -> compressed
+    /// - "home.r10" -> compressed
+    /// - "home.r042" -> compressed
+    /// - "video-0001.mkv" -> decompressed
+    /// - "aa-23-1111.mkv" -> decompressed
+    /// - "aa-23-1111.rar" -> compressed
+    /// - "za-23-1111.r01" -> compressed
+    /// - "zb-21111.r002" -> compressed
+    /// - "f-23-1111.r003" -> compressed
+    /// - "Stephen King\The.Lawnmower.Man.1992.DVDRiP.XviD.iNTERNAL-JUSTRiP\CD1\jrp-tlma.r05" -> compressed
+    /// - "Pulp.Fiction.1994.DVDRip.XviD.AC3\DISC2\pulpfict-ac3.r03" -> compressed
+    /// - "Gladiator.2000.720p.BluRay.x264-YIFY\CD2\glad-yify.mkv" -> decompressed
+    /// - "Inception.2010.1080p.BluRay.x264.YIFY\Part2\incept-yify.avi" -> decompressed
+    /// - "classics/Jaws.1975.720p.BluRay.x264.YIFY\CD1\jaws1975-yify.mp4" -> decompressed
+    /// - "Blade.Runner.2049.2017.2160p.UHD.BluRay.x265\CD1\blade2049-gp.avi" -> decompressed
+    /// - "sci-fi/Avatar.2.2022.2160p.UHD.BluRay.x265\CD2\avat2-uhd.rar" -> compressed
+    /// - "Mad.Max.Fury.Road.2015.720p.BluRay.x264-YIFY\CD1\madmax-yify.avi" -> decompressed
+    /// - "best/King.Kong.1933.REMASTERED.720p.BluRay.x264\CD2\kong1933-remast.mp4" -> decompressed
+    /// - "Breaking.Bad.S05E14.720p.HDTV.x264-IMMERSE\CD1\bb-s05e14.r11" -> compressed
+    /// - "shows/Game.of.Thrones.S08E03.1080p.WEB.H264-MEMENTO\DISC1\got-s08e03.mkv" -> decompressed
+    /// - "Stranger.Things.S04E01.Chapter.One.720p.NF.WEB-DL.DDP5.1.x264-NTb\CD2\st-s04e01.r10" -> compressed
+    /// - "The.Office.US.S07E17.720p.NF.WEB-DL.DDP5.1.x264-NTb\PART1\office-s07e17.avi" -> decompressed
+    /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.rar" -> compressed
+    /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> decompressed
+    /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> compressed
     /// - "README.txt" -> unknown
     /// - "video_without_extension" -> unknown
     OUTPUT
@@ -163,6 +205,22 @@ pub fn is_main_archive_file(_input_filename: &str) -> &str {
     /// - "Series.S01E01.mkv" -> false
     /// - "Holiday.Pictures.2022.zip" -> true
     /// - "Holiday.Pictures.2022.z01" -> false
+    /// - "Stephen King\The.Lawnmower.Man.1992.DVDRiP.XviD.iNTERNAL-JUSTRiP\CD1\jrp-tlma.r05" -> false
+    /// - "Pulp.Fiction.1994.DVDRip.XviD.AC3\DISC2\pulpfict-ac3.r03" -> false
+    /// - "Gladiator.2000.720p.BluRay.x264-YIFY\CD2\glad-yify.mkv" -> false
+    /// - "Inception.2010.1080p.BluRay.x264.YIFY\Part2\incept-yify.avi" -> false
+    /// - "classics/Jaws.1975.720p.BluRay.x264.YIFY\CD1\jaws1975-yify.mp4" -> false
+    /// - "Blade.Runner.2049.2017.2160p.UHD.BluRay.x265\CD1\blade2049-gp.avi" -> false
+    /// - "sci-fi/Avatar.2.2022.2160p.UHD.BluRay.x265\CD2\avat2-uhd.rar" -> true
+    /// - "Mad.Max.Fury.Road.2015.720p.BluRay.x264-YIFY\CD1\madmax-yify.avi" -> false
+    /// - "best/King.Kong.1933.REMASTERED.720p.BluRay.x264\CD2\kong1933-remast.mp4" -> false
+    /// - "Breaking.Bad.S05E14.720p.HDTV.x264-IMMERSE\CD1\bb-s05e14.r11" -> false
+    /// - "shows/Game.of.Thrones.S08E03.1080p.WEB.H264-MEMENTO\DISC1\got-s08e03.mkv" -> false
+    /// - "Stranger.Things.S04E01.Chapter.One.720p.NF.WEB-DL.DDP5.1.x264-NTb\CD2\st-s04e01.r10" -> false
+    /// - "The.Office.US.S07E17.720p.NF.WEB-DL.DDP5.1.x264-NTb\PART1\office-s07e17.avi" -> false
+    /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.rar" -> true
+    /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> false
+    /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> false
     /// - "sample" -> unknown
     /// - "README.txt" -> unknown
     OUTPUT
@@ -206,6 +264,15 @@ pub fn extract_movie_title_from_filename(_input_filename: &str) -> &str {
     /// - "Se7en.1995.avi" -> Se7en
     /// - "John.Wick.Chapter.3.Parabellum.2019.720p.BluRay.mkv" -> John Wick - Chapter 3 Parabellum
     /// - "Fight.Club.1999.mkv" -> Fight Club
+    /// - "Stephen King\The.Lawnmower.Man.1992.DVDRiP.XviD.iNTERNAL-JUSTRiP\CD1\jrp-tlma.r05" -> The Lawnmower Man
+    /// - "Pulp.Fiction.1994.DVDRip.XviD.AC3\DISC2\pulpfict-ac3.r03" -> Pulp Fiction
+    /// - "Gladiator.2000.720p.BluRay.x264-YIFY\CD2\glad-yify.mkv" -> Gladiator
+    /// - "Inception.2010.1080p.BluRay.x264.YIFY\Part2\incept-yify.avi" -> Inception
+    /// - "classics/Jaws.1975.720p.BluRay.x264.YIFY\CD1\jaws1975-yify.mp4" -> Jaws
+    /// - "Blade.Runner.2049.2017.2160p.UHD.BluRay.x265\CD1\blade2049-gp.avi" -> Blade Runner 2049
+    /// - "sci-fi/Avatar.2.2022.2160p.UHD.BluRay.x265\CD2\avat2-uhd.rar" -> Avatar 2
+    /// - "Mad.Max.Fury.Road.2015.720p.BluRay.x264-YIFY\CD1\madmax-yify.avi" -> Mad Max Fury Road
+    /// - "best/King.Kong.1933.REMASTERED.720p.BluRay.x264\CD2\kong1933-remast.mp4" -> King Kong
     /// - "Show.Name.S01E01.1080p.WEB-DL-GROUP.mkv" -> unknown
     /// - "README.txt" -> unknown
     OUTPUT
@@ -244,6 +311,13 @@ pub fn extract_tv_show_title_from_filename(_input_filename: &str) -> &str {
     /// - "CSI.204.avi" -> CSI
     /// - "ER.101.avi" -> ER
     /// - "Room.104.2017.1080p.WEBRip.x264-STRiFE.mkv" -> Room 104
+    /// - "Breaking.Bad.S05E14.720p.HDTV.x264-IMMERSE\CD1\bb-s05e14.r11" -> Breaking Bad
+    /// - "shows/Game.of.Thrones.S08E03.1080p.WEB.H264-MEMENTO\DISC1\got-s08e03.mkv" -> Game of Thrones
+    /// - "Stranger.Things.S04E01.Chapter.One.720p.NF.WEB-DL.DDP5.1.x264-NTb\CD2\st-s04e01.r10" -> Stranger Things
+    /// - "The.Office.US.S07E17.720p.NF.WEB-DL.DDP5.1.x264-NTb\PART1\office-s07e17.avi" -> The Office
+    /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.rar" -> Friends
+    /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> Lost
+    /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> The Expanse
     /// - "README.txt" -> unknown
     OUTPUT
 }
@@ -277,6 +351,13 @@ pub fn extract_season_episode_from_filename(_input_filename: &str) -> &str {
     /// - "CSI.204.avi" -> season:2, episode:4
     /// - "ER.101.avi" -> season:1, episode:1
     /// - "Battlestar.Galactica.2004.S01E01.33.720p.BluRay.x264.mkv" -> season:1, episode:1
+    /// - "Breaking.Bad.S05E14.720p.HDTV.x264-IMMERSE\CD1\bb-s05e14.r11" -> season:5, episode:14
+    /// - "shows/Game.of.Thrones.S08E03.1080p.WEB.H264-MEMENTO\DISC1\got-s08e03.mkv" -> season:8, episode:3
+    /// - "Stranger.Things.S04E01.Chapter.One.720p.NF.WEB-DL.DDP5.1.x264-NTb\CD2\st-s04e01.r10" -> season:4, episode:1
+    /// - "The.Office.US.S07E17.720p.NF.WEB-DL.DDP5.1.x264-NTb\PART1\office-s07e17.avi" -> season:7, episode:17
+    /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.rar" -> season:2, episode:11
+    /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> season:4, episode:2
+    /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> season:3, episode:8
     /// - "README.txt" -> unknown
     OUTPUT
 }

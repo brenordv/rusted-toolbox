@@ -57,6 +57,11 @@ impl ControlFileWrapper {
         item.file.clone()
     }
 
+    pub fn get_file_path(&self) -> String {
+        let item = self.item.lock().unwrap();
+        item.file_path.clone()
+    }
+
     pub fn get_media_type(&self) -> MediaType {
         let item = self.item.lock().unwrap();
         item.media_type.clone().unwrap_or(MediaType::Unknown)

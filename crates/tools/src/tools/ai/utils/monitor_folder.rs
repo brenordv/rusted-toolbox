@@ -10,7 +10,7 @@ pub async fn monitor_folder_for_new_files<Fut, F>(
     on_created_handler: Option<F>,
 ) -> Result<()>
 where
-    F: Fn(Event) -> Fut,
+    F: Fn(Event, PathBuf) -> Fut,
     Fut: Future<Output = Result<()>>,
 {
     let path = PathBuf::from(folder_to_watch);
@@ -41,12 +41,14 @@ pub async fn monitor_folder<Fut, F>(
     on_other_handler: Option<fn(Event) -> anyhow::Result<()>>,
 ) -> Result<()>
 where
-    F: Fn(Event) -> Fut,
+    F: Fn(Event, PathBuf) -> Fut,
     Fut: Future<Output = Result<()>>,
 {
     let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
 
     let mut watcher = notify::recommended_watcher(tx)?;
+
+    let folder = PathBuf::from(folder_to_watch);
 
     watcher.watch(Path::new(folder_to_watch), RecursiveMode::Recursive)?;
 
@@ -65,7 +67,7 @@ where
                 }
                 EventKind::Create(_) => {
                     if let Some(handler) = on_created_handler.as_ref() {
-                        handler(event).await?;
+                        handler(event, folder.clone()).await?;
                     }
                 }
                 EventKind::Modify(_) => {
