@@ -27,11 +27,6 @@ async fn main() -> Result<()> {
     initialize_log("MEDIA_SORTER", LogLevel::Debug);
     dotenv().ok();
 
-    debug!("Starting");
-    info!("Starting");
-    warn!("asdasdasd");
-    error!("Starting");
-
     println!("Rusted Agents: Media sorter");
 
     let folder_to_watch = env::var("AI_MEDIA_SORTER_WATCH_FOLDER")
