@@ -2,14 +2,7 @@ use crate::shared::sqlite::dictionary_db::{DictionaryDb, DictionaryDbItem};
 use crate::shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use crate::shared::system::folder_walkthrough::list_all_files_recursively;
 use crate::shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
-use crate::tools::ai::ai_functions::media_sorter_functions::{
-    extract_movie_title_from_filename_as_string, extract_season_episode_from_filename_as_string,
-    extract_tv_show_title_from_filename_as_string, identify_media_format_from_filename_as_string,
-    identify_media_type_from_filename_as_string, is_main_archive_file_as_string,
-};
-use crate::tools::ai::message_builders::system_message_builders::{
-    build_rust_ai_function_system_message, build_rust_ai_function_user_message,
-};
+use crate::tools::ai::message_builders::system_message_builders::build_rust_ai_function_system_message;
 use crate::tools::ai::models::file_process_item_model::FileProcessItem;
 use crate::tools::ai::models::file_process_item_traits::FileProcessItemTraits;
 use crate::tools::ai::models::models::FileProcessResult::{
@@ -17,10 +10,11 @@ use crate::tools::ai::models::models::FileProcessResult::{
     Identifying, Ignored, Undefined,
 };
 use crate::tools::ai::models::models::MediaType::{Movie, TvShow};
-use crate::tools::ai::models::models::{FileProcessResult, MediaType, TvShowSeasonEpisodeInfo};
+use crate::tools::ai::models::models::{FileProcessResult, MediaType};
 use crate::tools::ai::requesters::requester_builders::build_requester_for_openai;
 use crate::tools::ai::requesters::requester_implementations::OpenAiRequester;
 use crate::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
+use crate::tools::ai::tasks::media_identifiers::identify_file_hybrid;
 use crate::tools::ai::utils::control_file_wrapper::ControlFileWrapper;
 use anyhow::{Context, Result};
 use decompress::ExtractOptsBuilder;
@@ -30,7 +24,6 @@ use std::process::Command;
 use std::sync::Arc;
 use std::{env, fs};
 use tracing::{debug, error, info, warn};
-use crate::tools::ai::tasks::media_identifiers::identify_file_hybrid;
 
 pub async fn handle_event_created(event: Event, watch_folder: PathBuf) -> Result<()> {
     debug!("File created event triggered with event: {:?}", event);

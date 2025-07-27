@@ -1,15 +1,19 @@
-use std::sync::Arc;
-use tracing::{info};
 use crate::shared::system::pathbuf_extensions::PathBufExtensions;
-use crate::tools::ai::ai_functions::media_sorter_functions::{extract_movie_title_from_filename_as_string, extract_season_episode_from_filename_as_string, extract_tv_show_title_from_filename_as_string, identify_media_format_from_filename_as_string, identify_media_type_from_filename_as_string, is_main_archive_file_as_string};
+use crate::tools::ai::ai_functions::media_sorter_functions::{
+    extract_movie_title_from_filename_as_string, extract_season_episode_from_filename_as_string,
+    extract_tv_show_title_from_filename_as_string, identify_media_format_from_filename_as_string,
+    identify_media_type_from_filename_as_string, is_main_archive_file_as_string,
+};
 use crate::tools::ai::message_builders::system_message_builders::build_rust_ai_function_user_message;
 use crate::tools::ai::models::file_process_item_traits::FileProcessItemTraits;
-use crate::tools::ai::models::models::FileProcessResult::{IdentifiedFailed, IdentifiedOk, Identifying, Ignored};
+use crate::tools::ai::models::models::FileProcessResult::{IdentifiedFailed, Ignored};
 use crate::tools::ai::models::models::MediaType::{Movie, TvShow};
 use crate::tools::ai::models::models::TvShowSeasonEpisodeInfo;
 use crate::tools::ai::requesters::requester_implementations::OpenAiRequester;
 use crate::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
 use crate::tools::ai::utils::control_file_wrapper::ControlFileWrapper;
+use std::sync::Arc;
+use tracing::info;
 
 /// Identifies basic media data from a file using AI assistance.
 ///

@@ -1,37 +1,34 @@
 use anyhow::Context;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use regex::Regex;
 
 static COMPRESSED_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
         "zip", "gz", "bz2", "xz", "7z", "rar", "tar", "tgz", "tbz2", "lz4", "zst", "tar.gz",
         "tar.bz2", "tar.xz", "tar.zst", "tar.lz4", "cbr", "cbz", "ace", "arj", "lha", "jar",
     ]
-        .iter()
-        .cloned()
-        .collect()
+    .iter()
+    .cloned()
+    .collect()
 });
 
 static IMAGE_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
-        "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heif", "heic", "avif", "ico", "svg"
+        "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heif", "heic", "avif", "ico",
+        "svg",
     ]
-        .iter()
-        .cloned()
-        .collect()
+    .iter()
+    .cloned()
+    .collect()
 });
 
-static MAIN_RAR_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)^[^.]+\.rar$|\.part0*1\.rar$").unwrap()
-});
-static MAIN_7Z_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)\.7z\.0*1$").unwrap()
-});
-static MAIN_ZIP_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)^[^.]+\.zip$|\.zip\.0*1$").unwrap()
-});
+static MAIN_RAR_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^[^.]+\.rar$|\.part0*1\.rar$").unwrap());
+static MAIN_7Z_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\.7z\.0*1$").unwrap());
+static MAIN_ZIP_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^[^.]+\.zip$|\.zip\.0*1$").unwrap());
 
 pub trait PathBufExtensions {
     fn is_compressed(&self) -> bool;
@@ -62,10 +59,10 @@ impl PathBufExtensions for Path {
     fn is_compressed(&self) -> bool {
         // Magic byte check (slower than checking the extension, but more accurate)
         if let Ok(Some(kind)) = infer::get_from_path(self) {
-            return kind.mime_type().starts_with("application/x-") ||
-                kind.mime_type().contains("zip") ||
-                kind.mime_type().contains("compressed") ||
-                kind.mime_type().contains("tar");
+            return kind.mime_type().starts_with("application/x-")
+                || kind.mime_type().contains("zip")
+                || kind.mime_type().contains("compressed")
+                || kind.mime_type().contains("tar");
         }
 
         // Fallback to extension if not available magic byte not available.
@@ -109,7 +106,7 @@ impl PathBufExtensions for Path {
 
     fn is_image(&self) -> bool {
         if let Ok(Some(kind)) = infer::get_from_path(self) {
-            return kind.mime_type().starts_with("image/")
+            return kind.mime_type().starts_with("image/");
         };
 
         self.extension()
@@ -122,7 +119,7 @@ impl PathBufExtensions for Path {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::{rstest, fixture};
+    use rstest::{fixture, rstest};
     use std::fs::File;
     use std::io::Write;
     use tempfile::TempDir;
@@ -141,7 +138,8 @@ mod tests {
             0x49, 0x48, 0x44, 0x52, // IHDR chunk type
             0x00, 0x00, 0x00, 0x01, // Width: 1
             0x00, 0x00, 0x00, 0x01, // Height: 1
-            0x08, 0x02, 0x00, 0x00, 0x00, // Bit depth, color type, compression, filter, interlace
+            0x08, 0x02, 0x00, 0x00,
+            0x00, // Bit depth, color type, compression, filter, interlace
             0x90, 0x77, 0x53, 0xDE, // CRC
         ]
     }
@@ -188,7 +186,11 @@ mod tests {
     #[case("image.jpgg", false)]
     #[case("test.pn", false)]
     #[case("file.backup.jpg", true)]
-    fn should_return_true_for_mixed_case_image_extensions(temp_dir: TempDir, #[case] filename: &str, #[case] expected: bool) {
+    fn should_return_true_for_mixed_case_image_extensions(
+        temp_dir: TempDir,
+        #[case] filename: &str,
+        #[case] expected: bool,
+    ) {
         // Arrange
         let file_path = temp_dir.path().join(filename);
         File::create(&file_path).unwrap();
@@ -197,13 +199,17 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert_eq!(result, expected, "Expected {} to be recognized as an image: {}", filename, expected);
+        assert_eq!(
+            result, expected,
+            "Expected {} to be recognized as an image: {}",
+            filename, expected
+        );
     }
 
     #[rstest]
     fn should_return_true_for_valid_png_content_regardless_of_extension(
         temp_dir: TempDir,
-        sample_png_bytes: Vec<u8>
+        sample_png_bytes: Vec<u8>,
     ) {
         // Arrange
         let file_path = temp_dir.path().join("test.txt"); // Wrong extension
@@ -214,13 +220,16 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert!(result, "Expected file with PNG content to be recognized as image despite .txt extension");
+        assert!(
+            result,
+            "Expected file with PNG content to be recognized as image despite .txt extension"
+        );
     }
 
     #[rstest]
     fn should_return_true_for_valid_jpeg_content_regardless_of_extension(
         temp_dir: TempDir,
-        sample_jpeg_bytes: Vec<u8>
+        sample_jpeg_bytes: Vec<u8>,
     ) {
         // Arrange
         let file_path = temp_dir.path().join("document.doc"); // Wrong extension
@@ -231,7 +240,10 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert!(result, "Expected file with JPEG content to be recognized as image despite .doc extension");
+        assert!(
+            result,
+            "Expected file with JPEG content to be recognized as image despite .doc extension"
+        );
     }
 
     #[rstest]
@@ -245,7 +257,10 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert!(result, "Expected fallback to extension-based detection when content detection fails");
+        assert!(
+            result,
+            "Expected fallback to extension-based detection when content detection fails"
+        );
     }
 
     #[rstest]
@@ -259,7 +274,10 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert!(!result, "Expected false for non-image content with non-image extension");
+        assert!(
+            !result,
+            "Expected false for non-image content with non-image extension"
+        );
     }
 
     #[rstest]
@@ -272,7 +290,10 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert!(!result, "Expected false for empty file with non-image extension");
+        assert!(
+            !result,
+            "Expected false for empty file with non-image extension"
+        );
     }
 
     #[rstest]
@@ -285,7 +306,10 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert!(result, "Expected true for empty file with image extension (fallback behavior)");
+        assert!(
+            result,
+            "Expected true for empty file with image extension (fallback behavior)"
+        );
     }
 
     #[rstest]
@@ -297,7 +321,10 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert!(!result, "Expected false for nonexistent file with non-image extension");
+        assert!(
+            !result,
+            "Expected false for nonexistent file with non-image extension"
+        );
     }
 
     #[rstest]
@@ -309,7 +336,10 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert!(result, "Expected true for nonexistent file with image extension (fallback behavior)");
+        assert!(
+            result,
+            "Expected true for nonexistent file with image extension (fallback behavior)"
+        );
     }
 
     #[rstest]
@@ -348,9 +378,11 @@ mod tests {
         let result = file_path.is_image();
 
         // Assert
-        assert!(result, "Expected true for Unicode filename with image extension");
+        assert!(
+            result,
+            "Expected true for Unicode filename with image extension"
+        );
     }
-
 
     #[rstest]
     #[case("file.zip")]
