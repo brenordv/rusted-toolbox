@@ -122,7 +122,7 @@ impl FileProcessItemTraits for ControlFileWrapper {
         self.save()
     }
 
-    fn update_is_archived(&self, is_archived: bool) -> Result<()> {
+    fn update_is_archive(&self, is_archived: bool) -> Result<()> {
         {
             let mut item = self.item.lock().unwrap();
             item.is_archive = Some(is_archived);

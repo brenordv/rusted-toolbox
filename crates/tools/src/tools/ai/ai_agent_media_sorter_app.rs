@@ -30,6 +30,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::{env, fs};
 use tracing::{debug, error, info, warn};
+use crate::tools::ai::tasks::media_identifiers::identify_file_hybrid;
 
 pub async fn handle_event_created(event: Event, watch_folder: PathBuf) -> Result<()> {
     debug!("File created event triggered with event: {:?}", event);
@@ -113,7 +114,7 @@ async fn handle_new_file(
                 debug!("File is currently unknown. Identifying...");
 
                 // No work done yet. Let's decompress the file. Let's identify the file.
-                match identify_file(file_control.clone(), ai_requester).await {
+                match identify_file_hybrid(file_control.clone(), ai_requester).await {
                     Ok(_) => {
                         continue;
                     }
@@ -373,7 +374,7 @@ async fn identify_file(
     info!("Is file compressed or decompressed?: {:?}", file_type);
 
     if file_type == "compressed" {
-        control.update_is_archived(true)?;
+        control.update_is_archive(true)?;
 
         info!("Identifying if it is the main archive file...");
 
@@ -404,7 +405,7 @@ async fn identify_file(
             }
         };
     } else if file_type == "decompressed" {
-        control.update_is_archived(false)?;
+        control.update_is_archive(false)?;
     }
 
     info!("Guessing media type...");

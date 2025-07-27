@@ -2,21 +2,42 @@ use anyhow::Context;
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use regex::Regex;
 
 static COMPRESSED_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
         "zip", "gz", "bz2", "xz", "7z", "rar", "tar", "tgz", "tbz2", "lz4", "zst", "tar.gz",
-        "tar.bz2", "tar.xz", "tar.zst", "tar.lz4",
+        "tar.bz2", "tar.xz", "tar.zst", "tar.lz4", "cbr", "cbz", "ace", "arj", "lha", "jar",
     ]
-    .iter()
-    .cloned()
-    .collect()
+        .iter()
+        .cloned()
+        .collect()
+});
+
+static IMAGE_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+    [
+        "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heif", "heic", "avif", "ico", "svg"
+    ]
+        .iter()
+        .cloned()
+        .collect()
+});
+
+static MAIN_RAR_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)^[^.]+\.rar$|\.part0*1\.rar$").unwrap()
+});
+static MAIN_7Z_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\.7z\.0*1$").unwrap()
+});
+static MAIN_ZIP_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)^[^.]+\.zip$|\.zip\.0*1$").unwrap()
 });
 
 pub trait PathBufExtensions {
     fn is_compressed(&self) -> bool;
     fn is_main_file_multi_part_compression(&self) -> bool;
     fn absolute_to_string(&self) -> anyhow::Result<String>;
+    fn is_image(&self) -> bool;
 }
 
 impl PathBufExtensions for PathBuf {
@@ -31,34 +52,48 @@ impl PathBufExtensions for PathBuf {
     fn absolute_to_string(&self) -> anyhow::Result<String> {
         self.as_path().absolute_to_string()
     }
+
+    fn is_image(&self) -> bool {
+        self.as_path().is_image()
+    }
 }
 
 impl PathBufExtensions for Path {
     fn is_compressed(&self) -> bool {
-        // Get filename as a string
+        // Magic byte check (slower than checking the extension, but more accurate)
+        if let Ok(Some(kind)) = infer::get_from_path(self) {
+            return kind.mime_type().starts_with("application/x-") ||
+                kind.mime_type().contains("zip") ||
+                kind.mime_type().contains("compressed") ||
+                kind.mime_type().contains("tar");
+        }
+
+        // Fallback to extension if not available magic byte not available.
         let file_name = match self.file_name().and_then(|n| n.to_str()) {
             Some(name) => name.to_ascii_lowercase(),
             None => return false,
         };
 
         let parts: Vec<&str> = file_name.split('.').collect();
+
         for i in 1..parts.len() {
             let ext = parts[i..].join(".");
             if COMPRESSED_EXTENSIONS.contains(ext.as_str()) {
                 return true;
             }
         }
+
         false
     }
 
     fn is_main_file_multi_part_compression(&self) -> bool {
-        self.file_name()
-            .and_then(|n| n.to_str())
-            .map(|name| {
-                name.chars().rev().take(2).all(|c| c.is_ascii_digit())
-                    || name.chars().rev().take(1).all(|c| c.is_ascii_digit())
-            })
-            .unwrap_or(false)
+        let file_name = match self.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => return false,
+        };
+        MAIN_RAR_RE.is_match(file_name)
+            || MAIN_7Z_RE.is_match(file_name)
+            || MAIN_ZIP_RE.is_match(file_name)
     }
 
     fn absolute_to_string(&self) -> anyhow::Result<String> {
@@ -71,12 +106,251 @@ impl PathBufExtensions for Path {
             None => Err(anyhow::anyhow!("Path is not valid UTF-8")),
         }
     }
+
+    fn is_image(&self) -> bool {
+        if let Ok(Some(kind)) = infer::get_from_path(self) {
+            return kind.mime_type().starts_with("image/")
+        };
+
+        self.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| IMAGE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    use rstest::{rstest, fixture};
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    #[fixture]
+    fn temp_dir() -> TempDir {
+        tempfile::tempdir().unwrap()
+    }
+
+    #[fixture]
+    fn sample_png_bytes() -> Vec<u8> {
+        // Minimal valid PNG header
+        vec![
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+            0x00, 0x00, 0x00, 0x0D, // IHDR chunk length
+            0x49, 0x48, 0x44, 0x52, // IHDR chunk type
+            0x00, 0x00, 0x00, 0x01, // Width: 1
+            0x00, 0x00, 0x00, 0x01, // Height: 1
+            0x08, 0x02, 0x00, 0x00, 0x00, // Bit depth, color type, compression, filter, interlace
+            0x90, 0x77, 0x53, 0xDE, // CRC
+        ]
+    }
+
+    #[fixture]
+    fn sample_jpeg_bytes() -> Vec<u8> {
+        // Minimal valid JPEG header
+        vec![
+            0xFF, 0xD8, 0xFF, 0xE0, // JPEG SOI + APP0
+            0x00, 0x10, // APP0 length
+            0x4A, 0x46, 0x49, 0x46, 0x00, // "JFIF\0"
+            0x01, 0x01, // Version
+            0x01, // Units
+            0x00, 0x48, 0x00, 0x48, // X/Y density
+            0x00, 0x00, // Thumbnail dimensions
+        ]
+    }
+
+    #[rstest]
+    #[case("test.jpg", true)]
+    #[case("test.jpeg", true)]
+    #[case("test.png", true)]
+    #[case("test.gif", true)]
+    #[case("test.bmp", true)]
+    #[case("test.tiff", true)]
+    #[case("test.tif", true)]
+    #[case("test.webp", true)]
+    #[case("test.heif", true)]
+    #[case("test.heic", true)]
+    #[case("test.avif", true)]
+    #[case("test.ico", true)]
+    #[case("test.svg", true)]
+    #[case("TEST.JPG", true)]
+    #[case("Test.Png", true)]
+    #[case("image.JPEG", true)]
+    #[case("file.GIF", true)]
+    #[case("test.txt", false)]
+    #[case("test.doc", false)]
+    #[case("test.pdf", false)]
+    #[case("test.mp4", false)]
+    #[case("test.zip", false)]
+    #[case("test.exe", false)]
+    #[case("test", false)]
+    #[case("image.jpgg", false)]
+    #[case("test.pn", false)]
+    #[case("file.backup.jpg", true)]
+    fn should_return_true_for_mixed_case_image_extensions(temp_dir: TempDir, #[case] filename: &str, #[case] expected: bool) {
+        // Arrange
+        let file_path = temp_dir.path().join(filename);
+        File::create(&file_path).unwrap();
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert_eq!(result, expected, "Expected {} to be recognized as an image: {}", filename, expected);
+    }
+
+    #[rstest]
+    fn should_return_true_for_valid_png_content_regardless_of_extension(
+        temp_dir: TempDir,
+        sample_png_bytes: Vec<u8>
+    ) {
+        // Arrange
+        let file_path = temp_dir.path().join("test.txt"); // Wrong extension
+        let mut file = File::create(&file_path).unwrap();
+        file.write_all(&sample_png_bytes).unwrap();
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(result, "Expected file with PNG content to be recognized as image despite .txt extension");
+    }
+
+    #[rstest]
+    fn should_return_true_for_valid_jpeg_content_regardless_of_extension(
+        temp_dir: TempDir,
+        sample_jpeg_bytes: Vec<u8>
+    ) {
+        // Arrange
+        let file_path = temp_dir.path().join("document.doc"); // Wrong extension
+        let mut file = File::create(&file_path).unwrap();
+        file.write_all(&sample_jpeg_bytes).unwrap();
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(result, "Expected file with JPEG content to be recognized as image despite .doc extension");
+    }
+
+    #[rstest]
+    fn should_fallback_to_extension_when_content_detection_fails(temp_dir: TempDir) {
+        // Arrange
+        let file_path = temp_dir.path().join("test.png");
+        let mut file = File::create(&file_path).unwrap();
+        file.write_all(b"This is not image content").unwrap(); // Invalid content
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(result, "Expected fallback to extension-based detection when content detection fails");
+    }
+
+    #[rstest]
+    fn should_return_false_for_non_image_content_and_non_image_extension(temp_dir: TempDir) {
+        // Arrange
+        let file_path = temp_dir.path().join("test.txt");
+        let mut file = File::create(&file_path).unwrap();
+        file.write_all(b"This is plain text content").unwrap();
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(!result, "Expected false for non-image content with non-image extension");
+    }
+
+    #[rstest]
+    fn should_return_false_for_empty_file_with_non_image_extension(temp_dir: TempDir) {
+        // Arrange
+        let file_path = temp_dir.path().join("empty.txt");
+        File::create(&file_path).unwrap(); // Empty file
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(!result, "Expected false for empty file with non-image extension");
+    }
+
+    #[rstest]
+    fn should_return_true_for_empty_file_with_image_extension(temp_dir: TempDir) {
+        // Arrange
+        let file_path = temp_dir.path().join("empty.png");
+        File::create(&file_path).unwrap(); // Empty file
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(result, "Expected true for empty file with image extension (fallback behavior)");
+    }
+
+    #[rstest]
+    fn should_return_false_for_nonexistent_file_with_non_image_extension() {
+        // Arrange
+        let file_path = PathBuf::from("nonexistent.txt");
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(!result, "Expected false for nonexistent file with non-image extension");
+    }
+
+    #[rstest]
+    fn should_return_true_for_nonexistent_file_with_image_extension() {
+        // Arrange
+        let file_path = PathBuf::from("nonexistent.jpg");
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(result, "Expected true for nonexistent file with image extension (fallback behavior)");
+    }
+
+    #[rstest]
+    fn should_return_false_for_path_without_extension(temp_dir: TempDir) {
+        // Arrange
+        let file_path = temp_dir.path().join("filename_without_extension");
+        File::create(&file_path).unwrap();
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(!result, "Expected false for file without extension");
+    }
+
+    #[rstest]
+    fn should_return_false_for_path_with_only_dot(temp_dir: TempDir) {
+        // Arrange
+        let file_path = temp_dir.path().join("filename.");
+        File::create(&file_path).unwrap();
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(!result, "Expected false for file with empty extension");
+    }
+
+    #[rstest]
+    fn should_handle_unicode_filenames_with_image_extensions(temp_dir: TempDir) {
+        // Arrange
+        let file_path = temp_dir.path().join("画像ファイル.jpg"); // Japanese characters
+        File::create(&file_path).unwrap();
+
+        // Act
+        let result = file_path.is_image();
+
+        // Assert
+        assert!(result, "Expected true for Unicode filename with image extension");
+    }
+
 
     #[rstest]
     #[case("file.zip")]
@@ -212,23 +486,23 @@ mod tests {
     #[rstest]
     #[case::two_digit_extension("backup.zip.01", true)]
     #[case::three_digit_extension("backup.zip.001", true)]
-    #[case::single_digit_extension("archive.part1", true)]
-    #[case::single_digit_end("music.2", true)]
-    #[case::main_file_zip("backup.zip", false)]
-    #[case::main_file_rar("video.rar", false)]
+    #[case::single_digit_extension("archive.part1", false)]
+    #[case::single_digit_end("music.2", false)]
+    #[case::main_file_zip("backup.zip", true)]
+    #[case::main_file_rar("video.rar", true)]
     #[case::not_a_part_file("notes.txt", false)]
     #[case::not_digits_at_end("file.zip.foo", false)]
-    #[case::multiple_digits_at_end("split.42", true)]
-    #[case::zero_digit("zero.0", true)]
+    #[case::multiple_digits_at_end("split.42", false)]
+    #[case::zero_digit("zero.0", false)]
     #[case::hidden_file(".hidden", false)]
-    #[case::numeric_filename("123456", true)]
-    #[case::unsupported_filename_01("movie.part1.rar", false)]
-    #[case::unsupported_filename_02("movie.part01.rar", false)]
-    #[case::unsupported_filename_03("archive.001.rar", false)]
-    #[case::unsupported_filename_04("file.part2.zip", false)]
+    #[case::numeric_filename("123456", false)]
+    #[case::filename_01("movie.part1.rar", true)]
+    #[case::filename_02("movie.part01.rar", true)]
+    #[case::unsupported_filename_01("archive.002.rar", false)]
+    #[case::unsupported_filename_02("file.part2.zip", false)]
     #[case::invalid_multipart_name_01("archive.part", false)]
     #[case::invalid_multipart_name_01("file.abc", false)]
-    #[case::unconvenitional_filename("justdigits.99", true)]
+    #[case::unconvenitional_filename("justdigits.99", false)]
     fn test_is_main_file_multi_part_compression(#[case] filename: &str, #[case] expected: bool) {
         let path = Path::new(filename);
         assert_eq!(path.is_main_file_multi_part_compression(), expected);
