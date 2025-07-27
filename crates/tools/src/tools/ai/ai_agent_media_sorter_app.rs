@@ -114,8 +114,10 @@ async fn handle_new_file(
                 debug!("File is currently unknown. Identifying...");
 
                 // No work done yet. Let's decompress the file. Let's identify the file.
+                file_control.update_status(Identifying)?;
                 match identify_file_hybrid(file_control.clone(), ai_requester).await {
                     Ok(_) => {
+                        file_control.update_status(IdentifiedOk)?;
                         continue;
                     }
                     Err(e) => {
@@ -336,157 +338,6 @@ fn handle_decompress(control: Arc<ControlFileWrapper>) -> Result<()> {
         control.update_status(DecompressedFailed)?;
         anyhow::bail!("Failed to decompress file: {}", file.display());
     }
-
-    Ok(())
-}
-
-async fn identify_file(
-    control: Arc<ControlFileWrapper>,
-    ai_requester: &mut OpenAiRequester,
-) -> Result<()> {
-    control.update_status(Identifying)?;
-
-    let file_name = control.get_file_path();
-
-    let file_name_lower = file_name.to_lowercase();
-
-    let ignored_extensions = vec![".nfo", ".sfv", ".jpg", ".png", ".gif"];
-
-    for ext in &ignored_extensions {
-        if file_name_lower.ends_with(ext) {
-            control.update_status(Ignored)?;
-            return Ok(());
-        }
-    }
-
-    info!("Checking if file is an archive...");
-    let response = ai_requester
-        .send_request(
-            build_rust_ai_function_user_message(
-                identify_media_format_from_filename_as_string,
-                file_name.as_str(),
-            ),
-            false,
-        )
-        .await?;
-
-    let file_type = response.message.as_str();
-    info!("Is file compressed or decompressed?: {:?}", file_type);
-
-    if file_type == "compressed" {
-        control.update_is_archive(true)?;
-
-        info!("Identifying if it is the main archive file...");
-
-        let request =
-            build_rust_ai_function_user_message(is_main_archive_file_as_string, file_name.as_str());
-
-        let response = ai_requester.send_request(request, false).await?;
-
-        let is_main_file = response.message.as_str();
-
-        info!("Is file the main archive file?: {:?}", is_main_file);
-
-        match is_main_file.parse::<bool>() {
-            Ok(b) => {
-                control.update_is_main_archive_file(b)?;
-                if !b {
-                    // If the file is compressed, and it's not the main one, no point in
-                    // keeping analyzing it.
-                    control.update_status(Ignored)?;
-                    return Ok(());
-                }
-            }
-            Err(_) => {
-                anyhow::bail!(
-                    "Failed to identify if file is the main archive file: {}",
-                    file_name
-                );
-            }
-        };
-    } else if file_type == "decompressed" {
-        control.update_is_archive(false)?;
-    }
-
-    info!("Guessing media type...");
-
-    let response = ai_requester
-        .send_request(
-            build_rust_ai_function_user_message(
-                identify_media_type_from_filename_as_string,
-                file_name.as_str(),
-            ),
-            false,
-        )
-        .await?;
-
-    let ai_media_type = response.message.as_str();
-
-    info!("Is file from a Movie or TV Show?: {:?}", ai_media_type);
-
-    if ai_media_type == "movie" {
-        control.update_media_type(Movie)?;
-
-        let response = ai_requester
-            .send_request(
-                build_rust_ai_function_user_message(
-                    extract_movie_title_from_filename_as_string,
-                    file_name.as_str(),
-                ),
-                false,
-            )
-            .await?;
-
-        let movie_title = response.message;
-
-        info!("Movie title: {:?}", movie_title);
-
-        control.update_title(movie_title)?;
-    } else if ai_media_type == "tvshow" {
-        control.update_media_type(TvShow)?;
-
-        info!("Extracting title of the TV Show...");
-
-        let response = ai_requester
-            .send_request(
-                build_rust_ai_function_user_message(
-                    extract_tv_show_title_from_filename_as_string,
-                    file_name.as_str(),
-                ),
-                false,
-            )
-            .await?;
-
-        let tv_show_title = response.message;
-
-        info!("TV Show name?: {:?}", tv_show_title);
-
-        control.update_title(tv_show_title)?;
-
-        info!("Extracting season and episode numbers of the TV Show...");
-
-        let response = ai_requester
-            .send_request(
-                build_rust_ai_function_user_message(
-                    extract_season_episode_from_filename_as_string,
-                    file_name.as_str(),
-                ),
-                false,
-            )
-            .await?;
-
-        info!("Season and Episode numbers?: {:?}", response.message);
-
-        let season_episode_info = TvShowSeasonEpisodeInfo::new(response.message)?;
-
-        control.update_season_episode_info(season_episode_info)?;
-    } else {
-        control.update_status(IdentifiedFailed)?;
-
-        anyhow::bail!("Failed to identify media type for file: {}", file_name);
-    };
-
-    control.update_status(IdentifiedOk)?;
 
     Ok(())
 }

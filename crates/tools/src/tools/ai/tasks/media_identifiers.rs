@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{info};
 use crate::shared::system::pathbuf_extensions::PathBufExtensions;
 use crate::tools::ai::ai_functions::media_sorter_functions::{extract_movie_title_from_filename_as_string, extract_season_episode_from_filename_as_string, extract_tv_show_title_from_filename_as_string, identify_media_format_from_filename_as_string, identify_media_type_from_filename_as_string, is_main_archive_file_as_string};
 use crate::tools::ai::message_builders::system_message_builders::build_rust_ai_function_user_message;
@@ -11,6 +11,25 @@ use crate::tools::ai::requesters::requester_implementations::OpenAiRequester;
 use crate::tools::ai::requesters::requester_traits::OpenAiRequesterTraits;
 use crate::tools::ai::utils::control_file_wrapper::ControlFileWrapper;
 
+/// Identifies basic media data from a file using AI assistance.
+///
+/// This function uses an AI model to identify whether a given file corresponds
+/// to a movie or a TV show based on its filename. Depending on the identified
+/// media type, it further extracts and updates metadata such as the title, and
+/// for TV shows, it also extracts season and episode information.
+///
+/// # Arguments
+///
+/// * `control` - A thread-safe wrapper around the ControlFile instance, which
+///   contains file metadata and provides methods to update it.
+/// * `ai_requester` - A mutable reference to an instance of `OpenAiRequester`,
+///   responsible for sending requests to the AI model.
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the media identification and metadata extraction
+/// processes succeed. Otherwise, it returns an `anyhow::Error` describing what
+/// went wrong.
 async fn identify_media_basic_data_using_ai(
     control: Arc<ControlFileWrapper>,
     ai_requester: &mut OpenAiRequester,
@@ -98,12 +117,37 @@ async fn identify_media_basic_data_using_ai(
     Ok(())
 }
 
+/// Asynchronously identifies a file's type and processes it based on its characteristics.
+///
+/// This function performs the following operations:
+/// - Updates the file status to "Identifying".
+/// - Examines the file to determine its type (e.g., image or compressed).
+/// - Applies appropriate handling based on the file type:
+///   - If the file is an image, it logs that no further analysis is needed and updates the status to "Ignored".
+///   - If the file is compressed, it validates whether the file is the primary archive file:
+///     - If not the main archive file, logs the information, updates its properties, marks it as "Ignored", and stops further processing.
+///     - If it is the main archive file, logs the information, marks it as such, updates the status to "Ignored", and stops further processing.
+///   - If the file is neither an image nor compressed, further analysis is conducted using AI to identify the media's basic properties.
+///
+/// # Remarks
+/// The difference between this function and `identify_file_only_with_ai` is that this one identifies if the file is an archive,
+/// and if it is the main file in the archive using simple local methods. This greatly reduces processing time and costs when dealing
+/// with multipart compressed files.
+///
+/// # Arguments
+///
+/// * `control` - An `Arc` wrapped instance of `ControlFileWrapper` that provides methods to access and update the file's metadata.
+/// * `ai_requester` - A mutable reference to an `OpenAiRequester`, which is used for AI-based analysis of the file.
+///
+/// # Returns
+///
+/// Returns an `anyhow::Result<()>`, where:
+/// - `Ok(())` indicates successful completion of the file identification and processing.
+/// - `Err` contains an error in case of failure during file analysis, updates, or AI processing.
 pub async fn identify_file_hybrid(
     control: Arc<ControlFileWrapper>,
     ai_requester: &mut OpenAiRequester,
 ) -> anyhow::Result<()> {
-    control.update_status(Identifying)?;
-
     let file = control.get_file();
 
     if file.is_image() {
@@ -111,11 +155,11 @@ pub async fn identify_file_hybrid(
         control.update_status(Ignored)?;
         return Ok(());
     }
-    
+
     if file.is_compressed() {
         info!("File is compressed, checking if it is the main archive file...");
         control.update_is_archive(true)?;
-        
+
         if !file.is_main_file_multi_part_compression() {
             info!("File is not the main archive file, no point in keeping analyzing it.");
             control.update_is_main_archive_file(false)?;
@@ -133,17 +177,39 @@ pub async fn identify_file_hybrid(
 
     identify_media_basic_data_using_ai(control.clone(), ai_requester).await?;
 
-    control.update_status(IdentifiedOk)?;
-
     Ok(())
 }
 
+/// Asynchronously identifies a file's type and processes it based on its characteristics.
+///
+/// This function performs the following operations:
+/// - Updates the file status to "Identifying".
+/// - Examines the file to determine its type (e.g., image or compressed).
+/// - Applies appropriate handling based on the file type:
+///   - If the file is an image, it logs that no further analysis is needed and updates the status to "Ignored".
+///   - If the file is compressed, it validates whether the file is the primary archive file:
+///     - If not the main archive file, logs the information, updates its properties, marks it as "Ignored", and stops further processing.
+///     - If it is the main archive file, logs the information, marks it as such, updates the status to "Ignored", and stops further processing.
+///   - If the file is neither an image nor compressed, further analysis is conducted using AI to identify the media's basic properties.
+///
+/// # Remarks
+/// The difference between this function and `identify_file_hybrid` is that this one identifies if the file is an archive,
+/// and if it is the main file in the archive using AI. This makes things slower and a bit more expensive, but it is way cooler.
+///
+/// # Arguments
+///
+/// * `control` - An `Arc` wrapped instance of `ControlFileWrapper` that provides methods to access and update the file's metadata.
+/// * `ai_requester` - A mutable reference to an `OpenAiRequester`, which is used for AI-based analysis of the file.
+///
+/// # Returns
+///
+/// Returns an `anyhow::Result<()>`, where:
+/// - `Ok(())` indicates successful completion of the file identification and processing.
+/// - `Err` contains an error in case of failure during file analysis, updates, or AI processing.
 pub async fn identify_file_only_with_ai(
     control: Arc<ControlFileWrapper>,
     ai_requester: &mut OpenAiRequester,
 ) -> anyhow::Result<()> {
-    control.update_status(Identifying)?;
-
     let file = control.get_file();
 
     if file.is_image() {
@@ -204,8 +270,6 @@ pub async fn identify_file_only_with_ai(
     }
 
     identify_media_basic_data_using_ai(control.clone(), ai_requester).await?;
-
-    control.update_status(IdentifiedOk)?;
 
     Ok(())
 }
