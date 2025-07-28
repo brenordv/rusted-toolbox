@@ -1,8 +1,8 @@
-use crate::shared::utils::format_duration_to_string::format_duration_to_string;
 use chrono::{DateTime, Duration, Utc};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use shared::utils::format_duration_to_string::format_duration_to_string;
 
 pub enum JwtPrint {
     Pretty,

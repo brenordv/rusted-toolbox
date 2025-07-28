@@ -1,9 +1,9 @@
-use crate::shared::utils::copy_string_to_clipboard::copy_to_clipboard;
 use crate::tools::jwt::models::{Claims, ExpirationStatus, TokenInfo};
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde_json::{Map, Value};
+use shared::utils::copy_string_to_clipboard::copy_to_clipboard;
 use std::process;
 
 /// Decodes JWT token without signature verification.

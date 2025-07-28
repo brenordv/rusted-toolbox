@@ -1,11 +1,11 @@
-use crate::shared::constants::general::{SIZE_128KB, SIZE_64KB};
-use crate::shared::utils::datetime_utc_utils::DateTimeUtcUtils;
-use crate::shared::utils::format_bytes_to_string::format_bytes_to_string;
-use crate::shared::utils::format_duration_to_string::format_duration_to_string;
 use crate::tools::split::models::SplitArgs;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use log::error;
+use shared::constants::general::{SIZE_128KB, SIZE_64KB};
+use shared::utils::datetime_utc_utils::DateTimeUtcUtils;
+use shared::utils::format_bytes_to_string::format_bytes_to_string;
+use shared::utils::format_duration_to_string::format_duration_to_string;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;

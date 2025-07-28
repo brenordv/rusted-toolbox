@@ -1,5 +1,3 @@
-use log::error;
-use rusted_toolbox::shared::system::tool_exit_helpers::{exit_error, exit_success};
 use rusted_toolbox::tools::jwt::cli_utils::{
     get_cli_arguments, print_runtime_info, validate_cli_arguments,
 };
@@ -8,6 +6,8 @@ use rusted_toolbox::tools::jwt::jwt_app::{
     print_token_pretty,
 };
 use rusted_toolbox::tools::jwt::models::JwtPrint;
+use shared::system::tool_exit_helpers::{exit_error, exit_success};
+use tracing::error;
 
 /// JWT decoding and processing tool.
 ///

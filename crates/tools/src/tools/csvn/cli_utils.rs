@@ -1,10 +1,10 @@
-use crate::shared::command_line::cli_builder::CommandExt;
-use crate::shared::constants::general::{CSVN_APP_NAME, DASH_LINE};
-use crate::shared::constants::versions::CSVN_VERSION;
-use crate::shared::system::get_current_working_dir::get_current_working_dir;
 use crate::tools::csvn::models::CsvNConfig;
 use anyhow::{anyhow, Context, Result};
 use clap::{Arg, Command};
+use shared::command_line::cli_builder::CommandExt;
+use shared::constants::general::{CSVN_APP_NAME, DASH_LINE};
+use shared::constants::versions::CSVN_VERSION;
+use shared::system::get_current_working_dir::get_current_working_dir;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

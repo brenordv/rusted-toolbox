@@ -1,14 +1,14 @@
-use log::error;
-use rusted_toolbox::shared::constants::general::{EXIT_CODE_INTERRUPTED_BY_USER, GUID_APP_NAME};
-use rusted_toolbox::shared::logging::app_logger::LogLevel;
-use rusted_toolbox::shared::logging::logging_helpers::initialize_log;
-use rusted_toolbox::shared::system::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
 use rusted_toolbox::tools::guid::cli_utils::{
     get_cli_arguments, print_runtime_info, validate_cli_arguments,
 };
 use rusted_toolbox::tools::guid::guid_app::{
     continuous_generation, copy_guid_to_clipboard, generate_once,
 };
+use shared::constants::general::{EXIT_CODE_INTERRUPTED_BY_USER, GUID_APP_NAME};
+use shared::logging::app_logger::LogLevel;
+use shared::logging::logging_helpers::initialize_log;
+use shared::system::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
+use tracing::error;
 
 /// GUID generator tool.
 ///

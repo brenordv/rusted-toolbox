@@ -1,6 +1,6 @@
-use crate::shared::constants::general::SIZE_128KB;
 use crate::tools::cat::models::CatOptions;
 use anyhow::{Context, Result};
+use shared::constants::general::SIZE_128KB;
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};

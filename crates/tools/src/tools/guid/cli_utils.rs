@@ -1,8 +1,8 @@
-use crate::shared::command_line::cli_builder::CommandExt;
-use crate::shared::constants::general::{DASH_LINE, GUID_APP_NAME};
-use crate::shared::constants::versions::GUID_VERSION;
 use crate::tools::guid::models::GuidArgs;
 use clap::{Arg, Command};
+use shared::command_line::cli_builder::CommandExt;
+use shared::constants::general::{DASH_LINE, GUID_APP_NAME};
+use shared::constants::versions::GUID_VERSION;
 
 /// Displays runtime configuration information.
 ///

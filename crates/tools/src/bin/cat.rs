@@ -1,12 +1,12 @@
-use log::error;
-use rusted_toolbox::shared::constants::general::CAT_APP_NAME;
-use rusted_toolbox::shared::logging::app_logger::LogLevel;
-use rusted_toolbox::shared::logging::logging_helpers::initialize_log;
-use rusted_toolbox::shared::system::tool_exit_helpers::{exit_error, exit_success};
 use rusted_toolbox::tools::cat::cat_app::cat_file;
 use rusted_toolbox::tools::cat::cli_utils::get_cli_arguments;
 use rusted_toolbox::tools::cat::models::CatOptions;
+use shared::constants::general::CAT_APP_NAME;
+use shared::logging::app_logger::LogLevel;
+use shared::logging::logging_helpers::initialize_log;
+use shared::system::tool_exit_helpers::{exit_error, exit_success};
 use std::io::{self, Write};
+use tracing::error;
 
 /// Unix cat command implementation.
 ///

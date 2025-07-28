@@ -1,9 +1,9 @@
-use crate::shared::command_line::cli_builder::CommandExt;
-use crate::shared::constants::general::{DASH_LINE, EH_READ_APP_NAME};
-use crate::shared::constants::versions::EH_EXPORT_VERSION;
-use crate::shared::eventhub::eventhub_models::EventHubConfig;
-use crate::shared::eventhub::utils::cli_arguments::CommandCommonExt;
 use clap::{ArgMatches, Command};
+use shared::command_line::cli_builder::CommandExt;
+use shared::constants::general::{DASH_LINE, EH_READ_APP_NAME};
+use shared::constants::versions::EH_EXPORT_VERSION;
+use shared::eventhub::eventhub_models::EventHubConfig;
+use shared::eventhub::utils::cli_arguments::CommandCommonExt;
 
 /// Displays runtime configuration and settings for the EventHub Exporter.
 ///

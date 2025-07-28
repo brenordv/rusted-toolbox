@@ -1,9 +1,9 @@
-use crate::shared::eventhub::eventhub_models::InboundMessage;
 use chrono::{DateTime, Local, Utc};
 use crossterm::cursor::MoveToColumn;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::ExecutableCommand;
+use shared::eventhub::eventhub_models::InboundMessage;
 use std::io::{stdout, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;

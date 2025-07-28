@@ -1,5 +1,5 @@
-use crate::shared::eventhub::eventhub_models::EventHubConfig;
 use anyhow::{anyhow, Result};
+use shared::eventhub::eventhub_models::EventHubConfig;
 use std::path::PathBuf;
 
 /// Applies command-line overrides to the EventHub configuration.

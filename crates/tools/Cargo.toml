@@ -3,16 +3,8 @@ name = "rusted-toolbox"
 version = "1.0.0"
 edition = "2021"
 authors = ["Breno RdV"]
-description = "A collection of CLI utilities ported from Go to Rust"
+description = "A collection of CLI utilities ported from Go, Python, PowerShell, and C# to Rust. Plus a few more."
 
-
-[[bin]]
-name = "ai-agent-chat"
-path = "src/bin/ai_agent_chat.rs"
-
-[[bin]]
-name = "ai-agent-media-sorter"
-path = "src/bin/ai_agent_media_sorter.rs"
 
 [[bin]]
 name = "guid"
@@ -55,14 +47,15 @@ name = "eh-export"
 path = "src/bin/eh_export.rs"
 
 [dependencies]
+shared = { path = "../shared" }
+clap = { version = "4.5.41", features = ["derive"] }
 dotenv = "0.15.0"
-clap = { version = "4.4", features = ["derive"] }
 tokio = { version = "1.0", features = ["full"] }
 uuid = { version = "1.6", features = ["v4"] }
 arboard = "3.3"
 csv = "1.3"
 chrono = { version = "0.4", features = ["serde"] }
-anyhow = "1.0"
+anyhow = "1.0.98"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 regex = "1.11.1"
@@ -87,7 +80,7 @@ azeventhubs = "0.20"
 azure_core = "0.20"
 azure_identity = "0.20"
 bytes = "1.5"
-url = "2.4"
+url = "2.5.4"
 futures-util = "0.3"
 async-trait = "0.1.88"
 tokio-stream = "0.1.17"
@@ -106,5 +99,5 @@ infer="0.19.0"
 
 
 [dev-dependencies]
-tempfile = "3.8"
-rstest="0.25.0"
+tempfile = "3.20.0"
+rstest="0.26.1"

@@ -1,9 +1,9 @@
-use crate::shared::command_line::cli_builder::CommandExt;
-use crate::shared::constants::general::{DASH_LINE, GET_LINES_APP_NAME};
-use crate::shared::constants::versions::GET_LINES_VERSION;
-use crate::shared::system::tool_exit_helpers::exit_error;
 use crate::tools::get_lines::models::GetLinesArgs;
 use clap::{Arg, Command};
+use shared::command_line::cli_builder::CommandExt;
+use shared::constants::general::{DASH_LINE, GET_LINES_APP_NAME};
+use shared::constants::versions::GET_LINES_VERSION;
+use shared::system::tool_exit_helpers::exit_error;
 use std::path::Path;
 
 /// Displays runtime configuration information.

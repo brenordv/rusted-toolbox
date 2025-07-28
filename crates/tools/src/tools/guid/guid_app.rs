@@ -1,6 +1,6 @@
-use crate::shared::utils::copy_string_to_clipboard::copy_to_clipboard;
-use crate::shared::utils::new_guid::new_guid;
 use anyhow::{Context, Result};
+use shared::utils::copy_string_to_clipboard::copy_to_clipboard;
+use shared::utils::new_guid::new_guid;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;

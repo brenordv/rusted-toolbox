@@ -1,9 +1,8 @@
-use crate::shared::command_line::cli_builder::CommandExt;
-use crate::shared::constants::general::{DASH_LINE, TS_APP_NAME};
-use crate::shared::constants::versions::TS_VERSION;
-use clap::{Arg, Command};
-
 use crate::tools::ts::models::TsArgs;
+use clap::{Arg, Command};
+use shared::command_line::cli_builder::CommandExt;
+use shared::constants::general::{DASH_LINE, TS_APP_NAME};
+use shared::constants::versions::TS_VERSION;
 
 /// Displays runtime information for the timestamp converter.
 ///

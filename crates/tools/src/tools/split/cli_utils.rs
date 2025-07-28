@@ -1,9 +1,9 @@
-use crate::shared::command_line::cli_builder::CommandExt;
-use crate::shared::constants::general::{DASH_LINE, SPLIT_APP_NAME};
-use crate::shared::constants::versions::SPLIT_VERSION;
-use crate::shared::system::get_current_working_dir::get_current_working_dir;
 use crate::tools::split::models::SplitArgs;
 use clap::{Arg, Command};
+use shared::command_line::cli_builder::CommandExt;
+use shared::constants::general::{DASH_LINE, SPLIT_APP_NAME};
+use shared::constants::versions::SPLIT_VERSION;
+use shared::system::get_current_working_dir::get_current_working_dir;
 use std::path::{Path, PathBuf};
 
 /// Displays runtime configuration for the file splitting operation.

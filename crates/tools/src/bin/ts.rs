@@ -1,10 +1,10 @@
-use log::error;
-use rusted_toolbox::shared::constants::general::TS_APP_NAME;
-use rusted_toolbox::shared::logging::app_logger::LogLevel;
-use rusted_toolbox::shared::logging::logging_helpers::initialize_log;
-use rusted_toolbox::shared::system::tool_exit_helpers::{exit_error, exit_success};
 use rusted_toolbox::tools::ts::cli_utils::{get_cli_arguments, print_runtime_info};
 use rusted_toolbox::tools::ts::ts_app::process_input;
+use shared::constants::general::TS_APP_NAME;
+use shared::logging::app_logger::LogLevel;
+use shared::logging::logging_helpers::initialize_log;
+use shared::system::tool_exit_helpers::{exit_error, exit_success};
+use tracing::error;
 
 /// Main entry point for the timestamp converter tool.
 ///

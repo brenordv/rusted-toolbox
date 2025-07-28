@@ -1,6 +1,6 @@
-use crate::shared::eventhub::eventhub_models::EventHubConfig;
 use anyhow::{anyhow, Result};
 use clap::ArgMatches;
+use shared::eventhub::eventhub_models::EventHubConfig;
 use std::path::PathBuf;
 
 /// Applies CLI argument overrides to EventHub configuration.

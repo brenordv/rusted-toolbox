@@ -1,9 +1,3 @@
-use log::error;
-use rusted_toolbox::shared::constants::general::GET_LINES_APP_NAME;
-use rusted_toolbox::shared::logging::app_logger::LogLevel;
-use rusted_toolbox::shared::logging::logging_helpers::initialize_log;
-use rusted_toolbox::shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
-use rusted_toolbox::shared::system::tool_exit_helpers::{exit_error, exit_success};
 use rusted_toolbox::tools::get_lines::cli_utils::{
     get_cli_arguments, print_runtime_info, validate_cli_arguments,
 };
@@ -12,10 +6,16 @@ use rusted_toolbox::tools::get_lines::get_lines_app::{
     process_lines_read, spawn_file_reading_workers,
 };
 use rusted_toolbox::tools::get_lines::models::LineData;
+use shared::constants::general::GET_LINES_APP_NAME;
+use shared::logging::app_logger::LogLevel;
+use shared::logging::logging_helpers::initialize_log;
+use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
+use shared::system::tool_exit_helpers::{exit_error, exit_success};
 use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tracing::error;
 
 /// Main entry point for the get-lines tool.
 ///
