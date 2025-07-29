@@ -4,14 +4,16 @@ use crate::utils::get_user_response::get_user_response;
 use crate::utils::load_chat_personality_prompt::load_chat_personality_prompt;
 use crate::utils::printer::RolePrinter;
 use anyhow::{Context, Result};
-use shared::constants::general::{AI_AGENT_CHATBOT_VERSION, DASH_LINE};
+
 use std::env;
+use shared::constants::general::DASH_LINE;
+use crate::constants::{AI_CHATBOT_VERSION};
 
 /// Displays runtime configuration information.
 ///
 /// Shows input file, headers, cleaning options, and default mappings.
 pub fn print_runtime_info(args: &ChatBotAgent) {
-    println!("💬 ChatBot v{}", AI_AGENT_CHATBOT_VERSION);
+    println!("💬 ChatBot v{}", AI_CHATBOT_VERSION);
     println!("{}", DASH_LINE);
 
     println!("🧍 User: {}", &args.user_name);
