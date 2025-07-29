@@ -17,6 +17,12 @@ pub enum FileProcessResult {
     Ignored,
 }
 
+pub enum IdentificationResult {
+    Success,
+    Ignored,
+    Error,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MediaType {
     Unknown,

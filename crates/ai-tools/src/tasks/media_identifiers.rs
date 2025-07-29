@@ -7,7 +7,7 @@ use crate::message_builders::system_message_builders::build_rust_ai_function_use
 use crate::models::file_process_item_traits::FileProcessItemTraits;
 use crate::models::models::FileProcessResult::{IdentifiedFailed, Ignored};
 use crate::models::models::MediaType::{Movie, TvShow};
-use crate::models::models::TvShowSeasonEpisodeInfo;
+use crate::models::models::{IdentificationResult, TvShowSeasonEpisodeInfo};
 use crate::requesters::requester_implementations::OpenAiRequester;
 use crate::requesters::requester_traits::OpenAiRequesterTraits;
 use crate::utils::control_file_wrapper::ControlFileWrapper;
@@ -151,13 +151,12 @@ async fn identify_media_basic_data_using_ai(
 pub async fn identify_file_hybrid(
     control: Arc<ControlFileWrapper>,
     ai_requester: &mut OpenAiRequester,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<IdentificationResult> {
     let file = control.get_file();
 
     if file.is_image() {
         info!("File is an image, no need to analyze it further...");
-        control.update_status(Ignored)?;
-        return Ok(());
+        return Ok(IdentificationResult::Ignored);
     }
 
     if file.is_compressed() {
@@ -167,21 +166,19 @@ pub async fn identify_file_hybrid(
         if !file.is_main_file_multi_part_compression() {
             info!("File is not the main archive file, no point in keeping analyzing it.");
             control.update_is_main_archive_file(false)?;
-            control.update_status(Ignored)?;
-            return Ok(());
+            return Ok(IdentificationResult::Ignored);
         }
 
         info!("File is the main archive file, proceeding with analysis...");
         control.update_is_main_archive_file(true)?;
-        control.update_status(Ignored)?;
-        return Ok(());
+        return Ok(IdentificationResult::Ignored);
     }
 
     control.update_is_archive(false)?;
 
     identify_media_basic_data_using_ai(control.clone(), ai_requester).await?;
 
-    Ok(())
+    Ok(IdentificationResult::Success)
 }
 
 /// Asynchronously identifies a file's type and processes it based on its characteristics.

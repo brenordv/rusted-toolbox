@@ -6,7 +6,7 @@ use crate::models::models::FileProcessResult::{
     Identifying, Ignored, Undefined,
 };
 use crate::models::models::MediaType::{Movie, TvShow};
-use crate::models::models::{FileProcessResult, MediaType};
+use crate::models::models::{FileProcessResult, IdentificationResult, MediaType};
 use crate::requesters::requester_builders::build_requester_for_ai;
 use crate::requesters::requester_implementations::OpenAiRequester;
 use crate::requesters::requester_traits::OpenAiRequesterTraits;
@@ -103,14 +103,25 @@ async fn handle_new_file(
 
     while file_control.get_current_attempts() < *max_retries {
         match file_control.get_current_status() {
-            FileProcessResult::Undefined => {
+            Undefined => {
                 debug!("File is currently unknown. Identifying...");
 
                 // No work done yet. Let's decompress the file. Let's identify the file.
                 file_control.update_status(Identifying)?;
                 match identify_file_hybrid(file_control.clone(), ai_requester).await {
-                    Ok(_) => {
-                        file_control.update_status(IdentifiedOk)?;
+                    Ok(result) => {
+                        match result {
+                            IdentificationResult::Success => {
+                                file_control.update_status(IdentifiedOk)?;
+                            }
+                            IdentificationResult::Ignored => {
+                                file_control.update_status(Ignored)?;
+                            }
+                            IdentificationResult::Error => {
+                                error!("Identify file failed for unknown reasons");
+                                file_control.update_status(IdentifiedFailed)?;
+                            }
+                        }
                         continue;
                     }
                     Err(e) => {
@@ -119,12 +130,11 @@ async fn handle_new_file(
                     }
                 }
             }
-            FileProcessResult::Decompressing
-            | FileProcessResult::Identifying
-            | FileProcessResult::Copying => {
+            Decompressing | Identifying | FileProcessResult::Copying => {
                 // Already working on this file.
                 // We shouldn't receive notification for the file as created while working on it.
                 // If this happens, will check it out. For now, let's just move on.
+                // But it is probably a bug.
                 warn!(
                     "Already working on file [{}] for task [{}]",
                     file.display(),
@@ -132,7 +142,7 @@ async fn handle_new_file(
                 );
                 break;
             }
-            FileProcessResult::IdentifiedOk => {
+            IdentifiedOk => {
                 if !file_control.get_is_archived() {
                     // If it is not compressed, we just need to copy it.
                     // So let's consider the file as decompressed.
@@ -153,7 +163,7 @@ async fn handle_new_file(
                 handle_decompress(file_control.clone())?;
                 continue;
             }
-            FileProcessResult::DecompressedOk => {
+            DecompressedOk => {
                 // All good so far.
                 // now we need to:
                 // 1. Figure out where to copy the files
@@ -185,7 +195,7 @@ async fn handle_new_file(
 
                 continue;
             }
-            FileProcessResult::IdentifiedFailed => {
+            IdentifiedFailed => {
                 // Failed to identify the media. Maybe try again.
                 debug!("Failed to identify media type. Trying again...");
 
@@ -193,7 +203,7 @@ async fn handle_new_file(
                 file_control.update_status(Undefined)?;
                 continue;
             }
-            FileProcessResult::DecompressedFailed => {
+            DecompressedFailed => {
                 // Failed to decompress. Maybe try again.
                 debug!("Failed to decompress file. Trying again...");
                 file_control.update_attempt()?;
@@ -207,12 +217,12 @@ async fn handle_new_file(
                 file_control.update_status(DecompressedOk)?;
                 continue;
             }
-            FileProcessResult::Ignored => {
+            Ignored => {
                 // File is compressed, but it's not the main one from a multi-part,
                 // so we just ignore it.
                 break;
             }
-            FileProcessResult::CopiedOk => {
+            CopiedOk => {
                 // All done for this file. Nothing else to do.
                 break;
             }

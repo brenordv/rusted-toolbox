@@ -105,10 +105,17 @@ impl PathBufExtensions for Path {
     }
 
     fn is_image(&self) -> bool {
-        if let Ok(Some(kind)) = infer::get_from_path(self) {
-            return kind.mime_type().starts_with("image/");
+        let is_image = if let Ok(Some(kind)) = infer::get_from_path(self) {
+            kind.mime_type().starts_with("image/")
+        } else {
+            false
         };
 
+        if is_image {
+            return true;
+        }
+
+        // In case we cannot identify using the magic bytes, we fall back to checking the extension.
         self.extension()
             .and_then(|e| e.to_str())
             .map(|e| IMAGE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
