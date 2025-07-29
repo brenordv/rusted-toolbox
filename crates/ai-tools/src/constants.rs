@@ -1,4 +1,3 @@
-
 pub const AI_CHATBOT_NAME: &str = "ai-chatbot";
 pub const AI_CHATBOT_VERSION: &str = "1.0.0";
 

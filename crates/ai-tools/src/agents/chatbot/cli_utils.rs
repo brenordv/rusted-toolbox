@@ -5,9 +5,9 @@ use crate::utils::load_chat_personality_prompt::load_chat_personality_prompt;
 use crate::utils::printer::RolePrinter;
 use anyhow::{Context, Result};
 
-use std::env;
+use crate::constants::AI_CHATBOT_VERSION;
 use shared::constants::general::DASH_LINE;
-use crate::constants::{AI_CHATBOT_VERSION};
+use std::env;
 
 /// Displays runtime configuration information.
 ///
