@@ -258,7 +258,10 @@ impl OpenAiRequesterTraits for OpenAiRequester {
 
         Ok(AiResponse {
             success,
-            message: ai_response.content,
+            message: ai_response
+                .content
+                .trim_end_matches(&['\n', '\r'][..])
+                .to_string(),
         })
     }
 }

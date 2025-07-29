@@ -31,7 +31,7 @@ fn main() {
     print_runtime_info(&args);
 
     // Set up a graceful shutdown
-    let shutdown_signal = setup_graceful_shutdown();
+    let shutdown_signal = setup_graceful_shutdown(false);
 
     match process_file(&mut args, shutdown_signal) {
         Ok(_) => exit_success(),

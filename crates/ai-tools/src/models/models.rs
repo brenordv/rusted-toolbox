@@ -95,3 +95,16 @@ pub struct AiResponse {
     pub success: bool,
     pub message: String,
 }
+
+impl AiResponse {
+    pub fn new_empty(success: bool) -> AiResponse {
+        AiResponse {
+            success,
+            message: String::new(),
+        }
+    }
+
+    pub fn new(success: bool, message: String) -> AiResponse {
+        AiResponse { success, message }
+    }
+}

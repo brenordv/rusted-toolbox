@@ -57,7 +57,7 @@ async fn main() {
     }
 
     // 2) Set up the graceful shutdown
-    let shutdown_signal = setup_graceful_shutdown();
+    let shutdown_signal = setup_graceful_shutdown(false);
 
     // 3) Prepare output channels and writer tasks
     let mut output_channels: HashMap<String, mpsc::Sender<String>> = HashMap::new();

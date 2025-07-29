@@ -3,7 +3,20 @@ use crate::requesters::requester_traits::OpenAiRequesterTraits;
 use anyhow::{Context, Result};
 use std::env;
 
-pub fn build_requester_for_openwebui() -> Result<OpenAiRequester> {
+pub fn build_requester_for_ai() -> Result<OpenAiRequester> {
+    let ai_platform = env::var("AI_PLATFORM").context("AI_PLATFORM must be set")?;
+
+    match ai_platform.to_lowercase().trim() {
+        "openai" => build_requester_for_openai(),
+        "local" => build_requester_for_openwebui(),
+        "openrouter" => build_requester_for_open_router(),
+        _ => Err(anyhow::anyhow!(
+            "AI_PLATFORM must be set to one of: openai, openwebui, openrouter"
+        )),
+    }
+}
+
+fn build_requester_for_openwebui() -> Result<OpenAiRequester> {
     let request_history_path = match env::var("LOCAL_OPENWEBUI_REQUEST_HISTORY_PATH") {
         Ok(path) => Some(path),
         Err(_) => None,
@@ -36,7 +49,7 @@ pub fn build_requester_for_openwebui() -> Result<OpenAiRequester> {
     Ok(requester)
 }
 
-pub fn build_requester_for_openai() -> Result<OpenAiRequester> {
+fn build_requester_for_openai() -> Result<OpenAiRequester> {
     let request_history_path = match env::var("OPEN_AI_CHAT_REQUEST_HISTORY_PATH") {
         Ok(path) => Some(path),
         Err(_) => None,
@@ -75,7 +88,7 @@ pub fn build_requester_for_openai() -> Result<OpenAiRequester> {
     Ok(requester)
 }
 
-pub fn build_requester_for_open_router() -> Result<OpenAiRequester> {
+fn build_requester_for_open_router() -> Result<OpenAiRequester> {
     let request_history_path = match env::var("OPEN_ROUTER_CHAT_REQUEST_HISTORY_PATH") {
         Ok(path) => Some(path),
         Err(_) => None,

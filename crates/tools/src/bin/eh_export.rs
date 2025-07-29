@@ -89,7 +89,7 @@ async fn main() {
     print_runtime_info(&mut config);
 
     // Set up a graceful shutdown
-    let shutdown = setup_graceful_shutdown();
+    let shutdown = setup_graceful_shutdown(false);
 
     // Create an exporter and start
     let exporter = EventHubExporter::new(config, Some(Arc::clone(&shutdown)))

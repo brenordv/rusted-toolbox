@@ -7,7 +7,7 @@ use crate::models::models::FileProcessResult::{
 };
 use crate::models::models::MediaType::{Movie, TvShow};
 use crate::models::models::{FileProcessResult, MediaType};
-use crate::requesters::requester_builders::build_requester_for_openai;
+use crate::requesters::requester_builders::build_requester_for_ai;
 use crate::requesters::requester_implementations::OpenAiRequester;
 use crate::requesters::requester_traits::OpenAiRequesterTraits;
 use crate::tasks::media_identifiers::identify_file_hybrid;
@@ -48,7 +48,7 @@ pub async fn handle_event_created(event: Event, watch_folder: PathBuf) -> Result
     let files_read_db = Arc::new(db);
 
     debug!("Initializing AI requester...");
-    let mut ai_requester = build_requester_for_openai()?;
+    let mut ai_requester = build_requester_for_ai()?;
 
     ai_requester.set_system_message(build_rust_ai_function_system_message())?;
 
