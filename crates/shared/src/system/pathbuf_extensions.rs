@@ -24,6 +24,28 @@ static IMAGE_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     .collect()
 });
 
+static SUBTITLE_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+    [
+        "srt",  // SubRip
+        "sub",  // MicroDVD, SubViewer, or VobSub (paired with .idx)
+        "ass",  // Advanced SubStation Alpha
+        "ssa",  // SubStation Alpha
+        "vtt",  // WebVTT
+        "sbv",  // YouTube SBV
+        "txt",  // Plain text (sometimes used)
+        "mpl",  // MPL2
+        "dks",  // DKS
+        "lrc",  // Lyric subtitle (karaoke)
+        "idx",  // VobSub index file, paired with .sub
+        "stl",  // Spruce subtitle format (DVD authoring)
+        "xml",  // Sometimes used for subtitles, e.g., TTML/DFXP
+    ]
+        .iter()
+        .cloned()
+        .collect()
+});
+
+
 static MAIN_RAR_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)^[^.]+\.rar$|\.part0*1\.rar$").unwrap());
 static MAIN_7Z_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\.7z\.0*1$").unwrap());
@@ -35,6 +57,7 @@ pub trait PathBufExtensions {
     fn is_main_file_multi_part_compression(&self) -> bool;
     fn absolute_to_string(&self) -> anyhow::Result<String>;
     fn is_image(&self) -> bool;
+    fn is_subtitle(&self) -> bool;
 }
 
 impl PathBufExtensions for PathBuf {
@@ -52,6 +75,10 @@ impl PathBufExtensions for PathBuf {
 
     fn is_image(&self) -> bool {
         self.as_path().is_image()
+    }
+
+    fn is_subtitle(&self) -> bool {
+        self.as_path().is_subtitle()
     }
 }
 
@@ -119,6 +146,13 @@ impl PathBufExtensions for Path {
         self.extension()
             .and_then(|e| e.to_str())
             .map(|e| IMAGE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+            .unwrap_or(false)
+    }
+
+    fn is_subtitle(&self) -> bool {
+        self.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| SUBTITLE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
             .unwrap_or(false)
     }
 }

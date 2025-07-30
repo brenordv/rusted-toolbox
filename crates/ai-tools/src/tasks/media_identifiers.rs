@@ -158,6 +158,11 @@ pub async fn identify_file_hybrid(
         info!("File is an image, no need to analyze it further...");
         return Ok(IdentificationResult::Ignored);
     }
+    
+    if file.is_subtitle() {
+        info!("File is subtitle, no need to analyze it further...");
+        return Ok(IdentificationResult::Ignored);
+    }
 
     if file.is_compressed() {
         info!("File is compressed, checking if it is the main archive file...");

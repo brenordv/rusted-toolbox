@@ -104,6 +104,25 @@ pub fn identify_media_type_from_filename(_input_filename: &str) -> &str {
     /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.r06" -> tvshow
     /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> tvshow
     /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> tvshow
+    /// - "The Shawshank Redemption 1994 1080p BluRay x264 YIFY.mp4" -> movie
+    /// - "Game of Thrones S08E03 1080p WEB H264-MEMENTO.mkv" -> tvshow
+    /// - "Better Call Saul S03E05 1080p AMZN WEBRip DDP5.1 x264-NTb.mkv" -> tvshow
+    /// - "Forrest Gump 1994 720p BluRay x264 YIFY.mp4" -> movie
+    /// - "Rick and Morty S05E01E02 720p WEBRip x264-ION10.mkv" -> tvshow
+    /// - "The Mandalorian/S01E02 720p WEBRip x264-GalaxyTV.mkv" -> tvshow
+    /// - "Mad Max Fury Road 2015 720p BluRay x264 YIFY.mp4" -> movie
+    /// - "Stranger Things/S04E01 Chapter One 720p NF WEB-DL DDP5.1 x264-NTb.mkv" -> tvshow
+    /// - "10 Things I Hate About You 1999.mkv" -> movie
+    /// - "Movies Super Hero/Spider-Man Into the Spider-Verse 2018 1080p BluRay x264 YIFY.mp4" -> movie
+    /// - "The Office/US S07E17 720p NF WEB-DL DDP5.1 x264-NTb.mkv" -> tvshow
+    /// - "Sherlock S02 E03 1080p BluRay x264-SHORTCUT.mkv" -> tvshow
+    /// - "King Kong 1933 REMASTERED 720p BluRay x264-GROUP.mkv" -> movie
+    /// - "Edge of Tomorrow 2014 720p BluRay x264 YIFY.mkv" -> movie
+    /// - "True Detective S02E01 720p HDTV x264-KILLERS.mkv" -> tvshow
+    /// - "Show Name 2022 2x07 720p WEB-DL.mkv" -> tvshow
+    /// - "Blade Runner 2049 2017 1080p BluRay x264-GROUP.mkv" -> movie
+    /// - "La La Land 2016 1080p BluRay x264 YIFY.mp4" -> movie
+    /// - "John Wick Chapter 3 Parabellum 2019 720p BluRay.mkv" -> movie
     /// - "readme.md" -> unknown
     OUTPUT
 }
@@ -163,6 +182,25 @@ pub fn identify_media_format_from_filename(_input_filename: &str) -> &str {
     /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.rar" -> compressed
     /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> decompressed
     /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> compressed
+    /// - "The Shawshank Redemption 1994 1080p BluRay x264 YIFY.mp4" -> decompressed
+    /// - "Game of Thrones S08E03 1080p WEB H264-MEMENTO.mkv" -> decompressed
+    /// - "Better Call Saul S03E05 1080p AMZN WEBRip DDP5.1 x264-NTb.zip" -> compressed
+    /// - "Forrest Gump 1994 720p BluRay x264 YIFY.7z" -> compressed
+    /// - "Rick and Morty S05E01E02 720p WEBRip x264-ION10.rar" -> compressed
+    /// - "The Mandalorian/S01E02 720p WEBRip x264-GalaxyTV.part1.rar" -> compressed
+    /// - "Mad Max Fury Road 2015 720p BluRay x264 YIFY.r001" -> compressed
+    /// - "Stranger Things/S04E01 Chapter One 720p NF WEB-DL DDP5.1 x264-NTb.r999" -> compressed
+    /// - "10 Things I Hate About You 1999.mkv" -> decompressed
+    /// - "Movies Super Hero/Spider-Man Into the Spider-Verse 2018 1080p BluRay x264 YIFY.mp4" -> decompressed
+    /// - "The Office/US S07E17 720p NF WEB-DL DDP5.1 x264-NTb.r15" -> compressed
+    /// - "Sherlock S02 E03 1080p BluRay x264-SHORTCUT.mkv" -> decompressed
+    /// - "King Kong 1933 REMASTERED 720p BluRay x264-GROUP.iso" -> compressed
+    /// - "Edge of Tomorrow 2014 720p BluRay x264 YIFY.mkv" -> decompressed
+    /// - "True Detective S02E01 720p HDTV x264-KILLERS.zip" -> compressed
+    /// - "Show Name 2022 2x07 720p WEB-DL.rar" -> compressed
+    /// - "Blade Runner 2049 2017 1080p BluRay x264-GROUP.7z" -> compressed
+    /// - "La La Land 2016 1080p BluRay x264 YIFY.mp4" -> decompressed
+    /// - "John Wick Chapter 3 Parabellum 2019 720p BluRay.mkv" -> decompressed
     /// - "README.txt" -> unknown
     /// - "video_without_extension" -> unknown
     OUTPUT
@@ -221,6 +259,25 @@ pub fn is_main_archive_file(_input_filename: &str) -> &str {
     /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.rar" -> true
     /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> false
     /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> false
+    /// - "The Shawshank Redemption 1994 1080p BluRay x264 YIFY.mp4" -> false
+    /// - "Game of Thrones S08E03 1080p WEB H264-MEMENTO.mkv" -> false
+    /// - "Better Call Saul S03E05 1080p AMZN WEBRip DDP5.1 x264-NTb.zip" -> true
+    /// - "Forrest Gump 1994 720p BluRay x264 YIFY.7z" -> true
+    /// - "Rick and Morty S05E01E02 720p WEBRip x264-ION10.rar" -> true
+    /// - "The Mandalorian/S01E02 720p WEBRip x264-GalaxyTV.part1.rar" -> false
+    /// - "Mad Max Fury Road 2015 720p BluRay x264 YIFY.r001" -> false
+    /// - "Stranger Things/S04E01 Chapter One 720p NF WEB-DL DDP5.1 x264-NTb.r999" -> false
+    /// - "10 Things I Hate About You 1999.mkv" -> false
+    /// - "Movies Super Hero/Spider-Man Into the Spider-Verse 2018 1080p BluRay x264 YIFY.mp4" -> false
+    /// - "The Office/US S07E17 720p NF WEB-DL DDP5.1 x264-NTb.r15" -> false
+    /// - "Sherlock S02 E03 1080p BluRay x264-SHORTCUT.mkv" -> false
+    /// - "King Kong 1933 REMASTERED 720p BluRay x264-GROUP.iso" -> true
+    /// - "Edge of Tomorrow 2014 720p BluRay x264 YIFY.mkv" -> false
+    /// - "True Detective S02E01 720p HDTV x264-KILLERS.zip" -> true
+    /// - "Show Name 2022 2x07 720p WEB-DL.rar" -> true
+    /// - "Blade Runner 2049 2017 1080p BluRay x264-GROUP.7z" -> true
+    /// - "La La Land 2016 1080p BluRay x264 YIFY.mp4" -> false
+    /// - "John Wick Chapter 3 Parabellum 2019 720p BluRay.mkv" -> false
     /// - "sample" -> unknown
     /// - "README.txt" -> unknown
     OUTPUT
@@ -243,7 +300,7 @@ pub fn extract_movie_title_from_filename(_input_filename: &str) -> &str {
     /// - "Joker.2019.BluRay.x264.YIFY.zip" -> Joker
     /// - "Parasite.2019.KOREAN.1080p.BluRay.x264.DTS-FGT.mkv" -> Parasite
     /// - "1917.2019.2160p.UHD.BluRay.X265-IAMABLE.mkv" -> 1917
-    /// - "Spider-Man.Into.the.Spider-Verse.2018.1080p.BluRay.x264.YIFY.mp4" -> Spider Man - Into the Spider Verse
+    /// - "Spider-Man.Into.the.Spider-Verse.2018.1080p.BluRay.x264.YIFY.mp4" -> Spider-Man - Into the Spider Verse
     /// - "Gladiator.2000.1080p.BluRay.x264.YIFY.mp4" -> Gladiator
     /// - "Mad.Max.Fury.Road.2015.720p.BluRay.x264.YIFY.mp4" -> Mad Max - Fury Road
     /// - "Interstellar.2014.1080p.BluRay.x264.YIFY.mp4" -> Interstellar
@@ -273,6 +330,16 @@ pub fn extract_movie_title_from_filename(_input_filename: &str) -> &str {
     /// - "sci-fi/Avatar.2.2022.2160p.UHD.BluRay.x265\CD2\avat2-uhd.rar" -> Avatar 2
     /// - "Mad.Max.Fury.Road.2015.720p.BluRay.x264-YIFY\CD1\madmax-yify.avi" -> Mad Max Fury Road
     /// - "best/King.Kong.1933.REMASTERED.720p.BluRay.x264\CD2\kong1933-remast.mp4" -> King Kong
+    /// - "The Shawshank Redemption 1994 1080p BluRay x264 YIFY.mp4" -> The Shawshank Redemption
+    /// - "Forrest Gump 1994 720p BluRay x264 YIFY.7z" -> Forrest Gump
+    /// - "Mad Max Fury Road 2015 720p BluRay x264 YIFY.r001" -> Mad Max Fury Road
+    /// - "10 Things I Hate About You 1999.mkv" -> 10 Things I Hate About You
+    /// - "Movies Super Hero/Spider-Man Into the Spider-Verse 2018 1080p BluRay x264 YIFY.mp4" -> Spider-Man Into the Spider-Verse
+    /// - "King Kong 1933 REMASTERED 720p BluRay x264-GROUP.iso" -> King Kong
+    /// - "Edge of Tomorrow 2014 720p BluRay x264 YIFY.mkv" -> Edge of Tomorrow
+    /// - "Blade Runner 2049 2017 1080p BluRay x264-GROUP.7z" -> Blade Runner 2049
+    /// - "La La Land 2016 1080p BluRay x264 YIFY.mp4" -> La La Land
+    /// - "John Wick Chapter 3 Parabellum 2019 720p BluRay.mkv" -> John Wick Chapter 3 Parabellum
     /// - "Show.Name.S01E01.1080p.WEB-DL-GROUP.mkv" -> unknown
     /// - "README.txt" -> unknown
     OUTPUT
@@ -318,6 +385,14 @@ pub fn extract_tv_show_title_from_filename(_input_filename: &str) -> &str {
     /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.rar" -> Friends
     /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> Lost
     /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> The Expanse
+    /// - "Game of Thrones S08E03 1080p WEB H264-MEMENTO.mkv" -> Game of Thrones
+    /// - "Better Call Saul S03E05 1080p AMZN WEBRip DDP5.1 x264-NTb.zip" -> Better Call Saul
+    /// - "Rick and Morty S05E01E02 720p WEBRip x264-ION10.rar" -> Rick and Morty
+    /// - "The Mandalorian/S01E02 720p WEBRip x264-GalaxyTV.part1.rar" -> The Mandalorian
+    /// - "Stranger Things/S04E01 Chapter One 720p NF WEB-DL DDP5.1 x264-NTb.r999" -> Stranger Things
+    /// - "The Office/US S07E17 720p NF WEB-DL DDP5.1 x264-NTb.r15" -> The Office US
+    /// - "Sherlock S02 E03 1080p BluRay x264-SHORTCUT.mkv" -> Sherlock
+    /// - "True Detective S02E01 720p HDTV x264-KILLERS.zip" -> True Detective
     /// - "README.txt" -> unknown
     OUTPUT
 }
@@ -358,6 +433,14 @@ pub fn extract_season_episode_from_filename(_input_filename: &str) -> &str {
     /// - "favs/Friends.2x11.480p.DVD.x264-SAiNTS\CD1\friends-2x11.rar" -> season:2, episode:11
     /// - "Lost.S04E02.PT-BR.1080p.WEB-DL\CD2\lost-s04e02.mp4" -> season:4, episode:2
     /// - "sci-fi/The.Expanse.S03E08.720p.WEB-DL.x264-MEMENTO\CD1\expanse-s03e08.r14" -> season:3, episode:8
+    /// - "Game of Thrones S08E03 1080p WEB H264-MEMENTO.mkv" ->  season:8, episode:3
+    /// - "Better Call Saul S03E05 1080p AMZN WEBRip DDP5.1 x264-NTb.zip" -> season:3, episode:5
+    /// - "Rick and Morty S05E01E02 720p WEBRip x264-ION10.rar" -> season:5, episode:1
+    /// - "The Mandalorian/S01E02 720p WEBRip x264-GalaxyTV.part1.rar" -> season:1, episode:2
+    /// - "Stranger Things/S04E01 Chapter One 720p NF WEB-DL DDP5.1 x264-NTb.r999" -> season:4, episode:1
+    /// - "The Office/US S07E17 720p NF WEB-DL DDP5.1 x264-NTb.r15" -> season:7, episode:17
+    /// - "Sherlock S02 E03 1080p BluRay x264-SHORTCUT.mkv" -> season:2, episode:3
+    /// - "True Detective S02E01 720p HDTV x264-KILLERS.zip" -> season:2, episode:1
     /// - "README.txt" -> unknown
     OUTPUT
 }

@@ -227,3 +227,10 @@ TL;DR:
 - **#2**: Some files are way too big. Partly due to the documentation + testing. Some methods should be moved to different files.
 - **#3**: Do a better job at showing the default values for CLI arguments + do it in a unified way.
 - **#4**: Unify all the constants in one file. We don't have that many to justify different files.
+
+## Building on Linux
+TODO: Improve this later (but before merging the PR))
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential libssl-dev pkg-config
+```
