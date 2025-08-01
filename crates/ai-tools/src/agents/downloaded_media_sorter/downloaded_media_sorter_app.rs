@@ -24,8 +24,9 @@ use std::process::Command;
 use std::sync::Arc;
 use std::{env, fs};
 use tracing::{debug, error, info, warn};
+use shared::system::monitor_folder::EventType;
 
-pub async fn handle_event_created(event: Event, watch_folder: PathBuf) -> Result<()> {
+pub async fn handle_event_created(event: Event, _: EventType, watch_folder: PathBuf) -> Result<()> {
     debug!("File created event triggered with event: {:?}", event);
 
     debug!("Loading environment variables...");

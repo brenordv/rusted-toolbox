@@ -5,7 +5,7 @@ use dotenv::dotenv;
 use rusted_ai::agents::downloaded_media_sorter::cli_utils::print_runtime_info;
 use rusted_ai::agents::downloaded_media_sorter::downloaded_media_sorter_app::handle_event_created;
 use rusted_ai::constants::AI_DOWNLOADED_MEDIA_SORTER_NAME;
-use rusted_ai::utils::monitor_folder::monitor_folder_for_new_files;
+use shared::system::monitor_folder::monitor_folder_for_on_created_only;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
 
     print_runtime_info(&folder_to_watch);
 
-    monitor_folder_for_new_files(folder_to_watch.as_str(), Some(handle_event_created)).await?;
+    monitor_folder_for_on_created_only(folder_to_watch.as_str(), handle_event_created).await?;
 
     Ok(())
 }

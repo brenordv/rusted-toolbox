@@ -6,4 +6,4 @@ members = [
     "crates/ai-tools",
     "crates/shared",
     "crates/tools"
-]
+, "crates/scene-media-organizer"]

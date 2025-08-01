@@ -1,0 +1,21 @@
+[package]
+name = "scene-media-organizer"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "A collection of CLI utilities leveraging AI to do stuff."
+
+[[bin]]
+name = "smo-watchdog"
+path = "src/bin/smo_watchdog.rs"
+
+[dependencies]
+shared = { path = "../shared" }
+dotenv = "0.15.0"
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+async-trait = "0.1.88"
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+reqwest = { version = "0.12.22", features = ["json"] }
+anyhow = "1.0.98"
+chrono = { version = "0.4.41", features = ["serde"] }
