@@ -146,10 +146,15 @@ impl PathBufExtensions for Path {
     fn is_compressed(&self) -> bool {
         // Magic byte check (slower than checking the extension, but more accurate)
         if let Ok(Some(kind)) = infer::get_from_path(self) {
-            return kind.mime_type().starts_with("application/x-")
+            let magic_bytes_point_to_archive = kind.mime_type().starts_with("application/x-")
                 || kind.mime_type().contains("zip")
                 || kind.mime_type().contains("compressed")
+                || kind.mime_type().contains("rar")
                 || kind.mime_type().contains("tar");
+
+            if magic_bytes_point_to_archive {
+                return true;
+            }
         }
 
         // Fallback to extension if not available magic byte not available.
@@ -172,12 +177,11 @@ impl PathBufExtensions for Path {
 
     fn is_main_file_multi_part_compression(&self) -> bool {
         let file_name = match self.file_name().and_then(|n| n.to_str()) {
-            Some(name) => name,
+            Some(name) => name.to_lowercase(),
             None => return false,
         };
-        MAIN_RAR_RE.is_match(file_name)
-            || MAIN_7Z_RE.is_match(file_name)
-            || MAIN_ZIP_RE.is_match(file_name)
+
+        COMPRESSED_EXTENSIONS.contains(file_name.as_str())
     }
 
     fn absolute_to_string(&self) -> anyhow::Result<String> {

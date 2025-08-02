@@ -3311,6 +3311,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "decompress",
  "dotenv",
  "notify",
  "reqwest",

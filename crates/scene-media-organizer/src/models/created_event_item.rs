@@ -1,5 +1,7 @@
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
 use std::str::FromStr;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone, Copy)]
@@ -36,7 +38,7 @@ impl FromStr for CreatedEventItemMediaType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "movie" => Ok(CreatedEventItemMediaType::Movie),
-            "tvshow" | "tv-show" => Ok(CreatedEventItemMediaType::TvShow),
+            "tvshow" | "tv-show" | "tv show" | "episode" => Ok(CreatedEventItemMediaType::TvShow),
             _ => Err(format!("Unknown media type: {}", s)),
         }
     }
@@ -92,6 +94,24 @@ pub struct CreatedEventItem {
     pub season: Option<u32>,
     pub episode: Option<u32>,
     pub timestamp: DateTime<Utc>,
+}
+
+impl CreatedEventItem {
+    pub fn get_title_as_filename(&self) -> Result<String> {
+        if self.title.is_empty() {
+            anyhow::bail!("Title is empty when it should not be.");
+        };
+
+        Ok(sanitize_string_for_filename(&self.title))
+    }
+
+    pub fn update_target_path(&mut self, new_target_path: String) {
+        self.target_path = new_target_path;
+    }
+
+    pub fn update_status(&mut self, new_status: CreatedEventItemStatus) {
+        self.status = new_status;
+    }
 }
 
 #[cfg(test)]
