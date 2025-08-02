@@ -1,6 +1,7 @@
 use anyhow::Result;
 use notify::Event;
 use scene_media_organizer::constants::APP_SMO_WATCHDOG_SLUG;
+use scene_media_organizer::routines::process_file::ProcessFileRoutine;
 use scene_media_organizer::tools::smo_watchdog_app::cli_utils::{
     get_runtime_info, print_runtime_info,
 };
@@ -9,6 +10,7 @@ use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::monitor_folder::{monitor_folder_for_on_created_only, EventType};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing_log::log::debug;
 
 pub async fn test(event: Event, event_type: EventType, _: PathBuf) -> Result<()> {
@@ -41,7 +43,23 @@ async fn main() -> Result<()> {
 
     print_runtime_info(&runtime_config);
 
-    monitor_folder_for_on_created_only(&runtime_config.get_watch_folder(), test).await?;
+    let file_processor = ProcessFileRoutine::new(
+        ".data/watchdog.db".to_string(),
+        "http://rverse.local:10147/api/guess".to_string(),
+    )?;
+
+    let shared_processor = Arc::from(&file_processor);
+
+    let handler = move |event, event_type, path| {
+        let processor = shared_processor.clone();
+        async move {
+            processor
+                .handle_on_file_created(event, event_type, path)
+                .await
+        }
+    };
+
+    monitor_folder_for_on_created_only(&runtime_config.get_watch_folder(), handler).await?;
 
     Ok(())
 }
