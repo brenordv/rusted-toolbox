@@ -38,8 +38,8 @@ pub fn get_runtime_info() -> Result<WatchdogRuntimeConfig> {
         .context("SMO_WATCHDOG_BASE_TVSHOW_FOLDER is not set")?;
     let target_base_series_folder = PathBuf::from(&target_base_series_folder_str);
 
-    let data_folder = env::var("SMO_WATCHDOG_DATA_FILE")
-        .context("SMO_WATCHDOG_DATA_FILE is not set")?;
+    let data_folder =
+        env::var("SMO_WATCHDOG_DATA_FILE").context("SMO_WATCHDOG_DATA_FILE is not set")?;
 
     let guess_it_api_base_url = env::var("SMO_WATCHDOG_GUESS_IT_API_BASE_URL")
         .context("SMO_WATCHDOG_GUESS_IT_API_BASE_URL is not set")?;

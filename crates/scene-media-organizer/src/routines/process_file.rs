@@ -2,6 +2,7 @@ use crate::models::created_event_item::{
     CreatedEventItem, CreatedEventItemFileType, CreatedEventItemMediaType, CreatedEventItemStatus,
 };
 use crate::models::guessit_response::GuessItResponse;
+use crate::models::watchdog_runtime_config::WatchdogRuntimeConfig;
 use crate::utils::file_status_controller::FileStatusController;
 use crate::utils::guessit_client::GuessItClient;
 use anyhow::{Context, Result};
@@ -11,25 +12,25 @@ use notify::Event;
 use shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use shared::system::monitor_folder::EventType;
 use shared::system::pathbuf_extensions::PathBufExtensions;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
-use std::{env, fs};
 use tokio::time::sleep;
 use tracing_log::log::{debug, error};
 
 pub struct ProcessFileRoutine {
     file_status_controller: FileStatusController,
     guess: GuessItClient,
-    unrar_bin_path: String,
+    runtime_config: WatchdogRuntimeConfig,
 }
 
 impl ProcessFileRoutine {
-    pub fn new(db_path: String, guess_it_base_url: String, unrar_bin_path: String) -> Result<Self> {
+    pub fn new(runtime_config: &WatchdogRuntimeConfig) -> Result<Self> {
         Ok(Self {
-            file_status_controller: FileStatusController::new(db_path)?,
-            guess: GuessItClient::new(guess_it_base_url),
-            unrar_bin_path,
+            file_status_controller: FileStatusController::new(runtime_config.db_data_file.clone())?,
+            guess: GuessItClient::new(runtime_config.guess_it_api_base_url.clone()),
+            runtime_config: runtime_config.clone(),
         })
     }
 
@@ -65,7 +66,7 @@ impl ProcessFileRoutine {
                         let response = self.guess.it(entry.to_str().unwrap().to_string()).await?;
 
                         debug!("Creating file control item...");
-                        let new_item = Self::create_file_control_item(&entry, &response)?;
+                        let new_item = self.create_file_control_item(&entry, &response)?;
 
                         debug!("Adding file control item to database...");
                         self.file_status_controller.add_file_control(&new_item)?;
@@ -136,6 +137,7 @@ impl ProcessFileRoutine {
     }
 
     fn create_file_control_item(
+        &self,
         full_path: &PathBuf,
         guess_it_data: &GuessItResponse,
     ) -> Result<CreatedEventItem> {
@@ -215,24 +217,21 @@ impl ProcessFileRoutine {
             timestamp,
         };
 
-        let target_path = Self::define_target_path(&file_control_item)?;
+        let target_path = self.define_target_path(&file_control_item)?;
 
         file_control_item.update_target_path(target_path);
 
         Ok(file_control_item)
     }
 
-    fn define_target_path(file_control_item: &CreatedEventItem) -> Result<String> {
+    fn define_target_path(&self, file_control_item: &CreatedEventItem) -> Result<String> {
         let mut title_as_filename = file_control_item.get_title_as_filename()?;
 
         let mut path: PathBuf;
 
         match file_control_item.media_type {
             CreatedEventItemMediaType::Movie => {
-                let base_movie_folder = env::var("SMO_WATCHDOG_WATCH_BASE_MOVIE_FOLDER")
-                    .context("SMO_WATCHDOG_WATCH_BASE_MOVIE_FOLDER not found in .env file")?;
-
-                path = PathBuf::from(base_movie_folder);
+                path = PathBuf::from(self.runtime_config.target_base_movie_folder.clone());
 
                 if let Some(year) = file_control_item.year {
                     title_as_filename.push_str(&format!("--{}", year));
@@ -241,10 +240,7 @@ impl ProcessFileRoutine {
                 path.push(title_as_filename);
             }
             CreatedEventItemMediaType::TvShow => {
-                let base_tv_folder = env::var("SMO_WATCHDOG_WATCH_BASE_TVSHOW_FOLDER")
-                    .context("SMO_WATCHDOG_WATCH_BASE_TVSHOW_FOLDER not found in .env file")?;
-
-                path = PathBuf::from(base_tv_folder);
+                path = PathBuf::from(self.runtime_config.target_base_series_folder.clone());
 
                 path.push(title_as_filename);
 
@@ -311,7 +307,7 @@ impl ProcessFileRoutine {
         // For .rar files, try using `unrar` command-line tool
         if ext == "rar" {
             // Try invoking `unrar` if available
-            let status = Command::new(self.unrar_bin_path.clone())
+            let status = Command::new(self.runtime_config.unrar_bin_path.clone())
                 .arg("x")
                 .arg("-y") // auto-yes for prompts
                 .arg(file)

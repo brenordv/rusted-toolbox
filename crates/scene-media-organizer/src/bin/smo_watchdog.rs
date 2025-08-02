@@ -17,11 +17,7 @@ async fn main() -> Result<()> {
 
     print_runtime_info(&runtime_config);
 
-    let file_processor = ProcessFileRoutine::new(
-        runtime_config.db_data_file.clone(),
-        runtime_config.guess_it_api_base_url.clone(),
-        runtime_config.unrar_bin_path.clone(),
-    )?;
+    let file_processor = ProcessFileRoutine::new(&runtime_config)?;
 
     let shared_processor = Arc::from(&file_processor);
 

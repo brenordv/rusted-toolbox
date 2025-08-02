@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+#[derive(Debug, Clone)]
 pub struct WatchdogRuntimeConfig {
     pub watch_folder: PathBuf,
     pub target_base_movie_folder: PathBuf,
