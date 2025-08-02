@@ -52,10 +52,6 @@ impl ProcessFileRoutine {
                 .context("Failed to convert path to string.")?
                 .to_string();
 
-            if entry_str.ends_with("Stephen King") {
-                debug!("Skipping file: {:?}", entry);
-            }
-
             let mut file_control_item =
                 match self.file_status_controller.get_file_control(&entry_str)? {
                     Some(file_control_item) => {
