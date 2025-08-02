@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::time::Duration;
 use anyhow::Result;
 use notify::Event;
 use tracing_log::log::debug;
@@ -8,8 +7,7 @@ use scene_media_organizer::tools::smo_watchdog_app::cli_utils::{get_runtime_info
 use scene_media_organizer::utils::guessit_client::GuessItClient;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
-use shared::system::monitor_folder::{dummy_handle_event_created, monitor_folder_for_on_created_only, EventType};
-use shared::system::pathbuf_extensions::PathBufExtensions;
+use shared::system::monitor_folder::{monitor_folder_for_on_created_only, EventType};
 
 pub async fn test(event: Event, event_type: EventType, _: PathBuf) -> Result<()> {
     let created_entries = &event.paths;

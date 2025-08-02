@@ -8,22 +8,18 @@
 //! # Errors
 //! - Returns an error if the specified folder does not exist or cannot be watched.
 //! - Errors that occur during the invocation of the passed `on_created_handler` are propagated.
-#[cfg(feature = "serde")]
-pub use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use crate::system::ensure_directory_exists::EnsureDirectoryExists;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc};
-use std::thread::sleep;
 use std::time::Duration;
-use notify::event::{AccessKind, AccessMode, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode};
+use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum EventType {
     /// The catch-all event kind, for unsupported/unknown events.
     /// This variant should be used as the "else" case when mapping native kernel bitmasks or
@@ -44,19 +40,19 @@ pub enum EventType {
     /// An event emitted when the file is read.
     AccessRead,
     /// An event emitted when the file, or a handle to the file, is opened.
-    AccessOpen(AccessMode),
+    AccessOpen,
     /// An event emitted when the file, or a handle to the file, is closed.
-    AccessClose(AccessMode),
+    AccessClose,
     /// An event which specific kind is known but cannot be represented otherwise.
     AccessOther,
     /// The catch-all case, to be used when the specific kind of event is unknown.
     ModifyAny,
     /// An event emitted when the data content of a file is changed.
-    ModifyData(DataChange),
+    ModifyData,
     /// An event emitted when the metadata of a file or folder is changed.
-    ModifyMetadata(MetadataKind),
+    ModifyMetadata,
     /// An event emitted when the name of a file or folder is changed.
-    ModifyName(RenameMode),
+    ModifyName,
     /// An event which specific kind is known but cannot be represented otherwise.
     ModifyOther,
     /// The catch-all case, to be used when the specific kind of event is unknown.
@@ -133,8 +129,8 @@ where
                     let event_type = match kind {
                         AccessKind::Any => EventType::AccessAny,
                         AccessKind::Read => EventType::AccessRead,
-                        AccessKind::Open(mode) => EventType::AccessOpen(mode),
-                        AccessKind::Close(mode) => EventType::AccessClose(mode),
+                        AccessKind::Open(_) => EventType::AccessOpen,
+                        AccessKind::Close(_) => EventType::AccessClose,
                         AccessKind::Other => EventType::AccessOther,
                     };
 
@@ -157,9 +153,9 @@ where
                 EventKind::Modify(kind) => {
                     let event_type = match kind {
                         ModifyKind::Any => EventType::ModifyAny,
-                        ModifyKind::Data(data) => EventType::ModifyData(data),
-                        ModifyKind::Metadata(metadata) => EventType::ModifyMetadata(metadata),
-                        ModifyKind::Name(name) => EventType::ModifyName(name),
+                        ModifyKind::Data(_) => EventType::ModifyData,
+                        ModifyKind::Metadata(_) => EventType::ModifyMetadata,
+                        ModifyKind::Name(_) => EventType::ModifyName,
                         ModifyKind::Other => EventType::ModifyOther,
                     };
 
