@@ -22,25 +22,18 @@ pub struct GuessItClient {
 
 impl GuessItClient {
     pub fn new(base_url: String) -> Self {
-        Self {
-            base_url,
-        }
+        Self { base_url }
     }
-    
+
     pub async fn it(&self, filename: String) -> Result<GuessItResponse> {
         let url = format!("{}?it={}", self.base_url, filename);
-        
+
         let client = get_http_client();
 
-        let response = client
-            .get(&url)
-            .send()
-            .await?;
-            
-        let guessit_response: GuessItResponse = response
-            .json()
-            .await?;
-            
+        let response = client.get(&url).send().await?;
+
+        let guessit_response: GuessItResponse = response.json().await?;
+
         Ok(guessit_response)
     }
 }

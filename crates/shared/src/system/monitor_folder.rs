@@ -8,15 +8,15 @@
 //! # Errors
 //! - Returns an error if the specified folder does not exist or cannot be watched.
 //! - Errors that occur during the invocation of the passed `on_created_handler` are propagated.
-use anyhow::Result;
-use notify::{Event, EventKind, RecursiveMode, Watcher};
 use crate::system::ensure_directory_exists::EnsureDirectoryExists;
+use anyhow::Result;
+use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
+use notify::{Event, EventKind, RecursiveMode, Watcher};
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc};
+use std::sync::mpsc;
 use std::time::Duration;
-use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
-use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -65,9 +65,8 @@ pub enum EventType {
     RemoveOther,
     /// An event not fitting in any of the above four categories.
     /// This may be used for meta-events about the watch itself.
-    Other
+    Other,
 }
-
 
 /// Convenience wrapper for cases when we only care about the created events.
 pub async fn monitor_folder_for_on_created_only<Fut, F>(
@@ -188,17 +187,24 @@ where
     Ok(())
 }
 
-
 /// Dummy function that handles the "file created" event triggered within a watched folder.
 /// Doesn't do anything with the files, just logs the entries received.
-pub async fn dummy_handle_event_created(event: Event, event_type: EventType, _: PathBuf) -> Result<()> {
+pub async fn dummy_handle_event_created(
+    event: Event,
+    event_type: EventType,
+    _: PathBuf,
+) -> Result<()> {
     let created_entries = &event.paths;
-    debug!("[{:?}] On Created Event (count: {}): [{:?}]", event_type, created_entries.len(), event);
+    debug!(
+        "[{:?}] On Created Event (count: {}): [{:?}]",
+        event_type,
+        created_entries.len(),
+        event
+    );
 
     for entry in created_entries {
         debug!("Processing file: {:?}", entry);
         tokio::time::sleep(Duration::from_secs(2)).await;
-
     }
 
     Ok(())

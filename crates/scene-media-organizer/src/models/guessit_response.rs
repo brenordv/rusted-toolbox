@@ -6,5 +6,5 @@ pub struct GuessItResponse {
     pub r#type: String,
     pub year: Option<u32>,
     pub season: Option<u32>,
-    pub episode: Option<u32>
+    pub episode: Option<u32>,
 }

@@ -1,9 +1,8 @@
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-
 
 static COMPRESSED_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
@@ -27,25 +26,24 @@ static IMAGE_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 
 static SUBTITLE_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
-        "srt",  // SubRip
-        "sub",  // MicroDVD, SubViewer, or VobSub (paired with .idx)
-        "ass",  // Advanced SubStation Alpha
-        "ssa",  // SubStation Alpha
-        "vtt",  // WebVTT
-        "sbv",  // YouTube SBV
-        "txt",  // Plain text (sometimes used)
-        "mpl",  // MPL2
-        "dks",  // DKS
-        "lrc",  // Lyric subtitle (karaoke)
-        "idx",  // VobSub index file, paired with .sub
-        "stl",  // Spruce subtitle format (DVD authoring)
-        "xml",  // Sometimes used for subtitles, e.g., TTML/DFXP
+        "srt", // SubRip
+        "sub", // MicroDVD, SubViewer, or VobSub (paired with .idx)
+        "ass", // Advanced SubStation Alpha
+        "ssa", // SubStation Alpha
+        "vtt", // WebVTT
+        "sbv", // YouTube SBV
+        "txt", // Plain text (sometimes used)
+        "mpl", // MPL2
+        "dks", // DKS
+        "lrc", // Lyric subtitle (karaoke)
+        "idx", // VobSub index file, paired with .sub
+        "stl", // Spruce subtitle format (DVD authoring)
+        "xml", // Sometimes used for subtitles, e.g., TTML/DFXP
     ]
-        .iter()
-        .cloned()
-        .collect()
+    .iter()
+    .cloned()
+    .collect()
 });
-
 
 static MAIN_RAR_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)^[^.]+\.rar$|\.part0*1\.rar$").unwrap());
@@ -60,7 +58,6 @@ pub trait PathBufExtensions {
     fn absolute_to_string(&self) -> Result<String>;
     fn is_image(&self) -> bool;
     fn is_subtitle(&self) -> bool;
-
 }
 
 impl PathBufExtensions for PathBuf {
@@ -78,7 +75,8 @@ impl PathBufExtensions for PathBuf {
         let mut candidate = self.clone();
 
         loop {
-            let stem = candidate.file_stem()
+            let stem = candidate
+                .file_stem()
                 .and_then(|s| s.to_str())
                 .context("Failed to extract file stem")?;
 
@@ -643,7 +641,6 @@ mod tests {
         assert_eq!(path.is_main_file_multi_part_compression(), expected);
     }
 
-
     #[rstest]
     fn should_return_original_path_when_file_does_not_exist(temp_dir: TempDir) {
         // Arrange
@@ -673,7 +670,11 @@ mod tests {
     #[case::k("456.txt", "456_1.txt")]
     #[case::k("a.txt", "a_1.txt")]
     #[case::k("report_v2.pdf", "report_v2_1.pdf")]
-    fn should_add_suffix_1_when_file_exists_without_number_suffix(temp_dir: TempDir, #[case] filename: &str, #[case] expected_file: &str) {
+    fn should_add_suffix_1_when_file_exists_without_number_suffix(
+        temp_dir: TempDir,
+        #[case] filename: &str,
+        #[case] expected_file: &str,
+    ) {
         // Arrange
         let original_path = temp_dir.path().join(filename);
         File::create(&original_path).unwrap();

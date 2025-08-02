@@ -1,7 +1,7 @@
 use crate::system::get_current_working_dir::get_current_working_dir;
+use anyhow::Context;
 use rusqlite::{Connection, Result, Row, ToSql};
 use std::path::PathBuf;
-use anyhow::Context;
 
 /// The generic database wrapper struct.
 pub struct GenericDb {
@@ -21,8 +21,7 @@ impl GenericDb {
         let path = db_path.trim();
 
         let conn = if path == ":memory:" || path.eq_ignore_ascii_case("memory") {
-            Connection::open_in_memory()
-                .context("Failed to open in-memory database")?
+            Connection::open_in_memory().context("Failed to open in-memory database")?
         } else {
             let mut pathbuf = PathBuf::from(path);
 

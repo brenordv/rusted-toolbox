@@ -18,13 +18,13 @@ use notify::Event;
 use shared::sqlite::dictionary_db::{DictionaryDb, DictionaryDbItem};
 use shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use shared::system::folder_walkthrough::list_all_files_recursively;
+use shared::system::monitor_folder::EventType;
 use shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::{env, fs};
 use tracing::{debug, error, info, warn};
-use shared::system::monitor_folder::EventType;
 
 pub async fn handle_event_created(event: Event, _: EventType, watch_folder: PathBuf) -> Result<()> {
     debug!("File created event triggered with event: {:?}", event);
