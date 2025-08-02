@@ -384,7 +384,9 @@ impl ProcessFileRoutine {
 
         let destination = destination_folder.join(file_control_item.file_name.clone());
 
-        fs::copy(&destination, &destination).context(format!(
+        let source = PathBuf::from(file_control_item.full_path.clone());
+        
+        fs::copy(&source, &destination).context(format!(
             "Failed to copy file from {:?} to {:?}",
             file_control_item.full_path,
             destination.display()
