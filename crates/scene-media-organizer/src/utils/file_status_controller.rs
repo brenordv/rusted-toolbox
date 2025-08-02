@@ -174,23 +174,26 @@ impl FileStatusController {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#;
 
-        self.db.execute(insert_sql, &[
-            &item.full_path,
-            &item.file_name,
-            &item.parent,
-            &item.target_path,
-            &format!("{:?}", item.item_type),
-            &format!("{:?}", item.media_type),
-            &format!("{:?}", item.status),
-            &item.is_archive as &dyn ToSql,
-            &item.is_main_archive_file as &dyn ToSql,
-            &item.attempts,
-            &item.title,
-            &item.year,
-            &item.season,
-            &item.episode,
-            &item.timestamp.to_rfc3339(),
-        ])?;
+        self.db.execute(
+            insert_sql,
+            &[
+                &item.full_path,
+                &item.file_name,
+                &item.parent,
+                &item.target_path,
+                &format!("{:?}", item.item_type),
+                &format!("{:?}", item.media_type),
+                &format!("{:?}", item.status),
+                &item.is_archive as &dyn ToSql,
+                &item.is_main_archive_file as &dyn ToSql,
+                &item.attempts,
+                &item.title,
+                &item.year,
+                &item.season,
+                &item.episode,
+                &item.timestamp.to_rfc3339(),
+            ],
+        )?;
 
         Ok(())
     }
@@ -216,24 +219,27 @@ impl FileStatusController {
             WHERE full_path = ?
         "#;
 
-        self.db.execute(update_sql, &[
-            &item.full_path,
-            &item.file_name,
-            &item.parent,
-            &item.target_path,
-            &format!("{:?}", item.item_type),
-            &format!("{:?}", item.media_type),
-            &format!("{:?}", item.status),
-            &item.is_archive as &dyn ToSql,
-            &item.is_main_archive_file as &dyn ToSql,
-            &item.attempts,
-            &item.title,
-            &item.year,
-            &item.season,
-            &item.episode,
-            &item.timestamp.to_rfc3339(),
-            &item.full_path, // Where
-        ])?;
+        self.db.execute(
+            update_sql,
+            &[
+                &item.full_path,
+                &item.file_name,
+                &item.parent,
+                &item.target_path,
+                &format!("{:?}", item.item_type),
+                &format!("{:?}", item.media_type),
+                &format!("{:?}", item.status),
+                &item.is_archive as &dyn ToSql,
+                &item.is_main_archive_file as &dyn ToSql,
+                &item.attempts,
+                &item.title,
+                &item.year,
+                &item.season,
+                &item.episode,
+                &item.timestamp.to_rfc3339(),
+                &item.full_path, // Where
+            ],
+        )?;
 
         Ok(())
     }
@@ -344,7 +350,10 @@ mod tests {
         assert_eq!(retrieved_item.media_type, test_item.media_type);
         assert_eq!(retrieved_item.status, test_item.status);
         assert_eq!(retrieved_item.is_archive, test_item.is_archive);
-        assert_eq!(retrieved_item.is_main_archive_file, test_item.is_main_archive_file);
+        assert_eq!(
+            retrieved_item.is_main_archive_file,
+            test_item.is_main_archive_file
+        );
         assert_eq!(retrieved_item.attempts, test_item.attempts);
         assert_eq!(retrieved_item.title, test_item.title);
         assert_eq!(retrieved_item.year, test_item.year);
@@ -352,7 +361,6 @@ mod tests {
         assert_eq!(retrieved_item.episode, test_item.episode);
         // Note: We might not want to check the timestamp because it might suffer slight differences.
         assert_eq!(retrieved_item.timestamp, test_item.timestamp);
-
     }
 
     #[test]
@@ -395,7 +403,10 @@ mod tests {
         assert!(update_result.is_ok());
 
         // Retrieve and verify the update
-        let retrieved = controller.get_file_control(&test_item.full_path).unwrap().unwrap();
+        let retrieved = controller
+            .get_file_control(&test_item.full_path)
+            .unwrap()
+            .unwrap();
         assert_eq!(retrieved.status, CreatedEventItemStatus::Done);
         assert_eq!(retrieved.attempts, 5);
         assert_eq!(retrieved.title, "Updated Movie Title");
@@ -446,8 +457,14 @@ mod tests {
 
         assert!(retrieved1.is_some());
         assert!(retrieved2.is_some());
-        assert_eq!(retrieved1.unwrap().media_type, CreatedEventItemMediaType::Movie);
-        assert_eq!(retrieved2.unwrap().media_type, CreatedEventItemMediaType::TvShow);
+        assert_eq!(
+            retrieved1.unwrap().media_type,
+            CreatedEventItemMediaType::Movie
+        );
+        assert_eq!(
+            retrieved2.unwrap().media_type,
+            CreatedEventItemMediaType::TvShow
+        );
     }
 
     #[test]
@@ -470,7 +487,10 @@ mod tests {
 
             controller.add_file_control(&test_item).unwrap();
 
-            let retrieved = controller.get_file_control(&test_item.full_path).unwrap().unwrap();
+            let retrieved = controller
+                .get_file_control(&test_item.full_path)
+                .unwrap()
+                .unwrap();
             assert_eq!(retrieved.status, *status);
         }
     }
@@ -491,7 +511,10 @@ mod tests {
 
             controller.add_file_control(&test_item).unwrap();
 
-            let retrieved = controller.get_file_control(&test_item.full_path).unwrap().unwrap();
+            let retrieved = controller
+                .get_file_control(&test_item.full_path)
+                .unwrap()
+                .unwrap();
             assert_eq!(retrieved.media_type, *media_type);
         }
     }
@@ -509,7 +532,10 @@ mod tests {
 
         controller.add_file_control(&test_item).unwrap();
 
-        let retrieved = controller.get_file_control(&test_item.full_path).unwrap().unwrap();
+        let retrieved = controller
+            .get_file_control(&test_item.full_path)
+            .unwrap()
+            .unwrap();
         assert_eq!(retrieved.year, None);
         assert_eq!(retrieved.season, None);
         assert_eq!(retrieved.episode, None);
@@ -520,7 +546,11 @@ mod tests {
     #[case(2, false, true)]
     #[case(3, true, false)]
     #[case(4, true, true)]
-    fn test_file_control_with_boolean_flags(#[case] test_num: usize, #[case] is_archive: bool, #[case]  is_main_archive_file: bool) {
+    fn test_file_control_with_boolean_flags(
+        #[case] test_num: usize,
+        #[case] is_archive: bool,
+        #[case] is_main_archive_file: bool,
+    ) {
         let controller = FileStatusController::new(":memory:".to_string()).unwrap();
 
         let mut test_item = create_test_item();
@@ -530,9 +560,12 @@ mod tests {
 
         controller.add_file_control(&test_item).unwrap();
 
-        let retrieved = controller.get_file_control(&test_item.full_path).unwrap().unwrap();
+        let retrieved = controller
+            .get_file_control(&test_item.full_path)
+            .unwrap()
+            .unwrap();
         assert_eq!(retrieved.is_archive, is_archive);
-        assert_eq!(retrieved.is_main_archive_file, is_main_archive_file);        
+        assert_eq!(retrieved.is_main_archive_file, is_main_archive_file);
     }
 
     #[test]
@@ -548,7 +581,10 @@ mod tests {
 
         controller.add_file_control(&test_item).unwrap();
 
-        let retrieved = controller.get_file_control(&test_item.full_path).unwrap().unwrap();
+        let retrieved = controller
+            .get_file_control(&test_item.full_path)
+            .unwrap()
+            .unwrap();
         assert_eq!(retrieved.attempts, large_attempt);
     }
 
