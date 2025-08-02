@@ -3312,11 +3312,13 @@ dependencies = [
  "async-trait",
  "chrono",
  "dotenv",
+ "notify",
  "reqwest",
  "rusqlite",
  "serde",
  "shared",
  "tokio",
+ "tracing-log",
 ]
 
 [[package]]

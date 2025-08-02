@@ -1,12 +1,16 @@
 use crate::system::get_current_working_dir::get_current_working_dir;
 use rusqlite::{Connection, Result, Row, ToSql};
 use std::path::PathBuf;
+use anyhow::Context;
 
 /// The generic database wrapper struct.
 pub struct GenericDb {
     conn: Connection,
 }
 
+/// Wrapper for the SQLite.
+/// Meant for simple use cases and prototyping. Most likely won't work with multi-thread
+/// applications.
 impl GenericDb {
     /// Initializes a new GenericDb instance.
     pub fn new(db_path: String) -> anyhow::Result<Self> {
@@ -17,7 +21,8 @@ impl GenericDb {
         let path = db_path.trim();
 
         let conn = if path == ":memory:" || path.eq_ignore_ascii_case("memory") {
-            Connection::open_in_memory()?
+            Connection::open_in_memory()
+                .context("Failed to open in-memory database")?
         } else {
             let mut pathbuf = PathBuf::from(path);
 
@@ -26,12 +31,13 @@ impl GenericDb {
                 pathbuf = cwd.join(pathbuf);
             }
 
-            if pathbuf.is_dir() {
-                let db_file = pathbuf.join("data.db");
-                Connection::open(db_file)?
+            let db_file = if pathbuf.is_dir() {
+                pathbuf.join("data.db")
             } else {
-                Connection::open(&pathbuf)?
-            }
+                pathbuf.clone()
+            };
+
+            Connection::open(db_file)?
         };
 
         Ok(GenericDb { conn })

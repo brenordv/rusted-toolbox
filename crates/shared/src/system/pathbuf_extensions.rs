@@ -1,8 +1,9 @@
-use anyhow::Context;
+use anyhow::{Result, Context};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
 
 static COMPRESSED_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
@@ -53,14 +54,59 @@ static MAIN_ZIP_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)^[^.]+\.zip$|\.zip\.0*1$").unwrap());
 
 pub trait PathBufExtensions {
+    fn next_available_file(&self) -> Result<PathBuf>;
     fn is_compressed(&self) -> bool;
     fn is_main_file_multi_part_compression(&self) -> bool;
-    fn absolute_to_string(&self) -> anyhow::Result<String>;
+    fn absolute_to_string(&self) -> Result<String>;
     fn is_image(&self) -> bool;
     fn is_subtitle(&self) -> bool;
+
 }
 
 impl PathBufExtensions for PathBuf {
+    fn next_available_file(&self) -> Result<PathBuf> {
+        // 1. Check if the file exists.
+        if !self.exists() {
+            // 2. If it doesn't, return self and we're done.
+            return Ok(self.clone());
+        }
+
+        // 3. If it exists, continue with the logic...
+
+        let ext = self.extension().and_then(|e| e.to_str());
+
+        let mut candidate = self.clone();
+
+        loop {
+            let stem = candidate.file_stem()
+                .and_then(|s| s.to_str())
+                .context("Failed to extract file stem")?;
+
+            // Check if filename ends with a number
+            if let Some((base, num)) = extract_number_suffix(stem) {
+                // 3. If the filename ends with a number, increase this number.
+                let new_num = num + 1;
+                let new_filename = match ext {
+                    Some(e) => format!("{}_{}.{}", base, new_num, e),
+                    None => format!("{}_{}", base, new_num),
+                };
+                candidate = self.with_file_name(new_filename);
+            } else {
+                // 4. If the filename does not end with a number, add _1 as a suffix before the file extension.
+                let new_filename = match ext {
+                    Some(e) => format!("{}_1.{}", stem, e),
+                    None => format!("{}_1", stem),
+                };
+                candidate = self.with_file_name(new_filename);
+            }
+
+            // 5. With the new filename, try again from 1.
+            if !candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
     fn is_compressed(&self) -> bool {
         self.as_path().is_compressed()
     }
@@ -69,7 +115,7 @@ impl PathBufExtensions for PathBuf {
         self.as_path().is_main_file_multi_part_compression()
     }
 
-    fn absolute_to_string(&self) -> anyhow::Result<String> {
+    fn absolute_to_string(&self) -> Result<String> {
         self.as_path().absolute_to_string()
     }
 
@@ -82,7 +128,23 @@ impl PathBufExtensions for PathBuf {
     }
 }
 
+/// Extracts base and numeric suffix, if present.
+/// Returns (base, num). E.g. "report_2" -> ("report", 2)
+fn extract_number_suffix(stem: &str) -> Option<(&str, usize)> {
+    let parts: Vec<&str> = stem.rsplitn(2, '_').collect();
+    if parts.len() == 2 {
+        if let Ok(num) = parts[0].parse() {
+            return Some((parts[1], num));
+        }
+    }
+    None
+}
+
 impl PathBufExtensions for Path {
+    fn next_available_file(&self) -> Result<PathBuf> {
+        self.to_path_buf().next_available_file()
+    }
+
     fn is_compressed(&self) -> bool {
         // Magic byte check (slower than checking the extension, but more accurate)
         if let Ok(Some(kind)) = infer::get_from_path(self) {
@@ -579,5 +641,110 @@ mod tests {
     fn test_is_main_file_multi_part_compression(#[case] filename: &str, #[case] expected: bool) {
         let path = Path::new(filename);
         assert_eq!(path.is_main_file_multi_part_compression(), expected);
+    }
+
+
+    #[rstest]
+    fn should_return_original_path_when_file_does_not_exist(temp_dir: TempDir) {
+        // Arrange
+        let file_path = temp_dir.path().join("nonexistent.txt");
+
+        // Act
+        let result = file_path.next_available_file().unwrap();
+
+        // Assert
+        assert_eq!(result, file_path);
+    }
+
+    #[rstest]
+    #[case::a("document.txt", "document_1.txt")]
+    #[case::b("document_5.txt", "document_6.txt")]
+    #[case::c("README", "README_1")]
+    #[case::c("README_3", "README_4")]
+    #[case::d("file_0.txt", "file_1.txt")]
+    #[case::e("file_999.txt", "file_1000.txt")]
+    #[case::f("my_test_file_2.txt", "my_test_file_3.txt")]
+    #[case::g("my_test_file_.txt", "my_test_file__1.txt")]
+    #[case::h(".hidden", ".hidden_1")]
+    #[case::i(".hidden.txt", ".hidden_1.txt")]
+    #[case::j("archive.tar.gz", "archive.tar_1.gz")]
+    #[case::k("文档.txt", "文档_1.txt")]
+    #[case::k("123", "123_1")]
+    #[case::k("456.txt", "456_1.txt")]
+    #[case::k("a.txt", "a_1.txt")]
+    #[case::k("report_v2.pdf", "report_v2_1.pdf")]
+    fn should_add_suffix_1_when_file_exists_without_number_suffix(temp_dir: TempDir, #[case] filename: &str, #[case] expected_file: &str) {
+        // Arrange
+        let original_path = temp_dir.path().join(filename);
+        File::create(&original_path).unwrap();
+
+        // Act
+        let result = original_path.next_available_file().unwrap();
+
+        // Assert
+        let expected = temp_dir.path().join(expected_file);
+        assert_eq!(result, expected);
+        assert!(!result.exists());
+    }
+
+    #[rstest]
+    fn should_find_next_available_when_multiple_files_exist(temp_dir: TempDir) {
+        // Arrange
+        let base_path = temp_dir.path().join("report.pdf");
+        let file1 = temp_dir.path().join("report_1.pdf");
+        let file2 = temp_dir.path().join("report_2.pdf");
+        let file3 = temp_dir.path().join("report_3.pdf");
+
+        File::create(&base_path).unwrap();
+        File::create(&file1).unwrap();
+        File::create(&file2).unwrap();
+        File::create(&file3).unwrap();
+
+        // Act
+        let result = base_path.next_available_file().unwrap();
+
+        // Assert
+        let expected = temp_dir.path().join("report_4.pdf");
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn should_handle_very_long_filename(temp_dir: TempDir) {
+        // Arrange
+        let long_name = "a".repeat(200);
+        let filename = format!("{}.txt", long_name);
+        let original_path = temp_dir.path().join(&filename);
+        File::create(&original_path).unwrap();
+
+        // Act
+        let result = original_path.next_available_file().unwrap();
+
+        // Assert
+        let expected_filename = format!("{}_1.txt", long_name);
+        let expected = temp_dir.path().join(expected_filename);
+        assert_eq!(result, expected);
+        assert!(!result.exists());
+    }
+
+    #[rstest]
+    fn should_handle_gap_in_numbered_sequence_starting_from_original(temp_dir: TempDir) {
+        // Arrange
+        let original_path = temp_dir.path().join("file.txt");
+        let file2 = temp_dir.path().join("file_2.txt");
+        let file4 = temp_dir.path().join("file_4.txt");
+
+        File::create(&original_path).unwrap();
+        // Skip file_1.txt - it doesn't exist
+        File::create(&file2).unwrap();
+        // Skip file_3.txt - it doesn't exist
+        File::create(&file4).unwrap();
+
+        // Act
+        let result = original_path.next_available_file().unwrap();
+
+        // Assert
+        let expected = temp_dir.path().join("file_1.txt");
+        assert_eq!(result, expected);
+        assert!(!result.exists());
     }
 }
