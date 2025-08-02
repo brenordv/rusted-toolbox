@@ -13,21 +13,23 @@ use shared::system::monitor_folder::EventType;
 use shared::system::pathbuf_extensions::PathBufExtensions;
 use std::path::PathBuf;
 use std::process::Command;
-use std::{env, fs};
 use std::time::Duration;
+use std::{env, fs};
 use tokio::time::sleep;
 use tracing_log::log::{debug, error};
 
 pub struct ProcessFileRoutine {
     file_status_controller: FileStatusController,
     guess: GuessItClient,
+    unrar_bin_path: String,
 }
 
 impl ProcessFileRoutine {
-    pub fn new(db_path: String, guess_it_base_url: String) -> Result<Self> {
+    pub fn new(db_path: String, guess_it_base_url: String, unrar_bin_path: String) -> Result<Self> {
         Ok(Self {
             file_status_controller: FileStatusController::new(db_path)?,
             guess: GuessItClient::new(guess_it_base_url),
+            unrar_bin_path,
         })
     }
 
@@ -76,7 +78,7 @@ impl ProcessFileRoutine {
                 CreatedEventItemStatus::New => {
                     if file_control_item.is_archive {
                         debug!("File is an archive. Decompressing...");
-                        let decompressed = Self::decompress_file(&entry)?;
+                        let decompressed = self.decompress_file(&entry)?;
                         if decompressed {
                             file_control_item.update_status(CreatedEventItemStatus::Done);
                             self.file_status_controller
@@ -223,7 +225,7 @@ impl ProcessFileRoutine {
     fn define_target_path(file_control_item: &CreatedEventItem) -> Result<String> {
         let mut title_as_filename = file_control_item.get_title_as_filename()?;
 
-        let mut path = PathBuf::new();
+        let mut path: PathBuf;
 
         match file_control_item.media_type {
             CreatedEventItemMediaType::Movie => {
@@ -257,13 +259,16 @@ impl ProcessFileRoutine {
 
         let path_as_str = path
             .to_str()
-            .context(format!("Failed to get {:?} path as string", file_control_item.media_type))?
+            .context(format!(
+                "Failed to get {:?} path as string",
+                file_control_item.media_type
+            ))?
             .to_string();
 
         Ok(path_as_str)
     }
 
-    fn decompress_file(file: &PathBuf) -> Result<bool> {
+    fn decompress_file(&self, file: &PathBuf) -> Result<bool> {
         // Get the parent directory to extract into
         let out_dir = file
             .parent()
@@ -306,7 +311,7 @@ impl ProcessFileRoutine {
         // For .rar files, try using `unrar` command-line tool
         if ext == "rar" {
             // Try invoking `unrar` if available
-            let status = Command::new("Z:\\dev\\projects\\rust\\rusted-toolbox\\UnRAR.exe")
+            let status = Command::new(self.unrar_bin_path.clone())
                 .arg("x")
                 .arg("-y") // auto-yes for prompts
                 .arg(file)
