@@ -14,6 +14,8 @@ use shared::system::pathbuf_extensions::PathBufExtensions;
 use std::path::PathBuf;
 use std::process::Command;
 use std::{env, fs};
+use std::time::Duration;
+use tokio::time::sleep;
 use tracing_log::log::{debug, error};
 
 pub struct ProcessFileRoutine {
@@ -93,7 +95,7 @@ impl ProcessFileRoutine {
                     let should_copy = Self::should_copy_file(&entry)?;
                     if !should_copy {
                         debug!("Nope, I'm not touching this. Moving on...");
-                        file_control_item.update_status(CreatedEventItemStatus::Done);
+                        file_control_item.update_status(CreatedEventItemStatus::Ignored);
                         self.file_status_controller
                             .update_file_control(&file_control_item)?;
                         continue;
@@ -103,7 +105,7 @@ impl ProcessFileRoutine {
                     self.file_status_controller
                         .update_file_control(&file_control_item)?;
 
-                    Self::copy_file(&file_control_item)?;
+                    Self::copy_file(&file_control_item).await?;
 
                     file_control_item.update_status(CreatedEventItemStatus::Done);
                     self.file_status_controller
@@ -386,7 +388,10 @@ impl ProcessFileRoutine {
         Ok(!extensions_to_skip.contains(&ext.as_str()))
     }
 
-    fn copy_file(file_control_item: &CreatedEventItem) -> Result<()> {
+    async fn copy_file(file_control_item: &CreatedEventItem) -> Result<()> {
+        const MAX_RETRIES: u32 = 3;
+        const BASE_DELAY_MS: u64 = 3000;
+
         let destination_folder = PathBuf::from(file_control_item.target_path.clone());
 
         destination_folder.ensure_directory_exists()?;
@@ -395,11 +400,33 @@ impl ProcessFileRoutine {
 
         let source = PathBuf::from(file_control_item.full_path.clone());
 
-        fs::copy(&source, &destination).context(format!(
-            "Failed to copy file from {:?} to {:?}",
-            file_control_item.full_path,
-            destination.display()
-        ))?;
+        for attempt in 1..=MAX_RETRIES {
+            match fs::copy(&source, &destination) {
+                Ok(_) => {
+                    return Ok(());
+                }
+                Err(e) => {
+                    if attempt == MAX_RETRIES {
+                        return Err(anyhow::anyhow!(
+                            "Failed to copy file from {:?} to {:?} after {} attempts. Last error: {}",
+                            file_control_item.full_path,
+                            destination.display(),
+                            MAX_RETRIES,
+                            e
+                        ));
+                    }
+
+                    let delay = Duration::from_millis(BASE_DELAY_MS * (2_u64.pow(attempt - 1)));
+
+                    debug!(
+                        "Copy attempt {} failed: {}. Retrying in {:?}...",
+                        attempt, e, delay
+                    );
+
+                    sleep(delay).await;
+                }
+            }
+        }
 
         Ok(())
     }
