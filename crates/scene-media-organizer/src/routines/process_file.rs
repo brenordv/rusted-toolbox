@@ -11,9 +11,9 @@ use notify::Event;
 use shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use shared::system::monitor_folder::EventType;
 use shared::system::pathbuf_extensions::PathBufExtensions;
-use std::{env, fs};
 use std::path::PathBuf;
 use std::process::Command;
+use std::{env, fs};
 use tracing_log::log::{debug, error};
 
 pub struct ProcessFileRoutine {
@@ -83,7 +83,7 @@ impl ProcessFileRoutine {
                         } else {
                             error!("Failed to decompress file.");
                         }
-                        
+
                         // After decompressing the file, it will trigger this event more times,
                         // so we don't need to do anything else.
                         continue;
@@ -109,7 +109,10 @@ impl ProcessFileRoutine {
                     self.file_status_controller
                         .update_file_control(&file_control_item)?;
 
-                    debug!("Alright! This file was copied! \\o/: {:?}", file_control_item.full_path);
+                    debug!(
+                        "Alright! This file was copied! \\o/: {:?}",
+                        file_control_item.full_path
+                    );
                 }
                 CreatedEventItemStatus::Identified => {}
                 CreatedEventItemStatus::Prepared => {}
@@ -165,7 +168,9 @@ impl ProcessFileRoutine {
 
         let is_main_archive_file = full_path.is_main_file_multi_part_compression();
 
-        let status = if (is_archive & !is_main_archive_file) || item_type == CreatedEventItemFileType::Directory {
+        let status = if (is_archive & !is_main_archive_file)
+            || item_type == CreatedEventItemFileType::Directory
+        {
             CreatedEventItemStatus::Ignored
         } else {
             CreatedEventItemStatus::New
@@ -214,7 +219,11 @@ impl ProcessFileRoutine {
     }
 
     fn define_target_path(file_control_item: &CreatedEventItem) -> Result<String> {
-        let title_as_filename = file_control_item.get_title_as_filename()?;
+        let mut title_as_filename = file_control_item.get_title_as_filename()?;
+
+        if let Some(year) = file_control_item.year {
+            title_as_filename.push_str(&format!("--{}", year));
+        }
 
         match file_control_item.media_type {
             CreatedEventItemMediaType::Movie => {
@@ -385,7 +394,7 @@ impl ProcessFileRoutine {
         let destination = destination_folder.join(file_control_item.file_name.clone());
 
         let source = PathBuf::from(file_control_item.full_path.clone());
-        
+
         fs::copy(&source, &destination).context(format!(
             "Failed to copy file from {:?} to {:?}",
             file_control_item.full_path,

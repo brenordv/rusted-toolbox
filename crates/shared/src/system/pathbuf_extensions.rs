@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
-use regex::Regex;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -44,12 +43,6 @@ static SUBTITLE_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     .cloned()
     .collect()
 });
-
-static MAIN_RAR_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)^[^.]+\.rar$|\.part0*1\.rar$").unwrap());
-static MAIN_7Z_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\.7z\.0*1$").unwrap());
-static MAIN_ZIP_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)^[^.]+\.zip$|\.zip\.0*1$").unwrap());
 
 pub trait PathBufExtensions {
     fn next_available_file(&self) -> Result<PathBuf>;
@@ -186,8 +179,8 @@ impl PathBufExtensions for Path {
                 continue;
             }
             return true;
-        };
-        
+        }
+
         false
     }
 
