@@ -3314,9 +3314,11 @@ dependencies = [
  "dotenv",
  "notify",
  "reqwest",
+ "rstest",
  "rusqlite",
  "serde",
  "shared",
+ "tempfile",
  "tokio",
  "tracing-log",
 ]
