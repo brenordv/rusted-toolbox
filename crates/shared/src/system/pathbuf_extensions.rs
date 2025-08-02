@@ -181,7 +181,14 @@ impl PathBufExtensions for Path {
             None => return false,
         };
 
-        COMPRESSED_EXTENSIONS.contains(file_name.as_str())
+        for ext in COMPRESSED_EXTENSIONS.iter() {
+            if !file_name.ends_with(ext) {
+                continue;
+            }
+            return true;
+        };
+        
+        false
     }
 
     fn absolute_to_string(&self) -> anyhow::Result<String> {

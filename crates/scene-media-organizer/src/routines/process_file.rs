@@ -11,7 +11,7 @@ use notify::Event;
 use shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use shared::system::monitor_folder::EventType;
 use shared::system::pathbuf_extensions::PathBufExtensions;
-use std::env;
+use std::{env, fs};
 use std::path::PathBuf;
 use std::process::Command;
 use tracing_log::log::{debug, error};
@@ -76,14 +76,40 @@ impl ProcessFileRoutine {
                         debug!("File is an archive. Decompressing...");
                         let decompressed = Self::decompress_file(&entry)?;
                         if decompressed {
-                            file_control_item.status = CreatedEventItemStatus::Prepared;
+                            file_control_item.update_status(CreatedEventItemStatus::Done);
                             self.file_status_controller
                                 .update_file_control(&file_control_item)?;
+                            debug!("Ok, we're done with this file.");
                         } else {
                             error!("Failed to decompress file.");
                         }
+                        
+                        // After decompressing the file, it will trigger this event more times,
+                        // so we don't need to do anything else.
+                        continue;
                     }
-                    debug!("Hey, this is a new file: {:?}", file_control_item.full_path);
+
+                    debug!("Should I copy this file to the target path?");
+                    let should_copy = Self::should_copy_file(&entry)?;
+                    if !should_copy {
+                        debug!("Nope, I'm not touching this. Moving on...");
+                        file_control_item.update_status(CreatedEventItemStatus::Done);
+                        self.file_status_controller
+                            .update_file_control(&file_control_item)?;
+                        continue;
+                    }
+
+                    file_control_item.update_status(CreatedEventItemStatus::Copying);
+                    self.file_status_controller
+                        .update_file_control(&file_control_item)?;
+
+                    Self::copy_file(&file_control_item)?;
+
+                    file_control_item.update_status(CreatedEventItemStatus::Done);
+                    self.file_status_controller
+                        .update_file_control(&file_control_item)?;
+
+                    debug!("Alright! This file was copied! \\o/: {:?}", file_control_item.full_path);
                 }
                 CreatedEventItemStatus::Identified => {}
                 CreatedEventItemStatus::Prepared => {}
@@ -139,7 +165,7 @@ impl ProcessFileRoutine {
 
         let is_main_archive_file = full_path.is_main_file_multi_part_compression();
 
-        let status = if is_archive & !is_main_archive_file {
+        let status = if (is_archive & !is_main_archive_file) || item_type == CreatedEventItemFileType::Directory {
             CreatedEventItemStatus::Ignored
         } else {
             CreatedEventItemStatus::New
@@ -311,5 +337,59 @@ impl ProcessFileRoutine {
 
         // Unsupported file format
         Ok(false)
+    }
+
+    fn should_copy_file(file: &PathBuf) -> Result<bool> {
+        // Copying folders would be a mess...
+        if file.is_dir() {
+            return Ok(false);
+        }
+
+        // Don't care about sample files.
+        if file.to_string_lossy().to_lowercase().contains("sample") {
+            return Ok(false);
+        };
+
+        // I won't copy any compressed files.
+        if file.is_compressed() {
+            return Ok(false);
+        }
+
+        // Get file extension, we need to check that.
+        let ext_opt = file
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase());
+
+        // Also don't care about files without an extension.
+        let ext = match ext_opt {
+            Some(ref e) if !e.is_empty() => e,
+            _ => return Ok(false),
+        };
+
+        // For this use case, I also don't want to copy any of those files.
+        let extensions_to_skip = [
+            "sh", "bat", "ps1", "py", "js", "rb", "pl", "php", "lua", // Executables
+            "exe", "dll", "bin", "so", "out", // Compressed
+            "zip", "rar", "7z", "gz", "bz2", "xz", "tar", // Just in case
+        ];
+
+        Ok(!extensions_to_skip.contains(&ext.as_str()))
+    }
+
+    fn copy_file(file_control_item: &CreatedEventItem) -> Result<()> {
+        let destination_folder = PathBuf::from(file_control_item.target_path.clone());
+
+        destination_folder.ensure_directory_exists()?;
+
+        let destination = destination_folder.join(file_control_item.file_name.clone());
+
+        fs::copy(&destination, &destination).context(format!(
+            "Failed to copy file from {:?} to {:?}",
+            file_control_item.full_path,
+            destination.display()
+        ))?;
+
+        Ok(())
     }
 }
