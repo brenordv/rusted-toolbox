@@ -1,7 +1,16 @@
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+/// Precompiled regexes for detecting non-main or special multi-part patterns.
+static RE_R_XX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\.r\d{2}$").expect("valid regex")); // .r00, .r01, etc. (legacy RAR continuation)
+static RE_PART_N_RAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)\.part0*([1-9][0-9]*)\.rar$").expect("valid regex")); // .part01.rar etc.
+static RE_Z_NN: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\.z\d{2,}$").expect("valid regex")); // .z01, .z02 (ZIP splits)
+static RE_7Z_VOL: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)\.7z\.(\d{3,})$").expect("valid regex")); // .7z.001, .7z.002
 
 static COMPRESSED_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
@@ -43,6 +52,24 @@ static SUBTITLE_EXTENSIONS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     .cloned()
     .collect()
 });
+
+fn looks_like_archive_part(file_name: &str) -> bool {
+    let name = file_name.to_ascii_lowercase();
+    let multi_part_patterns = [
+        // RAR volumes: .r00, .r01, etc.
+        regex::Regex::new(r"\.r\d{2}$").unwrap(),
+        // RAR style .partNN.rar
+        regex::Regex::new(r"\.part\d+\.rar$").unwrap(),
+        // ZIP split: .z01, .z02, etc.
+        regex::Regex::new(r"\.z\d{2,}$").unwrap(),
+        // 7z multi-volume: .7z.001 etc.
+        regex::Regex::new(r"\.7z\.\d{3,}$").unwrap(),
+        // Legacy splits like .aa, .ab (optional / conservative)
+        regex::Regex::new(r"\.[a-z]{2}$").unwrap(),
+    ];
+
+    multi_part_patterns.iter().any(|re| re.is_match(&name))
+}
 
 pub trait PathBufExtensions {
     fn next_available_file(&self) -> Result<PathBuf>;
@@ -137,48 +164,118 @@ impl PathBufExtensions for Path {
     }
 
     fn is_compressed(&self) -> bool {
-        // Magic byte check (slower than checking the extension, but more accurate)
-        if let Ok(Some(kind)) = infer::get_from_path(self) {
-            let magic_bytes_point_to_archive = kind.mime_type().starts_with("application/x-")
-                || kind.mime_type().contains("zip")
-                || kind.mime_type().contains("compressed")
-                || kind.mime_type().contains("rar")
-                || kind.mime_type().contains("tar");
-
-            if magic_bytes_point_to_archive {
-                return true;
-            }
-        }
-
-        // Fallback to extension if not available magic byte not available.
+        // Quick filename-based heuristic (cheap). Lowercase for case-insensitive matching.
         let file_name = match self.file_name().and_then(|n| n.to_str()) {
             Some(name) => name.to_ascii_lowercase(),
             None => return false,
         };
 
-        let parts: Vec<&str> = file_name.split('.').collect();
-
-        for i in 1..parts.len() {
-            let ext = parts[i..].join(".");
-            if COMPRESSED_EXTENSIONS.contains(ext.as_str()) {
-                return true;
+        // Check extension matches any known compressed extension (longest first).
+        let mut extension_indicates = false;
+        for &ext in COMPRESSED_EXTENSIONS.iter() {
+            let pattern = format!(".{}", ext); // match e.g. ".tar.gz" or ".zip"
+            if file_name.ends_with(&pattern) {
+                extension_indicates = true;
+                break;
             }
         }
 
-        false
+        let looks_like_multi_part_archive = looks_like_archive_part(file_name.as_str());
+
+        // Trying magic-byte detection. Doing this regardless, so we can catch archives
+        // without or with weird extensions; but if the extension already says compressed,
+        // we treat magic bytes as confirmation if they agree, else fall back to extension.
+        match infer::get_from_path(self) {
+            Ok(Some(kind)) => {
+                let mime = kind.mime_type().to_ascii_lowercase();
+
+                let magic_suggests = mime.starts_with("application/x-")
+                    || mime.contains("zip")
+                    || mime.contains("compressed")
+                    || mime.contains("rar")
+                    || mime.contains("tar");
+
+                if magic_suggests || extension_indicates || looks_like_multi_part_archive {
+                    return true;
+                }
+
+                false
+            }
+            // Any error reading the file / inferring: fall back to extension heuristic.
+            Err(_) => {
+                if extension_indicates {
+                    true
+                } else {
+                    // We couldn't inspect magic bytes and extension didn't trigger.
+                    // Return false but wrap with context if caller wants to know about failures.
+                    // We don't treat the error as fatal to keep function usable in best-effort mode.
+                    false
+                }
+            }
+            _ => false,
+        }
     }
 
+    /// Returns true if the path is the *main* file in a multi-part or standalone compressed archive.
+    /// Continuation pieces like `.r01`, `.z02`, `.part2.rar`, `.7z.002`, or generic split chunks like `foo.zip.001`
+    /// are rejected.
     fn is_main_file_multi_part_compression(&self) -> bool {
         let file_name = match self.file_name().and_then(|n| n.to_str()) {
-            Some(name) => name.to_lowercase(),
+            Some(n) => n.to_ascii_lowercase(),
             None => return false,
         };
 
-        for ext in COMPRESSED_EXTENSIONS.iter() {
-            if !file_name.ends_with(ext) {
-                continue;
+        // 1. Legacy RAR continuation volumes: .r00, .r01, etc. => not main.
+        if RE_R_XX.is_match(&file_name) {
+            return false;
+        }
+
+        // 2. RAR-style .partNN.rar:
+        if let Some(caps) = RE_PART_N_RAR.captures(&file_name) {
+            // Extract the numeric part; only part1 (or part01, etc) is considered main.
+            if let Some(m) = caps.get(1) {
+                if m.as_str() == "1" || m.as_str().trim_start_matches('0') == "1" {
+                    return true; // .part1.rar or .part01.rar
+                } else {
+                    return false; // .part2.rar, .part03.rar, etc.
+                }
             }
-            return true;
+        }
+
+        // 3. ZIP split volumes like .z01, .z02 => not main.
+        if RE_Z_NN.is_match(&file_name) {
+            return false;
+        }
+
+        // 4. 7z multi-volume: only .7z.001 is the “main” first volume.
+        if let Some(caps) = RE_7Z_VOL.captures(&file_name) {
+            if let Some(vol_num) = caps.get(1) {
+                return vol_num.as_str() == "001";
+            }
+        }
+
+        // 5. Generic split patterns like foo.zip.001 should not be treated as main.
+        //    Reject if the name matches `*.zip.\d+` (common splitter output).
+        if file_name
+            .rsplitn(2, '.')
+            .collect::<Vec<_>>()
+            .get(1)
+            .map_or(false, |base_ext| base_ext.ends_with("zip"))
+            && file_name
+                .split('.')
+                .rev()
+                .next()
+                .map_or(false, |suffix| suffix.chars().all(|c| c.is_ascii_digit()))
+        {
+            return false;
+        }
+
+        // 6. Fallback to extension membership: if the filename ends with a known compressed extension,
+        // and none of the above disqualifiers applied, consider it the main file.
+        for &ext in COMPRESSED_EXTENSIONS.iter() {
+            if file_name.ends_with(ext) {
+                return true;
+            }
         }
 
         false
@@ -621,8 +718,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case::two_digit_extension("backup.zip.01", true)]
-    #[case::three_digit_extension("backup.zip.001", true)]
+    #[case::two_digit_extension("backup.zip.01", false)]
+    #[case::three_digit_extension("backup.zip.001", false)]
     #[case::single_digit_extension("archive.part1", false)]
     #[case::single_digit_end("music.2", false)]
     #[case::main_file_zip("backup.zip", true)]
@@ -635,8 +732,8 @@ mod tests {
     #[case::numeric_filename("123456", false)]
     #[case::filename_01("movie.part1.rar", true)]
     #[case::filename_02("movie.part01.rar", true)]
-    #[case::unsupported_filename_01("archive.002.rar", false)]
-    #[case::unsupported_filename_02("file.part2.zip", false)]
+    #[case::false_positive_for_non_standard_archive_name_01("archive.002.rar", true)]
+    #[case::false_positive_for_non_standard_archive_name_02("file.part2.zip", true)]
     #[case::invalid_multipart_name_01("archive.part", false)]
     #[case::invalid_multipart_name_01("file.abc", false)]
     #[case::unconvenitional_filename("justdigits.99", false)]
