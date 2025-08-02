@@ -3,6 +3,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use tracing::debug;
 
 /// Precompiled regexes for detecting non-main or special multi-part patterns.
 static RE_R_XX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\.r\d{2}$").expect("valid regex")); // .r00, .r01, etc. (legacy RAR continuation)
@@ -195,6 +196,8 @@ impl PathBufExtensions for Path {
                     || mime.contains("rar")
                     || mime.contains("tar");
 
+                debug!("Mime Type for file: [{}][{}] ", mime, self.display());
+
                 if magic_suggests || extension_indicates || looks_like_multi_part_archive {
                     return true;
                 }
@@ -203,7 +206,7 @@ impl PathBufExtensions for Path {
             }
             // Any error reading the file / inferring: fall back to extension heuristic.
             Err(_) => {
-                if extension_indicates {
+                if extension_indicates || looks_like_multi_part_archive {
                     true
                 } else {
                     // We couldn't inspect magic bytes and extension didn't trigger.

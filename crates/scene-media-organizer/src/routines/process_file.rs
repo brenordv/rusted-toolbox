@@ -16,13 +16,15 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
+use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
-use tracing_log::log::{debug, error};
+use tracing_log::log::{debug, error, info};
 
 pub struct ProcessFileRoutine {
     file_status_controller: FileStatusController,
     guess: GuessItClient,
     runtime_config: WatchdogRuntimeConfig,
+    decompress_file_task_channel: Option<Sender<String>>,
 }
 
 impl ProcessFileRoutine {
@@ -31,6 +33,19 @@ impl ProcessFileRoutine {
             file_status_controller: FileStatusController::new(runtime_config.db_data_file.clone())?,
             guess: GuessItClient::new(runtime_config.guess_it_api_base_url.clone()),
             runtime_config: runtime_config.clone(),
+            decompress_file_task_channel: None,
+        })
+    }
+
+    pub fn new_with_channel(
+        runtime_config: &WatchdogRuntimeConfig,
+        decompress_file_task_channel: Sender<String>,
+    ) -> Result<Self> {
+        Ok(Self {
+            file_status_controller: FileStatusController::new(runtime_config.db_data_file.clone())?,
+            guess: GuessItClient::new(runtime_config.guess_it_api_base_url.clone()),
+            runtime_config: runtime_config.clone(),
+            decompress_file_task_channel: Some(decompress_file_task_channel),
         })
     }
 
@@ -78,19 +93,16 @@ impl ProcessFileRoutine {
             match file_control_item.status {
                 CreatedEventItemStatus::New => {
                     if file_control_item.is_archive {
-                        debug!("File is an archive. Decompressing...");
-                        let decompressed = self.decompress_file(&entry)?;
-                        if decompressed {
-                            file_control_item.update_status(CreatedEventItemStatus::Done);
-                            self.file_status_controller
-                                .update_file_control(&file_control_item)?;
-                            debug!("Ok, we're done with this file.");
-                        } else {
-                            error!("Failed to decompress file.");
-                        }
+                        debug!("File is an archive. Notifying that decompression is needed...");
+                        match self.decompress_file_task_channel {
+                            Some(ref channel) => {
+                                channel.send(entry_str).await?;
+                            }
+                            None => {
+                                error!("Failed to send decompression task to channel.");
+                            }
+                        };
 
-                        // After decompressing the file, it will trigger this event more times,
-                        // so we don't need to do anything else.
                         continue;
                     }
 
@@ -133,6 +145,51 @@ impl ProcessFileRoutine {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn handle_decompress_file(&self, target_file: String) -> Result<()> {
+        match self.file_status_controller.get_file_control(&target_file)? {
+            None => {
+                anyhow::bail!(format!("File not found in database: {}", target_file));
+            }
+            Some(mut file_control_item) => {
+                let target_file = &file_control_item.get_full_path_as_path_buf();
+
+                let mut current_attempts: usize = 0;
+                const MAX_ATTEMPTS: usize = 5;
+                const QUIET_TIME_MS: u64 = 10000;
+
+                while current_attempts <= MAX_ATTEMPTS {
+                    current_attempts += 1;
+
+                    match self.decompress_file(&target_file) {
+                        Ok(success) => {
+                            if success {
+                                file_control_item.update_status(CreatedEventItemStatus::Done);
+                                self.file_status_controller
+                                    .update_file_control(&file_control_item)?;
+                                // After decompressing the file, it will trigger this event more times,
+                                // so we don't need to do anything else.
+                                debug!("Ok, we're done with this file.");
+                                return Ok(());
+                            } else {
+                                error!("Failed to decompress file.");
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to decompress file: {}", e);
+                        }
+                    }
+
+                    info!(
+                        "Decompressing file failed. Trying again in {} ms...",
+                        QUIET_TIME_MS
+                    );
+                    let _ = sleep(Duration::from_millis(QUIET_TIME_MS));
+                }
+            }
+        }
         Ok(())
     }
 

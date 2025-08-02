@@ -39,6 +39,10 @@ impl GenericDb {
             Connection::open(db_file)?
         };
 
+        conn.pragma_update(None, "journal_mode", &"WAL")?;
+        conn.pragma_update(None, "synchronous", &"NORMAL")?;
+        //conn.set_busy_timeout(std::time::Duration::from_secs(5))?;
+
         Ok(GenericDb { conn })
     }
 

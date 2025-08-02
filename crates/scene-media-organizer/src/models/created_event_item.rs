@@ -112,6 +112,10 @@ impl CreatedEventItem {
     pub fn update_status(&mut self, new_status: CreatedEventItemStatus) {
         self.status = new_status;
     }
+
+    pub fn get_full_path_as_path_buf(&self) -> std::path::PathBuf {
+        std::path::PathBuf::from(self.full_path.clone())
+    }
 }
 
 #[cfg(test)]

@@ -44,7 +44,7 @@ pub fn get_runtime_info() -> Result<WatchdogRuntimeConfig> {
     let guess_it_api_base_url = env::var("SMO_WATCHDOG_GUESS_IT_API_BASE_URL")
         .context("SMO_WATCHDOG_GUESS_IT_API_BASE_URL is not set")?;
 
-    let unrar_bin_path = env::var("SMO_WATCHDOG_unrar_bin_path").unwrap_or("unrar".to_string());
+    let unrar_bin_path = env::var("SMO_WATCHDOG_UNRAR_BIN_PATH").unwrap_or("unrar".to_string());
 
     Ok(WatchdogRuntimeConfig::new(
         watch_folder,
