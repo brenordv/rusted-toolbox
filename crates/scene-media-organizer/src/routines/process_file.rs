@@ -52,6 +52,10 @@ impl ProcessFileRoutine {
                 .context("Failed to convert path to string.")?
                 .to_string();
 
+            if entry_str.ends_with("Stephen King") {
+                debug!("Skipping file: {:?}", entry);
+            }
+
             let mut file_control_item =
                 match self.file_status_controller.get_file_control(&entry_str)? {
                     Some(file_control_item) => {
@@ -223,33 +227,26 @@ impl ProcessFileRoutine {
     fn define_target_path(file_control_item: &CreatedEventItem) -> Result<String> {
         let mut title_as_filename = file_control_item.get_title_as_filename()?;
 
-        if let Some(year) = file_control_item.year {
-            title_as_filename.push_str(&format!("--{}", year));
-        }
+        let mut path = PathBuf::new();
 
         match file_control_item.media_type {
             CreatedEventItemMediaType::Movie => {
                 let base_movie_folder = env::var("SMO_WATCHDOG_WATCH_BASE_MOVIE_FOLDER")
                     .context("SMO_WATCHDOG_WATCH_BASE_MOVIE_FOLDER not found in .env file")?;
 
-                let mut path = PathBuf::from(base_movie_folder);
+                path = PathBuf::from(base_movie_folder);
+
+                if let Some(year) = file_control_item.year {
+                    title_as_filename.push_str(&format!("--{}", year));
+                }
 
                 path.push(title_as_filename);
-
-                path.ensure_directory_exists()?;
-
-                let path_as_str = path
-                    .to_str()
-                    .context("Failed to get movie path as string")?
-                    .to_string();
-
-                Ok(path_as_str)
             }
             CreatedEventItemMediaType::TvShow => {
                 let base_tv_folder = env::var("SMO_WATCHDOG_WATCH_BASE_TVSHOW_FOLDER")
                     .context("SMO_WATCHDOG_WATCH_BASE_TVSHOW_FOLDER not found in .env file")?;
 
-                let mut path = PathBuf::from(base_tv_folder);
+                path = PathBuf::from(base_tv_folder);
 
                 path.push(title_as_filename);
 
@@ -259,17 +256,15 @@ impl ProcessFileRoutine {
                 };
 
                 path.push(season);
-
-                path.ensure_directory_exists()?;
-
-                let path_as_str = path
-                    .to_str()
-                    .context("Failed to get tv show path as string")?
-                    .to_string();
-
-                Ok(path_as_str)
             }
-        }
+        };
+
+        let path_as_str = path
+            .to_str()
+            .context(format!("Failed to get {:?} path as string", file_control_item.media_type))?
+            .to_string();
+
+        Ok(path_as_str)
     }
 
     fn decompress_file(file: &PathBuf) -> Result<bool> {
@@ -389,8 +384,13 @@ impl ProcessFileRoutine {
     }
 
     async fn copy_file(file_control_item: &CreatedEventItem) -> Result<()> {
-        const MAX_RETRIES: u32 = 3;
+        // TODO Mk2: Make this configurable.
+        const MAX_RETRIES: u32 = 5;
         const BASE_DELAY_MS: u64 = 3000;
+
+        if file_control_item.target_path.is_empty() {
+            anyhow::bail!("Target path is empty. This should never happen.");
+        }
 
         let destination_folder = PathBuf::from(file_control_item.target_path.clone());
 
