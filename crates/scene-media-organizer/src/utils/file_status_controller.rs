@@ -3,6 +3,7 @@ use crate::models::created_event_item::{
 };
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use rusqlite::ToSql;
 use shared::sqlite::generic_db::GenericDb;
 
 pub struct FileStatusController {
@@ -150,5 +151,47 @@ impl FileStatusController {
         }
 
         Ok(result.get(0).cloned())
+    }
+    
+    pub fn add_file_control(&self, item: &CreatedEventItem) -> Result<()> {
+        let insert_sql = r#"
+            INSERT INTO files (
+                full_path,
+                file_name,
+                parent,
+                target_path,
+                item_type,
+                media_type,
+                status,
+                is_archive,
+                is_main_archive_file,
+                attempts,
+                title,
+                year,
+                season,
+                episode,
+                timestamp,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#;
+
+        self.db.execute(insert_sql, &[
+            &item.full_path,
+            &item.file_name,
+            &item.parent,
+            &item.target_path,
+            &format!("{:?}", item.item_type),
+            &format!("{:?}", item.media_type),
+            &format!("{:?}", item.status),
+            &item.is_archive as &dyn ToSql,
+            &item.is_main_archive_file as &dyn ToSql,
+            &item.attempts,
+            &item.title,
+            &item.year,
+            &item.season,
+            &item.episode,
+            &item.timestamp.to_rfc3339(),
+        ])?;
+
+        Ok(())
     }
 }
