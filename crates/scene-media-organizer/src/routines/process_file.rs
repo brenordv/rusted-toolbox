@@ -63,7 +63,13 @@ impl ProcessFileRoutine {
         );
 
         for entry in created_entries {
-            debug!("Processing file: {:?}", entry);
+            info!("Waiting for file to stabilize: {:?}", entry);
+            if !Self::wait_for_file_stability(&entry).await? {
+                error!("File is not stable. Moving on...");
+                continue;
+            }
+
+            info!("File is stable. Processing it...");
 
             let entry_str = entry
                 .to_str()
@@ -488,5 +494,40 @@ impl ProcessFileRoutine {
         }
 
         Ok(())
+    }
+
+    async fn wait_for_file_stability(file_path: &PathBuf) -> Result<bool> {
+        let mut last_size = None;
+        let mut stable_count = 0;
+
+        const TIMEOUT_SECS: u64 = 120;
+        const REQUIRED_STABLE_CHECKS: u8 = 3;
+        const CHECK_INTERVAL_MS: u64 = 1000;
+
+        for _ in 0..(TIMEOUT_SECS * 1000 / CHECK_INTERVAL_MS) {
+            match fs::metadata(file_path) {
+                Ok(metadata) => {
+                    let current_size = metadata.len();
+
+                    if Some(current_size) == last_size {
+                        stable_count += 1;
+                        if stable_count >= REQUIRED_STABLE_CHECKS {
+                            return Ok(true);
+                        }
+                    } else {
+                        stable_count = 0;
+                    }
+
+                    last_size = Some(current_size);
+                }
+                Err(_) => {
+                    stable_count = 0;
+                }
+            }
+
+            sleep(Duration::from_millis(CHECK_INTERVAL_MS)).await;
+        }
+
+        Ok(false)
     }
 }
