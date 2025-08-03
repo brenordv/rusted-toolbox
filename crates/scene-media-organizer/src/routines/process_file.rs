@@ -156,11 +156,22 @@ impl ProcessFileRoutine {
             Some(mut file_control_item) => {
                 let target_file = &file_control_item.get_full_path_as_path_buf();
 
-                let mut current_attempts: usize = 0;
-                const MAX_ATTEMPTS: usize = 5;
+                let mut current_attempts: u64 = 0;
+                const MAX_ATTEMPTS: u64 = 5;
                 const QUIET_TIME_MS: u64 = 10000;
 
                 while current_attempts <= MAX_ATTEMPTS {
+                    let current_quiet_time = current_attempts * QUIET_TIME_MS;
+
+                    if current_quiet_time > 0 {
+                        info!(
+                            "Decompressing file failed. Trying again in {} ms...",
+                            &current_quiet_time
+                        );
+                    }
+
+                    let _ = sleep(Duration::from_millis(current_quiet_time));
+
                     current_attempts += 1;
 
                     match self.decompress_file(&target_file) {
@@ -181,12 +192,6 @@ impl ProcessFileRoutine {
                             error!("Failed to decompress file: {}", e);
                         }
                     }
-
-                    info!(
-                        "Decompressing file failed. Trying again in {} ms...",
-                        QUIET_TIME_MS
-                    );
-                    let _ = sleep(Duration::from_millis(QUIET_TIME_MS));
                 }
             }
         }

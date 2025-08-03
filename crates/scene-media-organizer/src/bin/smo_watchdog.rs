@@ -36,10 +36,8 @@ async fn main() -> Result<()> {
                     let _ = decompression_task_file_processor.handle_decompress_file(main_path_str);
                 }
 
-                // tick to drive debounce
-                _ = sleep(Duration::from_millis(1000)) => {
-
-                }
+                // tick. even with no messages, this runs every time.
+                _ = sleep(Duration::from_millis(1000)) => {}
             }
         }
     });
