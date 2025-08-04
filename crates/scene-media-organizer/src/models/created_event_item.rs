@@ -38,7 +38,9 @@ impl FromStr for CreatedEventItemMediaType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "movie" => Ok(CreatedEventItemMediaType::Movie),
-            "tvshow" | "tv-show" | "tv show" | "episode" => Ok(CreatedEventItemMediaType::TvShow),
+            "tvshow" | "tv-show" | "tv show" | "episode" | "tv" => {
+                Ok(CreatedEventItemMediaType::TvShow)
+            }
             _ => Err(format!("Unknown media type: {}", s)),
         }
     }

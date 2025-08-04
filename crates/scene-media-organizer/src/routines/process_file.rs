@@ -234,7 +234,7 @@ impl ProcessFileRoutine {
         };
 
         let media_type = guess_it_data
-            .r#type
+            .media_type
             .parse::<CreatedEventItemMediaType>()
             .unwrap();
 
