@@ -11,12 +11,14 @@
 use crate::system::ensure_directory_exists::EnsureDirectoryExists;
 use anyhow::Result;
 use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
-use notify::{Event, EventKind, RecursiveMode, Watcher};
+use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::future::Future;
-use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::path::PathBuf;
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio::time::sleep;
 use tracing::debug;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -74,14 +76,14 @@ pub async fn monitor_folder_for_on_created_only<Fut, F>(
     on_created_handler: F,
 ) -> Result<()>
 where
-    F: Fn(Event, EventType, PathBuf) -> Fut,
+    F: Fn(PathBuf, EventType, PathBuf) -> Fut,
     Fut: Future<Output = Result<()>>,
 {
     let path = PathBuf::from(folder_to_watch);
 
     path.ensure_directory_exists()?;
 
-    monitor_folder(
+    monitor_folder2(
         folder_to_watch,
         None,
         None,
@@ -95,7 +97,7 @@ where
     Ok(())
 }
 
-pub async fn monitor_folder<Fut, F>(
+pub async fn monitor_folder2<Fut, F>(
     folder_to_watch: &str,
     on_any_handler: Option<F>,
     on_access_handler: Option<F>,
@@ -105,86 +107,108 @@ pub async fn monitor_folder<Fut, F>(
     on_other_handler: Option<F>,
 ) -> Result<()>
 where
-    F: Fn(Event, EventType, PathBuf) -> Fut,
+    F: Fn(PathBuf, EventType, PathBuf) -> Fut,
     Fut: Future<Output = Result<()>>,
 {
-    let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
+    let (tx, mut rx) = mpsc::channel(100);
 
-    let mut watcher = notify::recommended_watcher(tx)?;
+    let mut watcher = recommended_watcher(move |res| {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            if tx.send(res).await.is_err() {
+                // log or ignore
+            }
+        });
+    })?;
 
     let folder = PathBuf::from(folder_to_watch);
 
-    watcher.watch(Path::new(folder_to_watch), RecursiveMode::Recursive)?;
+    watcher.watch(&folder, RecursiveMode::Recursive)?;
 
-    for res in rx {
-        match res {
-            Ok(event) => match event.kind {
-                EventKind::Any => {
-                    if let Some(handler) = on_any_handler.as_ref() {
-                        handler(event, EventType::Any, folder.clone()).await?;
+    // Batch/debounce
+    let mut pending_paths = HashSet::new();
+    loop {
+        if let Some(res) = rx.recv().await {
+            match res {
+                Ok(event) => {
+                    // Adding all the files we received to a hashset, so we have a unique list.
+                    for path in event.paths {
+                        pending_paths.insert(path);
                     }
-                }
-                EventKind::Access(kind) => {
-                    let event_type = match kind {
-                        AccessKind::Any => EventType::AccessAny,
-                        AccessKind::Read => EventType::AccessRead,
-                        AccessKind::Open(_) => EventType::AccessOpen,
-                        AccessKind::Close(_) => EventType::AccessClose,
-                        AccessKind::Other => EventType::AccessOther,
-                    };
 
-                    if let Some(handler) = on_access_handler.as_ref() {
-                        handler(event, event_type, folder.clone()).await?;
-                    }
-                }
-                EventKind::Create(kind) => {
-                    let event_type = match kind {
-                        CreateKind::Any => EventType::CreatedAny,
-                        CreateKind::File => EventType::CreatedFile,
-                        CreateKind::Folder => EventType::CreatedFolder,
-                        CreateKind::Other => EventType::CreatedOther,
-                    };
+                    // Wait a little bit to cool down in case of bursts.
+                    sleep(Duration::from_millis(300)).await;
 
-                    if let Some(handler) = on_created_handler.as_ref() {
-                        handler(event, event_type, folder.clone()).await?;
-                    }
-                }
-                EventKind::Modify(kind) => {
-                    let event_type = match kind {
-                        ModifyKind::Any => EventType::ModifyAny,
-                        ModifyKind::Data(_) => EventType::ModifyData,
-                        ModifyKind::Metadata(_) => EventType::ModifyMetadata,
-                        ModifyKind::Name(_) => EventType::ModifyName,
-                        ModifyKind::Other => EventType::ModifyOther,
-                    };
+                    // Processing unique files.
+                    for path in pending_paths.drain() {
+                        match event.kind {
+                            EventKind::Any => {
+                                if let Some(handler) = on_any_handler.as_ref() {
+                                    handler(path, EventType::Any, folder.clone()).await?;
+                                }
+                            }
+                            EventKind::Access(kind) => {
+                                let event_type = match kind {
+                                    AccessKind::Any => EventType::AccessAny,
+                                    AccessKind::Read => EventType::AccessRead,
+                                    AccessKind::Open(_) => EventType::AccessOpen,
+                                    AccessKind::Close(_) => EventType::AccessClose,
+                                    AccessKind::Other => EventType::AccessOther,
+                                };
 
-                    if let Some(handler) = on_modify_handler.as_ref() {
-                        handler(event, event_type, folder.clone()).await?;
-                    }
-                }
-                EventKind::Remove(kind) => {
-                    let event_type = match kind {
-                        RemoveKind::Any => EventType::RemoveAny,
-                        RemoveKind::File => EventType::RemoveFile,
-                        RemoveKind::Folder => EventType::RemoveFolder,
-                        RemoveKind::Other => EventType::RemoveOther,
-                    };
+                                if let Some(handler) = on_access_handler.as_ref() {
+                                    handler(path, event_type, folder.clone()).await?;
+                                }
+                            }
+                            EventKind::Create(kind) => {
+                                let event_type = match kind {
+                                    CreateKind::Any => EventType::CreatedAny,
+                                    CreateKind::File => EventType::CreatedFile,
+                                    CreateKind::Folder => EventType::CreatedFolder,
+                                    CreateKind::Other => EventType::CreatedOther,
+                                };
 
-                    if let Some(handler) = on_remove_handler.as_ref() {
-                        handler(event, event_type, folder.clone()).await?;
+                                if let Some(handler) = on_created_handler.as_ref() {
+                                    handler(path, event_type, folder.clone()).await?;
+                                }
+                            }
+                            EventKind::Modify(kind) => {
+                                let event_type = match kind {
+                                    ModifyKind::Any => EventType::ModifyAny,
+                                    ModifyKind::Data(_) => EventType::ModifyData,
+                                    ModifyKind::Metadata(_) => EventType::ModifyMetadata,
+                                    ModifyKind::Name(_) => EventType::ModifyName,
+                                    ModifyKind::Other => EventType::ModifyOther,
+                                };
+
+                                if let Some(handler) = on_modify_handler.as_ref() {
+                                    handler(path, event_type, folder.clone()).await?;
+                                }
+                            }
+                            EventKind::Remove(kind) => {
+                                let event_type = match kind {
+                                    RemoveKind::Any => EventType::RemoveAny,
+                                    RemoveKind::File => EventType::RemoveFile,
+                                    RemoveKind::Folder => EventType::RemoveFolder,
+                                    RemoveKind::Other => EventType::RemoveOther,
+                                };
+
+                                if let Some(handler) = on_remove_handler.as_ref() {
+                                    handler(path, event_type, folder.clone()).await?;
+                                }
+                            }
+                            EventKind::Other => {
+                                if let Some(handler) = on_other_handler.as_ref() {
+                                    handler(path, EventType::Other, folder.clone()).await?;
+                                }
+                            }
+                        }
                     }
                 }
-                EventKind::Other => {
-                    if let Some(handler) = on_other_handler.as_ref() {
-                        handler(event, EventType::Other, folder.clone()).await?;
-                    }
-                }
-            },
-            Err(e) => anyhow::bail!("watch error: {:?}", e),
+                Err(e) => anyhow::bail!("watch error: {:?}", e),
+            }
         }
     }
-
-    Ok(())
 }
 
 /// Dummy function that handles the "file created" event triggered within a watched folder.

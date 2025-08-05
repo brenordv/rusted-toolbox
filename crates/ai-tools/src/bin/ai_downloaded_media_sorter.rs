@@ -12,6 +12,7 @@ use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use std::env;
 use tracing::{debug, error, info, warn};
 
+//Obsolete. Delete this.
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenv().ok();
@@ -27,8 +28,7 @@ async fn main() -> Result<()> {
 
     print_runtime_info(&folder_to_watch);
 
-    monitor_folder_for_on_created_only(folder_to_watch.as_str(), handle_event_created).await?;
+    //monitor_folder_for_on_created_only(folder_to_watch.as_str(), handle_event_created).await?;
 
     Ok(())
 }
-// Possible bug: Need to check: Cases where the filename contains spaces

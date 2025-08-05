@@ -8,7 +8,6 @@ use crate::utils::guessit_client::GuessItClient;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use decompress::ExtractOptsBuilder;
-use notify::Event;
 use shared::system::ensure_directory_exists::EnsureDirectoryExists;
 use shared::system::monitor_folder::EventType;
 use shared::system::pathbuf_extensions::PathBufExtensions;
@@ -51,103 +50,102 @@ impl ProcessFileRoutine {
 
     pub async fn handle_on_file_created(
         &self,
-        event: Event,
+        file_created: PathBuf,
         event_type: EventType,
         _: PathBuf,
     ) -> Result<()> {
-        let created_entries = &event.paths;
         debug!(
-            "[{:?}] On Created Event (count: {})",
-            event_type,
-            created_entries.len()
+            "[{:?}] On Created Event triggered for file: {:?}",
+            event_type, file_created
         );
 
-        for entry in created_entries {
-            info!("Waiting for file to stabilize: {:?}", entry);
-            if !Self::wait_for_file_stability(&entry).await? {
-                error!("File is not stable. Moving on...");
-                continue;
+        info!("Waiting for file to stabilize...");
+        if !Self::wait_for_file_stability(&file_created).await? {
+            error!("File is not stable. Moving on...");
+            return Ok(());
+        }
+
+        info!("File is stable. Processing it...");
+
+        let entry_str = file_created
+            .to_str()
+            .context("Failed to convert path to string.")?
+            .to_string();
+
+        let mut file_control_item =
+            match self.file_status_controller.get_file_control(&entry_str)? {
+                Some(file_control_item) => {
+                    debug!("File already exists in the database.");
+                    file_control_item
+                }
+                None => {
+                    debug!("Calling GuessIt to get info on the file...");
+                    let response = self
+                        .guess
+                        .it(file_created.to_str().unwrap().to_string())
+                        .await?;
+
+                    debug!("Creating file control item...");
+                    let new_item = self.create_file_control_item(&file_created, &response)?;
+
+                    debug!("Adding file control item to database...");
+                    self.file_status_controller.add_file_control(&new_item)?;
+
+                    new_item
+                }
+            };
+
+        match file_control_item.status {
+            CreatedEventItemStatus::New => {
+                if file_control_item.is_archive {
+                    debug!("File is an archive. Notifying that decompression is needed...");
+                    match self.decompress_file_task_channel {
+                        Some(ref channel) => {
+                            channel.send(entry_str).await?;
+                        }
+                        None => {
+                            error!("Failed to send decompression task to channel.");
+                        }
+                    };
+
+                    return Ok(());
+                }
+
+                debug!("Should I copy this file to the target path?");
+                let should_copy = Self::should_copy_file(&file_created)?;
+                if !should_copy {
+                    debug!("Nope, I'm not touching this. Moving on...");
+                    file_control_item.update_status(CreatedEventItemStatus::Ignored);
+                    self.file_status_controller
+                        .update_file_control(&file_control_item)?;
+                    return Ok(());
+                }
+
+                file_control_item.update_status(CreatedEventItemStatus::Copying);
+                self.file_status_controller
+                    .update_file_control(&file_control_item)?;
+
+                Self::copy_file(&file_control_item).await?;
+
+                file_control_item.update_status(CreatedEventItemStatus::Done);
+                self.file_status_controller
+                    .update_file_control(&file_control_item)?;
+
+                debug!(
+                    "Alright! This file was copied! \\o/: {:?}",
+                    file_control_item.full_path
+                );
             }
-
-            info!("File is stable. Processing it...");
-
-            let entry_str = entry
-                .to_str()
-                .context("Failed to convert path to string.")?
-                .to_string();
-
-            let mut file_control_item =
-                match self.file_status_controller.get_file_control(&entry_str)? {
-                    Some(file_control_item) => {
-                        debug!("File already exists in the database.");
-                        file_control_item
-                    }
-                    None => {
-                        debug!("Calling GuessIt to get info on the file...");
-                        let response = self.guess.it(entry.to_str().unwrap().to_string()).await?;
-
-                        debug!("Creating file control item...");
-                        let new_item = self.create_file_control_item(&entry, &response)?;
-
-                        debug!("Adding file control item to database...");
-                        self.file_status_controller.add_file_control(&new_item)?;
-
-                        new_item
-                    }
-                };
-
-            match file_control_item.status {
-                CreatedEventItemStatus::New => {
-                    if file_control_item.is_archive {
-                        debug!("File is an archive. Notifying that decompression is needed...");
-                        match self.decompress_file_task_channel {
-                            Some(ref channel) => {
-                                channel.send(entry_str).await?;
-                            }
-                            None => {
-                                error!("Failed to send decompression task to channel.");
-                            }
-                        };
-
-                        continue;
-                    }
-
-                    debug!("Should I copy this file to the target path?");
-                    let should_copy = Self::should_copy_file(&entry)?;
-                    if !should_copy {
-                        debug!("Nope, I'm not touching this. Moving on...");
-                        file_control_item.update_status(CreatedEventItemStatus::Ignored);
-                        self.file_status_controller
-                            .update_file_control(&file_control_item)?;
-                        continue;
-                    }
-
-                    file_control_item.update_status(CreatedEventItemStatus::Copying);
-                    self.file_status_controller
-                        .update_file_control(&file_control_item)?;
-
-                    Self::copy_file(&file_control_item).await?;
-
-                    file_control_item.update_status(CreatedEventItemStatus::Done);
-                    self.file_status_controller
-                        .update_file_control(&file_control_item)?;
-
-                    debug!(
-                        "Alright! This file was copied! \\o/: {:?}",
-                        file_control_item.full_path
-                    );
-                }
-                CreatedEventItemStatus::Identified => {}
-                CreatedEventItemStatus::Prepared => {}
-                CreatedEventItemStatus::Copying => {}
-                CreatedEventItemStatus::Done => {
-                    debug!("Oh, we're already done with this file. Moving on...");
-                    continue;
-                }
-                CreatedEventItemStatus::Ignored => {
-                    debug!("File is ignored. Moving on...");
-                    continue;
-                }
+            CreatedEventItemStatus::Identified => {}
+            CreatedEventItemStatus::Prepared => {}
+            CreatedEventItemStatus::Copying => {}
+            CreatedEventItemStatus::Done => {
+                debug!("Oh, we're already done with this file. Moving on...");
+                return Ok(());
+            }
+            CreatedEventItemStatus::Ignored => {
+                debug!("File is ignored. Moving on...");
+                return Ok(());
             }
         }
 
