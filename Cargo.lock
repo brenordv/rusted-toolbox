@@ -3305,26 +3305,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scene-media-organizer"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "decompress",
- "dotenv",
- "notify",
- "reqwest",
- "rstest",
- "rusqlite",
- "serde",
- "shared",
- "tempfile",
- "tokio",
- "tracing-log",
-]
-
-[[package]]
 name = "schannel"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"

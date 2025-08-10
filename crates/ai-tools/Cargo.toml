@@ -10,9 +10,6 @@ description = "A collection of CLI utilities leveraging AI to do stuff."
 name = "ai-agent-chat"
 path = "src/bin/ai_chatbot.rs"
 
-[[bin]]
-name = "ai-agent-media-sorter"
-path = "src/bin/ai_downloaded_media_sorter.rs"
 
 [dependencies]
 shared = { path = "../shared" }
