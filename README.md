@@ -12,9 +12,10 @@ We currently have the following tools:
 8. A tool that mimics the [touch](#-touch---readme) command from Unix (also useful on Windows);
 9. A tool that [generates GUID](#-guid---readme) (uuidv4) in the terminal with some nice options;
 10. A tool that [converts unix timestamp](#-ts---readme) to readable format and vice versa;
+11. An AI-powered [chatbot agent](#-ai-agent-chat---readme) for local or cloud LLMs;
 
 ## Well, well, well. What do we have here?
-### 🐱 cat - [readme](src/tools/cat/readme.md)
+### 🐱 cat - [readme](crates/tools/src/tools/cat/readme.md)
 Mimics the classic Unix `cat` command. It concatenates files and displays them with optional line numbering, 
 character visualization, and formatting features.
 
@@ -32,7 +33,7 @@ Output:
      4	debug=true$
 ```
 
-### 📊 csvn - [readme](src/tools/csvn/readme.md)
+### 📊 csvn - [readme](crates/tools/src/tools/csvn/readme.md)
 I hate dealing with CSV files with data missing and having to write a script (or search for something) to fix it, so I
 created this tool: A CSV data Normalizer.
 This tool fills in empty fields with default values you specify, making your data clean and consistent.
@@ -43,7 +44,7 @@ This tool fills in empty fields with default values you specify, making your dat
 csvn --file messy_data.csv --value-map "name=Unknown" --value-map "age=0"
 ```
 
-### 📡 eh-read - [readme](src/tools/eh_read/readme.md)
+### 📡 eh-read - [readme](crates/tools/src/tools/eh_read/readme.md)
 EventHub Reader - connects to Azure EventHub, reads messages, and stores them locally with checkpoint/resume support. 
 This is your gateway to capturing streaming data for later analysis. Performs reasonably well, and during my tests were
 able to read about 380 messages/second (it could probably be faster in better filesystems than NTFS).
@@ -54,7 +55,7 @@ able to read about 380 messages/second (it could probably be faster in better fi
 eh_read --connection-string "Endpoint=sb://..." --entity-path "events" --read-to-file --dump-filter "ERROR"
 ```
 
-### ☁️ eh-export - [readme](src/tools/eh_export/readme.md)
+### ☁️ eh-export - [readme](crates/tools/src/tools/eh_export/readme.md)
 One of the features of the aforementioned `EventHub Reader` is the ability to read messages from Eventhub and save them
 to a local embedded database. After that, you need a way to export those messages from the DB to files.
 Enter EventHub Export tool! It exports messages from local databases (created by eh_read) to various file formats. 
@@ -68,7 +69,7 @@ max speed and then export the messages.
 eh_export --config export-config.json --export-format json --dump-filter "temperature" --include-metadata
 ```
 
-### 🔍 get-lines - [readme](src/tools/get_lines/readme.md)
+### 🔍 get-lines - [readme](crates/tools/src/tools/get_lines/readme.md)
 High-performance text search (case insensitive) utility that extracts lines containing specific patterns. 
 It's like grep but with some neat features like separate output files per search term and parallel processing.
 
@@ -79,7 +80,7 @@ get_lines --file server.log --search "error,warning,critical" --output results -
 ```
 Creates `results/error.txt`, `results/warning.txt`, and `results/critical.txt` files automatically.
 
-### 🆔 guid - [readme](src/tools/guid/readme.md)
+### 🆔 guid - [readme](crates/tools/src/tools/guid/readme.md)
 GUID generator with some extra features that I find useful, like continuous generation at intervals and clipboard
 integration or automatically copying the GUID to the clipboard.
 
@@ -95,7 +96,7 @@ Output:
 ```
 (The GUID values will be printed over and over on the same line.
 
-### 🔐 jwt - [readme](src/tools/jwt/readme.md)
+### 🔐 jwt - [readme](crates/tools/src/tools/jwt/readme.md)
 JWT decoder that extracts and displays token contents without signature verification. 
 Handy for debugging authentication issues and understanding what's in your tokens.
 
@@ -107,7 +108,7 @@ jwt --copy-to-clipboard client_id "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 Instantly see what's inside those mysterious JWT tokens, and copies the value of `client_id` claim to the clipboard, if
 it exists.
 
-### ✂️ split - [readme](src/tools/split/readme.md)
+### ✂️ split - [readme](crates/tools/src/tools/split/readme.md)
 File splitter that handles both regular text files and CSV files with header preservation. 
 
 **Example:**
@@ -117,7 +118,7 @@ split --file huge_dataset.csv --csv-mode --lines-per-file 1000
 ```
 Each output file gets the original headers: no more manual header management!
 
-### 👆 touch - [readme](src/tools/touch/readme.md)
+### 👆 touch - [readme](crates/tools/src/tools/touch/readme.md)
 My implementation of the Unix `touch` command for updating file timestamps. 
 Creates files if they don't exist and handles various timestamp formats.
 
@@ -127,7 +128,7 @@ Creates files if they don't exist and handles various timestamp formats.
 touch -d "2024-12-25 15:30:00" holiday_file1.txt holiday_file2.txt
 ```
 
-### ⏰ ts - [readme](src/tools/ts/readme.md)
+### ⏰ ts - [readme](crates/tools/src/tools/ts/readme.md)
 This tool is a simple bidirectional timestamp converter, that converts between Unix timestamps and human-readable dates
 automatically. It detects what you give it and converts to the other format. Not a perfect port of the Unix tool `date`,
 but it works similarly.
@@ -148,6 +149,22 @@ Output:
 UTC Time: 2023-12-28T12:00:00Z
 Local Time: 2023-12-28T13:00:00+0100
 ```
+
+### 🤖 ai-agent-chat - readme
+Simple terminal chatbot that runs against your chosen AI provider (OpenAI, OpenRouter, or a local OpenWebUI-compatible server). It loads a personality prompt from disk, prints tidy speaker tags, and optionally sends an initial message to the AI.
+
+Requirements (environment variables):
+- `AI_PLATFORM`: one of `openai`, `openrouter`, or `local`;
+- For OpenAI: `OPEN_AI_API_KEY`, `OPEN_AI_MODEL`, `OPEN_AI_API_URL`, `OPEN_AI_TEMPERATURE` (optional), `OPEN_AI_ORGANIZATION`;
+- For OpenRouter: `OPEN_ROUTER_API_KEY`, `OPEN_ROUTER_MODEL`, `OPEN_ROUTER_API_URL`, `OPEN_ROUTER_TEMPERATURE` (optional);
+- For Local (OpenWebUI-compatible): `LOCAL_OPENWEBUI_API_KEY`, `LOCAL_OPENWEBUI_MODEL`, `LOCAL_OPENWEBUI_URL`, `LOCAL_OPENWEBUI_TEMPERATURE` (optional);
+- Common: `AI_CHAT_PERSONALITIES_FOLDER` (folder with your prompt files), `AI_CHAT_USER_NAME` (optional), `AI_CHAT_INITIAL_MSG_TO_AI` (optional), and request history paths (`*_REQUEST_HISTORY_PATH`, optional) depending on the selected platform.
+
+Example:
+```bash
+ai-agent-chat
+```
+You will be prompted for your name (unless `AI_CHAT_USER_NAME` is set), a personality will be loaded from `AI_CHAT_PERSONALITIES_FOLDER`, and the chat will start. Press Ctrl+C to exit.
 
 ## Ok, but why?
 Well, three main reasons:
@@ -227,3 +244,10 @@ TL;DR:
 - **#2**: Some files are way too big. Partly due to the documentation + testing. Some methods should be moved to different files.
 - **#3**: Do a better job at showing the default values for CLI arguments + do it in a unified way.
 - **#4**: Unify all the constants in one file. We don't have that many to justify different files.
+
+## Building on Linux
+TODO: Improve this later (but before merging the PR))
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential libssl-dev pkg-config
+```

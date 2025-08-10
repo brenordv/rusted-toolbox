@@ -54,3 +54,5 @@ target/
 .template_made_using_*/
 .test-files/*
 dist/
+own_Luna.txt
+.data/

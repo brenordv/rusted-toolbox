@@ -1,0 +1,123 @@
+# Custom
+appsettings*.json
+*.appsettings*.json
+.data/
+
+# Universal ignores
+*.log
+*.tmp
+*.swp
+*.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.vscode/
+*.iml
+*.bak
+.env
+bin/
+dist/
+build/
+.cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+pip-wheel-metadata/
+*.egg-info/
+.pytest_cache/
+.coverage
+.tox/
+.mypy_cache/
+.pyre/
+.ipynb_checkpoints
+
+# C#
+obj/
+*.user
+*.suo
+*.pdb
+*.cache
+*.vs/
+TestResults/
+*.ncb
+*.dbmdl
+
+# Go
+*.exe
+*.test
+*.out
+vendor/
+Godeps/
+go.sum
+go.work
+go.work.sum
+*.mod
+.coverage/
+*.coverprofile
+
+# Node/Web/React/JS/TS
+node_modules/
+bower_components/
+jspm_packages/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+coverage/
+.next/
+out/
+*.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.env.*
+*.local
+*.env
+
+# Rust
+target/
+Cargo.lock
+*.rs.bk
+*.rlib
+
+# Common Test/Build Artifacts
+coverage.xml
+*.lcov
+*.clover
+*.gcov
+*.lst
+
+# Secrets or Sensitive Files
+*.key
+*.pem
+*.crt
+*.p12
+*.env.*
+*.secrets
+*.envrc
+
+# JetBrains IDE specific
+.idea/
+*.iws
+*.ipr
+
+# Mac-specific
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+._*
+
+# Windows-specific
+$RECYCLE.BIN/
+System Volume Information/
+
+# Misc
+*.orig
+*.rej
