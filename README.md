@@ -12,6 +12,7 @@ We currently have the following tools:
 8. A tool that mimics the [touch](#-touch---readme) command from Unix (also useful on Windows);
 9. A tool that [generates GUID](#-guid---readme) (uuidv4) in the terminal with some nice options;
 10. A tool that [converts unix timestamp](#-ts---readme) to readable format and vice versa;
+11. An AI-powered [chatbot agent](#-ai-agent-chat---readme) for local or cloud LLMs;
 
 ## Well, well, well. What do we have here?
 ### 🐱 cat - [readme](crates/tools/src/tools/cat/readme.md)
@@ -148,6 +149,22 @@ Output:
 UTC Time: 2023-12-28T12:00:00Z
 Local Time: 2023-12-28T13:00:00+0100
 ```
+
+### 🤖 ai-agent-chat - readme
+Simple terminal chatbot that runs against your chosen AI provider (OpenAI, OpenRouter, or a local OpenWebUI-compatible server). It loads a personality prompt from disk, prints tidy speaker tags, and optionally sends an initial message to the AI.
+
+Requirements (environment variables):
+- `AI_PLATFORM`: one of `openai`, `openrouter`, or `local`;
+- For OpenAI: `OPEN_AI_API_KEY`, `OPEN_AI_MODEL`, `OPEN_AI_API_URL`, `OPEN_AI_TEMPERATURE` (optional), `OPEN_AI_ORGANIZATION`;
+- For OpenRouter: `OPEN_ROUTER_API_KEY`, `OPEN_ROUTER_MODEL`, `OPEN_ROUTER_API_URL`, `OPEN_ROUTER_TEMPERATURE` (optional);
+- For Local (OpenWebUI-compatible): `LOCAL_OPENWEBUI_API_KEY`, `LOCAL_OPENWEBUI_MODEL`, `LOCAL_OPENWEBUI_URL`, `LOCAL_OPENWEBUI_TEMPERATURE` (optional);
+- Common: `AI_CHAT_PERSONALITIES_FOLDER` (folder with your prompt files), `AI_CHAT_USER_NAME` (optional), `AI_CHAT_INITIAL_MSG_TO_AI` (optional), and request history paths (`*_REQUEST_HISTORY_PATH`, optional) depending on the selected platform.
+
+Example:
+```bash
+ai-agent-chat
+```
+You will be prompted for your name (unless `AI_CHAT_USER_NAME` is set), a personality will be loaded from `AI_CHAT_PERSONALITIES_FOLDER`, and the chat will start. Press Ctrl+C to exit.
 
 ## Ok, but why?
 Well, three main reasons:
