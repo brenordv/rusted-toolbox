@@ -8,4 +8,4 @@ pub const JWT_VERSION: &str = "1.0.0";
 pub const NSCV_VERSION: &str = "1.0.0";
 pub const SPLIT_VERSION: &str = "1.0.0";
 pub const TOUCH_VERSION: &str = "1.0.0";
-pub const TS_VERSION: &str = "1.0.0";
+pub const TS_VERSION: &str = "1.1.0";
