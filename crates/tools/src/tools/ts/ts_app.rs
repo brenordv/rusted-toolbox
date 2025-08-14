@@ -44,8 +44,8 @@ pub fn process_input(input: &str) -> Result<()> {
             convert_unix_to_datetime(unix_timestamp / 1000)?;
         } else {
             convert_unix_to_datetime(unix_timestamp)?;
-        }        
-        
+        }
+
         return Ok(());
     }
 
