@@ -15,10 +15,6 @@ name = "touch"
 path = "src/bin/touch.rs"
 
 [[bin]]
-name = "cat"
-path = "src/bin/cat.rs"
-
-[[bin]]
 name = "ts"
 path = "src/bin/ts.rs"
 

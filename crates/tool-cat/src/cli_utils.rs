@@ -1,7 +1,6 @@
-use crate::tools::cat::models::CatArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{CAT_APP_NAME, CAT_VERSION};
+use crate::models::CatArgs;
 
 /// Parses command-line arguments for cat application.
 ///
@@ -13,7 +12,7 @@ use shared::constants::general::{CAT_APP_NAME, CAT_VERSION};
 ///
 /// # Supported Options
 /// - `-A, --show-all`: Show all non-printing characters
-/// - `-b, --number-nonblank`: Number non-blank lines  
+/// - `-b, --number-nonblank`: Number non-blank lines
 /// - `-e`: Equivalent to -vE
 /// - `-E, --show-ends`: Show line endings with $
 /// - `-n, --number`: Number all lines
@@ -37,9 +36,9 @@ use shared::constants::general::{CAT_APP_NAME, CAT_VERSION};
 /// # Notes
 /// If no files are provided, the program will default to reading from `stdin`.
 pub fn get_cli_arguments() -> CatArgs {
-    let matches = Command::new(CAT_APP_NAME)
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            CAT_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "Concatenate files and print on the standard output",
             "Mimics the behavior of CAT (the Linux tool).\
             Concatenate FILE(s) to standard output.\n\n\

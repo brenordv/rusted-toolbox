@@ -1,23 +1,20 @@
-use rusted_toolbox::tools::cat::cat_app::cat_file;
-use rusted_toolbox::tools::cat::cli_utils::get_cli_arguments;
-use rusted_toolbox::tools::cat::models::CatOptions;
-use shared::constants::general::CAT_APP_NAME;
+use std::io;
+use std::io::Write;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
-use std::io::{self, Write};
+use crate::cat_app::cat_file;
+use crate::cli_utils::get_cli_arguments;
+use crate::models::CatOptions;
 use tracing::error;
 
-/// Unix cat command implementation.
-///
-/// Concatenates files and prints to stdout. Reads from stdin if no files provided.
-/// Supports line numbering, character visualization, and formatting options.
-///
-/// # Exit Codes
-/// - 0: Success
-/// - 1: Error occurred
+mod models;
+mod cli_utils;
+mod cat_app;
+
+
 fn main() {
-    initialize_log(CAT_APP_NAME, LogLevel::Error);
+    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Error);
 
     let args = get_cli_arguments();
 

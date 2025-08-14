@@ -1,4 +1,3 @@
-pub mod cat;
 pub mod csvn;
 pub mod eh_export;
 pub mod eh_read;

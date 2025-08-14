@@ -15,7 +15,7 @@ We currently have the following tools:
 11. An AI-powered [chatbot agent](#-ai-agent-chat---readme) for local or cloud LLMs;
 
 ## Well, well, well. What do we have here?
-### 🐱 cat - [readme](crates/tools/src/tools/cat/readme.md)
+### 🐱 cat - [readme](crates/tool-cat/readme.md)
 Mimics the classic Unix `cat` command. It concatenates files and displays them with optional line numbering, 
 character visualization, and formatting features.
 

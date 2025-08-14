@@ -5,4 +5,5 @@ members = [
     "crates/macros",
     "crates/ai-tools",
     "crates/shared",
-    "crates/tools"]
+    "crates/tools",
+    "crates/tool-cat"]
