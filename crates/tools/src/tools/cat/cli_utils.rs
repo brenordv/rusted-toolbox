@@ -1,8 +1,7 @@
 use crate::tools::cat::models::CatArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::CAT_APP_NAME;
-use shared::constants::versions::CAT_VERSION;
+use shared::constants::general::{CAT_APP_NAME, CAT_VERSION};
 
 /// Parses command-line arguments for cat application.
 ///

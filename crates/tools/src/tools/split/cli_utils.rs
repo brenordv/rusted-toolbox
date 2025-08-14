@@ -1,8 +1,7 @@
 use crate::tools::split::models::SplitArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE, SPLIT_APP_NAME};
-use shared::constants::versions::SPLIT_VERSION;
+use shared::constants::general::{DASH_LINE, SPLIT_APP_NAME, SPLIT_VERSION};
 use shared::system::get_current_working_dir::get_current_working_dir;
 use std::path::{Path, PathBuf};
 

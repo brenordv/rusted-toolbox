@@ -3,8 +3,7 @@ use chrono::{Datelike, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use clap::{Arg, Command};
 use filetime::FileTime;
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::TOUCH_APP_NAME;
-use shared::constants::versions::TOUCH_VERSION;
+use shared::constants::general::{TOUCH_APP_NAME, TOUCH_VERSION};
 use std::io;
 
 /// Parses command-line arguments for the touch utility.
