@@ -1,13 +1,13 @@
-use crate::tools::ts::models::TsArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE, TS_APP_NAME, TS_VERSION};
+use shared::constants::general::DASH_LINE;
+use crate::models::TsArgs;
 
 /// Displays runtime information for the timestamp converter.
 ///
 /// Shows version, divider line, and input (or "(Current time)" if no input provided).
 pub fn print_runtime_info(args: &TsArgs) {
-    println!("🚀 Timestamp Converter v{}", TS_VERSION);
+    println!("🚀 Timestamp Converter v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
     let input = if args.input.is_empty() {
@@ -29,9 +29,9 @@ pub fn print_runtime_info(args: &TsArgs) {
 /// # Returns
 /// TsArgs struct containing the parsed input string
 pub fn get_cli_arguments() -> TsArgs {
-    let matches = Command::new(TS_APP_NAME)
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            TS_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "A simple utility to convert Unix timestamps to date time and vice versa.",
             "This tool receives a Unix timestamp and converts it to a date time (ISO8601) or vice versa.",
         ).arg(

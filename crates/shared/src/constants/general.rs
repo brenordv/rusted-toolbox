@@ -1,8 +1,5 @@
 pub const AUTHOR_NAME: &str = "Breno RdV";
 
-pub const TS_APP_NAME: &str = "ts";
-pub const TS_VERSION: &str = "1.1.0";
-
 pub const AI_AGENT_CHATBOT_NAME: &str = "chat-bot";
 pub const AI_AGENT_CHATBOT_VERSION: &str = "1.0.0";
 
