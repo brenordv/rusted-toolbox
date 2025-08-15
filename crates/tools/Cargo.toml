@@ -7,10 +7,6 @@ description = "A collection of CLI utilities ported from Go, Python, PowerShell,
 
 
 [[bin]]
-name = "touch"
-path = "src/bin/touch.rs"
-
-[[bin]]
 name = "ts"
 path = "src/bin/ts.rs"
 

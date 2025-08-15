@@ -1,10 +1,9 @@
-use crate::tools::touch::models::{TouchArgs, TouchTimeWord};
 use chrono::{Datelike, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use clap::{Arg, Command};
 use filetime::FileTime;
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{TOUCH_APP_NAME, TOUCH_VERSION};
 use std::io;
+use crate::models::{TouchArgs, TouchTimeWord};
 
 /// Parses command-line arguments for the touch utility.
 ///
@@ -29,9 +28,9 @@ use std::io;
 /// Exits with error on invalid arguments, date parsing failures,
 /// or reference file access issues.
 pub fn get_cli_arguments() -> TouchArgs {
-    let matches = Command::new(TOUCH_APP_NAME)
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            TOUCH_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "Update the access and modification times of each FILE to the current time.",
             "Mimics the Unix 'touch' command.\
             Update the access and modification times of each FILE to the current time.\n\n\

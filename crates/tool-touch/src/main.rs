@@ -1,10 +1,13 @@
-use rusted_toolbox::tools::touch::cli_utils::{get_cli_arguments, validate_cli_arguments};
-use rusted_toolbox::tools::touch::touch_app::touch_file;
-use shared::constants::general::TOUCH_APP_NAME;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
+use crate::cli_utils::{get_cli_arguments, validate_cli_arguments};
+use crate::touch_app::touch_file;
 use tracing::error;
+
+mod cli_utils;
+mod models;
+mod touch_app;
 
 /// Updates file access and modification times, creating files if they don't exist.
 ///
@@ -20,7 +23,7 @@ use tracing::error;
 /// - File creation or timestamp update errors for individual files
 /// - Invalid command-line arguments cause program termination
 fn main() {
-    initialize_log(TOUCH_APP_NAME, LogLevel::Error);
+    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Error);
 
     let args = get_cli_arguments();
 

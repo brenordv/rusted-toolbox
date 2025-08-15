@@ -4103,6 +4103,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "touch"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "filetime",
+ "shared",
+ "tracing",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
