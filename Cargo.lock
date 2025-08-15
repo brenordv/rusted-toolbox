@@ -844,6 +844,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "csvn"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "csv",
+ "shared",
+ "string-interner",
+ "tracing",
+]
+
+[[package]]
 name = "ctrlc"
 version = "3.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

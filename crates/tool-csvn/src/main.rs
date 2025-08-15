@@ -1,20 +1,16 @@
-use rusted_toolbox::tools::csvn::cli_utils::{get_cli_arguments, print_runtime_info};
-use rusted_toolbox::tools::csvn::csvn_app::process_file;
-use rusted_toolbox::tools::csvn::models::CsvNConfig;
-use shared::constants::general::CSVN_APP_NAME;
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
+use crate::cli_utils::{get_cli_arguments, print_runtime_info};
+use crate::models::CsvNConfig;
 use tracing::error;
+use crate::csvn_app::process_file;
 
-/// CSV Normalizer tool entry point.
-///
-/// Normalizes CSV files by filling missing fields with default values.
-/// Creates an output file with "_normalized" suffix.
-///
-/// # Exit Codes
-/// - Success: 0
-/// - Error: 1
+mod models;
+mod cli_utils;
+mod csvn_app;
+
 fn main() {
+    const CSVN_APP_NAME: &str = env!("CARGO_PKG_NAME");
     let mut args: CsvNConfig;
 
     match get_cli_arguments() {

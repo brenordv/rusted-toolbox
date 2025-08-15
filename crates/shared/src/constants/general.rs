@@ -1,12 +1,5 @@
 pub const AUTHOR_NAME: &str = "Breno RdV";
 
-pub const CAT_APP_NAME: &str = "cat";
-pub const CAT_VERSION: &str = "1.0.0";
-
-
-pub const CSVN_APP_NAME: &str = "csvn";
-pub const CSVN_VERSION: &str = "1.0.0";
-
 pub const EH_READ_APP_NAME: &str = "eh-read";
 pub const EH_READ_VERSION: &str = "1.0.0";
 

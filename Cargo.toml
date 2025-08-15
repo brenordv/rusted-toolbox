@@ -6,4 +6,4 @@ members = [
     "crates/ai-tools",
     "crates/shared",
     "crates/tools",
-    "crates/tool-cat"]
+    "crates/tool-cat", "crates/tool-csvn"]

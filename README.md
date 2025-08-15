@@ -33,7 +33,7 @@ Output:
      4	debug=true$
 ```
 
-### 📊 csvn - [readme](crates/tools/src/tools/csvn/readme.md)
+### 📊 csvn - [readme](crates/tool-csvn/readme.md)
 I hate dealing with CSV files with data missing and having to write a script (or search for something) to fix it, so I
 created this tool: A CSV data Normalizer.
 This tool fills in empty fields with default values you specify, making your data clean and consistent.

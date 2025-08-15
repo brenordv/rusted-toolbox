@@ -1,17 +1,17 @@
-use crate::tools::csvn::models::CsvNConfig;
 use anyhow::{anyhow, Context, Result};
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{CSVN_APP_NAME, CSVN_VERSION, DASH_LINE};
+use shared::constants::general::{DASH_LINE};
 use shared::system::get_current_working_dir::get_current_working_dir;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use crate::models::CsvNConfig;
 
 /// Displays runtime configuration information.
 ///
 /// Shows input file, headers, cleaning options, and default mappings.
 pub fn print_runtime_info(args: &CsvNConfig) {
-    println!("🚀 CSV Normalizer v{}", CSVN_VERSION);
+    println!("🚀 CSV Normalizer v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
     println!("📃 Input file: {}", args.input_file.display());
@@ -47,9 +47,9 @@ pub fn print_runtime_info(args: &CsvNConfig) {
 /// # Errors
 /// Returns error if required arguments are missing or parsing fails
 pub fn get_cli_arguments() -> Result<CsvNConfig> {
-    let matches = Command::new(CSVN_APP_NAME)
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            CSVN_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "CSV Normalizer",
             "Creates a normalized version of a CSV file, with missing fields filled by default values.")
         .arg(Arg::new("file")
