@@ -1,6 +1,6 @@
 use clap::{ArgMatches, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE, EH_READ_APP_NAME, EH_READ_VERSION};
+use shared::constants::general::{DASH_LINE};
 use shared::eventhub::eventhub_models::EventHubConfig;
 use shared::eventhub::utils::cli_arguments::CommandCommonExt;
 
@@ -9,7 +9,7 @@ use shared::eventhub::utils::cli_arguments::CommandCommonExt;
 /// Shows entity path, consumer group, partition, database settings,
 /// export options, checkpoint behavior, and feedback interval.
 pub fn print_runtime_info(config: &mut EventHubConfig) {
-    println!("🚀 EventHub Reader v{}", EH_READ_VERSION);
+    println!("🚀 EventHub Reader v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
     println!("🎯 Entity Path: {}", config.entity_path);
     println!(
@@ -63,9 +63,9 @@ pub fn print_runtime_info(config: &mut EventHubConfig) {
 /// # Returns
 /// Parsed command-line arguments as `ArgMatches`
 pub fn get_cli_arguments() -> ArgMatches {
-    Command::new(EH_READ_APP_NAME)
+    Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            EH_READ_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "Azure EventHub reader tool - reads messages from EventHub and stores them locally",
             "Azure EventHub reader tool - reads messages from EventHub and stores them locally.\n\n\
             All configuration options can be provided via JSON configuration file and/or command line arguments.\n\

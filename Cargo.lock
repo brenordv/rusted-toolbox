@@ -1043,6 +1043,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "eh-read"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "azeventhubs",
+ "chrono",
+ "clap",
+ "crossterm",
+ "ctrlc",
+ "futures-util",
+ "serde_json",
+ "shared",
+ "sled",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "encode_unicode"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

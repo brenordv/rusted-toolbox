@@ -1,16 +1,19 @@
-use rusted_toolbox::tools::eh_read::cli_utils::{get_cli_arguments, print_runtime_info};
-use rusted_toolbox::tools::eh_read::eventhub_reader_app::EventHubReader;
-use rusted_toolbox::tools::eh_read::graceful_shutdown::{
-    graceful_shutdown_routine, setup_graceful_shutdown,
-};
-use rusted_toolbox::tools::eh_read::runtime_config_utils::{apply_cli_overrides, validate_config};
-use shared::constants::general::EH_READ_APP_NAME;
+use tracing::error;
 use shared::eventhub::utils::config_utils::get_base_config_object;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::get_current_working_dir::get_current_working_dir;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
-use tracing::error;
+use crate::cli_utils::{get_cli_arguments, print_runtime_info};
+use crate::eventhub_reader_app::EventHubReader;
+use crate::graceful_shutdown::{graceful_shutdown_routine, setup_graceful_shutdown};
+use crate::runtime_config_utils::{apply_cli_overrides, validate_config};
+
+mod cli_utils;
+mod eventhub_reader_app;
+mod graceful_shutdown;
+mod progress_tracker;
+mod runtime_config_utils;
 
 /// EventHub message reader with checkpoint/resume support.
 ///
@@ -24,7 +27,7 @@ use tracing::error;
 #[tokio::main]
 async fn main() {
     // Initialize logging for the app
-    initialize_log(EH_READ_APP_NAME, LogLevel::Info);
+    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Info);
 
     // Get CLI arguments
     let matches = get_cli_arguments();

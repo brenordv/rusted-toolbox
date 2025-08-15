@@ -30,9 +30,6 @@ path = "src/bin/jwt.rs"
 name = "split"
 path = "src/bin/split.rs"
 
-[[bin]]
-name = "eh-read"
-path = "src/bin/eh_read.rs"
 
 [dependencies]
 shared = { path = "../shared" }
