@@ -55,7 +55,7 @@ able to read about 380 messages/second (it could probably be faster in better fi
 eh_read --connection-string "Endpoint=sb://..." --entity-path "events" --read-to-file --dump-filter "ERROR"
 ```
 
-### ☁️ eh-export - [readme](crates/tools/src/tools/eh_export/readme.md)
+### ☁️ eh-export - [readme](crates/tool-eventhub-export/readme.md)
 One of the features of the aforementioned `EventHub Reader` is the ability to read messages from Eventhub and save them
 to a local embedded database. After that, you need a way to export those messages from the DB to files.
 Enter EventHub Export tool! It exports messages from local databases (created by eh_read) to various file formats. 

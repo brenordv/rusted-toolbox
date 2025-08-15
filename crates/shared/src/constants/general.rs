@@ -3,9 +3,6 @@ pub const AUTHOR_NAME: &str = "Breno RdV";
 pub const EH_READ_APP_NAME: &str = "eh-read";
 pub const EH_READ_VERSION: &str = "1.0.0";
 
-pub const EH_EXPORT_APP_NAME: &str = "eh-export";
-pub const EH_EXPORT_VERSION: &str = "1.0.0";
-
 pub const GET_LINES_APP_NAME: &str = "get-lines";
 pub const GET_LINES_VERSION: &str = "1.0.0";
 

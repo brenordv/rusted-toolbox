@@ -1,6 +1,6 @@
 use clap::{ArgMatches, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE, EH_READ_APP_NAME, EH_EXPORT_VERSION};
+use shared::constants::general::{DASH_LINE};
 use shared::eventhub::eventhub_models::EventHubConfig;
 use shared::eventhub::utils::cli_arguments::CommandCommonExt;
 
@@ -13,7 +13,7 @@ use shared::eventhub::utils::cli_arguments::CommandCommonExt;
 /// - Version, database paths, export settings, filters, and operational flags
 /// - Formatted with emojis for visual clarity
 pub fn print_runtime_info(config: &mut EventHubConfig) {
-    println!("🚀 EventHub Exporter v{}", EH_EXPORT_VERSION);
+    println!("🚀 EventHub Exporter v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
     println!("🔊 Verbose: {}", config.verbose);
     println!(
@@ -72,9 +72,9 @@ pub fn print_runtime_info(config: &mut EventHubConfig) {
 /// - Shared EventHub connection arguments
 /// - Export-specific arguments for format, filters, and output options
 pub fn get_cli_arguments() -> ArgMatches {
-    Command::new(EH_READ_APP_NAME)
+    Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            EH_EXPORT_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "Azure EventHub export tool - exports messages from local database to files",
             "Azure EventHub export tool - exports messages from local database to files.\n\n\
             This tool reads messages previously saved by eh-read and exports them to various formats.\n\
