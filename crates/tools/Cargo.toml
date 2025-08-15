@@ -14,10 +14,6 @@ path = "src/bin/touch.rs"
 name = "ts"
 path = "src/bin/ts.rs"
 
-[[bin]]
-name = "split"
-path = "src/bin/split.rs"
-
 
 [dependencies]
 shared = { path = "../shared" }

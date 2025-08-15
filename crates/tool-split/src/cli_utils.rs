@@ -1,15 +1,15 @@
-use crate::tools::split::models::SplitArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE, SPLIT_APP_NAME, SPLIT_VERSION};
+use shared::constants::general::{DASH_LINE};
 use shared::system::get_current_working_dir::get_current_working_dir;
 use std::path::{Path, PathBuf};
+use crate::models::SplitArgs;
 
 /// Displays runtime configuration for the file splitting operation.
 ///
 /// Shows version, input file, output directory, lines per file, prefix, and CSV mode status.
 pub fn print_runtime_info(args: &SplitArgs) {
-    println!("🚀 File Splitter v{}", SPLIT_VERSION);
+    println!("🚀 File Splitter v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
     println!("📃 Input file: {}", args.input_file);
@@ -29,9 +29,9 @@ pub fn print_runtime_info(args: &SplitArgs) {
 /// # Panics
 /// Panics if required file argument is missing or numeric arguments cannot be parsed
 pub fn get_cli_arguments() -> SplitArgs {
-    let matches = Command::new(SPLIT_APP_NAME)
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            SPLIT_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "File splitter",
             "Split files by number of lines.")
         .arg(Arg::new("file")

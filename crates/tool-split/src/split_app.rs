@@ -1,4 +1,3 @@
-use crate::tools::split::models::SplitArgs;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use log::error;
@@ -11,6 +10,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use crate::models::SplitArgs;
 
 /// Creates a buffered file reader with 128KB buffer for input file.
 ///

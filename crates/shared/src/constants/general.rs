@@ -3,9 +3,6 @@ pub const AUTHOR_NAME: &str = "Breno RdV";
 pub const NSCV_APP_NAME: &str = "nscv";
 pub const NSCV_VERSION: &str = "1.0.0";
 
-pub const SPLIT_APP_NAME: &str = "split";
-pub const SPLIT_VERSION: &str = "1.0.0";
-
 pub const TOUCH_APP_NAME: &str = "touch";
 pub const TOUCH_VERSION: &str = "1.0.0";
 

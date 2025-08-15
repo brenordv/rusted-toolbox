@@ -6,4 +6,4 @@ members = [
     "crates/ai-tools",
     "crates/shared",
     "crates/tools",
-    "crates/tool-cat", "crates/tool-csvn", "crates/tool-eventhub-export", "crates/tool-eventhub-read", "crates/tool-get-lines", "crates/tool-guid", "crates/tool-jwt"]
+    "crates/tool-cat", "crates/tool-csvn", "crates/tool-eventhub-export", "crates/tool-eventhub-read", "crates/tool-get-lines", "crates/tool-guid", "crates/tool-jwt", "crates/tool-split"]

@@ -1,10 +1,12 @@
-use rusted_toolbox::tools::split::cli_utils::{
-    ensure_cli_arguments_are_valid, get_cli_arguments, print_runtime_info,
-};
-use rusted_toolbox::tools::split::split_app::process_input_file;
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
-use tracing::error;
+use crate::cli_utils::{ensure_cli_arguments_are_valid, get_cli_arguments, print_runtime_info};
+use crate::split_app::process_input_file;
+use tracing::{error};
+
+mod cli_utils;
+mod models;
+mod split_app;
 
 /// File splitting tool with graceful shutdown support.
 ///
