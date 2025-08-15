@@ -1,13 +1,13 @@
-use crate::tools::guid::models::GuidArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE, GUID_APP_NAME, GUID_VERSION};
+use shared::constants::general::{DASH_LINE};
+use crate::models::GuidArgs;
 
 /// Displays runtime configuration information.
 ///
 /// Shows version, silence mode, interval settings, clipboard options, and empty GUID flags.
 pub fn print_runtime_info(args: &GuidArgs) {
-    println!("🚀 Guid v{}", GUID_VERSION);
+    println!("🚀 Guid v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
     println!("🔇 Silence: {}", args.silent);
 
@@ -26,9 +26,9 @@ pub fn print_runtime_info(args: &GuidArgs) {
 /// # Errors
 /// Terminates program if invalid arguments are provided
 pub fn get_cli_arguments() -> GuidArgs {
-    let matches = Command::new(GUID_APP_NAME)
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            GUID_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "Generates GUIDs (uuid-v4) values, including empty.",
             "This tool can generate a single valid guid or an empty guid and copy this to the clipboard. Alternatively, it can continuously generate valid guids and output them to the terminal.")
         .arg(Arg::new("copy-to-clipboard")

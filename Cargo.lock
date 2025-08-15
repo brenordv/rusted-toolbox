@@ -1574,6 +1574,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "guid"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ctrlc",
+ "shared",
+ "tracing",
+]
+
+[[package]]
 name = "h2"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"

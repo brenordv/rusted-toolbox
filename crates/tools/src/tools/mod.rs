@@ -1,4 +1,3 @@
-pub mod guid;
 pub mod jwt;
 pub mod split;
 pub mod touch;

@@ -1,8 +1,5 @@
 pub const AUTHOR_NAME: &str = "Breno RdV";
 
-pub const GUID_APP_NAME: &str = "guid";
-pub const GUID_VERSION: &str = "1.0.0";
-
 pub const JWT_APP_NAME: &str = "jwt";
 pub const JWT_VERSION: &str = "1.0.0";
 
