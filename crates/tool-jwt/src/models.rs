@@ -101,6 +101,5 @@ impl Claims {
 
 pub struct TokenInfo {
     pub claims: Map<String, Value>,
-    pub is_valid: bool,
     pub expiration_status: ExpirationStatus,
 }

@@ -44,11 +44,9 @@ pub fn decode_jwt_token(token: &String) -> Result<TokenInfo> {
     match decode::<Claims>(&token, &key, &validation) {
         Ok(token_data) => {
             let expiration_status = token_data.claims.get_expiration_status();
-            let is_valid = matches!(expiration_status, ExpirationStatus::Valid { .. });
 
             Ok(TokenInfo {
                 claims: token_data.claims.extra,
-                is_valid,
                 expiration_status,
             })
         }
