@@ -1,7 +1,7 @@
+use crate::models::{JwtArgs, JwtPrint};
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE};
-use crate::models::{JwtArgs, JwtPrint};
+use shared::constants::general::DASH_LINE;
 
 /// Displays JWT runtime configuration information.
 ///

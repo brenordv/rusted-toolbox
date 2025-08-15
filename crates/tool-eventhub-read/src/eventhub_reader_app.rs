@@ -1,3 +1,4 @@
+use crate::progress_tracker::{OperationGuard, ProgressTracker};
 use anyhow::{anyhow, Context, Result};
 use azeventhubs::consumer::{EventPosition, ReadEventOptions};
 use azeventhubs::ReceivedEventData;
@@ -15,7 +16,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
-use crate::progress_tracker::{OperationGuard, ProgressTracker};
 
 /// EventHub message consumer with progress tracking and graceful shutdown.
 ///

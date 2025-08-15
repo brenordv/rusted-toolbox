@@ -1,13 +1,13 @@
+use crate::cli_utils::{get_cli_arguments, print_runtime_info};
+use crate::ts_app::process_input;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
-use crate::cli_utils::{get_cli_arguments, print_runtime_info};
-use crate::ts_app::process_input;
 use tracing::error;
 
-mod ts_app;
 mod cli_utils;
 mod models;
+mod ts_app;
 
 /// Main entry point for the timestamp converter tool.
 ///

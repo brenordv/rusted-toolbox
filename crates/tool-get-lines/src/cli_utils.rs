@@ -1,9 +1,9 @@
+use crate::models::GetLinesArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE};
+use shared::constants::general::DASH_LINE;
 use shared::system::tool_exit_helpers::exit_error;
 use std::path::Path;
-use crate::models::GetLinesArgs;
 
 /// Displays runtime configuration information.
 ///

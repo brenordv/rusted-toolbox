@@ -1,13 +1,13 @@
+use crate::cli_utils::{get_cli_arguments, print_runtime_info};
+use crate::csvn_app::process_file;
+use crate::models::CsvNConfig;
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
-use crate::cli_utils::{get_cli_arguments, print_runtime_info};
-use crate::models::CsvNConfig;
 use tracing::error;
-use crate::csvn_app::process_file;
 
-mod models;
 mod cli_utils;
 mod csvn_app;
+mod models;
 
 fn main() {
     const CSVN_APP_NAME: &str = env!("CARGO_PKG_NAME");

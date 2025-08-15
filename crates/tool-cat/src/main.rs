@@ -1,17 +1,16 @@
-use std::io;
-use std::io::Write;
-use shared::logging::app_logger::LogLevel;
-use shared::logging::logging_helpers::initialize_log;
-use shared::system::tool_exit_helpers::{exit_error, exit_success};
 use crate::cat_app::cat_file;
 use crate::cli_utils::get_cli_arguments;
 use crate::models::CatOptions;
+use shared::logging::app_logger::LogLevel;
+use shared::logging::logging_helpers::initialize_log;
+use shared::system::tool_exit_helpers::{exit_error, exit_success};
+use std::io;
+use std::io::Write;
 use tracing::error;
 
-mod models;
-mod cli_utils;
 mod cat_app;
-
+mod cli_utils;
+mod models;
 
 fn main() {
     initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Error);

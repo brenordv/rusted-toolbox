@@ -1,3 +1,4 @@
+use crate::models::CsvNConfig;
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use csv::{StringRecord, Writer, WriterBuilder};
@@ -12,7 +13,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use string_interner::DefaultSymbol;
-use crate::models::CsvNConfig;
 
 /// Determines headers for CSV processing.
 ///

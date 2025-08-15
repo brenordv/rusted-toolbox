@@ -1,14 +1,14 @@
-use shared::constants::general::{EXIT_CODE_INTERRUPTED_BY_USER};
+use crate::cli_utils::{get_cli_arguments, print_runtime_info, validate_cli_arguments};
+use crate::guid_app::{continuous_generation, copy_guid_to_clipboard, generate_once};
+use shared::constants::general::EXIT_CODE_INTERRUPTED_BY_USER;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
-use crate::cli_utils::{get_cli_arguments, print_runtime_info, validate_cli_arguments};
-use crate::guid_app::{continuous_generation, copy_guid_to_clipboard, generate_once};
 use tracing::error;
 
 mod cli_utils;
-mod models;
 mod guid_app;
+mod models;
 
 /// GUID generator tool.
 ///

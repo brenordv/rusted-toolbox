@@ -1,6 +1,6 @@
+use crate::models::CatArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use crate::models::CatArgs;
 
 /// Parses command-line arguments for cat application.
 ///

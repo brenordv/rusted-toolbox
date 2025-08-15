@@ -1,9 +1,9 @@
+use crate::models::CatOptions;
 use anyhow::{Context, Result};
 use shared::constants::general::SIZE_128KB;
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
-use crate::models::CatOptions;
 
 /// Processes file content with optional formatting.
 ///

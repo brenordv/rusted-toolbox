@@ -1,3 +1,4 @@
+use crate::models::{GetLinesArgs, LineData};
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
@@ -11,7 +12,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::ReceiverStream;
-use crate::models::{GetLinesArgs, LineData};
 
 /// Sets up file-based output channels for search term results.
 ///

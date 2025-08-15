@@ -1,7 +1,7 @@
+use crate::models::GuidArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE};
-use crate::models::GuidArgs;
+use shared::constants::general::DASH_LINE;
 
 /// Displays runtime configuration information.
 ///

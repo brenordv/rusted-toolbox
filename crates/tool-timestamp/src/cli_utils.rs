@@ -1,7 +1,7 @@
+use crate::models::TsArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
 use shared::constants::general::DASH_LINE;
-use crate::models::TsArgs;
 
 /// Displays runtime information for the timestamp converter.
 ///

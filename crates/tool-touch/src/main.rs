@@ -1,8 +1,8 @@
+use crate::cli_utils::{get_cli_arguments, validate_cli_arguments};
+use crate::touch_app::touch_file;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
-use crate::cli_utils::{get_cli_arguments, validate_cli_arguments};
-use crate::touch_app::touch_file;
 use tracing::error;
 
 mod cli_utils;
