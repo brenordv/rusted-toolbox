@@ -1,13 +1,12 @@
-use rusted_toolbox::tools::jwt::cli_utils::{
-    get_cli_arguments, print_runtime_info, validate_cli_arguments,
-};
-use rusted_toolbox::tools::jwt::jwt_app::{
-    copy_claim_to_clipboard, decode_jwt_token, print_token_csv, print_token_json,
-    print_token_pretty,
-};
-use rusted_toolbox::tools::jwt::models::JwtPrint;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
+use crate::cli_utils::{get_cli_arguments, print_runtime_info, validate_cli_arguments};
+use crate::jwt_app::{copy_claim_to_clipboard, decode_jwt_token, print_token_csv, print_token_json, print_token_pretty};
 use tracing::error;
+use crate::models::JwtPrint;
+
+mod cli_utils;
+mod jwt_app;
+mod models;
 
 /// JWT decoding and processing tool.
 ///

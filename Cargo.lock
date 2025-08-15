@@ -2111,6 +2111,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jwt"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "colored",
+ "jsonwebtoken",
+ "serde",
+ "serde_json",
+ "shared",
+ "tracing",
+]
+
+[[package]]
 name = "kqueue"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

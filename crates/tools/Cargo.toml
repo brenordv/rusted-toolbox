@@ -15,10 +15,6 @@ name = "ts"
 path = "src/bin/ts.rs"
 
 [[bin]]
-name = "jwt"
-path = "src/bin/jwt.rs"
-
-[[bin]]
 name = "split"
 path = "src/bin/split.rs"
 

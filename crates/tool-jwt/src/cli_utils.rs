@@ -1,7 +1,7 @@
-use crate::tools::jwt::models::{JwtArgs, JwtPrint};
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE, JWT_APP_NAME, JWT_VERSION};
+use shared::constants::general::{DASH_LINE};
+use crate::models::{JwtArgs, JwtPrint};
 
 /// Displays JWT runtime configuration information.
 ///
@@ -44,7 +44,7 @@ use shared::constants::general::{DASH_LINE, JWT_APP_NAME, JWT_VERSION};
 /// The function requires the constants `JWT_VERSION` and `DASH_LINE`, as well as the
 /// `JwtArgs` and `JwtPrint` types to be defined elsewhere in the codebase.
 pub fn print_runtime_info(args: &JwtArgs) {
-    println!("🚀 JWT v{}", JWT_VERSION);
+    println!("🚀 JWT v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
     println!("📏 Token length: {}", &args.token.len());
 
@@ -88,9 +88,9 @@ pub fn print_runtime_info(args: &JwtArgs) {
 /// - The `token` argument allows one or more JWT strings and automatically cleans up formatting inconsistencies
 ///   such as the "Bearer" keyword or extraneous whitespaces.
 pub fn get_cli_arguments() -> JwtArgs {
-    let matches = Command::new(JWT_APP_NAME)
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            JWT_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "Decodes and prints public JWT tokens data.",
             "Decodes all public info in the JWT tokens, and can either pretty-print, print the csv or json format. Optionally, can copy one of the claims to the clipboard.")
         .arg(Arg::new("copy-to-clipboard")
