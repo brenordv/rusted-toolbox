@@ -45,7 +45,7 @@ impl TouchArgs {
     /// Returns the appropriate file time based on available time sources.
     ///
     /// Checks time sources in priority order: date, time_spec, reference.
-    /// Returns the same time for both access and modify when using date or time_spec.
+    /// Returns the same time for both accesses and modify when using date or time_spec.
     ///
     /// # Returns
     /// - `Some((access_time, modify_time))`: Time source found
