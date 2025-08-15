@@ -1,0 +1,16 @@
+[package]
+name = "get-lines"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "High-performance text search utility that extracts lines containing specific search patterns from text files."
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+clap = "4.5.45"
+anyhow = "1.0.99"
+futures-util = "0.3.31"
+tokio = "1.47.1"
+tokio-stream = "0.1.17"
+tracing = "0.1.41"

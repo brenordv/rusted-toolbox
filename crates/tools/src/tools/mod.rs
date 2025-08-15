@@ -1,4 +1,3 @@
-pub mod get_lines;
 pub mod guid;
 pub mod jwt;
 pub mod split;

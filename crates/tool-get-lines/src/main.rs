@@ -1,21 +1,19 @@
-use rusted_toolbox::tools::get_lines::cli_utils::{
-    get_cli_arguments, print_runtime_info, validate_cli_arguments,
-};
-use rusted_toolbox::tools::get_lines::get_lines_app::{
-    prepare_to_export_search_terms_to_console, prepare_to_export_search_terms_to_output_files,
-    process_lines_read, spawn_file_reading_workers,
-};
-use rusted_toolbox::tools::get_lines::models::LineData;
-use shared::constants::general::GET_LINES_APP_NAME;
-use shared::logging::app_logger::LogLevel;
-use shared::logging::logging_helpers::initialize_log;
-use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
-use shared::system::tool_exit_helpers::{exit_error, exit_success};
 use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use shared::logging::app_logger::LogLevel;
+use shared::logging::logging_helpers::initialize_log;
+use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
+use shared::system::tool_exit_helpers::{exit_error, exit_success};
+use crate::cli_utils::{get_cli_arguments, print_runtime_info, validate_cli_arguments};
+use crate::get_lines_app::{prepare_to_export_search_terms_to_console, prepare_to_export_search_terms_to_output_files, process_lines_read, spawn_file_reading_workers};
+use crate::models::LineData;
 use tracing::error;
+
+mod cli_utils;
+mod get_lines_app;
+mod models;
 
 /// Main entry point for the get-lines tool.
 ///
@@ -43,7 +41,7 @@ use tracing::error;
 #[tokio::main]
 async fn main() {
     // 0) Initialize logging, but only for errors. We don't want to mess up the user's terminal.
-    initialize_log(GET_LINES_APP_NAME, LogLevel::Error);
+    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Error);
 
     // 1) Parse & validate CLI arguments
     let args = get_cli_arguments();
@@ -82,13 +80,13 @@ async fn main() {
                 term,
                 Arc::clone(&shutdown_signal),
             )
-            .inspect_err(|e| {
-                error!(
+                .inspect_err(|e| {
+                    error!(
                     "Failed to create output file for search term [{}]: [{}]",
                     term, e
                 );
-                exit_error();
-            });
+                    exit_error();
+                });
         }
     } else {
         prepare_to_export_search_terms_to_console(

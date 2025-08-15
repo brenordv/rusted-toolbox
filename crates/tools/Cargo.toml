@@ -19,10 +19,6 @@ name = "ts"
 path = "src/bin/ts.rs"
 
 [[bin]]
-name = "get-lines"
-path = "src/bin/get_lines.rs"
-
-[[bin]]
 name = "jwt"
 path = "src/bin/jwt.rs"
 

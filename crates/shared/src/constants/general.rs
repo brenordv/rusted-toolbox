@@ -1,8 +1,5 @@
 pub const AUTHOR_NAME: &str = "Breno RdV";
 
-pub const GET_LINES_APP_NAME: &str = "get-lines";
-pub const GET_LINES_VERSION: &str = "1.0.0";
-
 pub const GUID_APP_NAME: &str = "guid";
 pub const GUID_VERSION: &str = "1.0.0";
 

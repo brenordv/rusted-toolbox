@@ -1,15 +1,15 @@
-use crate::tools::get_lines::models::GetLinesArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::{DASH_LINE, GET_LINES_APP_NAME, GET_LINES_VERSION};
+use shared::constants::general::{DASH_LINE};
 use shared::system::tool_exit_helpers::exit_error;
 use std::path::Path;
+use crate::models::GetLinesArgs;
 
 /// Displays runtime configuration information.
 ///
 /// Shows version, input file, output destination, worker count, and search terms.
 pub fn print_runtime_info(args: &GetLinesArgs) {
-    println!("🚀 Get-Lines v{}", GET_LINES_VERSION);
+    println!("🚀 Get-Lines v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
     println!("📥 Input File: {}", args.file);
 
@@ -53,9 +53,9 @@ pub fn print_runtime_info(args: &GetLinesArgs) {
 /// - Defaults workers to 1 if parsing fails
 /// - Panics if required arguments are missing
 pub fn get_cli_arguments() -> GetLinesArgs {
-    let matches = Command::new(GET_LINES_APP_NAME)
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
-            GET_LINES_VERSION,
+            env!("CARGO_PKG_VERSION"),
             "Extracts lines from a text file.",
             "Searches for specific text within a file and outputs the lines containing the text. Supports parallel processing for faster search.")
         .preset_arg_verbose(None)
