@@ -1,14 +1,12 @@
-
 use anyhow::{Context, Result};
 
-
+use crate::models::ChatBotAgent;
 use shared::constants::general::DASH_LINE;
+use shared::system::select_file_from_path::select_file_from_path;
+use shared::utils::role_printer::{Role, RolePrinter};
 use std::env;
 use std::io::stdin;
 use std::path::PathBuf;
-use shared::system::select_file_from_path::select_file_from_path;
-use shared::utils::role_printer::{Role, RolePrinter};
-use crate::models::ChatBotAgent;
 
 /// Displays runtime configuration information.
 ///

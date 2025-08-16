@@ -1,11 +1,10 @@
-
+use crate::models::{AiResponse, ApiResponse, ChatCompletion, Message};
+use crate::request_wrappers::requester_traits::{MessageVecExt, OpenAiRequesterTraits};
+use crate::utils::request_loggers::RequestLogger;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, Response, StatusCode};
-use crate::models::{AiResponse, ApiResponse, ChatCompletion, Message};
-use crate::request_wrappers::requester_traits::{MessageVecExt, OpenAiRequesterTraits};
-use crate::utils::request_loggers::RequestLogger;
 
 pub struct OpenAiRequester {
     api_url: String,

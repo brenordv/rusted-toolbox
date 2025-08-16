@@ -1,6 +1,8 @@
 use crate::ai_functions::{fix_cli_command_as_string, suggest_cli_command_as_string};
 use crate::models::{HowMode, HowRuntimeConfig};
-use ai_shared::message_builders::system_message_builders::{build_rust_ai_function_system_message, build_rust_ai_function_user_message};
+use ai_shared::message_builders::system_message_builders::{
+    build_rust_ai_function_system_message, build_rust_ai_function_user_message,
+};
 use ai_shared::request_wrappers::requester_builders::build_requester_for_ai;
 use ai_shared::request_wrappers::requester_traits::OpenAiRequesterTraits;
 use anyhow::{Context, Result};
@@ -18,9 +20,7 @@ use shared::utils::copy_string_to_clipboard::copy_to_clipboard;
 /// Returns error if AI request fails, clipboard operation fails, or other system errors
 pub async fn start_how_app(config: HowRuntimeConfig) -> Result<()> {
     let result = match &config.mode {
-        HowMode::FixCommand(command) => {
-            fix_command(command, &config.os, &config.shell).await?
-        }
+        HowMode::FixCommand(command) => fix_command(command, &config.os, &config.shell).await?,
         HowMode::SuggestCommand(request) => {
             suggest_command(request, &config.os, &config.shell).await?
         }
@@ -51,17 +51,16 @@ pub async fn start_how_app(config: HowRuntimeConfig) -> Result<()> {
 async fn fix_command(command: &str, os: &str, shell: &Option<String>) -> Result<String> {
     let os_info = build_os_info(os, shell);
     let input = format!("command: {}\n{}", command, os_info);
-    
-    let mut requester = build_requester_for_ai()
-        .context("Failed to build AI requester")?;
-    
+
+    let mut requester = build_requester_for_ai().context("Failed to build AI requester")?;
+
     let system_message = build_rust_ai_function_system_message();
     let user_message = build_rust_ai_function_user_message(fix_cli_command_as_string, &input);
-    
+
     requester
         .set_system_message(system_message)?
         .initialize_api_client()?;
-    
+
     let response = requester
         .send_request(user_message, false)
         .await
@@ -88,17 +87,16 @@ async fn fix_command(command: &str, os: &str, shell: &Option<String>) -> Result<
 async fn suggest_command(request: &str, os: &str, shell: &Option<String>) -> Result<String> {
     let os_info = build_os_info(os, shell);
     let input = format!("request: {}\n: {}", request, os_info);
-    
-    let mut requester = build_requester_for_ai()
-        .context("Failed to build AI requester")?;
-    
+
+    let mut requester = build_requester_for_ai().context("Failed to build AI requester")?;
+
     let system_message = build_rust_ai_function_system_message();
     let user_message = build_rust_ai_function_user_message(suggest_cli_command_as_string, &input);
-    
+
     requester
         .set_system_message(system_message)?
         .initialize_api_client()?;
-    
+
     let response = requester
         .send_request(user_message, false)
         .await

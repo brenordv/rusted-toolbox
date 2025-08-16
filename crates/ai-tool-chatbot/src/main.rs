@@ -1,14 +1,14 @@
+mod chatbot_app;
 mod cli_utils;
 mod models;
-mod chatbot_app;
 
+use crate::chatbot_app::start_chatbot;
+use crate::cli_utils::{get_runtime_config, print_runtime_info};
 use anyhow::Result;
 use dotenv::dotenv;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
-use crate::chatbot_app::start_chatbot;
-use crate::cli_utils::{get_runtime_config, print_runtime_info};
 
 #[tokio::main]
 async fn main() -> Result<()> {

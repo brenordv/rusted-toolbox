@@ -3,13 +3,13 @@ mod cli_utils;
 mod how_app;
 mod models;
 
+use crate::cli_utils::{get_cli_arguments, print_runtime_info};
+use crate::how_app::start_how_app;
 use anyhow::Result;
 use dotenv::dotenv;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
-use crate::cli_utils::{get_cli_arguments, print_runtime_info};
-use crate::how_app::start_how_app;
 
 #[tokio::main]
 async fn main() -> Result<()> {

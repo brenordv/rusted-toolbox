@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
-use std::env;
 use crate::request_wrappers::requester_implementations::OpenAiRequester;
 use crate::request_wrappers::requester_traits::OpenAiRequesterTraits;
+use anyhow::{Context, Result};
+use std::env;
 
 pub fn build_requester_for_ai() -> Result<OpenAiRequester> {
     let ai_platform = env::var("AI_PLATFORM").context("AI_PLATFORM must be set")?;

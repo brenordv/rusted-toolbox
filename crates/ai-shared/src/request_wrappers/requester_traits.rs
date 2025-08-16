@@ -1,6 +1,6 @@
+use crate::models::{AiResponse, Message};
 use anyhow::Result;
 use async_trait::async_trait;
-use crate::models::{AiResponse, Message};
 
 pub trait MessageVecExt {
     fn first_is_system(&self) -> bool;
