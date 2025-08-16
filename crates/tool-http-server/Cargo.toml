@@ -14,3 +14,4 @@ warp = "0.3"
 chrono = { version = "0.4.41", features = ["serde"] }
 percent-encoding = "2.3.1"
 mime_guess = "2.0.5"
+tracing = "0.1.41"

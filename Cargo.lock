@@ -4189,6 +4189,7 @@ dependencies = [
  "percent-encoding",
  "shared",
  "tokio",
+ "tracing",
  "warp",
 ]
 

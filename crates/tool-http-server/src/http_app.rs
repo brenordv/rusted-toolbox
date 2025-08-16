@@ -5,21 +5,15 @@ use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use warp::{Filter, Reply};
+use std::time::Instant;
+use warp::http::HeaderMap;
+use tracing::info;
 
 pub async fn start_server(config: ServerArgs) {
     let root_path = config.root_path.clone();
 
     // Create a filter for logging requests
-    let log_filter = warp::log::custom(|info| {
-        println!(
-            "{} {} {} {} - {} bytes",
-            Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
-            info.method(),
-            info.path(),
-            info.status(),
-            info.elapsed().as_millis(),
-        );
-    });
+    let log_filter = create_request_logger();
 
     // Create the main route handler
     let routes = warp::path::full()
@@ -323,4 +317,29 @@ fn format_file_size(size: u64) -> String {
     } else {
         format!("{:.1} {}", size, UNITS[unit_index])
     }
+}
+
+// Create a function that returns a warp log configuration (not a filter)
+fn create_request_logger() -> warp::log::Log<impl Fn(warp::log::Info) + Copy> {
+    warp::log::custom(|info| {
+        let headers = info.request_headers();
+        let user_agent = headers.get("user-agent")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("unknown");
+        let content_length = headers.get("content-length")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("0");
+
+        info!(
+            target: "http_server::access_log",
+            "HTTP request completed - {} {} {} - {}ms - {} bytes - UA: {} - Remote: {:?}",
+            info.method(),
+            info.path(),
+            info.status(),
+            info.elapsed().as_millis(),
+            content_length,
+            user_agent,
+            info.remote_addr()
+        );
+    })
 }
