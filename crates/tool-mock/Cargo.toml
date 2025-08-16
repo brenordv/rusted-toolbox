@@ -1,18 +1,16 @@
 [package]
-name = "touch"
+name = "mock"
 version = "1.0.0"
 edition = "2021"
 authors = ["Breno RdV"]
-description = "Port of the Unix touch command."
+description = "Mock data generator CLI tool."
 repository = "https://github.com/brenordv/rusted-toolbox"
 
 [dependencies]
 shared = { path = "../shared" }
-filetime = "0.2.25"
-anyhow = "1.0.99"
 clap = "4.5.45"
-chrono = "0.4.41"
+anyhow = "1.0.99"
 tracing = "0.1.41"
-
-[dev-dependencies]
-tempfile = "3.20"
+rand = "0.9.2"
+chrono = { version = "0.4.41", features = ["serde"] }
+fake = { version = "4.4.0", features = ["derive", "chrono"] }

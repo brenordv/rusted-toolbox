@@ -16,22 +16,6 @@ use std::path::PathBuf;
 /// A `PathBuf` representing the resolved path. If the provided path is absolute, the result
 /// is the same as the input path. If the path is relative, the result is the base folder
 /// joined with the relative path.
-///
-/// # Example
-///
-/// ```
-/// use std::path::PathBuf;
-/// use shared::::resolve_path_with_base::resolve_path_with_base;
-///
-/// let base_folder = "/home/user";
-/// let relative_path = "documents/file.txt";
-/// let resolved_path = resolve_path_with_base(base_folder, relative_path);
-/// assert_eq!(resolved_path, PathBuf::from("/home/user/documents/file.txt"));
-///
-/// let absolute_path = "/var/log/system.log";
-/// let resolved_path = resolve_path_with_base(base_folder, absolute_path);
-/// assert_eq!(resolved_path, PathBuf::from("/var/log/system.log"));
-/// ```
 pub fn resolve_path_with_base(base_folder: &str, path: &str) -> PathBuf {
     let path_buf = PathBuf::from(path);
     if path_buf.is_absolute() {

@@ -199,7 +199,9 @@ mod tests {
         // Delete
         dict.delete::<ValueType>(key2).unwrap();
         let result = dict.get::<ValueType>(key2);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+
 
         // Delete missing should error
         let missing = dict.delete::<ValueType>("not_existing_key");
@@ -214,7 +216,9 @@ mod tests {
 
         // Get a missing key
         let missing = dict.get::<ValueType>("missing");
-        assert!(missing.is_err());
+        assert!(missing.is_ok());
+        assert!(missing.unwrap().is_none());
+
 
         // Update a missing key
         let result = dict.update(

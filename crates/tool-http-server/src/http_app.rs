@@ -3,8 +3,8 @@ use percent_encoding::percent_decode_str;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use warp::{Filter, Reply};
 use tracing::info;
+use warp::{Filter, Reply};
 
 pub async fn start_server(config: ServerArgs) {
     let root_path = config.root_path.clone();
@@ -320,10 +320,12 @@ fn format_file_size(size: u64) -> String {
 fn create_request_logger() -> warp::log::Log<impl Fn(warp::log::Info) + Copy> {
     warp::log::custom(|info| {
         let headers = info.request_headers();
-        let user_agent = headers.get("user-agent")
+        let user_agent = headers
+            .get("user-agent")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("unknown");
-        let content_length = headers.get("content-length")
+        let content_length = headers
+            .get("content-length")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("0");
 
