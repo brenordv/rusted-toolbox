@@ -9,7 +9,6 @@ websites, testing frontend applications, or sharing files locally during develop
 **Key Features:**
 - Serves static files from any directory with automatic MIME type detection
 - Beautiful directory browsing with file size display and navigation
-- Security-conscious path traversal protection
 - Automatic index file serving (index.html, index.htm)
 - Real-time request logging with detailed access information
 - Configurable port and root directory
@@ -18,9 +17,9 @@ websites, testing frontend applications, or sharing files locally during develop
 ## Command-Line Options
 - `path`: Directory to serve as web root (defaults to current directory)
 - `-p, --port`: Port number to listen on (default: 4200)
+- `-o, --host`: Host address to bind the server to (default: 127.0.0.1)
 
 ## Examples
-
 ### Basic Usage - Serve Current Directory
 **Command:**
 ```bash
@@ -77,8 +76,35 @@ http ./dist -p 3000
 Server running at http://127.0.0.1:3000
 ```
 
-## Features in Detail
+### Custom Host (Bind to All Interfaces)
+**Command:**
+``` bash
+http --host 0.0.0.0
+```
+**Output:**
+``` 
+🚀 Simple HTTP Server v1.0.0
+---------------------------
+📂 Root directory: /current/working/directory
+🚪 Port: 4200
+Server running at http://0.0.0.0:4200
+```
 
+### Serve on Specific Host and Port
+**Command:**
+``` bash
+http --host 192.168.1.100 --port 3000
+```
+**Output:**
+``` 
+🚀 Simple HTTP Server v1.0.0
+---------------------------
+📂 Root directory: /current/working/directory
+🚪 Port: 3000
+Server running at http://192.168.1.100:3000
+```
+
+## Features in Detail
 ### Directory Browsing
 When accessing a directory without an index file, the server generates a beautiful HTML listing showing:
 - 📁 Subdirectories with navigation links
