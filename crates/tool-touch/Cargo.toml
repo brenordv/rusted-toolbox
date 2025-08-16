@@ -1,0 +1,18 @@
+[package]
+name = "touch"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "Port of the Unix touch command."
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+filetime = "0.2.25"
+anyhow = "1.0.99"
+clap = "4.5.45"
+chrono = "0.4.41"
+tracing = "0.1.41"
+
+[dev-dependencies]
+tempfile = "3.0"

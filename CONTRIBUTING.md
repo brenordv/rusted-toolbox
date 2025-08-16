@@ -8,29 +8,32 @@ Each tool follows a few principles I try to stick to:
 
 ## Project structure
 1. **Workspace crates**
-   - `crates/tools`: The classic CLI tools (e.g., `cat`, `ts`, `jwt`, `eh-read`, ...)
-     - Entrypoints live in `crates/tools/src/bin` (one very thin file per binary);
-     - Tool implementation lives in `crates/tools/src/tools/<tool name>` with:
+   - **Individual tool crates**: Each CLI tool has its own dedicated crate (e.g., `crates/tool-cat`, `crates/tool-jwt`, `crates/tool-split`, etc.)
+     - Each tool crate contains:
+       - `main.rs` (thin entrypoint that orchestrates the tool logic);
        - `cli_utils.rs` (argument parsing/validation only);
        - `models.rs` (structs and data models);
-       - `<tool name>_app.rs` (the actual tool logic);
+       - `<tool_name>_app.rs` (the actual tool logic);
        - `readme.md` (manual for the tool);
+       - `Cargo.toml` (tool-specific dependencies and metadata);
        - Additional files as needed to keep things tidy, scoped to the tool;
-   - `crates/ai-tools`: AI-powered agents and helpers (e.g., the chatbot)
-     - Entrypoints live in `crates/ai-tools/src/bin` (same rule: orchestration only);
-     - Each agent lives under `crates/ai-tools/src/agents/<agent name>` with:
+   - `crates/ai-tools`: AI-powered agents and helpers (e.g., the chatbot) [I'll probably refactor this later]
+     - Binary definitions in `Cargo.toml` using `[[bin]]` sections;
+     - Each agent lives under `crates/ai-tools/src/agents/<agent_name>` with:
        - `cli_utils.rs` (runtime info, argument/env validation, but no agent logic);
        - `models.rs` (agent-specific types);
-       - `<agent name>_app.rs` (the agent logic);
+       - `<agent_name>_app.rs` (the agent logic);
        - Optional `readme.md` for agent-specific docs;
+     - Supporting modules: `ai_functions`, `message_builders`, `models`, `requesters`, `tasks`, `utils`;
    - `crates/shared`: Cross-cutting utilities and modules shared by multiple binaries
-     - Group code by theme (e.g., `constants`, `eventhub`, `logging`, `sqlite`, `system`, `utils`);
+     - Organized by functionality: `command_line`, `constants`, `eventhub`, `logging`, `sqlite`, `system`, `utils`;
      - If more than one tool/agent needs it, it belongs here rather than duplicating logic;
    - `crates/macros`: Procedural macros used across the workspace.
 2. **Root `readme.md` file**: Add a reference to any new tools/agents to this file, or update/review any behaviors here;
-3. **Build scripts (`build.sh`, and `build.bat`)**: The build command for every binary should be covered for all platforms (Windows, Linux, and MacOs);
+3. **Build scripts (`build.sh`, and `build.bat`)**: The build command for every tool and agent binary should be covered for all platforms (Windows, Linux, and MacOs). Each individual tool crate is built separately;
 4. **Installing on Non-Windows systems**: For non-Windows systems, where tools like `cat` and `touch` already exist, we build them but may skip copying to `dist`;
 5. **Testing**: Try to add tests to every tool/agent and shared utility when it makes sense;
+6. **Adding new tools**: To add a new CLI tool, create a new crate under `crates/tool-<name>` and add it to the workspace members in the root `Cargo.toml`;
 
 ## Tool/Agent structure
 1. Tools and agents can print/log information, trace, and warnings, but not errors;

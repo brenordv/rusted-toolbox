@@ -8,12 +8,11 @@
 #     curl -sSL https://raw.githubusercontent.com/brenordv/rusted-toolbox/refs/heads/master/convenience-build-macos.sh | bash
 #
 # This script will:
-# 1. Check/install Xcode CLI tools and Git
-# 2. Check/install Homebrew
-# 3. Check/install Rust via rustup
-# 4. Clone/update the repository in $CLONE_BASE
-# 5. Build the project via build.sh
-# 6. Install generated tools to $INSTALL_DIR and update PATH
+# 1. Check/install Rust via rustup
+# 2. Clone/update the repository in $CLONE_BASE
+# 3. Build the project for macOS
+# 4. Install tools from target/release to $INSTALL_DIR and update PATH
+# 5. Exclude 'cat' and 'touch' tools to avoid conflicts with macOS built-ins
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -101,30 +100,46 @@ setup_repository() {
   fi
 }
 
-# Build project
+# Build project for macOS
 build_project() {
-  print_status "Building project"
+  print_status "Building project for macOS"
   cargo build --release
   print_success "Build succeeded"
 }
 
 # Install built tools
 install_tools() {
-  local dist_dir="./dist/macos"
-  if [ ! -d "$dist_dir" ]; then
-    print_error "Distribution directory $dist_dir missing"
+  local release_dir="./target/release"
+  if [ ! -d "$release_dir" ]; then
+    print_error "Release directory $release_dir missing"
     exit 1
   fi
-  print_status "Installing tools from $dist_dir to $INSTALL_DIR"
-  for tool in "$dist_dir"/*; do
-    if [ -f "$tool" ] && [ -x "$tool" ]; then
-      cp "$tool" "$INSTALL_DIR/"
-      print_success "Installed $(basename "$tool")"
+  
+  print_status "Installing tools from $release_dir to $INSTALL_DIR"
+  
+  # List of tools to install (excluding cat and touch to avoid conflicts with macOS built-ins)
+  local tools=(
+    "guid"
+    "ts"
+    "csvn"
+    "get-lines"
+    "jwt"
+    "split"
+    "eh-read"
+    "eh-export"
+    "ai-agent-chat"
+    "http-server"
+  )
+  
+  for tool in "${tools[@]}"; do
+    local tool_path="$release_dir/$tool"
+    if [ -f "$tool_path" ] && [ -x "$tool_path" ]; then
+      cp "$tool_path" "$INSTALL_DIR/"
+      print_success "Installed $tool"
+    else
+      print_warning "Tool $tool not found or not executable at $tool_path"
     fi
   done
-  # Removing tools that already exit in MacOS
-  rm "$INSTALL_DIR/cat"
-  rm "$INSTALL_DIR/touch"
 }
 
 # Main

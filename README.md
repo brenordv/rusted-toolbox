@@ -15,7 +15,7 @@ We currently have the following tools:
 11. An AI-powered [chatbot agent](#-ai-agent-chat---readme) for local or cloud LLMs;
 
 ## Well, well, well. What do we have here?
-### 🐱 cat - [readme](crates/tools/src/tools/cat/readme.md)
+### 🐱 cat - [readme](crates/tool-cat/readme.md)
 Mimics the classic Unix `cat` command. It concatenates files and displays them with optional line numbering, 
 character visualization, and formatting features.
 
@@ -33,7 +33,7 @@ Output:
      4	debug=true$
 ```
 
-### 📊 csvn - [readme](crates/tools/src/tools/csvn/readme.md)
+### 📊 csvn - [readme](crates/tool-csvn/readme.md)
 I hate dealing with CSV files with data missing and having to write a script (or search for something) to fix it, so I
 created this tool: A CSV data Normalizer.
 This tool fills in empty fields with default values you specify, making your data clean and consistent.
@@ -55,7 +55,7 @@ able to read about 380 messages/second (it could probably be faster in better fi
 eh_read --connection-string "Endpoint=sb://..." --entity-path "events" --read-to-file --dump-filter "ERROR"
 ```
 
-### ☁️ eh-export - [readme](crates/tools/src/tools/eh_export/readme.md)
+### ☁️ eh-export - [readme](crates/tool-eventhub-export/readme.md)
 One of the features of the aforementioned `EventHub Reader` is the ability to read messages from Eventhub and save them
 to a local embedded database. After that, you need a way to export those messages from the DB to files.
 Enter EventHub Export tool! It exports messages from local databases (created by eh_read) to various file formats. 
