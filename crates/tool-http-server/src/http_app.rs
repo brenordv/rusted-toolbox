@@ -57,7 +57,7 @@ async fn handle_request(
         .decode_utf8()
         .map_err(|_| warp::reject::not_found())?;
 
-    // Remove leading slash and resolve path
+    // Remove the leading slash and resolve a path
     let relative_path = decoded_path.trim_start_matches('/');
     let file_path = if relative_path.is_empty() {
         root_path.clone()
