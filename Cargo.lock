@@ -4054,6 +4054,7 @@ dependencies = [
  "clap",
  "filetime",
  "shared",
+ "tempfile",
  "tracing",
 ]
 

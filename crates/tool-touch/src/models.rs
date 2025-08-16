@@ -18,22 +18,28 @@ pub enum TouchTimeWord {
 /// timestamp updates, and time sources.
 ///
 /// # Fields
-/// - `access`: Update access time flag
-/// - `no_create`: Skip file creation flag
-/// - `date`: Specified date/time for both timestamps
-/// - `ignore`: Compatibility flag (ignored)
-/// - `no_dereference`: Update symlink instead of target
-/// - `modify`: Update modification time flag
-/// - `reference`: Reference file timestamps (access, modify)
-/// - `time_spec`: Formatted time specification
-/// - `time`: Which timestamps to update
+/// - `access`: Update access time flag (-a)
+/// - `no_create`: Skip file creation flag (-c)
+/// - `date`: Specified date/time for both timestamps (-d)
+/// - `ignore`: Compatibility flag (ignored, -f)
+/// - `no_dereference`: Update symlink instead of target (-n)
+/// - `modify`: Update modification time flag (-m)
+/// - `reference`: Reference file timestamps (-r)
+/// - `time_spec`: Formatted time specification (-t)
+/// - `time`: Resolved timestamp update strategy (from -a, -m, --time)
 /// - `files`: List of target files
 pub struct TouchArgs {
+    // Used during CLI parsing to resolve TouchTimeWord, not directly in runtime logic
+    #[allow(dead_code)]
     pub access: bool,
     pub no_create: bool,
     pub date: Option<FileTime>,
+    // This option is ignored by the original implementation of touch, so we're also ignoring it.
+    #[allow(dead_code)]
     pub ignore: bool,
     pub no_dereference: bool,
+    // Used during CLI parsing to resolve TouchTimeWord, not directly in runtime logic
+    #[allow(dead_code)]
     pub modify: bool,
     pub reference: Option<(FileTime, FileTime)>,
     pub time_spec: Option<FileTime>,
