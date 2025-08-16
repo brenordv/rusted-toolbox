@@ -2,7 +2,7 @@
 resolver = "2"
 
 members = [
-    "crates/macros",
+    "crates/ai-macros",
     "crates/shared",
     "crates/tool-cat",
     "crates/tool-csvn",

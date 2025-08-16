@@ -1,9 +1,9 @@
 [package]
-name = "rusted_toolbox_macros"
+name = "ai-macros"
 version = "1.0.0"
 edition = "2021"
 authors = ["Breno RdV"]
-description = "Macros used by the rusted-toolbox tools"
+description = "AI Macros used by the rusted-toolbox tools"
 
 [dependencies]
 quote = "1.0.40"

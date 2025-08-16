@@ -50,14 +50,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai-macros"
+version = "1.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "ai-shared"
 version = "1.0.0"
 dependencies = [
+ "ai-macros",
  "anyhow",
  "async-trait",
  "chrono",
  "reqwest",
- "rusted_toolbox_macros",
  "serde",
  "serde_json",
  "shared",
@@ -3394,15 +3403,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rusted_toolbox_macros"
-version = "1.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.106",
-]
-
-[[package]]
 name = "rustix"
 version = "0.38.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3716,7 +3716,6 @@ dependencies = [
  "reqwest",
  "rstest",
  "rusqlite",
- "rusted_toolbox_macros",
  "serde",
  "serde_json",
  "sled",
