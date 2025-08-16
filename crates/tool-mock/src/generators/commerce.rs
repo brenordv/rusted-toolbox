@@ -45,8 +45,8 @@ pub fn generate_product(_options: &MockOptions) -> Result<String> {
         "Assistant",
     ];
 
-    let adjective = adjectives[rand::thread_rng().gen_range(0..adjectives.len())];
-    let noun = nouns[rand::thread_rng().gen_range(0..nouns.len())];
+    let adjective = adjectives[rand::rng().random_range(0..adjectives.len())];
+    let noun = nouns[rand::rng().random_range(0..nouns.len())];
 
     Ok(format!("{} {}", adjective, noun))
 }
@@ -100,9 +100,9 @@ pub fn generate_product_description(options: &MockOptions) -> Result<String> {
     let mut current_length = 0;
 
     while current_length < length {
-        let verb = verbs[rand::thread_rng().gen_range(0..verbs.len())];
-        let benefit = benefits[rand::thread_rng().gen_range(0..benefits.len())];
-        let feature = features[rand::thread_rng().gen_range(0..features.len())];
+        let verb = verbs[rand::rng().random_range(0..verbs.len())];
+        let benefit = benefits[rand::rng().random_range(0..benefits.len())];
+        let feature = features[rand::rng().random_range(0..features.len())];
 
         let sentence = format!("This product is {} {} through {}. ", verb, benefit, feature);
 
@@ -173,6 +173,6 @@ pub fn generate_buzzword(_options: &MockOptions) -> Result<String> {
         "Results-oriented",
     ];
 
-    let buzzword = buzzwords[rand::thread_rng().gen_range(0..buzzwords.len())];
+    let buzzword = buzzwords[rand::rng().random_range(0..buzzwords.len())];
     Ok(buzzword.to_string())
 }

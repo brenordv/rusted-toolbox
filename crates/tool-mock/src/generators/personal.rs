@@ -33,7 +33,7 @@ pub fn generate_email(_options: &MockOptions) -> Result<String> {
         "outlook.com",
         "example.com",
     ];
-    let domain = domains[rand::thread_rng().gen_range(0..domains.len())];
+    let domain = domains[rand::rng().random_range(0..domains.len())];
 
     Ok(format!("{}.{}@{}", first_name, last_name, domain))
 }
@@ -88,25 +88,25 @@ pub fn generate_birthday(options: &MockOptions) -> Result<String> {
 
     let age = options
         .age
-        .unwrap_or_else(|| rand::thread_rng().gen_range(18..80));
+        .unwrap_or_else(|| rand::rng().random_range(18..80));
 
     // Calculate birth year
     let birth_year = today.year() - age as i32;
 
     // Generate random month and day
-    let month = rand::thread_rng().gen_range(1..=12);
+    let month = rand::rng().random_range(1..=12);
     let day = match month {
         2 => {
             // Handle February and leap years
             let is_leap = (birth_year % 4 == 0 && birth_year % 100 != 0) || (birth_year % 400 == 0);
             if is_leap {
-                rand::thread_rng().gen_range(1..=29)
+                rand::rng().random_range(1..=29)
             } else {
-                rand::thread_rng().gen_range(1..=28)
+                rand::rng().random_range(1..=28)
             }
         }
-        4 | 6 | 9 | 11 => rand::thread_rng().gen_range(1..=30),
-        _ => rand::thread_rng().gen_range(1..=31),
+        4 | 6 | 9 | 11 => rand::rng().random_range(1..=30),
+        _ => rand::rng().random_range(1..=31),
     };
 
     let birthday = NaiveDate::from_ymd_opt(birth_year, month, day)

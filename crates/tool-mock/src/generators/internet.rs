@@ -16,7 +16,7 @@ pub fn generate_password(options: &MockOptions) -> Result<String> {
     let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
     let password: String = (0..length)
         .map(|_| {
-            let idx = rand::thread_rng().gen_range(0..chars.len());
+            let idx = rand::rng().random_range(0..chars.len());
             chars.chars().nth(idx).unwrap()
         })
         .collect();
@@ -27,9 +27,9 @@ pub fn generate_password(options: &MockOptions) -> Result<String> {
 /// Generate a random URL
 pub fn generate_url(_options: &MockOptions) -> Result<String> {
     let protocols = ["http", "https"];
-    let protocol = protocols[rand::thread_rng().gen_range(0..protocols.len())];
+    let protocol = protocols[rand::rng().random_range(0..protocols.len())];
     let domain = DomainSuffix().fake::<String>();
-    let path_segments: Vec<String> = (0..rand::thread_rng().gen_range(1..4))
+    let path_segments: Vec<String> = (0..rand::rng().random_range(1..4))
         .map(|_| FreeEmailProvider().fake::<String>().to_lowercase())
         .collect();
 
@@ -43,8 +43,8 @@ pub fn generate_url(_options: &MockOptions) -> Result<String> {
 
 /// Generate a random image URL
 pub fn generate_image_url(_options: &MockOptions) -> Result<String> {
-    let width = rand::thread_rng().gen_range(200..1200);
-    let height = rand::thread_rng().gen_range(200..1200);
+    let width = rand::rng().random_range(200..1200);
+    let height = rand::rng().random_range(200..1200);
 
     Ok(format!("https://picsum.photos/{}/{}", width, height))
 }
@@ -52,10 +52,10 @@ pub fn generate_image_url(_options: &MockOptions) -> Result<String> {
 /// Generate a random file URL
 pub fn generate_file_url(_options: &MockOptions) -> Result<String> {
     let protocols = ["http", "https", "ftp"];
-    let protocol = protocols[rand::thread_rng().gen_range(0..protocols.len())];
+    let protocol = protocols[rand::rng().random_range(0..protocols.len())];
     let domain = DomainSuffix().fake::<String>();
     let extensions = ["pdf", "doc", "docx", "txt", "jpg", "png", "zip", "tar.gz"];
-    let extension = extensions[rand::thread_rng().gen_range(0..extensions.len())];
+    let extension = extensions[rand::rng().random_range(0..extensions.len())];
     let filename = FreeEmailProvider().fake::<String>().to_lowercase();
 
     Ok(format!(

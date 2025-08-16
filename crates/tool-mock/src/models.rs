@@ -1,13 +1,6 @@
 use clap::ArgMatches;
 
-/// Available data categories for mock data generation
-#[derive(Debug, Clone)]
-pub enum DataCategory {
-    Person,
-    Internet,
-    Random,
-    Commerce,
-}
+
 
 /// Available data types within each category
 #[derive(Debug, Clone)]
@@ -149,7 +142,6 @@ impl DataType {
 #[derive(Debug)]
 pub struct MockArgs {
     pub data_type: Option<String>,
-    pub locale: String,
     pub min: Option<i32>,
     pub max: Option<i32>,
     pub length: Option<usize>,
@@ -165,10 +157,6 @@ impl MockArgs {
     pub fn parse(args: &ArgMatches) -> Self {
         MockArgs {
             data_type: args.get_one::<String>("data_type").cloned(),
-            locale: args
-                .get_one::<String>("locale")
-                .unwrap_or(&"en_US".to_string())
-                .clone(),
             min: args.get_one::<String>("min").and_then(|s| s.parse().ok()),
             max: args.get_one::<String>("max").and_then(|s| s.parse().ok()),
             length: args
@@ -211,7 +199,6 @@ impl MockArgs {
 #[derive(Debug)]
 pub struct MockOptions {
     pub data_type: DataType,
-    pub locale: String,
     pub min: Option<i32>,
     pub max: Option<i32>,
     pub length: Option<usize>,
@@ -232,7 +219,6 @@ impl MockOptions {
 
         Ok(MockOptions {
             data_type,
-            locale: args.locale.clone(),
             min: args.min,
             max: args.max,
             length: args.length,
