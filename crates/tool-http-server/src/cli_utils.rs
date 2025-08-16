@@ -9,7 +9,6 @@ pub fn print_runtime_info(args: &ServerArgs) {
     println!("{}", DASH_LINE);
     println!("📂 Root directory: {}", args.root_path.display());
     println!("🚪 Port: {}", args.port);
-    println!("🌎 Server URL: http://localhost:{}", args.port);
 }
 
 pub fn get_cli_arguments() -> ServerArgs {
