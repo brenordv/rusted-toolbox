@@ -5,4 +5,4 @@ members = [
     "crates/macros",
     "crates/ai-tools",
     "crates/shared",
-    "crates/tool-cat", "crates/tool-csvn", "crates/tool-eventhub-export", "crates/tool-eventhub-read", "crates/tool-get-lines", "crates/tool-guid", "crates/tool-jwt", "crates/tool-split", "crates/tool-touch", "crates/tool-timestamp"]
+    "crates/tool-cat", "crates/tool-csvn", "crates/tool-eventhub-export", "crates/tool-eventhub-read", "crates/tool-get-lines", "crates/tool-guid", "crates/tool-jwt", "crates/tool-split", "crates/tool-touch", "crates/tool-timestamp", "crates/tool-http-server"]

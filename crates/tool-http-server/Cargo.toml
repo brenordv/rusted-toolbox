@@ -1,0 +1,16 @@
+[package]
+name = "tool-http-server"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "Command-line tool for generating UUIDv4s with multiple modes, interval support, and clipboard integration for development workflows."
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+tokio = { version = "1.0", features = ["full"] }
+clap = "4.5.45"
+warp = "0.3"
+chrono = { version = "0.4.41", features = ["serde"] }
+percent-encoding = "2.3.1"
+mime_guess = "2.0.5"

@@ -1,18 +1,18 @@
+use filetime::FileTime;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
-use filetime::FileTime;
 
 /// Helper function to get the path to the touch binary
 fn get_touch_binary_path() -> String {
     // This will work when running tests via cargo test
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let target_dir = format!("{}/../../target", manifest_dir);
-    
+
     // Try both debug and release builds
     let debug_path = format!("{}/debug/touch.exe", target_dir);
     let release_path = format!("{}/release/touch.exe", target_dir);
-    
+
     if std::path::Path::new(&release_path).exists() {
         release_path
     } else {
@@ -41,15 +41,25 @@ fn test_cli_time_option_access_only() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(output.status.success(), "Touch command failed: {:?}", output);
+    assert!(
+        output.status.success(),
+        "Touch command failed: {:?}",
+        output
+    );
 
     // Check that only access time was updated
     let metadata = fs::metadata(&file_path).unwrap();
     let new_atime = FileTime::from_last_access_time(&metadata);
     let new_mtime = FileTime::from_last_modification_time(&metadata);
 
-    assert_ne!(new_atime, original_atime, "Access time should have been updated");
-    assert_eq!(new_mtime, original_mtime, "Modification time should remain unchanged");
+    assert_ne!(
+        new_atime, original_atime,
+        "Access time should have been updated"
+    );
+    assert_eq!(
+        new_mtime, original_mtime,
+        "Modification time should remain unchanged"
+    );
 }
 
 #[test]
@@ -73,15 +83,25 @@ fn test_cli_time_option_modify_only() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(output.status.success(), "Touch command failed: {:?}", output);
+    assert!(
+        output.status.success(),
+        "Touch command failed: {:?}",
+        output
+    );
 
     // Check that only modification time was updated
     let metadata = fs::metadata(&file_path).unwrap();
     let new_atime = FileTime::from_last_access_time(&metadata);
     let new_mtime = FileTime::from_last_modification_time(&metadata);
 
-    assert_eq!(new_atime, original_atime, "Access time should remain unchanged");
-    assert_ne!(new_mtime, original_mtime, "Modification time should have been updated");
+    assert_eq!(
+        new_atime, original_atime,
+        "Access time should remain unchanged"
+    );
+    assert_ne!(
+        new_mtime, original_mtime,
+        "Modification time should have been updated"
+    );
 }
 
 #[test]
@@ -105,15 +125,25 @@ fn test_cli_time_option_atime_alias() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(output.status.success(), "Touch command failed: {:?}", output);
+    assert!(
+        output.status.success(),
+        "Touch command failed: {:?}",
+        output
+    );
 
     // Check that only access time was updated
     let metadata = fs::metadata(&file_path).unwrap();
     let new_atime = FileTime::from_last_access_time(&metadata);
     let new_mtime = FileTime::from_last_modification_time(&metadata);
 
-    assert_ne!(new_atime, original_atime, "Access time should have been updated");
-    assert_eq!(new_mtime, original_mtime, "Modification time should remain unchanged");
+    assert_ne!(
+        new_atime, original_atime,
+        "Access time should have been updated"
+    );
+    assert_eq!(
+        new_mtime, original_mtime,
+        "Modification time should remain unchanged"
+    );
 }
 
 #[test]
@@ -137,15 +167,25 @@ fn test_cli_time_option_mtime_alias() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(output.status.success(), "Touch command failed: {:?}", output);
+    assert!(
+        output.status.success(),
+        "Touch command failed: {:?}",
+        output
+    );
 
     // Check that only modification time was updated
     let metadata = fs::metadata(&file_path).unwrap();
     let new_atime = FileTime::from_last_access_time(&metadata);
     let new_mtime = FileTime::from_last_modification_time(&metadata);
 
-    assert_eq!(new_atime, original_atime, "Access time should remain unchanged");
-    assert_ne!(new_mtime, original_mtime, "Modification time should have been updated");
+    assert_eq!(
+        new_atime, original_atime,
+        "Access time should remain unchanged"
+    );
+    assert_ne!(
+        new_mtime, original_mtime,
+        "Modification time should have been updated"
+    );
 }
 
 #[test]
@@ -169,15 +209,25 @@ fn test_cli_time_option_use_alias() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(output.status.success(), "Touch command failed: {:?}", output);
+    assert!(
+        output.status.success(),
+        "Touch command failed: {:?}",
+        output
+    );
 
     // Check that only access time was updated
     let metadata = fs::metadata(&file_path).unwrap();
     let new_atime = FileTime::from_last_access_time(&metadata);
     let new_mtime = FileTime::from_last_modification_time(&metadata);
 
-    assert_ne!(new_atime, original_atime, "Access time should have been updated");
-    assert_eq!(new_mtime, original_mtime, "Modification time should remain unchanged");
+    assert_ne!(
+        new_atime, original_atime,
+        "Access time should have been updated"
+    );
+    assert_eq!(
+        new_mtime, original_mtime,
+        "Modification time should remain unchanged"
+    );
 }
 
 #[test]
@@ -200,15 +250,25 @@ fn test_cli_default_behavior_updates_both() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(output.status.success(), "Touch command failed: {:?}", output);
+    assert!(
+        output.status.success(),
+        "Touch command failed: {:?}",
+        output
+    );
 
     // Check that both times were updated
     let metadata = fs::metadata(&file_path).unwrap();
     let new_atime = FileTime::from_last_access_time(&metadata);
     let new_mtime = FileTime::from_last_modification_time(&metadata);
 
-    assert_ne!(new_atime, original_atime, "Access time should have been updated");
-    assert_ne!(new_mtime, original_mtime, "Modification time should have been updated");
+    assert_ne!(
+        new_atime, original_atime,
+        "Access time should have been updated"
+    );
+    assert_ne!(
+        new_mtime, original_mtime,
+        "Modification time should have been updated"
+    );
 }
 
 #[test]
@@ -226,7 +286,11 @@ fn test_cli_create_new_file() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(output.status.success(), "Touch command failed: {:?}", output);
+    assert!(
+        output.status.success(),
+        "Touch command failed: {:?}",
+        output
+    );
 
     // Check that file was created
     assert!(file_path.exists(), "File should have been created");
@@ -248,10 +312,16 @@ fn test_cli_no_create_option() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(output.status.success(), "Touch command should succeed even when file doesn't exist with --no-create");
+    assert!(
+        output.status.success(),
+        "Touch command should succeed even when file doesn't exist with --no-create"
+    );
 
     // Check that file was NOT created
-    assert!(!file_path.exists(), "File should not have been created with --no-create option");
+    assert!(
+        !file_path.exists(),
+        "File should not have been created with --no-create option"
+    );
 }
 
 #[test]
@@ -268,7 +338,11 @@ fn test_cli_ignore_flag_is_accepted() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(output.status.success(), "Touch command should accept -f flag without error: {:?}", output);
+    assert!(
+        output.status.success(),
+        "Touch command should accept -f flag without error: {:?}",
+        output
+    );
 }
 
 #[test]
@@ -284,6 +358,8 @@ fn test_cli_invalid_time_option() {
         .output()
         .expect("Failed to execute touch command");
 
-    assert!(!output.status.success(), "Touch command should fail with invalid time option");
+    assert!(
+        !output.status.success(),
+        "Touch command should fail with invalid time option"
+    );
 }
-

@@ -75,13 +75,19 @@ pub fn touch_file(file: &str, args: &TouchArgs) -> Result<()> {
     let (update_access, update_modify) = determine_timestamps_to_update(args);
 
     let current_times =
-        process_current_update_times(args, &file_obj, times, update_access, update_modify).context(format!(
-            "Failed to get current times for file: [{}]",
-            &file_obj.display()
-        ))?;
+        process_current_update_times(args, &file_obj, times, update_access, update_modify)
+            .context(format!(
+                "Failed to get current times for file: [{}]",
+                &file_obj.display()
+            ))?;
 
-    let (final_atime, final_mtime) =
-        get_times_to_use_when_updating_file(args, times, update_access, update_modify, current_times);
+    let (final_atime, final_mtime) = get_times_to_use_when_updating_file(
+        args,
+        times,
+        update_access,
+        update_modify,
+        current_times,
+    );
 
     update_file_times(args, &file_obj, final_atime, final_mtime)?;
 
@@ -186,16 +192,8 @@ fn get_times_to_use_when_updating_file(
         // Use the current time
         let now = FileTime::now();
         let current = current_times.unwrap();
-        let atime = if update_access {
-            now
-        } else {
-            current.0
-        };
-        let mtime = if update_modify {
-            now
-        } else {
-            current.1
-        };
+        let atime = if update_access { now } else { current.0 };
+        let mtime = if update_modify { now } else { current.1 };
         (atime, mtime)
     };
     (final_atime, final_mtime)
@@ -260,9 +258,9 @@ mod tests {
     fn test_determine_timestamps_to_update_access_only() {
         let mut args = create_test_touch_args();
         args.time = TouchTimeWord::AccessOnly;
-        
+
         let (update_access, update_modify) = determine_timestamps_to_update(&args);
-        
+
         assert!(update_access);
         assert!(!update_modify);
     }
@@ -271,9 +269,9 @@ mod tests {
     fn test_determine_timestamps_to_update_modify_only() {
         let mut args = create_test_touch_args();
         args.time = TouchTimeWord::ModifyOnly;
-        
+
         let (update_access, update_modify) = determine_timestamps_to_update(&args);
-        
+
         assert!(!update_access);
         assert!(update_modify);
     }
@@ -282,9 +280,9 @@ mod tests {
     fn test_determine_timestamps_to_update_both() {
         let mut args = create_test_touch_args();
         args.time = TouchTimeWord::AccessAndModify;
-        
+
         let (update_access, update_modify) = determine_timestamps_to_update(&args);
-        
+
         assert!(update_access);
         assert!(update_modify);
     }
@@ -297,9 +295,8 @@ mod tests {
         let times = Some((new_time, new_time));
         let current_times = Some((current_time, current_time));
 
-        let (final_atime, final_mtime) = get_times_to_use_when_updating_file(
-            &args, times, true, false, current_times
-        );
+        let (final_atime, final_mtime) =
+            get_times_to_use_when_updating_file(&args, times, true, false, current_times);
 
         assert_eq!(final_atime, new_time);
         assert_eq!(final_mtime, current_time);
@@ -313,9 +310,8 @@ mod tests {
         let times = Some((new_time, new_time));
         let current_times = Some((current_time, current_time));
 
-        let (final_atime, final_mtime) = get_times_to_use_when_updating_file(
-            &args, times, false, true, current_times
-        );
+        let (final_atime, final_mtime) =
+            get_times_to_use_when_updating_file(&args, times, false, true, current_times);
 
         assert_eq!(final_atime, current_time);
         assert_eq!(final_mtime, new_time);
@@ -329,9 +325,8 @@ mod tests {
         let times = Some((new_time, new_time));
         let current_times = Some((current_time, current_time));
 
-        let (final_atime, final_mtime) = get_times_to_use_when_updating_file(
-            &args, times, true, true, current_times
-        );
+        let (final_atime, final_mtime) =
+            get_times_to_use_when_updating_file(&args, times, true, true, current_times);
 
         assert_eq!(final_atime, new_time);
         assert_eq!(final_mtime, new_time);
@@ -343,9 +338,8 @@ mod tests {
         let current_time = FileTime::from_unix_time(500000000, 0);
         let current_times = Some((current_time, current_time));
 
-        let (final_atime, final_mtime) = get_times_to_use_when_updating_file(
-            &args, None, true, false, current_times
-        );
+        let (final_atime, final_mtime) =
+            get_times_to_use_when_updating_file(&args, None, true, false, current_times);
 
         // Access time should be updated to "now" (we can't test exact time, but it should be recent)
         // Modify time should remain the current time
@@ -360,7 +354,7 @@ mod tests {
         fs::write(&file_path, "test content").unwrap();
 
         let result = create_file_if_needed(file_path.to_str().unwrap(), false);
-        
+
         assert!(result.is_ok());
         assert!(result.unwrap());
     }
@@ -371,7 +365,7 @@ mod tests {
         let file_path = temp_dir.path().join("new_file.txt");
 
         let result = create_file_if_needed(file_path.to_str().unwrap(), false);
-        
+
         assert!(result.is_ok());
         assert!(result.unwrap());
         assert!(file_path.exists());
@@ -383,7 +377,7 @@ mod tests {
         let file_path = temp_dir.path().join("nonexistent_file.txt");
 
         let result = create_file_if_needed(file_path.to_str().unwrap(), true);
-        
+
         assert!(result.is_ok());
         assert!(!result.unwrap());
         assert!(!file_path.exists());
@@ -392,7 +386,7 @@ mod tests {
     #[test]
     fn test_create_file_if_needed_stdout() {
         let result = create_file_if_needed("-", false);
-        
+
         assert!(result.is_ok());
         assert!(result.unwrap());
     }
