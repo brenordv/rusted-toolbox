@@ -602,7 +602,8 @@ mod tests {
 
         let result = log_level.to_default_log_level_for_app(&app_name);
 
-        assert_eq!(result, "TestApp=fatal");
+        // Fatal level should map to error, since that's the highest level
+        assert_eq!(result, "TestApp=error");
     }
 
     #[test]
