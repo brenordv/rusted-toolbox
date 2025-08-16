@@ -30,3 +30,22 @@ pub struct ApiResponse {
     pub choices: Vec<ApiChoice>,
     pub usage: Option<HashMap<String, Value>>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct AiResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+impl AiResponse {
+    pub fn new_empty(success: bool) -> AiResponse {
+        AiResponse {
+            success,
+            message: String::new(),
+        }
+    }
+
+    pub fn new(success: bool, message: String) -> AiResponse {
+        AiResponse { success, message }
+    }
+}

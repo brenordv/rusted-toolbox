@@ -7,3 +7,4 @@ pub mod new_guid;
 pub mod sanitize_str_regex;
 pub mod sanitize_string_for_filename;
 pub mod sanitize_string_for_table_name;
+pub mod role_printer;

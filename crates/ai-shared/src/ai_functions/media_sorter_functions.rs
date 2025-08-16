@@ -1,6 +1,10 @@
 #![allow(dead_code, unused_doc_comments)]
 use rusted_toolbox_macros::ai_function;
 
+/*
+Not in use, but keeping it to serve as a reference for future use.
+*/
+
 const OUTPUT: &str = "";
 
 #[ai_function]

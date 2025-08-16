@@ -1,0 +1,15 @@
+[package]
+name = "ai-chatbot"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "A simple AI powered CLI Chatbot"
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+ai-shared = { path = "../ai-shared" }
+tokio = "1.47.1"
+dotenv = "0.15.0"
+anyhow = "1.0.99"
+tracing = "0.1.41"

@@ -3,8 +3,23 @@ use crossterm::{
     ExecutableCommand,
 };
 
-use crate::models::models::Role;
 use std::io::stdout;
+
+pub enum Role {
+    Agent,
+    User,
+    System,
+}
+
+impl Role {
+    pub fn get_tag_color(&self) -> Color {
+        match self {
+            Role::Agent => Color::Green,
+            Role::User => Color::Cyan,
+            Role::System => Color::Yellow,
+        }
+    }
+}
 
 pub struct RolePrinter {
     color: Color,

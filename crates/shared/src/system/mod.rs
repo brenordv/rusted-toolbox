@@ -9,3 +9,4 @@ pub mod pathbuf_extensions;
 pub mod resolve_path_with_base;
 pub mod setup_graceful_shutdown;
 pub mod tool_exit_helpers;
+pub mod select_file_from_path;

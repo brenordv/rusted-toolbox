@@ -1,4 +1,3 @@
-use crate::models::open_ai::ChatCompletion;
 use anyhow::{Context, Result};
 use chrono::Local;
 use shared::system::ensure_directory_exists::EnsureDirectoryExists;
@@ -8,6 +7,7 @@ use shared::utils::datetime_utc_utils::DateTimeUtilsExt;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use crate::models::ChatCompletion;
 
 pub struct RequestLogger {
     runtime_history_path: PathBuf,

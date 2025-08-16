@@ -38,6 +38,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai-chatbot"
+version = "1.0.0"
+dependencies = [
+ "ai-shared",
+ "anyhow",
+ "dotenv",
+ "shared",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "ai-shared"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "reqwest",
+ "rusted_toolbox_macros",
+ "serde",
+ "serde_json",
+ "shared",
+]
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3365,63 +3391,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
-]
-
-[[package]]
-name = "rusted-ai"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "arboard",
- "async-std",
- "async-trait",
- "azeventhubs",
- "azure_core",
- "azure_identity",
- "base64 0.21.7",
- "bytes",
- "chrono",
- "clap",
- "colored",
- "crossterm",
- "csv",
- "ctrlc",
- "decompress",
- "dialoguer",
- "dotenv",
- "encoding_rs",
- "fastrand 2.3.0",
- "filetime",
- "futures",
- "futures-util",
- "indicatif",
- "infer 0.19.0",
- "jsonwebtoken",
- "log",
- "memmap2",
- "notify",
- "num_cpus",
- "once_cell",
- "regex",
- "reqwest",
- "rstest",
- "rusqlite",
- "rusted_toolbox_macros",
- "serde",
- "serde_json",
- "shared",
- "sled",
- "string-interner",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "url",
- "uuid",
- "walkdir",
 ]
 
 [[package]]

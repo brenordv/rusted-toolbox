@@ -1,10 +1,10 @@
-use crate::agents::chatbot::models::ChatBotAgent;
-use crate::models::models::AiResponse;
-use crate::requesters::requester_builders::build_requester_for_ai;
-use crate::requesters::requester_traits::OpenAiRequesterTraits;
-use crate::utils::get_user_response::get_user_response;
 use anyhow::{Context, Result};
 use tracing::error;
+use ai_shared::models::AiResponse;
+use ai_shared::request_wrappers::requester_builders::build_requester_for_ai;
+use ai_shared::request_wrappers::requester_traits::OpenAiRequesterTraits;
+use crate::cli_utils::get_user_response;
+use crate::models::ChatBotAgent;
 
 pub async fn start_chatbot(options: ChatBotAgent) -> Result<()> {
     let mut requester = build_requester_for_ai()?;
