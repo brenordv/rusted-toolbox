@@ -1,7 +1,5 @@
 use clap::ArgMatches;
 
-
-
 /// Available data types within each category
 #[derive(Debug, Clone)]
 pub enum DataType {
