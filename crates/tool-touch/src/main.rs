@@ -31,7 +31,7 @@ fn main() {
 
     let mut success = true;
     for file in &args.files {
-        if let Err(e) = touch_file(&file, &args) {
+        if let Err(e) = touch_file(file, &args) {
             error!("Error touching '{}': {}", file, e);
             success = false;
         }

@@ -9,7 +9,7 @@ use shared::utils::sanitize_str_regex::clean_str_regex;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use string_interner::DefaultSymbol;
@@ -45,11 +45,9 @@ pub fn ensure_headers(
 ///
 /// # Errors
 /// Returns error if an output file cannot be created
-pub fn get_output_normalized_file(input_file: &PathBuf) -> Result<Writer<File>> {
-    let input_str;
-
-    match input_file.to_str() {
-        Some(s) => input_str = s,
+pub fn get_output_normalized_file(input_file: &Path) -> Result<Writer<File>> {
+    let input_str = match input_file.to_str() {
+        Some(s) => s,
         None => {
             return Err(anyhow!(
                 "Input file path is not valid UTF-8. Non-UTF-8 paths are unsupported."
@@ -115,7 +113,7 @@ pub fn process_file(args: &mut CsvNConfig, shutdown_signal: Arc<AtomicBool>) -> 
         }
 
         let normalized_record =
-            normalize_record(&args, &value_map, &headers, record, &args.clean_string)?;
+            normalize_record(args, &value_map, &headers, record, &args.clean_string)?;
 
         output_file
             .write_record(&normalized_record)
@@ -231,7 +229,7 @@ fn normalize_record(
                 }
             }
         } else if *clean_string {
-            &clean_str_regex(&value)
+            &clean_str_regex(value)
         } else {
             value
         };

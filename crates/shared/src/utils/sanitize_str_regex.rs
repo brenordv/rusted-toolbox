@@ -5,7 +5,6 @@ use std::borrow::Cow;
 static NON_PRINTABLE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\p{C}").unwrap());
 
 /// Removes non-printable characters using a precompiled regex.
-
 pub fn clean_str_regex(input: &str) -> Cow<'_, str> {
     NON_PRINTABLE_RE.replace_all(input, "")
 }

@@ -3,7 +3,7 @@
 //! # Arguments
 //! - `folder_to_watch`: A string slice specifying the path to the folder to monitor.
 //! - `on_created_handler`: An optional asynchronous closure or function to handle file creation events.
-//!    The handler receives the event and the folder being watched as parameters and executes custom logic.
+//!   The handler receives the event and the folder being watched as parameters and executes custom logic.
 //!
 //! # Errors
 //! - Returns an error if the specified folder does not exist or cannot be watched.

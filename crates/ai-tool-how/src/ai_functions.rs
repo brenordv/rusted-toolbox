@@ -191,9 +191,9 @@ pub fn suggest_cli_command(_request: &str, _os: &str) -> &'static str {
     ///
     /// - Compress / extract
     ///   POSIX ▶ compress dir ▶ `tar -czf <archive>.tar.gz <dir>`
-    ///           extract tar.gz ▶ `tar -xzf <archive>.tar.gz`
+    ///   extract tar.gz ▶ `tar -xzf <archive>.tar.gz`
     ///   pwsh  ▶ compress dir ▶ `Compress-Archive -Path <dir> -DestinationPath <dir>.zip`
-    ///           extract zip  ▶ `Expand-Archive -Path <archive>.zip -DestinationPath <dir>`
+    ///   extract zip  ▶ `Expand-Archive -Path <archive>.zip -DestinationPath <dir>`
     ///
     /// - Show file metadata / permissions
     ///   POSIX ▶ `ls -la`

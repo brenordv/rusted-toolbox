@@ -17,10 +17,7 @@ pub fn build_requester_for_ai() -> Result<OpenAiRequester> {
 }
 
 fn build_requester_for_openwebui() -> Result<OpenAiRequester> {
-    let request_history_path = match env::var("LOCAL_OPENWEBUI_REQUEST_HISTORY_PATH") {
-        Ok(path) => Some(path),
-        Err(_) => None,
-    };
+    let request_history_path = env::var("LOCAL_OPENWEBUI_REQUEST_HISTORY_PATH").ok();
 
     let api_key =
         env::var("LOCAL_OPENWEBUI_API_KEY").context("LOCAL_OPENWEBUI_API_KEY must be set")?;
@@ -50,10 +47,7 @@ fn build_requester_for_openwebui() -> Result<OpenAiRequester> {
 }
 
 fn build_requester_for_openai() -> Result<OpenAiRequester> {
-    let request_history_path = match env::var("OPEN_AI_CHAT_REQUEST_HISTORY_PATH") {
-        Ok(path) => Some(path),
-        Err(_) => None,
-    };
+    let request_history_path = env::var("OPEN_AI_CHAT_REQUEST_HISTORY_PATH").ok();
 
     let api_key = env::var("OPEN_AI_API_KEY").context("OPEN_AI_API_KEY must be set")?;
 
@@ -89,10 +83,7 @@ fn build_requester_for_openai() -> Result<OpenAiRequester> {
 }
 
 fn build_requester_for_open_router() -> Result<OpenAiRequester> {
-    let request_history_path = match env::var("OPEN_ROUTER_CHAT_REQUEST_HISTORY_PATH") {
-        Ok(path) => Some(path),
-        Err(_) => None,
-    };
+    let request_history_path = env::var("OPEN_ROUTER_CHAT_REQUEST_HISTORY_PATH").ok();
 
     let api_key = env::var("OPEN_ROUTER_API_KEY").context("OPEN_ROUTER_API_KEY must be set")?;
 

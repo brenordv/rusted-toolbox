@@ -47,7 +47,7 @@ pub fn get_cli_arguments() -> ServerArgs {
 
     let root_path = matches
         .get_one::<String>("path")
-        .map(|p| PathBuf::from(p))
+        .map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     let port = matches.get_one::<u16>("port").copied().unwrap_or(4200);

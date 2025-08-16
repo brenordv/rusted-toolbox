@@ -104,7 +104,7 @@ fn detect_shell() -> Option<String> {
 
     // Check for common shell environment variables
     if let Ok(shell) = env::var("SHELL") {
-        if let Some(shell_name) = shell.split('/').last() {
+        if let Some(shell_name) = shell.split('/').next_back() {
             return Some(shell_name.to_string());
         }
     }

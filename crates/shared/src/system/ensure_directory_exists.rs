@@ -13,7 +13,7 @@ impl EnsureDirectoryExists for PathBuf {
             return Ok(());
         }
 
-        Ok(fs::create_dir_all(&self).context("Failed to create directory")?)
+        fs::create_dir_all(self).context("Failed to create directory")
     }
 
     fn ensure_parent_exists(&self) -> Result<()> {
@@ -23,6 +23,6 @@ impl EnsureDirectoryExists for PathBuf {
             return Ok(());
         }
 
-        Ok(fs::create_dir_all(&parent).context("Failed to create directory")?)
+        fs::create_dir_all(parent).context("Failed to create directory")
     }
 }

@@ -171,7 +171,7 @@ pub fn get_cli_arguments() -> TouchArgs {
     let files: Vec<String> = matches
         .get_many::<String>("files")
         .unwrap_or_default()
-        .map(|s| s.clone())
+        .cloned()
         .collect();
 
     TouchArgs {

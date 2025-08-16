@@ -12,7 +12,7 @@ use syn::{parse_macro_input, ItemFn};
 ///
 /// When you write:
 /// ```rust
-/// use rusted_toolbox_macros::ai_function;
+/// use ai_macros::ai_function;
 ///
 /// #[ai_function]
 /// fn foo(x: i32) -> i32 {

@@ -8,7 +8,7 @@ pub trait MessageVecExt {
 
 impl MessageVecExt for [Message] {
     fn first_is_system(&self) -> bool {
-        self.get(0).map(|m| m.role == "system").unwrap_or(false)
+        self.first().map(|m| m.role == "system").unwrap_or(false)
     }
 }
 

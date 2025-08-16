@@ -39,15 +39,15 @@ pub fn get_runtime_config() -> Result<ChatBotAgent> {
         personality_name.to_string()
     };
 
-    let tag_padding_size = if &user_name.len() > &ai_name.len() {
-        &user_name.len()
+    let tag_padding_size = if user_name.len() > ai_name.len() {
+        user_name.len()
     } else {
-        &ai_name.len()
+        ai_name.len()
     };
 
-    let agent_printer = RolePrinter::new(Role::Agent, ai_name.clone(), Some(*tag_padding_size));
+    let agent_printer = RolePrinter::new(Role::Agent, ai_name.clone(), Some(tag_padding_size));
 
-    let user_printer = RolePrinter::new(Role::User, user_name.clone(), Some(*tag_padding_size));
+    let user_printer = RolePrinter::new(Role::User, user_name.clone(), Some(tag_padding_size));
 
     let first_message_to_ai = env::var("AI_CHAT_INITIAL_MSG_TO_AI").ok();
 
@@ -83,7 +83,7 @@ pub fn load_chat_personality_prompt(personalities_path: &str) -> Result<(String,
 
     let personality_name = selected_personality_file
         .split('_')
-        .last()
+        .next_back()
         .unwrap_or("")
         .split(".")
         .next()

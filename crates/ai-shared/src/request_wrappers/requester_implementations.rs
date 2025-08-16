@@ -85,7 +85,7 @@ impl OpenAiRequester {
         }
     }
 
-    fn save_user_request_to_message_history(&mut self, payload: &Vec<Message>) -> Result<()> {
+    fn save_user_request_to_message_history(&mut self, payload: &[Message]) -> Result<()> {
         if payload.is_empty() {
             anyhow::bail!("Payload cannot be empty.");
         }
@@ -135,7 +135,7 @@ impl OpenAiRequester {
             .await
             .context("Failed to send request")?;
 
-        let status_code = (&api_response).status();
+        let status_code = api_response.status();
         Ok((api_response, status_code, status_code == 200))
     }
 
@@ -146,13 +146,13 @@ impl OpenAiRequester {
             .context("Failed to parse error response")
     }
 
-    fn extract_ai_response_from_text(raw_text_response: &String) -> Result<Message> {
+    fn extract_ai_response_from_text(raw_text_response: &str) -> Result<Message> {
         let api_response_obj: ApiResponse =
-            serde_json::from_str(&raw_text_response).context("Failed to parse response")?;
+            serde_json::from_str(raw_text_response).context("Failed to parse response")?;
 
         let ai_response = api_response_obj
             .choices
-            .get(0)
+            .first()
             .map(|choice| choice.message.content.clone())
             .context("No response returned")?;
 

@@ -13,7 +13,7 @@ use std::process;
 ///
 /// # Errors
 /// Returns error if JWT structure is invalid or decoding fails
-pub fn decode_jwt_token(token: &String) -> Result<TokenInfo> {
+pub fn decode_jwt_token(token: &str) -> Result<TokenInfo> {
     // Create validation that doesn't verify the signature
     let mut validation = Validation::new(Algorithm::HS256);
     validation.insecure_disable_signature_validation();
@@ -41,7 +41,7 @@ pub fn decode_jwt_token(token: &String) -> Result<TokenInfo> {
     // Use a fake key since we're not verifying signatures
     let key = DecodingKey::from_secret("no-key-just-public-data".as_ref());
 
-    match decode::<Claims>(&token, &key, &validation) {
+    match decode::<Claims>(token, &key, &validation) {
         Ok(token_data) => {
             let expiration_status = token_data.claims.get_expiration_status();
 

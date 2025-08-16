@@ -10,11 +10,11 @@ use shared::constants::general::DASH_LINE;
 /// # Arguments
 ///
 /// * `args` - A reference to a `JwtArgs` struct that contains the runtime arguments and
-///            configuration settings for the JWT. This includes:
-///            - `token`: A string slice representing the JWT token.
-///            - `claim_to_clipboard` (optional): An optional claim that will be copied
-///              to the clipboard if provided.
-///            - `print`: The selected output format, represented by the `JwtPrint` enum.
+///   configuration settings for the JWT. This includes:
+///  - `token`: A string slice representing the JWT token.
+///  - `claim_to_clipboard` (optional): An optional claim that will be copied
+///    to the clipboard if provided.
+///  - `print`: The selected output format, represented by the `JwtPrint` enum.
 ///
 /// The output format (Pretty, CSV, or JSON) and other details help users interact with
 /// the JWT intuitively.
@@ -109,21 +109,18 @@ pub fn get_cli_arguments() -> JwtArgs {
             .help("The token that will be decoded. It does not matter if it has the word Bearer or any line breaks."))
         .get_matches();
 
-    let claim_to_clipboard = match matches.get_one::<String>("copy-to-clipboard") {
-        None => None,
-        Some(claim) => Some(claim.clone()),
-    };
+    let claim_to_clipboard = matches.get_one::<String>("copy-to-clipboard").cloned();
 
     let print = if let Some(print_arg) = matches.get_one::<String>("print") {
-        JwtPrint::from_str(&print_arg).expect("Invalid print format.")
+        JwtPrint::from_str(print_arg).expect("Invalid print format.")
     } else {
         JwtPrint::Pretty
     };
 
     let token = matches
         .get_many::<String>("token")
-        .map(|vals| vals.cloned().collect())
-        .unwrap_or_else(Vec::new)
+        .map(|vals| vals.cloned().collect::<Vec<_>>())
+        .unwrap_or_default()
         .join(" ")
         .replace("Bearer", "")
         .replace([' ', '\n', '\r', '\t'], "")

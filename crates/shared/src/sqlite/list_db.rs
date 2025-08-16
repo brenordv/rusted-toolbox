@@ -138,23 +138,23 @@ impl SingleListDb {
     }
 
     pub fn add(&self, item: &str) -> anyhow::Result<i64> {
-        Ok(self.db.add(&self.list_name, item)?)
+        self.db.add(&self.list_name, item)
     }
 
     pub fn update(&self, id: i64, item: &str) -> anyhow::Result<String> {
-        Ok(self.db.update(&self.list_name, id, item)?)
+        self.db.update(&self.list_name, id, item)
     }
 
     pub fn delete(&self, id: i64) -> anyhow::Result<bool> {
-        Ok(self.db.delete(&self.list_name, id)?)
+        self.db.delete(&self.list_name, id)
     }
 
     pub fn get_latest(&self) -> anyhow::Result<Option<String>> {
-        Ok(self.db.get_latest(&self.list_name)?)
+        self.db.get_latest(&self.list_name)
     }
 
     pub fn exists(&self, item: &str) -> anyhow::Result<bool> {
-        Ok(self.db.exists(&self.list_name, item)?)
+        self.db.exists(&self.list_name, item)
     }
 }
 

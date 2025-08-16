@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use shared::eventhub::eventhub_models::EventHubConfig;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Applies command-line overrides to the EventHub configuration.
 ///
@@ -20,7 +20,7 @@ use std::path::PathBuf;
 pub fn apply_cli_overrides(
     config: &mut EventHubConfig,
     matches: &clap::ArgMatches,
-    current_dir: &PathBuf,
+    current_dir: &Path,
 ) -> Result<()> {
     // Inbound config overrides (for database access)
     if let Some(base_data_folder) = matches.get_one::<String>("base-data-folder") {
