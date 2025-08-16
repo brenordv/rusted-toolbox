@@ -45,7 +45,7 @@ pub fn get_cli_arguments() -> TsArgs {
     let input: String = matches
         .get_many::<String>("input")
         .unwrap_or_default()
-        .map(|s| s.clone())
+        .cloned()
         .collect::<Vec<String>>()
         .join(" ");
 

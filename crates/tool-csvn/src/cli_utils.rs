@@ -102,10 +102,7 @@ pub fn get_cli_arguments() -> Result<CsvNConfig> {
             .collect()
     });
 
-    let clean_string = matches
-        .get_one::<bool>("clean-string")
-        .unwrap_or(&false)
-        .clone();
+    let clean_string = *matches.get_one::<bool>("clean-string").unwrap_or(&false);
 
     let default_value_map: HashMap<String, String> = matches
         .get_many::<String>("value-map")

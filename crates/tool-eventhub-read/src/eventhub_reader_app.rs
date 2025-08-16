@@ -426,7 +426,7 @@ impl EventHubReader {
         ))?;
 
         // Clean up a test file
-        let _ = tokio::fs::remove_file(&test_file).await.context(format!(
+        tokio::fs::remove_file(&test_file).await.context(format!(
             "Failed to clean up test file: [{}]",
             test_file.display()
         ))?;

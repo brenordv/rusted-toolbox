@@ -128,8 +128,7 @@ pub fn get_cli_arguments() -> GetLinesArgs {
 ///
 /// # Behavior
 /// - Exits with code 1 if no valid search terms are provided, worker count <= zero, or if the input
-/// file doesn't exit.
-
+///   file doesn't exit.
 pub fn validate_cli_arguments(args: &GetLinesArgs) {
     if args.search.is_empty() {
         eprintln!("Error: No valid search terms provided.");

@@ -158,7 +158,7 @@ impl AppLogger {
     ///
     /// # Returns
     /// - Returns a mutable reference to the current instance of the struct, allowing method
-    /// chaining.
+    ///   chaining.
     pub fn log_to_console(&mut self, to_console: bool) -> &mut Self {
         self.to_console = to_console;
         self
@@ -227,7 +227,7 @@ impl AppLogger {
     ///
     /// # Parameters
     /// - `log_level`: The log level to set, represented by the `LogLevel` enum. This determines
-    /// the severity or verbosity of logs that will be handled.
+    ///   the severity or verbosity of logs that will be handled.
     ///
     /// # Returns
     /// A mutable reference to the current instance, allowing for method chaining.
@@ -253,7 +253,7 @@ impl AppLogger {
     ///
     /// # Requirements
     /// - The `self.app_name` field should contain a valid name for the application, which is used
-    /// in log file names.
+    ///   in log file names.
     /// - The `self.log_folder` specifies the directory where log files will be saved.
     /// - Environmental log level configuration should be provided (optional).
     ///
@@ -270,7 +270,7 @@ impl AppLogger {
     /// - If the `tracing_subscriber` environment filter cannot be initialized, it falls back to a
     ///   default log level defined in `self.log_level`.
     /// - If the log folder cannot be created or file handling fails, those logs are
-    /// silently ignored.
+    ///   silently ignored.
     ///
     /// # Notes
     /// - It is recommended to provide appropriate permissions for the `log_folder` path to ensure

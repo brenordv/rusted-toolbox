@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use clap::ArgMatches;
 use shared::eventhub::eventhub_models::EventHubConfig;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Applies CLI argument overrides to EventHub configuration.
 ///
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 pub fn apply_cli_overrides(
     config: &mut EventHubConfig,
     matches: &ArgMatches,
-    current_dir: &PathBuf,
+    current_dir: &Path,
 ) -> Result<()> {
     if let Some(conn_str) = matches.get_one::<String>("connection-string") {
         config.connection_string = conn_str.clone();

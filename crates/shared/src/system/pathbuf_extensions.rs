@@ -263,12 +263,11 @@ impl PathBufExtensions for Path {
             .rsplitn(2, '.')
             .collect::<Vec<_>>()
             .get(1)
-            .map_or(false, |base_ext| base_ext.ends_with("zip"))
+            .is_some_and(|base_ext| base_ext.ends_with("zip"))
             && file_name
                 .split('.')
-                .rev()
-                .next()
-                .map_or(false, |suffix| suffix.chars().all(|c| c.is_ascii_digit()))
+                .next_back()
+                .is_some_and(|suffix| suffix.chars().all(|c| c.is_ascii_digit()))
         {
             return false;
         }

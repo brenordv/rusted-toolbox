@@ -55,7 +55,7 @@ impl DictionaryDb {
 
         self.db.execute(&sql, &[&key, &value_str])?;
 
-        match self.get(&key) {
+        match self.get(key) {
             Ok(Some(got)) => Ok(got),
             Ok(None) => anyhow::bail!(
                 "Key not found. This is an indicative of a bug go check it out: [{}]",
@@ -83,7 +83,7 @@ impl DictionaryDb {
             anyhow::bail!("No key found: {}", &key);
         }
 
-        match self.get(&key) {
+        match self.get(key) {
             Ok(Some(got)) => Ok(got),
             Ok(None) => anyhow::bail!(
                 "Key not found. This is an indicative of a bug go check it out: [{}]",

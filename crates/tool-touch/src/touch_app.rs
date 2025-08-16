@@ -141,9 +141,9 @@ fn process_current_update_times(
 ) -> Result<Option<(FileTime, FileTime)>> {
     let current_times = if times.is_none() || (!update_access || !update_modify) {
         let metadata = if args.no_dereference {
-            std::fs::symlink_metadata(&file_obj)?
+            std::fs::symlink_metadata(file_obj)?
         } else {
-            std::fs::metadata(&file_obj)?
+            std::fs::metadata(file_obj)?
         };
         Some((
             FileTime::from_last_access_time(&metadata),
@@ -216,12 +216,12 @@ fn update_file_times(
     final_mtime: FileTime,
 ) -> Result<()> {
     if args.no_dereference {
-        set_symlink_file_times(&file_obj, final_atime, final_mtime).context(format!(
+        set_symlink_file_times(file_obj, final_atime, final_mtime).context(format!(
             "Failed to set file times for symlink: [{}]",
             &file_obj.display()
         ))?;
     } else {
-        set_file_times(&file_obj, final_atime, final_mtime).context(format!(
+        set_file_times(file_obj, final_atime, final_mtime).context(format!(
             "Failed to set file times for file: [{}]",
             &file_obj.display()
         ))?;

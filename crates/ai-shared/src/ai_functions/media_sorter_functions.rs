@@ -18,11 +18,11 @@ pub fn identify_media_type_from_filename(_input_filename: &str) -> &str {
     /// - The output must be exactly one of: "movie", "tvshow", or "unknown". No explanation or context. No other value.
     /// - Output must be a single token: "movie", "tvshow", or "unknown". No leading or trailing spaces or newlines.
     /// - Ignore the file extension and letter case when analyzing the filename.
-    /// Output:
+    ///   Output:
     /// - If the filename string contains the name of a Movie, return "movie";
     /// - If the filename string contains an indication for a TV Show episode, return "tvshow".
     /// - If you cannot reasonably classify, return "unknown" as a last resort.
-    /// Examples:
+    ///   Examples:
     /// - "The.Matrix.1999.1080p.BluRay.x264.DTS-FGT.mkv" -> movie
     /// - "Breaking.Bad.S05E14.720p.HDTV.x264-IMMERSE.mkv" -> tvshow
     /// - "Inception.2010.720p.BluRay.x264.YIFY.mp4" -> movie
@@ -142,11 +142,11 @@ pub fn identify_media_format_from_filename(_input_filename: &str) -> &str {
     /// - The output must be exactly one of: "compressed", "decompressed", or "unknown". No explanation or context. No other value.
     /// - Output must be a single token: "compressed", "decompressed", or "unknown". No leading or trailing spaces or newlines.
     /// - Ignore the letter case when analyzing the filename.
-    /// Output:
+    ///   Output:
     /// - If the filename string contains extensions that indicate the file is compressed, return "compressed";
     /// - If the filename string does not contain extensions that indicate the file is compressed, return "decompressed";
     /// - If you cannot reasonably classify, return "unknown" as a last resort.
-    /// Examples:
+    ///   Examples:
     /// - "The.Matrix.1999.1080p.BluRay.x264.DTS-FGT.mkv" -> decompressed
     /// - "Inception.2010.720p.BluRay.x264.YIFY.mp4" -> decompressed
     /// - "The.Matrix.1999.1080p.BluRay.x264.DTS-FGT.rar" -> compressed
@@ -221,11 +221,11 @@ pub fn is_main_archive_file(_input_filename: &str) -> &str {
     /// - The output must be exactly one of: "true", "false", or "unknown". No explanation or context. No other value.
     /// - Output must be a single token: "true", "false", or "unknown". No leading or trailing spaces or newlines.
     /// - Ignore letter case when analyzing the filename.
-    /// Output:
+    ///   Output:
     /// - If the filename string indicates the file is the main archive file (e.g., ends with ".rar", ".zip", ".7z", ".tar", ".tar.gz", ".tgz" with no part/number in the name), return "true";
     /// - If the filename string indicates the file is a part of a multi-part archive (e.g., ends with ".part01.rar", ".001", ".r01", ".z01", ".part2.7z", etc.), return "false";
     /// - If you cannot reasonably classify, return "unknown" as a last resort.
-    /// Examples:
+    ///   Examples:
     /// - "Movie.Title.2019.1080p.BluRay.x264-GROUP.rar" -> true
     /// - "Show.Name.S01E01.1080p.WEB-DL-GROUP.zip" -> true
     /// - "Big.Archive.2023.7z" -> true
@@ -298,7 +298,7 @@ pub fn extract_movie_title_from_filename(_input_filename: &str) -> &str {
     /// - Remove dots, dashes, and underscores that separate title words.
     /// - If you cannot reasonably extract a movie title, return "unknown" (but this must be your last resort).
     /// - The output must be a single line, with no extra spaces at the start or end.
-    /// Examples:
+    ///   Examples:
     /// - "The.Matrix.1999.1080p.BluRay.x264.DTS-FGT.mkv" -> The Matrix
     /// - "Inception.2010.720p.BluRay.x264.YIFY.mp4" -> Inception
     /// - "Joker.2019.BluRay.x264.YIFY.zip" -> Joker
@@ -360,7 +360,7 @@ pub fn extract_tv_show_title_from_filename(_input_filename: &str) -> &str {
     /// - Remove dots, dashes, and underscores that separate title words.
     /// - If you cannot reasonably extract a TV show title, return "unknown" (but this must be your last resort).
     /// - The output must be a single line, with no extra spaces at the start or end.
-    /// Examples:
+    ///   Examples:
     /// - "Breaking.Bad.S05E14.720p.HDTV.x264-IMMERSE.mkv" -> Breaking Bad
     /// - "Game.of.Thrones.S08E03.1080p.WEB.H264-MEMENTO.mkv" -> Game of Thrones
     /// - "Stranger.Things.S04E01.Chapter.One.720p.NF.WEB-DL.DDP5.1.x264-NTb.mkv" -> Stranger Things
@@ -411,7 +411,7 @@ pub fn extract_season_episode_from_filename(_input_filename: &str) -> &str {
     /// - For double-episode files, return the first episode (e.g., S01E01E02 = episode 1).
     /// - If you cannot reasonably extract both season and episode, return "unknown" (this must be your last resort).
     /// - Output must match exactly: "season:X, episode:Y" (no leading zeros, no explanation).
-    /// Examples:
+    ///   Examples:
     /// - "Breaking.Bad.S05E14.720p.HDTV.x264-IMMERSE.mkv" -> season:5, episode:14
     /// - "Game.of.Thrones.S08E03.1080p.WEB.H264-MEMENTO.mkv" -> season:8, episode:3
     /// - "Stranger.Things.S04E01.Chapter.One.720p.NF.WEB-DL.DDP5.1.x264-NTb.mkv" -> season:4, episode:1
@@ -462,7 +462,7 @@ pub fn extract_episode_title_from_filename(_input_filename: &str) -> &str {
     /// - Episode title is often found after season/episode info, or before quality tags (e.g., S01E01.Pilot, .Chapter.One., .The.Finale., etc.).
     /// - If you cannot reasonably extract a clear episode title, return "unknown" (this must be your last resort).
     /// - Output must be a single line, with no extra spaces at the start or end.
-    /// Examples:
+    ///   Examples:
     /// - "Stranger.Things.S04E01.Chapter.One.720p.NF.WEB-DL.DDP5.1.x264-NTb.mkv" -> Chapter One
     /// - "Lost.S01E01.Pilot.1080p.BluRay.x264-ROVERS.mkv" -> Pilot
     /// - "Show.Name.-.S04E10.-.The.Finale.mkv" -> The Finale

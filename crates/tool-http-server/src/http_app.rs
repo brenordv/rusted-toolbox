@@ -121,36 +121,34 @@ async fn serve_directory_listing(
     let mut files = Vec::new();
     let mut directories = Vec::new();
 
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            let file_name = entry.file_name().to_string_lossy().to_string();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
 
-            // Skip hidden files and directories
-            if file_name.starts_with('.') {
-                continue;
-            }
+        // Skip hidden files and directories
+        if file_name.starts_with('.') {
+            continue;
+        }
 
-            let relative_path = if request_path.ends_with('/') || request_path.is_empty() {
-                format!(
-                    "{}{}",
-                    if request_path == "/" {
-                        ""
-                    } else {
-                        request_path
-                    },
-                    file_name
-                )
-            } else {
-                format!("{}/{}", request_path, file_name)
-            };
+        let relative_path = if request_path.ends_with('/') || request_path.is_empty() {
+            format!(
+                "{}{}",
+                if request_path == "/" {
+                    ""
+                } else {
+                    request_path
+                },
+                file_name
+            )
+        } else {
+            format!("{}/{}", request_path, file_name)
+        };
 
-            if path.is_dir() {
-                directories.push((file_name, relative_path));
-            } else {
-                let size = path.metadata().map(|m| m.len()).unwrap_or(0);
-                files.push((file_name, relative_path, size));
-            }
+        if path.is_dir() {
+            directories.push((file_name, relative_path));
+        } else {
+            let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+            files.push((file_name, relative_path, size));
         }
     }
 

@@ -48,22 +48,22 @@ impl RequestLogger {
         Ok(())
     }
 
-    pub fn save_response(&self, response: &String, status_code: u16) -> Result<()> {
+    pub fn save_response(&self, response: &str, status_code: u16) -> Result<()> {
         let filename = self.get_new_response_file(status_code);
 
-        match serde_json::from_str::<serde_json::Value>(response.as_str()) {
+        match serde_json::from_str::<serde_json::Value>(response) {
             Ok(value) => {
                 // The value was parseable to JSON. We're doing this round-trip to save it in a
                 // pretty and readable format.
                 let pretty =
-                    serde_json::to_string_pretty(&value).unwrap_or_else(|_| response.clone());
+                    serde_json::to_string_pretty(&value).unwrap_or_else(|_| response.to_owned());
 
                 self.write_to_file(&filename, &pretty)?;
             }
             Err(_) => {
                 // The response cannot be a JSON. Probably the request failed, so we'll save the
                 // response as normal text.
-                self.write_to_file(&filename, &response)?;
+                self.write_to_file(&filename, response)?;
             }
         }
 
@@ -75,7 +75,7 @@ impl RequestLogger {
         let filename_str = filename.to_str().unwrap_or("<non-utf8 path>");
 
         let mut file =
-            File::create(&filename).context(format!("Failed to create file: {}", filename_str))?;
+            File::create(filename).context(format!("Failed to create file: {}", filename_str))?;
 
         file.write_all(content.as_bytes())
             .context(format!("Failed to write to file: {}", filename_str))?;

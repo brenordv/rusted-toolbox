@@ -57,10 +57,7 @@ pub fn get_cli_arguments() -> GuidArgs {
         add_to_clipboard: matches.get_flag("copy-to-clipboard"),
         generate_empty_guid: matches.get_flag("empty"),
         silent: matches.get_flag("silent"),
-        generate_on_interval: match matches.get_one::<f64>("continuous-generation") {
-            None => None,
-            Some(interval) => Some(interval.clone()),
-        },
+        generate_on_interval: matches.get_one::<f64>("continuous-generation").copied(),
     }
 }
 

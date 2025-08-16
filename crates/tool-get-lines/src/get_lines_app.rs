@@ -40,7 +40,7 @@ pub fn prepare_to_export_search_terms_to_output_files(
     output_channels: &mut HashMap<String, Sender<String>>,
     output_handles: &mut Vec<JoinHandle<()>>,
     output_dir: &String,
-    term: &String,
+    term: &str,
     shutdown_signal: Arc<AtomicBool>,
 ) -> Result<()> {
     let output_file_path =
@@ -55,7 +55,7 @@ pub fn prepare_to_export_search_terms_to_output_files(
 
     let (tx, mut rx) = mpsc::channel::<String>(args.workers * 2);
 
-    output_channels.insert(term.clone(), tx);
+    output_channels.insert(term.to_owned(), tx);
 
     let writer_clone = Arc::clone(&writer);
 
