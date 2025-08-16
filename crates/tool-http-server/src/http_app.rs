@@ -23,7 +23,7 @@ pub async fn start_server(config: ServerArgs) {
         )
         .with(log_filter);
 
-    let addr: SocketAddr = ([127, 0, 0, 1], config.port).into();
+    let addr: SocketAddr = (config.host, config.port).into();
 
     println!("Server running at http://{}", addr);
 

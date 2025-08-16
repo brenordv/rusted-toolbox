@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use crate::models::ServerArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
@@ -33,6 +34,15 @@ pub fn get_cli_arguments() -> ServerArgs {
                 .help("Port number to listen on (default: 4200)")
                 .value_parser(clap::value_parser!(u16)),
         )
+        .arg(
+            Arg::new("host")
+                .short('o')
+                .long("host")
+                .value_name("HOST")
+                .help("Host that will be used to bind the server (default: 127.0.0.1)")
+                .required(false)
+                .default_value("127.0.0.1"),
+        )
         .get_matches();
 
     let root_path = matches
@@ -42,7 +52,12 @@ pub fn get_cli_arguments() -> ServerArgs {
 
     let port = matches.get_one::<u16>("port").copied().unwrap_or(4200);
 
-    let config = ServerArgs { root_path, port };
+    let host: IpAddr = matches.get_one::<String>("host")
+        .unwrap()
+        .parse()
+        .unwrap_or_else(|_| "127.0.0.1".parse().unwrap());
+
+    let config = ServerArgs { root_path, port, host };
 
     // Validate root path exists
     if !config.root_path.exists() {
