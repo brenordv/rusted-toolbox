@@ -17,5 +17,6 @@ members = [
     "crates/tool-http-server",
     "crates/tool-mock",
     "crates/ai-tool-chatbot",
-    "crates/ai-shared"
-, "crates/ai-tool-how"]
+    "crates/ai-shared",
+    "crates/ai-tool-how"
+]
