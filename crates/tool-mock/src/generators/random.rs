@@ -7,7 +7,7 @@ use rand::Rng;
 pub fn generate_date(options: &MockOptions) -> Result<String> {
     let today = Local::now().date_naive();
     let range_years = options.range.unwrap_or(50) as i64;
-    
+
     let date = if options.past {
         let days_back = rand::thread_rng().gen_range(1..(range_years * 365));
         today - Duration::days(days_back)
@@ -19,14 +19,14 @@ pub fn generate_date(options: &MockOptions) -> Result<String> {
         let days_offset = rand::thread_rng().gen_range(-(range_years * 365)..(range_years * 365));
         today + Duration::days(days_offset)
     };
-    
+
     Ok(date.format("%Y-%m-%d").to_string())
 }
 
 /// Generate a random time
 pub fn generate_time(options: &MockOptions) -> Result<String> {
     let now = Local::now().time();
-    
+
     let time = if options.past || options.future {
         // Generate random time within the day
         let hour = rand::thread_rng().gen_range(0..24);
@@ -40,7 +40,7 @@ pub fn generate_time(options: &MockOptions) -> Result<String> {
         let second = rand::thread_rng().gen_range(0..60);
         NaiveTime::from_hms_opt(hour, minute, second).unwrap_or(now)
     };
-    
+
     Ok(time.format("%H:%M:%S").to_string())
 }
 
@@ -48,7 +48,7 @@ pub fn generate_time(options: &MockOptions) -> Result<String> {
 pub fn generate_datetime(options: &MockOptions) -> Result<String> {
     let now = Local::now();
     let range_years = options.range.unwrap_or(50) as i64;
-    
+
     let datetime = if options.past {
         let seconds_back = rand::thread_rng().gen_range(1..(range_years * 365 * 24 * 3600));
         now - Duration::seconds(seconds_back)
@@ -57,10 +57,11 @@ pub fn generate_datetime(options: &MockOptions) -> Result<String> {
         now + Duration::seconds(seconds_forward)
     } else {
         // Random datetime within range
-        let seconds_offset = rand::thread_rng().gen_range(-(range_years * 365 * 24 * 3600)..(range_years * 365 * 24 * 3600));
+        let seconds_offset = rand::thread_rng()
+            .gen_range(-(range_years * 365 * 24 * 3600)..(range_years * 365 * 24 * 3600));
         now + Duration::seconds(seconds_offset)
     };
-    
+
     Ok(datetime.format("%Y-%m-%d %H:%M:%S").to_string())
 }
 
@@ -68,7 +69,7 @@ pub fn generate_datetime(options: &MockOptions) -> Result<String> {
 pub fn generate_timestamp(options: &MockOptions) -> Result<String> {
     let now = Utc::now();
     let range_years = options.range.unwrap_or(50) as i64;
-    
+
     let timestamp = if options.past {
         let seconds_back = rand::thread_rng().gen_range(1..(range_years * 365 * 24 * 3600));
         now - Duration::seconds(seconds_back)
@@ -77,10 +78,11 @@ pub fn generate_timestamp(options: &MockOptions) -> Result<String> {
         now + Duration::seconds(seconds_forward)
     } else {
         // Random timestamp within range
-        let seconds_offset = rand::thread_rng().gen_range(-(range_years * 365 * 24 * 3600)..(range_years * 365 * 24 * 3600));
+        let seconds_offset = rand::thread_rng()
+            .gen_range(-(range_years * 365 * 24 * 3600)..(range_years * 365 * 24 * 3600));
         now + Duration::seconds(seconds_offset)
     };
-    
+
     Ok(timestamp.timestamp().to_string())
 }
 
@@ -89,7 +91,7 @@ pub fn generate_color_hex(_options: &MockOptions) -> Result<String> {
     let r = rand::thread_rng().gen_range(0..256);
     let g = rand::thread_rng().gen_range(0..256);
     let b = rand::thread_rng().gen_range(0..256);
-    
+
     Ok(format!("#{:02x}{:02x}{:02x}", r, g, b))
 }
 
@@ -98,7 +100,7 @@ pub fn generate_color_rgb(_options: &MockOptions) -> Result<String> {
     let r = rand::thread_rng().gen_range(0..256);
     let g = rand::thread_rng().gen_range(0..256);
     let b = rand::thread_rng().gen_range(0..256);
-    
+
     Ok(format!("rgb({}, {}, {})", r, g, b))
 }
 
@@ -106,7 +108,7 @@ pub fn generate_color_rgb(_options: &MockOptions) -> Result<String> {
 pub fn generate_integer(options: &MockOptions) -> Result<String> {
     let min = options.min.unwrap_or(0);
     let max = options.max.unwrap_or(100);
-    
+
     let value = rand::thread_rng().gen_range(min..=max);
     Ok(value.to_string())
 }
@@ -116,8 +118,8 @@ pub fn generate_float(options: &MockOptions) -> Result<String> {
     let min = options.min.unwrap_or(0) as f64;
     let max = options.max.unwrap_or(100) as f64;
     let precision = options.precision.unwrap_or(2);
-    
+
     let value: f64 = rand::thread_rng().gen_range(min..=max);
-    
+
     Ok(format!("{:.1$}", value, precision as usize))
 }

@@ -1,8 +1,8 @@
-use std::net::IpAddr;
 use crate::models::ServerArgs;
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
 use shared::constants::general::DASH_LINE;
+use std::net::IpAddr;
 use std::path::PathBuf;
 
 pub fn print_runtime_info(args: &ServerArgs) {
@@ -52,12 +52,17 @@ pub fn get_cli_arguments() -> ServerArgs {
 
     let port = matches.get_one::<u16>("port").copied().unwrap_or(4200);
 
-    let host: IpAddr = matches.get_one::<String>("host")
+    let host: IpAddr = matches
+        .get_one::<String>("host")
         .unwrap()
         .parse()
         .unwrap_or_else(|_| "127.0.0.1".parse().unwrap());
 
-    let config = ServerArgs { root_path, port, host };
+    let config = ServerArgs {
+        root_path,
+        port,
+        host,
+    };
 
     // Validate root path exists
     if !config.root_path.exists() {

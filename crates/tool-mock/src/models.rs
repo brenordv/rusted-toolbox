@@ -140,7 +140,8 @@ impl DataType {
             "  commerce.job-title    - Generate a job title",
             "  commerce.industry     - Generate an industry name",
             "  commerce.buzzword     - Generate a business buzzword",
-        ].join("\n")
+        ]
+        .join("\n")
     }
 }
 
@@ -164,11 +165,18 @@ impl MockArgs {
     pub fn parse(args: &ArgMatches) -> Self {
         MockArgs {
             data_type: args.get_one::<String>("data_type").cloned(),
-            locale: args.get_one::<String>("locale").unwrap_or(&"en_US".to_string()).clone(),
+            locale: args
+                .get_one::<String>("locale")
+                .unwrap_or(&"en_US".to_string())
+                .clone(),
             min: args.get_one::<String>("min").and_then(|s| s.parse().ok()),
             max: args.get_one::<String>("max").and_then(|s| s.parse().ok()),
-            length: args.get_one::<String>("length").and_then(|s| s.parse().ok()),
-            precision: args.get_one::<String>("precision").and_then(|s| s.parse().ok()),
+            length: args
+                .get_one::<String>("length")
+                .and_then(|s| s.parse().ok()),
+            precision: args
+                .get_one::<String>("precision")
+                .and_then(|s| s.parse().ok()),
             age: args.get_one::<String>("age").and_then(|s| s.parse().ok()),
             past: args.get_flag("past"),
             future: args.get_flag("future"),
