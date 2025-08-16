@@ -2,6 +2,9 @@
 appsettings*.json
 *.appsettings*.json
 .data/
+.test-files/
+.demos/
+**/.env
 
 # Universal ignores
 *.log

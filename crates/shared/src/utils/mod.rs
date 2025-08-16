@@ -4,6 +4,7 @@ pub mod format_bytes_to_string;
 pub mod format_duration_to_string;
 pub mod message_matches_filter;
 pub mod new_guid;
+pub mod role_printer;
 pub mod sanitize_str_regex;
 pub mod sanitize_string_for_filename;
 pub mod sanitize_string_for_table_name;

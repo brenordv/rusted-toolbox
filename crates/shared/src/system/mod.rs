@@ -7,5 +7,6 @@ pub mod mmap_csv_reader;
 pub mod monitor_folder;
 pub mod pathbuf_extensions;
 pub mod resolve_path_with_base;
+pub mod select_file_from_path;
 pub mod setup_graceful_shutdown;
 pub mod tool_exit_helpers;

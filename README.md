@@ -14,7 +14,8 @@ We currently have the following tools:
 10. A tool that [converts unix timestamp](crates/tool-timestamp/readme.md) to readable format and vice versa;
 11. A lightweight [HTTP server](crates/tool-http-server/readme.md) for serving static files during development;
 12. A [mock data generator](crates/tool-mock/readme.md) for creating test data with various types of realistic information;
-13. An AI-powered chatbot agent for local or cloud LLMs (documentation coming soon);
+13. An [AI-powered chatbot](crates/ai-tool-chatbot/readme.md) agent for local or cloud LLMs;
+14. A CLI tool called [HOW](crates/ai-tool-how/readme.md) that fixes broken commands and suggests commands from natural language;
 
 ## Ok, but why?
 Well, three main reasons:

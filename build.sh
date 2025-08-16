@@ -29,6 +29,12 @@ cp target/x86_64-unknown-linux-gnu/release/jwt dist/linux/
 cp target/x86_64-unknown-linux-gnu/release/split dist/linux/
 cp target/x86_64-unknown-linux-gnu/release/eh-read dist/linux/
 cp target/x86_64-unknown-linux-gnu/release/eh-export dist/linux/
+cp target/x86_64-unknown-linux-gnu/release/touch dist/linux/
+cp target/x86_64-unknown-linux-gnu/release/cat dist/linux/
+cp target/x86_64-unknown-linux-gnu/release/mock dist/linux/
+cp target/x86_64-unknown-linux-gnu/release/http dist/linux/
+cp target/x86_64-unknown-linux-gnu/release/ai-chatbot dist/linux/
+cp target/x86_64-unknown-linux-gnu/release/how dist/linux/
 
 echo "Building for Windows (x86_64)..."
 cargo build --release --target x86_64-pc-windows-gnu
@@ -48,6 +54,10 @@ cp target/x86_64-pc-windows-gnu/release/jwt.exe dist/windows/
 cp target/x86_64-pc-windows-gnu/release/split.exe dist/windows/
 cp target/x86_64-pc-windows-gnu/release/eh-read.exe dist/windows/
 cp target/x86_64-pc-windows-gnu/release/eh-export.exe dist/windows/
+cp target/x86_64-pc-windows-gnu/release/mock.exe dist/windows/
+cp target/x86_64-pc-windows-gnu/release/http.exe dist/windows/
+cp target/x86_64-pc-windows-gnu/release/ai-chatbot.exe dist/windows/
+cp target/x86_64-pc-windows-gnu/release/how.exe dist/windows/
 
 echo "Building for macOS (x86_64)..."
 cargo build --release --target x86_64-apple-darwin
@@ -65,6 +75,12 @@ cp target/x86_64-apple-darwin/release/jwt dist/macos/
 cp target/x86_64-apple-darwin/release/split dist/macos/
 cp target/x86_64-apple-darwin/release/eh-read dist/macos/
 cp target/x86_64-apple-darwin/release/eh-export dist/macos/
+cp target/x86_64-apple-darwin/release/touch dist/macos/
+cp target/x86_64-apple-darwin/release/cat dist/macos/
+cp target/x86_64-apple-darwin/release/mock dist/macos/
+cp target/x86_64-apple-darwin/release/http dist/macos/
+cp target/x86_64-apple-darwin/release/ai-chatbot dist/macos/
+cp target/x86_64-apple-darwin/release/how dist/macos/
 
 echo "Build completed successfully for Linux, Windows, and macOS."
 echo "Binaries are available in the dist/ directory." 

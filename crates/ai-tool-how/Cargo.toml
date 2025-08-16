@@ -1,0 +1,17 @@
+[package]
+name = "how"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "A CLI tool that helps users with command-line syntax by fixing broken commands and suggesting commands from natural language"
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+ai-shared = { path = "../ai-shared" }
+ai-macros = { path = "../ai-macros" }
+tokio = "1.47.1"
+dotenv = "0.15.0"
+anyhow = "1.0.99"
+tracing = "0.1.41"
+clap = "4.5.23"

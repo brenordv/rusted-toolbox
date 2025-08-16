@@ -38,6 +38,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai-chatbot"
+version = "1.0.0"
+dependencies = [
+ "ai-shared",
+ "anyhow",
+ "dotenv",
+ "shared",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "ai-macros"
+version = "1.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "ai-shared"
+version = "1.0.0"
+dependencies = [
+ "ai-macros",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "shared",
+]
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1738,6 +1773,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "how"
+version = "1.0.0"
+dependencies = [
+ "ai-macros",
+ "ai-shared",
+ "anyhow",
+ "clap",
+ "dotenv",
+ "shared",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "http"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3368,72 +3417,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rusted-ai"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "arboard",
- "async-std",
- "async-trait",
- "azeventhubs",
- "azure_core",
- "azure_identity",
- "base64 0.21.7",
- "bytes",
- "chrono",
- "clap",
- "colored",
- "crossterm",
- "csv",
- "ctrlc",
- "decompress",
- "dialoguer",
- "dotenv",
- "encoding_rs",
- "fastrand 2.3.0",
- "filetime",
- "futures",
- "futures-util",
- "indicatif",
- "infer 0.19.0",
- "jsonwebtoken",
- "log",
- "memmap2",
- "notify",
- "num_cpus",
- "once_cell",
- "regex",
- "reqwest",
- "rstest",
- "rusqlite",
- "rusted_toolbox_macros",
- "serde",
- "serde_json",
- "shared",
- "sled",
- "string-interner",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "url",
- "uuid",
- "walkdir",
-]
-
-[[package]]
-name = "rusted_toolbox_macros"
-version = "1.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.106",
-]
-
-[[package]]
 name = "rustix"
 version = "0.38.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3747,7 +3730,6 @@ dependencies = [
  "reqwest",
  "rstest",
  "rusqlite",
- "rusted_toolbox_macros",
  "serde",
  "serde_json",
  "sled",
