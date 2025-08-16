@@ -88,7 +88,7 @@ pub fn apply_cli_overrides(
 /// Ensures connection string, entity path, and consumer group are provided.
 ///
 /// # Errors
-/// Returns error with descriptive message if required parameters are missing.
+/// Returns error with a descriptive message if required parameters are missing.
 pub fn validate_config(config: &EventHubConfig) -> Result<()> {
     if config.connection_string.is_empty() {
         return Err(anyhow!("EventHub connection string is required. Use --connection-string or provide it in config file."));
