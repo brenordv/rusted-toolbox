@@ -1,12 +1,9 @@
 use crate::models::ServerArgs;
-use chrono::Utc;
 use percent_encoding::percent_decode_str;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use warp::{Filter, Reply};
-use std::time::Instant;
-use warp::http::HeaderMap;
 use tracing::info;
 
 pub async fn start_server(config: ServerArgs) {
@@ -113,7 +110,7 @@ async fn serve_file(file_path: &Path) -> Result<warp::reply::Response, warp::Rej
 
 async fn serve_directory_listing(
     dir_path: &Path,
-    root_path: &Path,
+    _root_path: &Path,
     request_path: &str,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let entries = match fs::read_dir(dir_path) {
@@ -242,7 +239,7 @@ async fn serve_directory_listing(
         title, title
     );
 
-    // Add parent directory link if not at root
+    // Add a parent directory link if not at the root
     if request_path != "/" && !request_path.is_empty() {
         let parent_path = if request_path.contains('/') {
             let mut parts: Vec<&str> = request_path.split('/').collect();
@@ -332,14 +329,13 @@ fn create_request_logger() -> warp::log::Log<impl Fn(warp::log::Info) + Copy> {
 
         info!(
             target: "http_server::access_log",
-            "HTTP request completed - {} {} {} - {}ms - {} bytes - UA: {} - Remote: {:?}",
+            "HTTP request completed - {} {} {} - {}ms - {} bytes - UA: {}",
             info.method(),
             info.path(),
             info.status(),
             info.elapsed().as_millis(),
             content_length,
-            user_agent,
-            info.remote_addr()
+            user_agent
         );
     })
 }
