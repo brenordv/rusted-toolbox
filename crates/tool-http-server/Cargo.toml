@@ -1,9 +1,9 @@
 [package]
-name = "tool-http-server"
+name = "http"
 version = "1.0.0"
 edition = "2021"
 authors = ["Breno RdV"]
-description = "Command-line tool for generating UUIDv4s with multiple modes, interval support, and clipboard integration for development workflows."
+description = "Lightweight async HTTP server for quickly serving static files with directory browsing, MIME detection, logging, and secure development-focused features."
 repository = "https://github.com/brenordv/rusted-toolbox"
 
 [dependencies]
