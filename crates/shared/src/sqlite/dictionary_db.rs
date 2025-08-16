@@ -202,7 +202,6 @@ mod tests {
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
 
-
         // Delete missing should error
         let missing = dict.delete::<ValueType>("not_existing_key");
         assert!(missing.is_err());
@@ -218,7 +217,6 @@ mod tests {
         let missing = dict.get::<ValueType>("missing");
         assert!(missing.is_ok());
         assert!(missing.unwrap().is_none());
-
 
         // Update a missing key
         let result = dict.update(
