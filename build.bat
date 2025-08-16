@@ -38,6 +38,10 @@ copy target\x86_64-pc-windows-msvc\release\jwt.exe dist\windows\ >nul
 copy target\x86_64-pc-windows-msvc\release\split.exe dist\windows\ >nul
 copy target\x86_64-pc-windows-msvc\release\eh-read.exe dist\windows\ >nul
 copy target\x86_64-pc-windows-msvc\release\eh-export.exe dist\windows\ >nul
+copy target\x86_64-pc-windows-msvc\release\mock.exe dist\windows\ >nul
+copy target\x86_64-pc-windows-msvc\release\http.exe dist\windows\ >nul
+copy target\x86_64-pc-windows-msvc\release\ai-chatbot.exe dist\windows\ >nul
+copy target\x86_64-pc-windows-msvc\release\how.exe dist\windows\ >nul
 
 echo Build completed successfully.
 echo Binaries are available in the dist\ directory.

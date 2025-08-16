@@ -1773,6 +1773,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "how"
+version = "1.0.0"
+dependencies = [
+ "ai-macros",
+ "ai-shared",
+ "anyhow",
+ "clap",
+ "dotenv",
+ "shared",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "http"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
