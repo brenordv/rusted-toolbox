@@ -72,7 +72,6 @@ pub fn get_cli_arguments() -> ArgMatches {
             Command line arguments take precedence over JSON configuration values.")
         .preset_arg_verbose(None)
         .preset_arg_config(None)
-        .preset_arg_connection_string("EventHub connection string")
         .add_eh_base_shared_args()
         .add_eh_reader_args()
         .get_matches()

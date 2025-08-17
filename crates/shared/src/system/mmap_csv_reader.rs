@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use csv::Reader;
+use csv::{Reader, StringRecord, StringRecordsIter};
 use memmap2::Mmap;
 use std::fs::File;
 use std::io::Cursor;
@@ -29,12 +29,12 @@ impl MmapCsvReader {
     }
 
     /// TODO: Add summary
-    pub fn headers(&mut self) -> csv::Result<&csv::StringRecord> {
+    pub fn headers(&mut self) -> csv::Result<&StringRecord> {
         self.reader.headers()
     }
 
     /// TODO: Add summary
-    pub fn records(&mut self) -> csv::StringRecordsIter<Cursor<&'static [u8]>> {
+    pub fn records(&mut self) -> StringRecordsIter<Cursor<&'static [u8]>> {
         self.reader.records()
     }
 }
