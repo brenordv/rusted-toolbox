@@ -21,9 +21,16 @@ use crate::logging::app_logger::{AppLogger, LogLevel};
 ///
 /// This function may panic if the logging system fails to initialize or if there are issues with the provided configuration.
 pub fn initialize_log(app_name: &str, log_level: LogLevel) {
-    AppLogger::new(true)
+    get_default_log_builder(app_name, log_level).init();
+}
+
+pub fn get_default_log_builder(app_name: &str, log_level: LogLevel) -> AppLogger {
+    let mut builder = AppLogger::new(true);
+
+    builder
         .log_level(log_level)
         .app_name(app_name)
-        .log_to_console(true)
-        .init();
+        .log_to_console(true);
+    
+    builder
 }
