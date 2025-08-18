@@ -1,0 +1,14 @@
+[package]
+name = "whisper2"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "Bare-bones, secure, and private P2P chat"
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+anyhow = "1.0.99"
+clap = "4.5.45"
+tracing = "0.1.41"
+ratatui = "0.29.0"
