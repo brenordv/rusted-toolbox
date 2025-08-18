@@ -31,6 +31,6 @@ pub fn get_default_log_builder(app_name: &str, log_level: LogLevel) -> AppLogger
         .log_level(log_level)
         .app_name(app_name)
         .log_to_console(true);
-    
+
     builder
 }
