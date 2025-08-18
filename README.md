@@ -91,13 +91,12 @@ TL;DR:
 9. The software author or license cannot be held liable for any damage inflicted by the software.
 
 ## Todo
-- **#1**: Change this to avoid needing the full connection string just to export messages.
+- **#1**: (EH tools) Change this to avoid needing the full connection string just to export messages.
 - **#2**: Some files are way too big. Partly due to the documentation + testing. Some methods should be moved to different files.
 - **#3**: Do a better job at showing the default values for CLI arguments + do it in a unified way.
-- **#4**: Unify all the constants in one file. We don't have that many to justify different files.
 
 ## Building on Linux
-TODO: Improve this later (but before merging the PR)
+TODO: Improve this later
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential libssl-dev pkg-config
