@@ -43,6 +43,7 @@ pub fn get_cli_arguments() -> Result<WhisperArgs> {
         return Ok(WhisperArgs {
             host: format!("{}:{}", ip, port),
             runtime: RuntimeType::Host,
+            role: "HOST".to_string(),
         });
     }
 
@@ -55,5 +56,6 @@ pub fn get_cli_arguments() -> Result<WhisperArgs> {
     Ok(WhisperArgs {
         host: connect_address.unwrap(),
         runtime: RuntimeType::Client,
+        role: "CLIENT".to_string(),
     })
 }

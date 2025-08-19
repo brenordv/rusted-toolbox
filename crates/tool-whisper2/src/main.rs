@@ -18,22 +18,17 @@ use crate::models::shared_types::RuntimeType;
 use crate::ui::dual_column::DualColumnUi;
 
 fn main() -> Result<()> {
-    get_default_log_builder(env!("CARGO_PKG_NAME"), LogLevel::Error)
-        .log_to_file(false, false)
+    get_default_log_builder(env!("CARGO_PKG_NAME"), LogLevel::Info)
+        .log_to_console(false)
+        .log_to_file(true, false)
         .init();
 
     let cli_args = get_cli_arguments()?;
-
     let (tx_own_messages, rx_own_messages) = mpsc::channel::<String>();
     let (tx_peer_message, rx_peer_message) = mpsc::channel::<String>();
 
-    let role = match cli_args.runtime {
-        RuntimeType::Host => "HOST".to_string(),
-        RuntimeType::Client => "CLIENT".to_string(),
-    };
-
     let ui_handle = thread::spawn(move || -> Result<()> {
-        let mut ui = DualColumnUi::new(rx_peer_message, rx_own_messages, role);
+        let mut ui = DualColumnUi::new(rx_peer_message, rx_own_messages, cli_args.role);
         ui.run()?;
         Ok(())
     });
