@@ -20,4 +20,4 @@ members = [
     "crates/ai-shared",
     "crates/ai-tool-how",
     "crates/tool-whisper"
-]
+, "crates/tool-whisper2"]

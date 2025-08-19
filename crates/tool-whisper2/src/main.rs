@@ -5,21 +5,41 @@ mod ui;
 use std::io::{Read, Write};
 use tracing::{error, info};
 use std::net::{TcpListener, TcpStream};
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
 use std::thread;
-use std::thread::sleep;
+use std::thread::{sleep, JoinHandle};
 use std::time::Duration;
 use anyhow::Result;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::get_default_log_builder;
 use crate::cli_utils::get_cli_arguments;
 use crate::models::shared_types::RuntimeType;
+use crate::ui::dual_column::DualColumnUi;
 
 fn main() -> Result<()> {
-    get_default_log_builder(env!("CARGO_PKG_NAME"), LogLevel::Debug)
+    get_default_log_builder(env!("CARGO_PKG_NAME"), LogLevel::Error)
         .log_to_file(false, false)
         .init();
 
     let cli_args = get_cli_arguments()?;
+
+    let (tx_own_messages, rx_own_messages) = mpsc::channel::<String>();
+    let (tx_peer_message, rx_peer_message) = mpsc::channel::<String>();
+
+    let role = match cli_args.runtime {
+        RuntimeType::Host => "HOST".to_string(),
+        RuntimeType::Client => "CLIENT".to_string(),
+    };
+
+    let ui_handle = thread::spawn(move || -> Result<()> {
+        let mut ui = DualColumnUi::new(rx_peer_message, rx_own_messages, role);
+        ui.run()?;
+        Ok(())
+    });
+
+    let read_handle: JoinHandle<Result<()>>;
+    let write_handle: JoinHandle<Result<()>>;
 
     match cli_args.runtime {
         RuntimeType::Host => {
@@ -37,19 +57,32 @@ fn main() -> Result<()> {
                 }
             };
 
-            chatter_over_tcp(&mut stream, "HOST".to_string())
+            let (rd_handle, wt_handle) = chatter_over_tcp(&mut stream, "HOST".to_string(), tx_own_messages, tx_peer_message)?;
+            read_handle = rd_handle;
+            write_handle = wt_handle;
+
         }
         RuntimeType::Client => {
             info!("Connecting to: {}", cli_args.host);
             let mut stream = TcpStream::connect(cli_args.host)?;
 
             info!("Connected!");
-            chatter_over_tcp(&mut stream, "CLIENT".to_string())
+            let (rd_handle, wt_handle) = chatter_over_tcp(&mut stream, "CLIENT".to_string(), tx_own_messages, tx_peer_message)?;
+            read_handle = rd_handle;
+            write_handle = wt_handle;
         }
-    }
+    };
+
+    let _ = read_handle.join();
+    let _ = write_handle.join();
+    let _ = ui_handle.join();
+
+    Ok(())
 }
 
-fn chatter_over_tcp(stream: &mut TcpStream, name: String) -> Result<()> {
+fn chatter_over_tcp(stream: &mut TcpStream, name: String, tx_own_messages: Sender<String>, tx_peer_message: Sender<String>)
+    -> Result<(JoinHandle<Result<()>>, JoinHandle<Result<()>>)>
+{
     let mut read_stream = stream.try_clone()?;
     let read_name = name.clone();
     let read_handle = thread::spawn(move || -> Result<()> {
@@ -70,6 +103,8 @@ fn chatter_over_tcp(stream: &mut TcpStream, name: String) -> Result<()> {
             match read_stream.read_exact(&mut message_buf) {
                 Ok(()) => {
                     let message = String::from_utf8_lossy(&message_buf);
+
+                    tx_peer_message.send(message.to_string())?;
                     info!("[{}-{}][{}bytes] Received: {}",
                         read_name,
                         count,
@@ -92,7 +127,7 @@ fn chatter_over_tcp(stream: &mut TcpStream, name: String) -> Result<()> {
 
         loop {
             count += 1;
-            let message = format!("Hello from {}! Count: {}", write_name, count);
+            let message = format!("Hello from {}! Count: {:0>5}", write_name, count);
 
             let message_bytes = message.as_bytes();
             let message_len = message_bytes.len() as u32;
@@ -102,6 +137,7 @@ fn chatter_over_tcp(stream: &mut TcpStream, name: String) -> Result<()> {
             // Then send the actual message
             write_stream.write_all(message_bytes)?;
 
+            tx_own_messages.send(message.clone())?;
 
             info!("[{}-{}][{}bytes] Sent: {}",
             write_name,
@@ -112,8 +148,6 @@ fn chatter_over_tcp(stream: &mut TcpStream, name: String) -> Result<()> {
             sleep(Duration::from_millis(100));
         }
     });
-    let _ = read_handle.join();
-    let _ = write_handle.join();
 
-    Ok(())
+    Ok((read_handle, write_handle))
 }
