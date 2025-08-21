@@ -56,3 +56,4 @@ target/
 dist/
 own_Luna.txt
 .data/
+logs/

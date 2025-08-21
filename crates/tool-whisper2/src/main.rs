@@ -44,7 +44,7 @@ fn main() -> Result<()> {
             info!("Initializing listener on: {}", cli_args.host);
             let listener = TcpListener::bind(cli_args.host)?;
 
-            info!("Waiting for client connections...");
+            info!("Waiting for someone to talk to...");
             let stream = match listener.accept() {
                 Ok((socket, addr)) => {
                     info!("Client connected! Client address: {addr:?}");
@@ -79,10 +79,6 @@ fn main() -> Result<()> {
             chat_connection.write_message(pub_key.as_str())?;
 
             info!("Handshake completed!");
-
-            //let (rd_handle, wt_handle) = chatter_over_tcp(&mut stream, "HOST".to_string(), tx_own_messages, tx_peer_message, keypair)?;
-            //read_handle = rd_handle;
-            //write_handle = wt_handle;
         }
         RuntimeType::Client => {
             info!("Connecting to: {}", cli_args.host);
@@ -111,10 +107,6 @@ fn main() -> Result<()> {
                 Encryption::create_pub_key_from_base64(server_pub_key_string.as_str())?;
             peer_encrypter = MessageEncrypter::new(server_pub_key)?;
             info!("Handshake completed!");
-
-            // let (rd_handle, wt_handle) = chatter_over_tcp(&mut stream, "CLIENT".to_string(), tx_own_messages, tx_peer_message, keypair)?;
-            // read_handle = rd_handle;
-            // write_handle = wt_handle;
         }
     };
 
