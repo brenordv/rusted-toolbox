@@ -21,7 +21,7 @@ We currently have the following tools:
 ## Ok, but why?
 Well, three main reasons:
 1st: I have a few tools and helpers made using Go, like my [Azure Eventhub Tools](https://github.com/brenordv/azure-eventhub-tools),
-and the [go help tools](https://github.com/brenordv/go-help).
+the [go Whisper](https://github.com/brenordv/go-whisper), and the [go help tools](https://github.com/brenordv/go-help).
 
 While I love Golang, it had a few incidents where malicious software was sneakily added to legit packages:
 1. https://thehackernews.com/2025/02/malicious-go-package-exploits-module.html
