@@ -15,6 +15,7 @@ use crate::ui::chat_ui::ChatUi;
 use anyhow::Result;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::get_default_log_builder;
+use shared::system::tool_exit_helpers::exit_success;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;
@@ -24,7 +25,7 @@ use tracing::{debug, error, info};
 
 fn main() -> Result<()> {
     get_default_log_builder(env!("CARGO_PKG_NAME"), LogLevel::Info)
-        .log_to_console(false)
+        .log_to_console(true)
         .log_to_file(true, false)
         .init();
 
@@ -253,6 +254,8 @@ fn create_handlers(
         let duration = session_start.elapsed().unwrap_or_default();
 
         info!("Disconnected. Session duration: {:?}", duration);
+
+        exit_success();
 
         Ok(())
     });
