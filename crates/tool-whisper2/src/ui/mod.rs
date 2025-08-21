@@ -1,1 +1,1 @@
-pub mod dual_column;
+pub mod chat_ui;
