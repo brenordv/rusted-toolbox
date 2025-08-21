@@ -1,11 +1,11 @@
-# Cat Tool
-
+# Cat
+## What It Is
+This is a port of the Unix `cat` command to Rust.
 A high-performance implementation of the Unix `cat` command that concatenates files and displays them on standard 
 output. Supports all standard Unix cat options including line numbering, character visualization, and formatting 
 features.
 
 ## What It Does
-
 The cat tool reads files sequentially and writes them to standard output. When no files are specified, it reads from 
 standard input. It offers two processing modes:
 
@@ -13,7 +13,6 @@ standard input. It offers two processing modes:
 - **Formatted mode**: Line-by-line processing with various formatting options
 
 ## Examples
-
 ### Basic file concatenation
 ```bash
 # Display single file
@@ -83,5 +82,4 @@ echo "Hello World" | cat -n
 ```
 
 ## Known Issues
-
 - Not sure if this is an actual issue, but this app uses 128Kb buffer instead of the original 8kb for the GNU `cat`.

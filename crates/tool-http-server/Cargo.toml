@@ -8,10 +8,9 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 
 [dependencies]
 shared = { path = "../shared" }
-tokio = { version = "1.47", features = ["full"] }
+tokio = { version = "1.47.1", features = ["full"] }
 clap = "4.5.45"
 warp = { version = "0.4.1", features = ["server"] }
-chrono = { version = "0.4.41", features = ["serde"] }
 percent-encoding = "2.3.1"
 mime_guess = "2.0.5"
 tracing = "0.1.41"
