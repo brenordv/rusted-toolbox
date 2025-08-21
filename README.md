@@ -39,8 +39,20 @@ post.
 3rd: Nice to have all the tools being cross-platform, centralized in a single repository, and each compiled to a single
 executable file.
 
-## Installation
+## Demos
+### AI Chatbot
+![AI Chatbot Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/ai-chat-bot-demo-0001.mp4)
 
+### Whisper
+![Whisper Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/whisper-demo-0001.mp4)
+
+### How
+![How Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/how-demo-0001.mp4)
+
+### HTTP Server
+![HTTP Server Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/http-server-demo-0001.mp4)
+
+## Installation
 ### Building all tools locally
 Considering you have Rust installed, you can build all tools by running:
 
