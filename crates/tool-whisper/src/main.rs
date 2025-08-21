@@ -14,12 +14,11 @@ use shared::logging::logging_helpers::get_default_log_builder;
 
 fn main() -> Result<()> {
     // Change the boolean flags below to enable logging to console and/or file.
-    // This helps with debugging, if you need.
+    // This helps with debugging if you need.
     get_default_log_builder(env!("CARGO_PKG_NAME"), LogLevel::Info)
         .log_to_console(false)
         .log_to_file(false, false)
         .init();
-
 
     let cli_args = get_cli_arguments()?;
     let chat_session = start_chat_session(cli_args)?;
