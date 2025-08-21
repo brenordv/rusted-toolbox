@@ -1,7 +1,7 @@
-# Touch File Timestamps Utility
-
+# Touch
 ## What it does
 
+This is a port of the Unix `touch` command to Rust.
 The Touch utility updates file access and modification timestamps, creating files if they don't exist. 
 It mimics the behavior of the Unix `touch` command, allowing users to set timestamps to the current time or specify
 custom timestamps through various options.
@@ -27,7 +27,6 @@ custom timestamps through various options.
 - `<FILES>`: One or more files to touch
 
 ## Examples
-
 ### Basic Usage - Update to Current Time
 **Command:**
 ```bash
