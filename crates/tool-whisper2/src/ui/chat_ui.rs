@@ -170,7 +170,7 @@ impl ChatUi {
                 InputMode::Normal => Style::default(),
                 InputMode::Editing => Style::default().fg(Color::Green),
             })
-            .block(Block::bordered().title("Input"));
+            .block(Block::bordered().title("What's on your mind?"));
         frame.render_widget(input, input_area);
 
         // Cursor in input field when editing
