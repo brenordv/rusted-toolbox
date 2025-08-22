@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::env;
 use std::path::PathBuf;
+use std::{env, fs};
 
 /// Retrieves the current working directory of the process.
 ///
@@ -27,7 +27,15 @@ use std::path::PathBuf;
 /// println!("Current working directory: {:?}", cwd);
 /// ```
 pub fn get_current_working_dir() -> PathBuf {
-    env::current_dir().unwrap_or_else(|_| PathBuf::from("../../../.."))
+    if let Ok(dir) = env::current_dir() {
+        return dir;
+    }
+
+    if let Ok(canon) = fs::canonicalize(".") {
+        return canon;
+    }
+
+    PathBuf::from(".")
 }
 
 pub fn get_current_working_dir_str() -> Result<String> {
@@ -55,7 +63,7 @@ mod tests {
             assert_eq!(result, expected);
         } else {
             // If env::current_dir() fails, our function should return "."
-            assert_eq!(result, PathBuf::from("../../../../.."));
+            assert_eq!(result, PathBuf::from("."));
         }
     }
 
