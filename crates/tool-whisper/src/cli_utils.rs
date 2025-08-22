@@ -11,7 +11,7 @@ pub fn get_cli_arguments() -> Result<WhisperArgs> {
         .add_basic_metadata(
             env!("CARGO_PKG_VERSION"),
             env!("CARGO_PKG_DESCRIPTION"),
-            "", // TODO: Add a long description.
+            "Bare-bones, secure, and private P2P chat",
         )
         .arg(
             Arg::new("wait")
