@@ -2,6 +2,7 @@ pub mod ensure_directory_exists;
 pub mod folder_walkthrough;
 pub mod get_current_working_dir;
 pub mod get_full_filepath_from_string;
+pub mod load_env_variables;
 pub mod load_json_file_to_object;
 pub mod mmap_csv_reader;
 pub mod monitor_folder;

@@ -109,11 +109,12 @@ pub fn fix_cli_command(_command: &str, _os: &str) -> &'static str {
 #[ai_function]
 pub fn suggest_cli_command(_request: &str, _os: &str) -> &'static str {
     /// ROLE
-    /// - Generate OS/shell-appropriate command(s) that accomplish the natural-language request.
+    /// - Generate OS/shell-appropriate command(s) that achieve the natural-language request.
     /// - Do all reasoning internally; OUTPUT ONLY commands.
+    /// - You are forbidden from adding any context, prose, explanation, code fences, backticks, or other non-command content -- only output the commands.
     ///
     /// INPUTS
-    /// - `request`: a single natural-language task description (may be brief/vague).
+    /// - `request`: a single natural-language task description (maybe brief/vague).
     /// - `os`: "windows (shell: powershell|cmd)" | "linux (shell: bash)" | "macos (shell: zsh)" | "unknown (value)".
     ///
     /// OS/SHELL RESOLUTION
@@ -137,7 +138,7 @@ pub fn suggest_cli_command(_request: &str, _os: &str) -> &'static str {
     /// 6) Safety gates: avoid destructive flags unless explicitly requested.
     ///
     /// OUTPUT CONTRACT (STRICT)
-    /// - Return command(s) ONLY—no prose, no code fences, no leading/trailing whitespace.
+    /// - Return command(s) ONLY—no prose, no code fences, no leading/trailing whitespace, no backticks -- only the command.
     /// - Use literal newlines between commands (max 3 total).
     /// - Use concrete placeholders **only** if the request is generic, with obvious tokens: `<pattern>`, `<name>`, `<file>`, `<dir>`, `<url>`, `<outfile>`, `<port>`, `<archive>`.
     ///

@@ -25,8 +25,7 @@ pub fn print_runtime_info(config: &HowRuntimeConfig) {
     if let Some(shell) = &config.shell {
         println!("🐚 Shell: {}", shell);
     }
-    println!("📋 Copy to clipboard: {}", config.copy_to_clipboard);
-    println!();
+    println!("📋 Copy to clipboard: {}\n\n", config.copy_to_clipboard);
 }
 
 /// Parses command-line arguments into How configuration.

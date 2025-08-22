@@ -11,6 +11,5 @@ shared = { path = "../shared" }
 ai-shared = { path = "../ai-shared" }
 ai-macros = { path = "../ai-macros" }
 tokio = "1.47.1"
-dotenv = "0.15.0"
 anyhow = "1.0.99"
 clap = "4.5.45"

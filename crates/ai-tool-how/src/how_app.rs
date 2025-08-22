@@ -27,6 +27,7 @@ pub async fn start_how_app(config: HowRuntimeConfig) -> Result<()> {
     };
 
     // Print the result
+    println!("Result:");
     println!("{}", result);
 
     // Copy to clipboard if requested
