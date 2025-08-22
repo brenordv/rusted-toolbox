@@ -135,8 +135,8 @@ impl AppLogger {
     /// - `to_file`: `false` - File logging is disabled by default.
     /// - `rotate_file_by_day`: `false` - Log file rotation by day is disabled by default.
     /// - `log_level`: `LogLevel::Info` - Default logging level is set to `Info`.
-    /// - `log_folder`: `"logs"` - Default folder name for storing log files.
-    /// - `app_name`: `"App"` - Default application name for the logging system.
+    /// - `log_folder`: `".logs"` - Default folder name for storing log files.
+    /// - `app_name`: `"env!("CARGO_PKG_NAME")"` - Default application name for the logging system.
     pub fn new(enabled: bool) -> Self {
         Self {
             enabled,
@@ -144,8 +144,8 @@ impl AppLogger {
             to_file: false,
             rotate_file_by_day: false,
             log_level: LogLevel::Info,
-            log_folder: "logs".to_string(),
-            app_name: "App".to_string(),
+            log_folder: ".logs".to_string(),
+            app_name: env!("CARGO_PKG_NAME").to_string(),
         }
     }
 
@@ -390,8 +390,8 @@ mod tests {
         assert!(logger.logs_to_console());
         assert!(!logger.logs_to_file());
         assert!(!logger.rotates_file_by_day());
-        assert_eq!(logger.get_log_folder(), "logs");
-        assert_eq!(logger.get_app_name(), "App");
+        assert_eq!(logger.get_log_folder(), ".logs");
+        assert_eq!(logger.get_app_name(), env!("CARGO_PKG_NAME"));
         assert_eq!(logger.get_log_level(), &LogLevel::Info);
     }
 
@@ -403,8 +403,8 @@ mod tests {
         assert!(logger.logs_to_console());
         assert!(!logger.logs_to_file());
         assert!(!logger.rotates_file_by_day());
-        assert_eq!(logger.get_log_folder(), "logs");
-        assert_eq!(logger.get_app_name(), "App");
+        assert_eq!(logger.get_log_folder(), ".logs");
+        assert_eq!(logger.get_app_name(), env!("CARGO_PKG_NAME"));
         assert_eq!(logger.get_log_level(), &LogLevel::Info);
     }
 
