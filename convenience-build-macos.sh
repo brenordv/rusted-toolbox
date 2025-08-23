@@ -119,18 +119,22 @@ install_tools() {
   
   # List of tools to install (excluding cat and touch to avoid conflicts with macOS built-ins)
   local tools=(
-    "guid"
-    "ts"
+    "how"
     "csvn"
-    "get-lines"
-    "jwt"
-    "split"
-    "eh-read"
     "eh-export"
-    "ai-agent-chat"
-    "http-server"
+    "eh-read"
+    "get-lines"
+    "gitignore"
+    "guid"
+    "http"
+    "imgx"
+    "jwt"
+    "mock"
+    "split"
+    "ts"
+    "whisper"
   )
-  
+
   for tool in "${tools[@]}"; do
     local tool_path="$release_dir/$tool"
     if [ -f "$tool_path" ] && [ -x "$tool_path" ]; then
