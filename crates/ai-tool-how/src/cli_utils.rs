@@ -36,7 +36,7 @@ pub fn get_cli_arguments() -> Result<HowRuntimeConfig> {
     let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
             env!("CARGO_PKG_VERSION"),
-            "A CLI tool that helps with command-line syntax",
+            env!("CARGO_PKG_DESCRIPTION"),
             "This tool can fix broken commands or suggest commands from natural language requests. It automatically detects your OS and shell for accurate suggestions."
         )
         .arg(Arg::new("ask")
