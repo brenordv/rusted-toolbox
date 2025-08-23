@@ -1,16 +1,12 @@
+use crate::models::ImageMeta;
+use anyhow::Result;
+use image::{ColorType, DynamicImage, ImageEncoder};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use image::{ColorType, DynamicImage, ImageEncoder};
-use crate::models::ImageMeta;
-use tracing::{debug, warn, info};
-use anyhow::Result;
+use tracing::{debug, info, warn};
 
-pub fn encode_png(
-    output_path: &PathBuf,
-    image: &DynamicImage,
-    meta: &ImageMeta,
-) -> Result<()> {
+pub fn encode_png(output_path: &PathBuf, image: &DynamicImage, meta: &ImageMeta) -> Result<()> {
     let file = File::create(output_path)?;
     let mut encoder = image::codecs::png::PngEncoder::new(file);
 
@@ -31,12 +27,7 @@ pub fn encode_png(
     Ok(())
 }
 
-
-pub fn encode_jpeg(
-    output_path: &PathBuf,
-    image: &DynamicImage,
-    meta: &ImageMeta,
-) -> Result<()> {
+pub fn encode_jpeg(output_path: &PathBuf, image: &DynamicImage, meta: &ImageMeta) -> Result<()> {
     // Convert to RGB if needed (JPEG doesn't support transparency)
     let rgb_image = match image.color() {
         ColorType::Rgb8 | ColorType::L8 => image.clone(),
@@ -66,10 +57,7 @@ pub fn encode_jpeg(
     Ok(())
 }
 
-pub fn encode_webp(
-    output_path: &PathBuf,
-    image: &DynamicImage,
-) -> Result<()> {
+pub fn encode_webp(output_path: &PathBuf, image: &DynamicImage) -> Result<()> {
     debug!("Encoding WebP in lossless mode");
     let file = File::create(output_path)?;
     let encoder = image::codecs::webp::WebPEncoder::new_lossless(file);
@@ -84,11 +72,7 @@ pub fn encode_webp(
     Ok(())
 }
 
-pub fn encode_avif(
-    output_path: &PathBuf,
-    image: &DynamicImage,
-    meta: &ImageMeta,
-) -> Result<()> {
+pub fn encode_avif(output_path: &PathBuf, image: &DynamicImage, meta: &ImageMeta) -> Result<()> {
     debug!("Encoding AVIF...");
     let file = File::create(output_path)?;
     let mut encoder = image::codecs::avif::AvifEncoder::new(file);
@@ -110,10 +94,7 @@ pub fn encode_avif(
     Ok(())
 }
 
-pub fn encode_bmp(
-    output_path: &PathBuf,
-    image: &DynamicImage
-) -> Result<()> {
+pub fn encode_bmp(output_path: &PathBuf, image: &DynamicImage) -> Result<()> {
     debug!("Encoding BMP...");
     let mut file = File::create(output_path)?;
     let encoder = image::codecs::bmp::BmpEncoder::new(&mut file);
@@ -128,10 +109,7 @@ pub fn encode_bmp(
     Ok(())
 }
 
-pub fn encode_gif(
-    output_path: &PathBuf,
-    image: &DynamicImage
-) -> Result<()> {
+pub fn encode_gif(output_path: &PathBuf, image: &DynamicImage) -> Result<()> {
     debug!("Encoding GIF");
 
     let mut file = File::create(output_path)?;
@@ -144,7 +122,8 @@ pub fn encode_gif(
         &mut file,
         rgba_image.width() as u16,
         rgba_image.height() as u16,
-        &[])?;
+        &[],
+    )?;
 
     // Use global color table
     encoder.set_repeat(gif::Repeat::Infinite)?;
@@ -163,7 +142,8 @@ fn encode_gif_with_quantization<W: Write>(
 
     let width = rgba_image.width();
     let height = rgba_image.height();
-    let pixels: Vec<RGBA> = rgba_image.pixels()
+    let pixels: Vec<RGBA> = rgba_image
+        .pixels()
         .map(|p| RGBA::new(p[0], p[1], p[2], p[3]))
         .collect();
 
@@ -177,11 +157,17 @@ fn encode_gif_with_quantization<W: Write>(
     let (palette, pixels) = result.remapped(&mut img)?;
 
     // Convert palette to GIF format
-    let gif_palette: Vec<u8> = palette.iter()
-        .flat_map(|p| [p.r, p.g, p.b])
-        .collect();
+    let transparent_values = palette.iter().map(|p| p.a).collect::<Vec<_>>();
+    let first_available_alpha: u8 =
+        transparent_values.iter().position(|a| *a != 0).unwrap_or(0) as u8;
+    let transparent = if first_available_alpha > 0 {
+        Some(first_available_alpha)
+    } else {
+        None
+    };
 
-    let mut frame = gif::Frame::from_indexed_pixels(width as u16, height as u16, pixels.clone(), Some(&gif_palette));
+    let mut frame =
+        gif::Frame::from_indexed_pixels(width as u16, height as u16, pixels.clone(), transparent);
     frame.delay = 0; // Static image
 
     encoder.write_frame(&frame)?;

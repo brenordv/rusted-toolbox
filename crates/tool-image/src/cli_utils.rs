@@ -1,14 +1,14 @@
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
 use crate::models::{EditArgs, TargetFormat};
 use anyhow::Result;
+use clap::{Arg, Command};
 use image::ImageFormat;
+use shared::command_line::cli_builder::CommandExt;
+use shared::constants::general::DASH_LINE;
 
 pub fn print_runtime_info(args: &EditArgs) {
     println!("🎨 Image v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);   
-    
+    println!("{}", DASH_LINE);
+
     println!("Files");
     for file in args.input_files.iter() {
         println!("  {:?}", file);
@@ -23,11 +23,11 @@ pub fn validate_args(args: &EditArgs) -> Result<()> {
     if args.input_files.is_empty() {
         return Err(anyhow::anyhow!("No input files provided"));
     };
-    
+
     if args.input_files.iter().any(|file| !file.exists()) {
         return Err(anyhow::anyhow!("Some of the input file does not exist"));
     }
-    
+
     Ok(())
 }
 
@@ -63,7 +63,8 @@ pub fn get_cli_arguments() -> EditArgs {
         .get_matches();
 
     EditArgs {
-        input_files: matches.get_many::<String>("input-files")
+        input_files: matches
+            .get_many::<String>("input-files")
             .unwrap_or_default()
             .map(|s| s.into())
             .collect(),

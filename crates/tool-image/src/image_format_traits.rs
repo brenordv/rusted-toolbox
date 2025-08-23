@@ -23,7 +23,7 @@ impl ImageFormatTraits for ImageFormat {
             ImageFormat::Avif => "avif".to_string(),
             ImageFormat::Qoi => "qoi".to_string(),
             ImageFormat::Pcx => "pcx".to_string(),
-            _ => "".to_string()
+            _ => "".to_string(),
         }
     }
 }
