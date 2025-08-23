@@ -13,10 +13,20 @@ pub fn print_runtime_info(args: &EditArgs) {
     for file in args.input_files.iter() {
         println!("  {:?}", file);
     }
-    println!("Input files: {:?}", args.input_files);
-    println!("Resize: {:?}", args.resize);
-    println!("Grayscale: {:?}", args.grayscale);
-    println!("Convert: {:?}", args.convert);
+
+    if let Some(resize) = args.resize {
+        println!("Resize: {}%", resize);
+    }
+
+    if args.grayscale {
+        println!("Grayscale: true");
+    }
+
+    if let Some(convert) = &args.convert {
+        println!("Convert: {:?}", convert);
+    }
+
+    println!();
 }
 
 pub fn validate_args(args: &EditArgs) -> Result<()> {

@@ -13,44 +13,57 @@ use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
 
 pub fn process_edit_job(job: EditJob, progress_bar: &ProgressBar) -> Result<()> {
-    progress_bar.set_message(format!("Processing {}", job.input_file.display()));
+    const PROGRESS_BAR_MAX: u64 = 100;
+
+    let inc_step = if let Some(length) = progress_bar.length() {
+        PROGRESS_BAR_MAX / length
+    } else {
+        1
+    };
+
+    progress_bar.set_length(100);
 
     info!("Decoding image: {}", job.input_file.display());
-    progress_bar.inc(1);
+    progress_bar.set_message("Decoding image...");
+    progress_bar.inc(inc_step);
     let mut img_info = decode_image(&job.input_file)?;
 
     debug!("Image decoded...");
-
     if let Some(resize) = job.resize {
         info!("Resizing image to {}% of its original size", resize);
-        progress_bar.inc(1);
+        progress_bar.set_message(format!("Resizing image to {}%...", resize));
+        progress_bar.inc(inc_step);
         img_info.dynamic_image = apply_resize(img_info.dynamic_image, resize)?;
         debug!("Image resized...");
     }
 
     if job.grayscale {
         info!("Converting image to grayscale");
-        progress_bar.inc(1);
+        progress_bar.set_message("Converting to greyscale...");
+        progress_bar.inc(inc_step);
         img_info.dynamic_image = img_info.dynamic_image.grayscale();
         debug!("Image converted to grayscale...");
     }
 
     info!("Determining output plan...");
-    progress_bar.inc(1);
+    progress_bar.set_message("Determining output plan...");
+    progress_bar.inc(inc_step);
     let (output_format, output_path) = determine_output_plan(&job, &img_info.image_meta)?;
 
     info!("Saving image to {}", output_path.display());
     if job.convert.is_some() {
         // The job of converting the image will be done at save time...
-        progress_bar.inc(1);
+        progress_bar.inc(inc_step);
     }
+
+    progress_bar.set_message(format!("Saving image to {}...", output_path.display()));
     encode_image(
         &img_info.dynamic_image,
         &output_path,
         output_format,
         &img_info.image_meta,
     )?;
-    progress_bar.inc(1);
+    progress_bar.inc(inc_step);
 
     debug!(
         "The file [{:?}] was processed and saved as: [{:?}]",
@@ -64,8 +77,9 @@ pub fn create_job_progress_bar(job: &EditJob, progress_bar: &MultiProgress) -> R
     let pb = progress_bar.add(ProgressBar::new(step_count));
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.blue} [{elapsed_precise}] {bar:20.cyan/blue} {pos:>3}% {msg}")?,
+            .template(format!("{{spinner:.blue}} [{{elapsed_precise}}] [{}] {{bar:50.green/black}} {{pos:>3}}% {{msg}}", job.input_file.display()).as_str())?,
     );
+
     Ok(pb)
 }
 

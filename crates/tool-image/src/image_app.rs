@@ -1,7 +1,7 @@
 use crate::image_edit_routines::{create_job_progress_bar, process_edit_job};
 use crate::models::{EditArgs, EditJob, ProcessingStatsInner};
 use anyhow::{anyhow, Result};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress};
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use shared::system::folder_walkthrough::list_all_files_recursively;
@@ -14,10 +14,6 @@ pub fn run_image_edit_commands(args: &EditArgs) -> Result<()> {
     let input_batch = expand_input_paths(&args.input_files)?;
     let jobs = build_jobs(input_batch, args)?;
     let progress_bar = MultiProgress::new();
-    let main_pb = progress_bar.add(ProgressBar::new(jobs.len() as u64));
-    main_pb.set_style(ProgressStyle::default_bar().template(
-        "{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-    )?);
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(num_cpus::get())
         .build()?;
@@ -39,14 +35,10 @@ pub fn run_image_edit_commands(args: &EditArgs) -> Result<()> {
                     stats.increment_error();
                 }
 
-                main_pb.inc(1);
-
                 result
             })
             .collect()
     });
-
-    main_pb.finish_with_message("Processing complete");
 
     // Collect final statistics
     let final_stats = Arc::try_unwrap(stats)
