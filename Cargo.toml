@@ -19,5 +19,12 @@ members = [
     "crates/ai-tool-chatbot",
     "crates/ai-shared",
     "crates/ai-tool-how",
-    "crates/tool-whisper"
-, "crates/tool-gitignore"]
+    "crates/tool-whisper",
+    "crates/tool-gitignore",
+    "crates/tool-image"
+]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

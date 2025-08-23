@@ -144,7 +144,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55f533f8e0af236ffe5eb979b99381df3258853f00ba2e44b6e1955292c75227"
 dependencies = [
  "clipboard-win",
- "image",
+ "image 0.25.6",
  "log",
  "objc2",
  "objc2-app-kit",
@@ -1873,6 +1873,10 @@ dependencies = [
  "png",
  "tiff",
 ]
+
+[[package]]
+name = "image"
+version = "1.0.0"
 
 [[package]]
 name = "indenter"
