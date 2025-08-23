@@ -9,78 +9,20 @@ if ! command -v cargo &> /dev/null; then
 fi
 
 # Create output directories
-mkdir -p dist/linux
-mkdir -p dist/windows
-mkdir -p dist/macos
+mkdir -p dist
 
 echo "Building for Linux (x86_64)..."
-cargo build --release --target x86_64-unknown-linux-gnu
+cargo build --release
 if [ $? -ne 0 ]; then
     echo "Failed to build for Linux"
     exit 1
 fi
 
-# Copy Linux binaries
-cp target/x86_64-unknown-linux-gnu/release/guid dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/ts dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/csvn dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/get-lines dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/jwt dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/split dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/eh-read dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/eh-export dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/touch dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/cat dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/mock dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/http dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/ai-chatbot dist/linux/
-cp target/x86_64-unknown-linux-gnu/release/how dist/linux/
+# Copy Linux binaries, except touch and cat because you already got that.
+find /target/release -maxdepth 1 -type f -executable \
+   ! -name "touch" ! -name "cat" \
+   -exec cp {} dist/ \;
 
-echo "Building for Windows (x86_64)..."
-cargo build --release --target x86_64-pc-windows-gnu
-if [ $? -ne 0 ]; then
-    echo "Failed to build for Windows"
-    exit 1
-fi
 
-# Copy Windows binaries
-cp target/x86_64-pc-windows-gnu/release/guid.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/touch.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/cat.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/ts.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/csvn.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/get-lines.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/jwt.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/split.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/eh-read.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/eh-export.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/mock.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/http.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/ai-chatbot.exe dist/windows/
-cp target/x86_64-pc-windows-gnu/release/how.exe dist/windows/
-
-echo "Building for macOS (x86_64)..."
-cargo build --release --target x86_64-apple-darwin
-if [ $? -ne 0 ]; then
-    echo "Failed to build for macOS"
-    exit 1
-fi
-
-# Copy macOS binaries
-cp target/x86_64-apple-darwin/release/guid dist/macos/
-cp target/x86_64-apple-darwin/release/ts dist/macos/
-cp target/x86_64-apple-darwin/release/csvn dist/macos/
-cp target/x86_64-apple-darwin/release/get-lines dist/macos/
-cp target/x86_64-apple-darwin/release/jwt dist/macos/
-cp target/x86_64-apple-darwin/release/split dist/macos/
-cp target/x86_64-apple-darwin/release/eh-read dist/macos/
-cp target/x86_64-apple-darwin/release/eh-export dist/macos/
-cp target/x86_64-apple-darwin/release/touch dist/macos/
-cp target/x86_64-apple-darwin/release/cat dist/macos/
-cp target/x86_64-apple-darwin/release/mock dist/macos/
-cp target/x86_64-apple-darwin/release/http dist/macos/
-cp target/x86_64-apple-darwin/release/ai-chatbot dist/macos/
-cp target/x86_64-apple-darwin/release/how dist/macos/
-
-echo "Build completed successfully for Linux, Windows, and macOS."
+echo "Build completed successfully for native system."
 echo "Binaries are available in the dist/ directory." 
