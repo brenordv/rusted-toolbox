@@ -4,18 +4,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(ValueEnum, Clone, Debug)]
-pub enum TargetFormat {
-    Png,
-    Jpg,
-    Jpeg,
-    Gif,
-    Webp,
-    Avif,
-    Tiff,
-    Bmp,
-}
-
-#[derive(ValueEnum, Clone, Debug)]
 pub enum FilterType {
     Nearest,
     Triangle,

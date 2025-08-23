@@ -1,7 +1,7 @@
-use crate::models::{EditArgs, TargetFormat};
+use crate::models::EditArgs;
+use crate::string_traits::StringExt;
 use anyhow::Result;
 use clap::{Arg, Command};
-use image::ImageFormat;
 use shared::command_line::cli_builder::CommandExt;
 use shared::constants::general::DASH_LINE;
 
@@ -41,7 +41,7 @@ pub fn get_cli_arguments() -> EditArgs {
         .arg(Arg::new("input-files")
             .help("Input files to process")
             .num_args(0..)
-            .trailing_var_arg(true)
+            .required(false)
             .action(clap::ArgAction::Append))
         .arg(Arg::new("resize")
             .long("resize")
@@ -58,9 +58,15 @@ pub fn get_cli_arguments() -> EditArgs {
             .long("convert")
             .short('c')
             .value_name("FORMAT")
-            .value_parser(clap::value_parser!(TargetFormat))
+            .value_parser(clap::value_parser!(String))
             .help("Convert the image to the specified format"))
         .get_matches();
+
+    let convert = if let Some(convert) = matches.get_one::<String>("convert") {
+        Some(convert.to_image_format())
+    } else {
+        None
+    };
 
     EditArgs {
         input_files: matches
@@ -70,6 +76,6 @@ pub fn get_cli_arguments() -> EditArgs {
             .collect(),
         resize: matches.get_one::<u32>("resize").copied(),
         grayscale: matches.get_flag("grayscale"),
-        convert: matches.get_one::<ImageFormat>("convert").cloned(),
+        convert,
     }
 }

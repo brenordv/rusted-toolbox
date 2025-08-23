@@ -4,6 +4,7 @@ mod image_edit_routines;
 mod image_encoders;
 mod image_format_traits;
 mod models;
+mod string_traits;
 
 use anyhow::Result;
 
