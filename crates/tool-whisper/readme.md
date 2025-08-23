@@ -164,3 +164,4 @@ Handshake completed!
 2. **No File Transfer**: Only text messages are supported; no file sharing capabilities.
 3. **Network Dependency**: Requires direct network connectivity between peers; doesn't work through NAT without port forwarding.
 
+
