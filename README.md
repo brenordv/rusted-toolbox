@@ -18,6 +18,7 @@ We currently have the following tools:
 14. A CLI tool called [HOW](crates/ai-tool-how/readme.md) that fixes broken commands and suggests commands from natural language;
 15. A bare-bones, fully private, encrypted P2P chat tool called [Whisper](crates/tool-whisper/readme.md); 
 16. A tool called [Gitignore](crates/tool-gitignore/readme.md) that generates/updates the `.gitignore` file of your project automatically; 
+17. An image editor called [IMGx](crates/tool-image/readme.md) that allows do quickly do common operations like resizing, converting to another format, and to greyscale;
 
 ## Ok, but why?
 Well, three main reasons:
