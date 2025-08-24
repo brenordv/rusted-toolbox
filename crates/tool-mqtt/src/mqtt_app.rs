@@ -16,19 +16,15 @@ pub async fn read_messages(args: &MqttArgs) -> Result<()> {
     loop {
         match event_loop.poll().await {
             Ok(event) => match event {
-                Event::Incoming(inc_message) => {
-                    match inc_message {
-                        Incoming::Publish(message) => {
-                            debug!("Publish received: {:?}", message);
-                            let decoded_payload = String::from_utf8(message.payload.to_vec())?;
-                            info!("Message received: {:?}", decoded_payload);
-                        }
-                        _ => {}
+                Event::Incoming(inc_message) => match inc_message {
+                    Incoming::Publish(message) => {
+                        debug!("Publish received: {:?}", message);
+                        let decoded_payload = String::from_utf8(message.payload.to_vec())?;
+                        info!("Message received: {:?}", decoded_payload);
                     }
-                }
-                Event::Outgoing(_) => {
-                    
-                }
+                    _ => {}
+                },
+                Event::Outgoing(_) => {}
             },
             Err(e) => {
                 error!("Error = {:?}", e);
@@ -39,14 +35,20 @@ pub async fn read_messages(args: &MqttArgs) -> Result<()> {
     }
 }
 
-fn create_connection_options(client_id: String, args: &MqttArgs) -> (String, AsyncClient, EventLoop) {
+fn create_connection_options(
+    client_id: String,
+    args: &MqttArgs,
+) -> (String, AsyncClient, EventLoop) {
     debug!("Creating connection options");
     let topic = args.topic.clone();
     let host = args.host.clone();
     let port = args.port;
 
-    let mut mqtt_options =
-        MqttOptions::new(format!("{}-{}", env!("CARGO_PKG_NAME"), client_id), host, port);
+    let mut mqtt_options = MqttOptions::new(
+        format!("{}-{}", env!("CARGO_PKG_NAME"), client_id),
+        host,
+        port,
+    );
 
     mqtt_options.set_keep_alive(Duration::from_secs(5));
 
@@ -82,44 +84,20 @@ pub async fn post_message(args: &MqttArgs) -> Result<()> {
     loop {
         match event_loop.poll().await {
             Ok(event) => match event {
-                Event::Incoming(inc_message) => {
-                    match inc_message {
-                        Incoming::Connect(_) => {}
-                        Incoming::ConnAck(_) => {}
-                        Incoming::Publish(_) => {}
-                        Incoming::PubAck(_) => {
-                            info!("Message publication acknowledged!");
-                            break;
-                        }
-                        Incoming::PubRec(_) => {}
-                        Incoming::PubRel(_) => {}
-                        Incoming::PubComp(_) => {}
-                        Incoming::Subscribe(_) => {}
-                        Incoming::SubAck(_) => {}
-                        Incoming::Unsubscribe(_) => {}
-                        Incoming::UnsubAck(_) => {}
-                        Incoming::PingReq => {}
-                        Incoming::PingResp => {}
-                        Incoming::Disconnect => {}
+                Event::Incoming(inc_message) => match inc_message {
+                    Incoming::PubAck(_) => {
+                        info!("Message publication acknowledged!");
+                        break;
                     }
-                }
-                Event::Outgoing(outgoing) => {
-                    match outgoing {
-                        Outgoing::Publish(_) => {
-                            info!("Message published. Waiting for ack...");
-                        }
-                        Outgoing::Subscribe(_) => {}
-                        Outgoing::Unsubscribe(_) => {}
-                        Outgoing::PubAck(_) => {}
-                        Outgoing::PubRec(_) => {}
-                        Outgoing::PubRel(_) => {}
-                        Outgoing::PubComp(_) => {}
-                        Outgoing::PingReq => {}
-                        Outgoing::PingResp => {}
-                        Outgoing::Disconnect => {}
-                        Outgoing::AwaitAck(_) => {}
+                    _ => {}
+
+                },
+                Event::Outgoing(outgoing) => match outgoing {
+                    Outgoing::Publish(_) => {
+                        info!("Message published. Waiting for ack...");
                     }
-                }
+                    _ => {}
+                },
             },
             Err(e) => {
                 error!("Error = {:?}", e);

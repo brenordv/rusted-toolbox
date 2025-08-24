@@ -102,7 +102,11 @@ pub fn get_cli_arguments() -> Result<MqttArgs> {
 
     let host = matches.get_one::<String>("host").unwrap();
     let port = matches.get_one::<String>("port").unwrap().parse::<u16>()?;
-    let topic = matches.get_one::<String>("topic").unwrap().trim().to_string();
+    let topic = matches
+        .get_one::<String>("topic")
+        .unwrap()
+        .trim()
+        .to_string();
     let message = matches.get_one::<String>("message");
     let username = matches.get_one::<String>("username");
     let password = matches.get_one::<String>("password");
