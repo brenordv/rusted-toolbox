@@ -1,7 +1,7 @@
 use crate::image_edit_routines::{create_job_progress_bar, process_edit_job};
 use crate::models::{EditArgs, EditJob, ProcessingStatsInner};
 use anyhow::{anyhow, Result};
-use indicatif::{MultiProgress};
+use indicatif::MultiProgress;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use shared::system::folder_walkthrough::list_all_files_recursively;

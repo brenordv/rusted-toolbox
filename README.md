@@ -19,6 +19,7 @@ We currently have the following tools:
 15. A bare-bones, fully private, encrypted P2P chat tool called [Whisper](crates/tool-whisper/readme.md); 
 16. A tool called [Gitignore](crates/tool-gitignore/readme.md) that generates/updates the `.gitignore` file of your project automatically; 
 17. An image editor called [IMGx](crates/tool-image/readme.md) that allows do quickly do common operations like resizing, converting to another format, and to greyscale;
+18. An [MQTT cli tool](crates/tool-mqtt/readme.md) that can be used to quickly send or receive messages from a specific topic.
 
 ## Ok, but why?
 Well, three main reasons:
@@ -109,6 +110,7 @@ TL;DR:
 - **#1**: (EH tools) Change this to avoid needing the full connection string just to export messages.
 - **#2**: Some files are way too big. Partly due to the documentation + testing. Some methods should be moved to different files.
 - **#3**: Do a better job at showing the default values for CLI arguments + do it in a unified way.
+- **#4**: Add to all the command lines the possibility of changing the log level.
 
 ## Building on Linux
 TODO: Improve this later
