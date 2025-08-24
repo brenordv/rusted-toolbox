@@ -4,6 +4,7 @@ use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, Outgoing, Qo
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
+use shared::utils::new_guid::new_guid;
 
 pub async fn read_messages(args: &MqttArgs) -> Result<()> {
     let (topic, client, mut event_loop) = create_connection_options("reader".to_string(), args);
@@ -45,7 +46,8 @@ fn create_connection_options(
     let port = args.port;
 
     let mut mqtt_options = MqttOptions::new(
-        format!("{}-{}", env!("CARGO_PKG_NAME"), client_id),
+        //Adding a guid to the id so that we can have multiple instances of the same client
+        format!("{}-{}-{}", env!("CARGO_PKG_NAME"), client_id, new_guid()),
         host,
         port,
     );
