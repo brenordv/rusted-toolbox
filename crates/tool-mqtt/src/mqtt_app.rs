@@ -1,10 +1,10 @@
 use crate::models::MqttArgs;
 use anyhow::Result;
 use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, Outgoing, QoS};
+use shared::utils::new_guid::new_guid;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
-use shared::utils::new_guid::new_guid;
 
 pub async fn read_messages(args: &MqttArgs) -> Result<()> {
     let (topic, client, mut event_loop) = create_connection_options("reader".to_string(), args);
@@ -92,7 +92,6 @@ pub async fn post_message(args: &MqttArgs) -> Result<()> {
                         break;
                     }
                     _ => {}
-
                 },
                 Event::Outgoing(outgoing) => match outgoing {
                     Outgoing::Publish(_) => {
