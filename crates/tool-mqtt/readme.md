@@ -143,3 +143,4 @@ The tool supports multiple command aliases for convenience:
 3. **SSL/TLS**: Currently only supports unencrypted TCP connections; secure connections are not implemented
 4. **Persistent Sessions**: Does not support persistent MQTT sessions; each connection is clean session
 5. **Binary Messages**: Binary payloads are converted to UTF-8 strings, which may not display correctly for non-text data
+
