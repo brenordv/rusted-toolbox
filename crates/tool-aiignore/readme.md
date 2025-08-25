@@ -6,7 +6,7 @@ control which files and directories are excluded from AI assistant indexing and 
 This tool is similar to [gitignore](../tool-gitignore/readme.md), but simpler and focused on keeping AI out of things
 it shouldn't see.
 
-I think it works well enough for now, but this will definitely need to evolve, since every day a brand-new shiny AI 
+I think it works well enough for now, but this will definitely need to evolve, since every day, a brand-new shiny AI 
 tool appears in the wild. 
 
 ## What It Does
