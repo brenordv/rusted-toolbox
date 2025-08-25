@@ -120,6 +120,7 @@ install_tools() {
   # List of tools to install (excluding cat and touch to avoid conflicts with macOS built-ins)
   local tools=(
     "how"
+    "aiignore"
     "csvn"
     "eh-export"
     "eh-read"
