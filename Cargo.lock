@@ -61,6 +61,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aiignore"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "reqwest",
+ "shared",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "aligned-vec"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -21,8 +21,10 @@ members = [
     "crates/ai-tool-how",
     "crates/tool-whisper",
     "crates/tool-gitignore",
-    "crates/tool-image"
-, "crates/tool-mqtt"]
+    "crates/tool-image",
+    "crates/tool-mqtt",
+    "crates/tool-aiignore"
+]
 
 [profile.release]
 lto = true

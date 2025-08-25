@@ -1,0 +1,15 @@
+[package]
+name = "aiignore"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "Tool that creates and updates common ai-ignore files"
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+anyhow = "1.0.99"
+clap = "4.5.45"
+tracing = "0.1.41"
+reqwest = { version = "0.12.23", features = ["json"] }
+tokio = "1.47.1"
