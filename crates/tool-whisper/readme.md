@@ -163,3 +163,4 @@ Handshake completed!
 1. **Message Size Limitation**: RSA encryption limits message size to approximately 446 bytes for 4096-bit keys. Longer messages will fail to encrypt. I'll probably improve this later.
 2. **No File Transfer**: Only text messages are supported; no file sharing capabilities.
 3. **Network Dependency**: Requires direct network connectivity between peers; doesn't work through NAT without port forwarding.
+
