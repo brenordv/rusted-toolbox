@@ -1,6 +1,6 @@
 [package]
 name = "gitignore"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Tool that scans the files and gets the appropriate data for creating/updating the gitignore file."
