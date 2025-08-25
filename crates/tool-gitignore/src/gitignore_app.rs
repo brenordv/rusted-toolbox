@@ -149,7 +149,7 @@ fn list_files(base: PathBuf, target_gitignore: &PathBuf) -> Vec<PathBuf> {
 
 fn should_ignore(path: &Path, target_gitignore: &Path) -> bool {
     is_git_related(path) // Skipping git folders
-        || is_in_ignorable_folder(path) // Skipping folders that are not relevant
+        || is_in_ignorable_file(path) // Skipping files that are not relevant
         || is_gitignore_file(path) // Skipping other gitignore files
         || path == target_gitignore // Skipping the target gitignore file
 }
@@ -161,11 +161,13 @@ fn is_git_related(path: &Path) -> bool {
             .any(|p| p.file_name().and_then(|n| n.to_str()) == Some(".git"))
 }
 
-fn is_in_ignorable_folder(path: &Path) -> bool {
+fn is_in_ignorable_file(path: &Path) -> bool {
     const IGNORABLE_FOLDERS: &[&str] = &[
         ".git",
         "node_modules",
         "venv",
+        ".venv",
+        "__pycache__",
         "env",
         "build",
         "dist",
@@ -175,9 +177,14 @@ fn is_in_ignorable_folder(path: &Path) -> bool {
         ".vscode",
     ];
 
+    if path.is_dir() {
+        // We can keep the folders, since they may hint for things to ignore (like .vscode, .idea, etc.)
+        return false;
+    }
+
     path.ancestors().any(|p| {
         if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-            IGNORABLE_FOLDERS.contains(&name)
+            IGNORABLE_FOLDERS.contains(&name.to_lowercase().as_str())
         } else {
             false
         }
