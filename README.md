@@ -20,6 +20,7 @@ We currently have the following tools:
 16. A tool called [Gitignore](crates/tool-gitignore/readme.md) that generates/updates the `.gitignore` file of your project automatically; 
 17. An image editor called [IMGx](crates/tool-image/readme.md) that allows do quickly do common operations like resizing, converting to another format, and to greyscale;
 18. An [MQTT cli tool](crates/tool-mqtt/readme.md) that can be used to quickly send or receive messages from a specific topic.
+19. A tool called [aiignore](crates/tool-aiignore/readme.md) that, similarly to gitignore, generates/updates known ai-ignore files for your project automatically;
 
 ## Ok, but why?
 Well, three main reasons:
