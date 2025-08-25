@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use tracing::info;
+use tracing::{debug, info};
 
 const AI_IGNORE_KNOWN_FILES: &[&str] = &[
     ".aiignore",
@@ -39,6 +39,13 @@ pub async fn run_aiignore_maintainer(folder: PathBuf) -> Result<()> {
     }
 
     info!("Downloading AI ignore templates...");
+
+    let data_count_before_download = aiignore_data.len();
+    debug!(
+        "Current AI ignore line count: {}",
+        data_count_before_download
+    );
+
     let client = Client::new();
     for url in AI_IGNORE_TEMPLATES {
         get_aiignore_template_data(url, &client, &mut aiignore_data).await?;
@@ -49,14 +56,30 @@ pub async fn run_aiignore_maintainer(folder: PathBuf) -> Result<()> {
         return Ok(());
     }
 
+    let data_count_after_download = aiignore_data.len();
+    debug!(
+        "AI ignore line count after download: {}",
+        data_count_after_download
+    );
+
+    if data_count_after_download == data_count_before_download {
+        info!("No new AI ignore data found...");
+    } else {
+        let data_count_diff = data_count_after_download - data_count_before_download;
+        info!("Added {} new lines of AI ignore data...", data_count_diff);
+    }
+
     let clean_data = sanitize_aiignore_data(&aiignore_data);
+
+    let clean_data_count = clean_data.len();
+    debug!("Cleaned AI ignore line count: {}", clean_data_count);
 
     info!("Writing {} lines to AI ignore files...", clean_data.len());
 
     for file_name in AI_IGNORE_KNOWN_FILES {
         let file_path = folder.join(file_name);
         let action = if file_path.exists() {
-            "updating"
+            "Updating"
         } else {
             "Creating"
         };
@@ -111,6 +134,11 @@ async fn get_aiignore_template_data(
 
     let mut new_lines: usize = 0;
     text.lines().map(|s| s.to_string()).for_each(|line| {
+        if line.starts_with('#') || line.is_empty() {
+            // Let's take out comments and blank lines out of the way early so we have a good count
+            // of new lines.
+            return;
+        }
         if aiignore_data.insert(line) {
             new_lines += 1;
         }
