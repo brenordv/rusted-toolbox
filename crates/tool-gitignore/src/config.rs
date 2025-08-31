@@ -101,6 +101,13 @@ impl Config {
             );
         });
 
+        ".sqlite|.sqlite3|.db|.db3|.s3db|.sdb|.sl3|.db-shm|.db-wal|.db-journal".to_string().split("|").for_each(|key| {
+            mappings.insert(
+                key.to_string(),
+                "https://raw.githubusercontent.com/brenordv/gitignore-files/refs/heads/master/sqlite.gitignore".to_string(),
+            );
+        });
+
         ".gd|.godot".to_string().split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
