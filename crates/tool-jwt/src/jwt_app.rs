@@ -120,12 +120,19 @@ pub fn print_token_json(claims: &Map<String, Value>) {
 /// Searches for claim key in token and copies its string value.
 /// Exits with error if claim not found or clipboard operation fails.
 pub fn copy_claim_to_clipboard(argument_to_copy: String, claims: &Map<String, Value>) {
-    if !claims.contains_key(&argument_to_copy) {
+    let mut value: &Value = &Value::Null;
+
+    for (key, claim_value) in claims {
+        if key.to_lowercase() != argument_to_copy.to_lowercase().trim() {
+            continue;
+        }
+        value = claim_value;
+    }
+
+    if value == &Value::Null {
         eprintln!("Claim not found: {}", argument_to_copy);
         return;
     }
-
-    let value = &claims[&argument_to_copy];
 
     let owned: String = value.to_string();
     let slice: &str = &owned; // but this owns a new String
