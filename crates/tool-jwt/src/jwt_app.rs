@@ -4,6 +4,7 @@ use colored::Colorize;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde_json::{Map, Value};
 use shared::utils::copy_string_to_clipboard::copy_to_clipboard;
+use std::borrow::Cow;
 use std::process;
 
 /// Decodes JWT token without signature verification.
@@ -134,10 +135,13 @@ pub fn copy_claim_to_clipboard(argument_to_copy: String, claims: &Map<String, Va
         return;
     }
 
-    let owned: String = value.to_string();
-    let slice: &str = &owned; // but this owns a new String
+    let text_to_copy: Cow<'_, str> = match value {
+        // Added this treatment to avoid strings being copied to the clipboard with quotes.
+        Value::String(s) => Cow::Borrowed(s.as_str()),
+        _ => Cow::Owned(value.to_string()),
+    };
 
-    match copy_to_clipboard(slice) {
+    match copy_to_clipboard(text_to_copy.as_ref()) {
         Ok(_) => {}
         Err(e) => {
             eprintln!("📋 Error copying to clipboard: {}", e);
