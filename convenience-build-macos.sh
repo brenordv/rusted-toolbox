@@ -3,7 +3,7 @@
 # macOS Installation Script for Rust Tools (Fixed & Improved)
 #
 # Usage:
-#   chmod +x install-macos.sh && ./install-macos.sh
+#   chmod +x convenience-build-macos.sh && ./convenience-build-macos.sh
 #   Or via curl: --update this--
 #     curl -sSL https://raw.githubusercontent.com/brenordv/rusted-toolbox/refs/heads/master/convenience-build-macos.sh | bash
 #
