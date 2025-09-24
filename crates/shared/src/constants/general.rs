@@ -1,8 +1,5 @@
 pub const AUTHOR_NAME: &str = "Breno RdV";
 
-pub const AI_AGENT_CHATBOT_NAME: &str = "chat-bot";
-pub const AI_AGENT_CHATBOT_VERSION: &str = "1.0.0";
-
 pub const DASH_LINE: &str = "---------------------------------------------------";
 
 pub const SIZE_8KB: usize = 8 * 1024;

@@ -144,7 +144,7 @@ pub fn copy_claim_to_clipboard(argument_to_copy: String, claims: &Map<String, Va
     match copy_to_clipboard(text_to_copy.as_ref()) {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("📋 Error copying to clipboard: {}", e);
+            eprintln!("Error copying to clipboard: {}", e);
             process::exit(1);
         }
     };

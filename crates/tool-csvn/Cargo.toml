@@ -1,6 +1,6 @@
 [package]
 name = "csvn"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "CLI tool that fills missing CSV fields with defaults and outputs a `_normalized` file for consistent, error-free downstream processing."

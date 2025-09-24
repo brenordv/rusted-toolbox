@@ -6,24 +6,24 @@ use shared::command_line::cli_builder::CommandExt;
 use shared::constants::general::DASH_LINE;
 
 pub fn print_runtime_info(args: &EditArgs) {
-    println!("🎨 Image v{}", env!("CARGO_PKG_VERSION"));
+    println!("Image v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
-    println!("Files");
+    println!("- Files");
     for file in args.input_files.iter() {
-        println!("  {:?}", file);
+        println!("  - {:?}", file);
     }
 
     if let Some(resize) = args.resize {
-        println!("Resize: {}%", resize);
+        println!("- Resize: {}%", resize);
     }
 
     if args.grayscale {
-        println!("Grayscale: true");
+        println!("- Grayscale: true");
     }
 
     if let Some(convert) = &args.convert {
-        println!("Convert: {:?}", convert);
+        println!("- Convert: {:?}", convert);
     }
 
     println!();

@@ -6,10 +6,10 @@ use shared::command_line::cli_builder::CommandExt;
 use shared::constants::general::DASH_LINE;
 
 pub fn print_runtime_info(args: &MqttArgs) {
-    println!("✉️ MQTT v{}", env!("CARGO_PKG_VERSION"));
+    println!("MQTT v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
-    println!("Host: {}:{}", args.host, args.port);
+    println!("- Host: {}:{}", args.host, args.port);
 
     let connection_type = if args.is_anonymous() {
         "Anonymous"
@@ -17,18 +17,18 @@ pub fn print_runtime_info(args: &MqttArgs) {
         "Authenticated"
     };
 
-    println!("Connection type: {}", connection_type);
-    println!("Topic: {}", args.topic);
+    println!("- Connection type: {}", connection_type);
+    println!("- Topic: {}", args.topic);
 
     match args.command {
         MqttCommand::Unknown => {}
         MqttCommand::Read => {
-            println!("Command: Read");
+            println!("- Command: Read");
         }
         MqttCommand::Post => {
-            println!("Command: Post");
+            println!("- Command: Post");
             if let Some(msg) = &args.message {
-                println!("Message: {}", msg);
+                println!("  - Message: {}", msg);
             }
         }
     }

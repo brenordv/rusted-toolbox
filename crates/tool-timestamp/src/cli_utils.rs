@@ -7,7 +7,7 @@ use shared::constants::general::DASH_LINE;
 ///
 /// Shows version, divider line, and input (or "(Current time)" if no input provided).
 pub fn print_runtime_info(args: &TsArgs) {
-    println!("🚀 Timestamp Converter v{}", env!("CARGO_PKG_VERSION"));
+    println!("Timestamp Converter v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
     let input = if args.input.is_empty() {
@@ -16,7 +16,7 @@ pub fn print_runtime_info(args: &TsArgs) {
         &args.input
     };
 
-    println!("🔢 Input: {}", input);
+    println!("- Input: {}", input);
 
     println!();
 }

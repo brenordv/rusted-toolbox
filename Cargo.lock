@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "ai-chatbot"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "ai-shared",
  "anyhow",
@@ -62,7 +62,7 @@ dependencies = [
 
 [[package]]
 name = "aiignore"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -828,7 +828,7 @@ dependencies = [
 
 [[package]]
 name = "csvn"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1054,7 +1054,7 @@ checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
 
 [[package]]
 name = "eh-export"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1070,7 +1070,7 @@ dependencies = [
 
 [[package]]
 name = "eh-read"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "azeventhubs",
@@ -1544,7 +1544,7 @@ dependencies = [
 
 [[package]]
 name = "get-lines"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1619,7 +1619,7 @@ checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
 
 [[package]]
 name = "gitignore"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -1638,7 +1638,7 @@ checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 
 [[package]]
 name = "guid"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1749,7 +1749,7 @@ dependencies = [
 
 [[package]]
 name = "how"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "ai-macros",
  "ai-shared",
@@ -1761,7 +1761,7 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "clap",
  "mime_guess",
@@ -2108,7 +2108,7 @@ checksum = "d0263a3d970d5c054ed9312c0057b4f3bde9c0b33836d3637361d4a9e6e7a408"
 
 [[package]]
 name = "imgx"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2320,7 +2320,7 @@ dependencies = [
 
 [[package]]
 name = "jwt"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2563,7 +2563,7 @@ dependencies = [
 
 [[package]]
 name = "mqtt"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3935,7 +3935,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -4106,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "split"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4672,7 +4672,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "ts"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "chrono",

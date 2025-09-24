@@ -22,10 +22,10 @@ pub async fn graceful_shutdown_routine(
     .await
     {
         Ok(_) => {
-            println!("👋 EventHub reader stopped gracefully.");
+            println!("EventHub reader stopped gracefully.");
         }
         Err(_) => {
-            println!("⏰ Graceful shutdown timed out, forcing exit.");
+            println!("Graceful shutdown timed out, forcing exit.");
         }
     }
 
@@ -54,7 +54,7 @@ pub fn setup_graceful_shutdown(reader: &mut EventHubReader) -> Result<()> {
     let reader_clone = reader.clone();
 
     ctrlc::set_handler(move || {
-        println!("\n🛑 Shutdown signal received, stopping gracefully...");
+        println!("\nShutdown signal received, stopping gracefully...");
         shutdown_clone.store(true, std::sync::atomic::Ordering::Relaxed);
         reader_clone.shutdown();
     })?;

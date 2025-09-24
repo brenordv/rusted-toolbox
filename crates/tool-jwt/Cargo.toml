@@ -1,6 +1,6 @@
 [package]
 name = "jwt"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Decodes JWT tokens and extracts their public claims, headers, and payload information. Optionally copies claims to clipboard."

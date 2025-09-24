@@ -77,7 +77,7 @@ async fn main() {
     let result = reader.start_reading().await;
 
     // Final cleanup with the graceful shutdown and timeout
-    println!("✅  Cleaning up resources...");
+    println!("[OK]  Cleaning up resources...");
 
     // Use a timeout for graceful shutdown to prevent hanging forever
     let _ = graceful_shutdown_routine(reader, result)

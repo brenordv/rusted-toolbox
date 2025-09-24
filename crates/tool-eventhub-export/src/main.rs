@@ -106,13 +106,13 @@ async fn main() {
 
     match exporter.start_export().await {
         Ok(()) => {
-            println!("🎉 Export completed successfully!");
+            println!("Export completed successfully!");
             exit_success();
             return;
         }
         Err(_e) if shutdown.load(std::sync::atomic::Ordering::Relaxed) => {
             exporter.shutdown();
-            println!("⚠️ Export interrupted by user");
+            println!("Export interrupted by user");
             exit_with_code(EXIT_CODE_INTERRUPTED_BY_USER);
             return;
         }

@@ -9,22 +9,22 @@ use std::path::Path;
 ///
 /// Shows version, input file, output destination, worker count, and search terms.
 pub fn print_runtime_info(args: &GetLinesArgs) {
-    println!("🚀 Get-Lines v{}", env!("CARGO_PKG_VERSION"));
+    println!("Get-Lines v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
-    println!("📥 Input File: {}", args.file);
+    println!("- Input File: {}", args.file);
 
     if let Some(output_folder) = args.output.as_deref() {
-        println!("📤 Output Folder: {}", output_folder);
+        println!("- Output Folder: {}", output_folder);
     } else {
-        println!("📺 Output: Console");
+        println!("- Output: Console");
     };
 
-    println!("🧠 Worker Count: {}", args.workers);
-    println!("🔍‍ Search: {:?}", args.search);
+    println!("- Worker Count: {}", args.workers);
+    println!("- Search: {:?}", args.search);
 
     if args.workers > 1 {
         println!(
-            "⚠ Warning: Output will not be in the same order as the input due to parallel processing."
+            "Warning: Output will not be in the same order as the input due to parallel processing."
         );
     }
 

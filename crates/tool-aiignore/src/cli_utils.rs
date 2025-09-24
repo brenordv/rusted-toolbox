@@ -7,9 +7,9 @@ use shared::system::get_current_working_dir::get_current_working_dir;
 use std::path::PathBuf;
 
 pub fn print_runtime_info(args: &AiIgnoreArgs) {
-    println!("📋 AiIgnore v{}", env!("CARGO_PKG_VERSION"));
+    println!("AiIgnore v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
-    println!("Target folder: {}\n", args.target_folder.display());
+    println!("- Target folder: {}\n", args.target_folder.display());
 }
 
 pub fn validate_args(args: &AiIgnoreArgs) -> Result<()> {

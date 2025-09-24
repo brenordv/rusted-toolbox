@@ -141,7 +141,3 @@ The `ts` tool provides functionality similar to parts of the Unix `date` command
 | Format flexibility | Multiple auto-detected      | Requires format specification       |
 | Timezone display   | Always shows both UTC/local | Single timezone (customizable)      |
 | Output format      | Fixed, user-friendly        | Highly customizable                 |
-
-# Changelog
-## 1.1.0
-- Now able to process numeric timestamps with milliseconds alongside the traditional unix timestamp.

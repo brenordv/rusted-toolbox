@@ -7,25 +7,25 @@ use std::env;
 
 /// Displays runtime configuration information.
 pub fn print_runtime_info(config: &HowRuntimeConfig) {
-    println!("🔧 How v{}", env!("CARGO_PKG_VERSION"));
+    println!("How v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
     match &config.mode {
         HowMode::FixCommand(cmd) => {
-            println!("🚨 Mode: Fix Command");
-            println!("📝 Command: {}", cmd);
+            println!("- Mode: Fix Command");
+            println!("- Command: {}", cmd);
         }
         HowMode::SuggestCommand(request) => {
-            println!("💡 Mode: Suggest Command");
-            println!("📝 Request: {}", request);
+            println!("- Mode: Suggest Command");
+            println!("- Request: {}", request);
         }
     }
 
-    println!("💻 OS: {}", config.os);
+    println!("- OS: {}", config.os);
     if let Some(shell) = &config.shell {
-        println!("🐚 Shell: {}", shell);
+        println!("- Shell: {}", shell);
     }
-    println!("📋 Copy to clipboard: {}\n\n", config.copy_to_clipboard);
+    println!("- Copy to clipboard: {}\n\n", config.copy_to_clipboard);
 }
 
 /// Parses command-line arguments into How configuration.
@@ -90,7 +90,7 @@ fn detect_os() -> String {
         "linux" => "linux".to_string(),
         other => {
             eprintln!(
-                "⚠️  Unknown OS detected: {}. This might affect the result.",
+                "  - Unknown OS detected: {}. This might affect the result.",
                 other
             );
             format!("unknown ({})", other).to_string()

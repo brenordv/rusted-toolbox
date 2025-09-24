@@ -145,7 +145,7 @@ async fn main() {
         if shutdown_signal.load(std::sync::atomic::Ordering::Relaxed) {
             println!("👋 stopping by user request..");
         } else {
-            println!("✅ get-lines completed successfully.");
+            println!("[OK] get-lines completed successfully.");
         }
     }
 

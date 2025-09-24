@@ -1,6 +1,6 @@
 [package]
 name = "how"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "A CLI tool that helps users with command-line syntax by fixing broken commands and suggesting commands from natural language"

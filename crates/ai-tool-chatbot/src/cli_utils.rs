@@ -12,11 +12,11 @@ use std::path::PathBuf;
 ///
 /// Shows input file, headers, cleaning options, and default mappings.
 pub fn print_runtime_info(args: &ChatBotAgent) {
-    println!("💬 ChatBot v{}", env!("CARGO_PKG_VERSION"));
+    println!("ChatBot v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
-    println!("🧍 User: {}", &args.user_name);
-    println!("🤖 Ai: {}", &args.ai_name);
+    println!("- User: {}", &args.user_name);
+    println!("- Ai: {}", &args.ai_name);
 
     println!();
 }

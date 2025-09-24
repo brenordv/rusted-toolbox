@@ -1,6 +1,6 @@
 [package]
 name = "http"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Lightweight async HTTP server for quickly serving static files with directory browsing, MIME detection, logging, and secure development-focused features."

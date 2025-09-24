@@ -131,7 +131,7 @@ impl EventHubExporter {
             export_path
         ))?;
 
-        println!("✅  Write permissions verified for: {:?}", export_path);
+        println!("[OK]  Write permissions verified for: {:?}", export_path);
         Ok(())
     }
 
@@ -148,12 +148,12 @@ impl EventHubExporter {
     /// - `Ok(())`: Export completed successfully
     /// - `Err`: Database, deserialization, or export operation failed
     pub async fn start_export(&self) -> Result<()> {
-        println!("🚀 Starting export process...");
+        println!("Starting export process...");
 
         // Iterate through all messages in a source database
         for item in self.source_db.iter() {
             if self.shutdown.load(Ordering::Relaxed) {
-                println!("\n🛑 Shutdown signal received, stopping export...");
+                println!("\nShutdown signal received, stopping export...");
                 break;
             }
 
@@ -188,7 +188,7 @@ impl EventHubExporter {
         // Final progress update
         self.progress.print_progress();
         println!();
-        println!("✅  Export completed successfully!");
+        println!("[OK]  Export completed successfully!");
 
         Ok(())
     }
