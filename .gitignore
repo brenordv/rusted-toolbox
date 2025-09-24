@@ -8,7 +8,12 @@
 **/.vitepress/cache
 **/.vitepress/dist
 **/mutants.out*/
+*-journal
+*-shm
+*-wal
 *.coverprofile
+*.db
+*.db3
 *.dll
 *.dylib
 *.exe
@@ -20,8 +25,13 @@
 *.pdb
 *.pid
 *.pid.lock
+*.s3db
+*.sdb
 *.seed
+*.sl3
 *.so
+*.sqlite
+*.sqlite3
 *.test
 *.tgz
 *.tsbuildinfo
@@ -56,6 +66,8 @@
 .idea/**/uiDesigner.xml
 .idea/**/usage.statistics.xml
 .idea/**/workspace.xml
+.idea/.cache/.Apifox_Helper
+.idea/ApifoxUploaderProjectSetting.xml
 .idea/caches/build_file_checksums.ser
 .idea/httpRequests
 .idea/replstate.xml
@@ -78,6 +90,7 @@
 .template_made_using_*/
 .tern-port
 .test-files/*
+.vite/
 .vscode-test
 .vuepress/dist
 .yarn-integrity
@@ -99,6 +112,7 @@ dist/
 fabric.properties
 go.work
 go.work.sum
+http-client.private.env.json
 jspm_packages/
 lerna-debug.log*
 lib-cov
