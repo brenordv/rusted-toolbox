@@ -162,18 +162,18 @@ impl EventHubReader {
         Self::print_info_start_reading();
 
         // Step 2: Initialize and verify the local database
-        println!("🔃 Checking local database access...");
+        println!("Checking local database access...");
         self.process_local_database_verification().await?;
 
         // Step 3: Check if we can reach EH
-        println!("🔃 Checking if we can reach Azure EventHub...");
+        println!("Checking if we can reach Azure EventHub...");
         self.verify_eventhub_connectivity().await?;
 
-        println!("📤 Preparing export config...");
+        println!("Preparing export config...");
         self.prepare_export_folders().await?;
 
         // Step 5: Give the user some feedback...
-        println!("👂 Listening for messages...");
+        println!("Listening for messages...");
 
         println!();
 
@@ -214,16 +214,16 @@ impl EventHubReader {
     /// Returns error if directory setup fails.
     async fn prepare_export_folders(&mut self) -> Result<()> {
         if self.config.inbound_config.read_to_file {
-            println!("📄 Messages will be saved to file...");
+            println!("Messages will be saved to file...");
             match self.setup_export_directories().await {
-                Ok(_) => println!("✅  Export directories ready!"),
+                Ok(_) => println!("[OK]  Export directories ready!"),
                 Err(e) => {
-                    println!("❌ Export setup failed: {}", e);
+                    println!("[FAIL] Export setup failed: {}", e);
                     anyhow::bail!("Failed to setup export directories: {}", e);
                 }
             }
         } else {
-            println!("📄 Messages will be only saved to the database...");
+            println!("Messages will be only saved to the database...");
         }
         Ok(())
     }
@@ -259,7 +259,7 @@ impl EventHubReader {
     /// Logs process start time and keyboard shortcut for stopping.
     fn print_info_start_reading() {
         info!("Starting to read messages from EventHub...");
-        println!("⌚ Process started at: {}", Local::now());
+        println!("- Process started at: {}", Local::now());
         println!("Press Ctrl+C to stop.");
         println!();
     }
@@ -1033,15 +1033,15 @@ Filename: {}
         print!("💾 Quick-saving current progress... ");
 
         match self.db.flush() {
-            Ok(_) => println!("✅  Done"),
-            Err(_) => println!("⚠️  Warning: Could not flush database"),
+            Ok(_) => println!("[OK]  Done"),
+            Err(_) => println!("  - Warning: Could not flush database"),
         }
     }
 
     pub async fn graceful_shutdown(&self) {
         println!();
 
-        println!("🛑 Graceful shutdown initiated...");
+        println!("Graceful shutdown initiated...");
 
         self.shutdown.store(true, Ordering::Relaxed);
 
@@ -1057,12 +1057,12 @@ Filename: {}
 
         let mut progress_dots = 0;
 
-        println!("⏳ Waiting for active operations to complete...");
+        println!("Waiting for active operations to complete...");
         loop {
             // Check if we've exceeded the timeout
             if start_time.elapsed() > shutdown_timeout {
                 println!(
-                    "⚠️ Shutdown timeout reached after {:?} seconds, forcing completion",
+                    "  - Shutdown timeout reached after {:?} seconds, forcing completion",
                     shutdown_timeout.as_secs()
                 );
                 // After timeout, we'll do one final flush and exit
@@ -1073,14 +1073,14 @@ Filename: {}
             let active_ops = self.progress.get_active_operations();
 
             if active_ops == 0 {
-                println!("✅ All active operations completed successfully");
+                println!("[OK] All active operations completed successfully");
                 break;
             }
 
             // Show progress with dots and operation count
             if active_ops != last_logged_ops {
                 println!(
-                    "   💼 {} operations still running, waiting for completion...",
+                    "   - {} operations still running, waiting for completion...",
                     active_ops
                 );
                 last_logged_ops = active_ops;
@@ -1088,7 +1088,7 @@ Filename: {}
             } else {
                 // Show progress dots every second
                 if progress_dots % 10 == 0 && progress_dots > 0 {
-                    print!("   ⏱️  Still waiting");
+                    print!("   - Still waiting");
                     for _ in 0..(progress_dots / 10).min(3) {
                         print!(".");
                     }
@@ -1101,7 +1101,7 @@ Filename: {}
         }
 
         // Phase 2: Flush database to ensure all writings are persisted
-        println!("💾 Ensuring all data is saved to disk...");
+        println!("Ensuring all data is saved to disk...");
         let flush_start = std::time::Instant::now();
 
         match tokio::task::spawn_blocking({
@@ -1113,15 +1113,15 @@ Filename: {}
             Ok(Ok(_)) => {
                 let flush_time = flush_start.elapsed();
                 println!(
-                    "✅ Database flushed successfully ({:.1}s)",
+                    "[OK] Database flushed successfully ({:.1}s)",
                     flush_time.as_secs_f32()
                 );
             }
             Ok(Err(e)) => {
-                println!("❌ Failed to flush database: {}", e);
+                println!("[FAIL] Failed to flush database: {}", e);
             }
             Err(_) => {
-                println!("⚠️  Database flush operation was interrupted");
+                println!("  - Database flush operation was interrupted");
             }
         }
 
@@ -1136,30 +1136,30 @@ Filename: {}
 
         println!();
 
-        println!("📊 Runtime Statistics:");
+        println!("Runtime Statistics:");
 
-        println!("   📨 Messages processed: {}", total_messages);
+        println!("   - Messages processed: {}", total_messages);
 
         if total_skipped > 0 {
-            println!("   ⏭️ Messages skipped: {}", total_skipped);
+            println!("   - Messages skipped: {}", total_skipped);
         }
 
         if total_duplicated > 0 {
-            println!("   🔄 Duplicate messages: {}", total_duplicated);
+            println!("   - Duplicate messages: {}", total_duplicated);
         }
 
-        println!("   ⏱️ Total runtime: {:.1}s", total_runtime.as_secs_f32());
+        println!("   - Total runtime: {:.1}s", total_runtime.as_secs_f32());
 
         if total_messages > 0 {
             let avg_rate = total_messages as f64 / total_runtime.as_secs_f64();
             let max_rate = self.progress.get_max_rate();
-            println!("   🚀 Average rate: {:.2} messages/second", avg_rate);
-            println!("   🏃 Peak rate: {:.2} messages/second", max_rate);
+            println!("   - Average rate: {:.2} messages/second", avg_rate);
+            println!("   - Peak rate: {:.2} messages/second", max_rate);
         }
 
         println!();
 
-        println!("✨ Graceful shutdown completed successfully!");
+        println!("Graceful shutdown completed successfully!");
 
         println!();
     }

@@ -158,7 +158,7 @@ pub fn spawn_file_reading_workers(
             for line_res in reader.lines() {
                 if shutdown_signal.load(Ordering::Relaxed) {
                     if !hide_runtime_info {
-                        println!("📖 File reading stopped due to shutdown signal");
+                        println!("File reading stopped due to shutdown signal");
                     }
                     break;
                 }

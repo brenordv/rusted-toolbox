@@ -9,14 +9,14 @@ use std::path::{Path, PathBuf};
 ///
 /// Shows version, input file, output directory, lines per file, prefix, and CSV mode status.
 pub fn print_runtime_info(args: &SplitArgs) {
-    println!("🚀 File Splitter v{}", env!("CARGO_PKG_VERSION"));
+    println!("File Splitter v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
-    println!("📃 Input file: {}", args.input_file);
-    println!("📃 Output dir: {}", args.output_dir);
-    println!("🔢 Lines per file: {}", args.lines_per_file);
-    println!("📎 File prefix: {}", args.prefix);
-    println!("📃 Csv Mode: {}", args.csv_mode);
+    println!("- Input file: {}", args.input_file);
+    println!("- Output dir: {}", args.output_dir);
+    println!("- Lines per file: {}", args.lines_per_file);
+    println!("- File prefix: {}", args.prefix);
+    println!("- Csv Mode: {}", args.csv_mode);
 
     println!();
 }

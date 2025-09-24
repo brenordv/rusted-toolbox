@@ -11,25 +11,25 @@ use std::path::PathBuf;
 ///
 /// Shows input file, headers, cleaning options, and default mappings.
 pub fn print_runtime_info(args: &CsvNConfig) {
-    println!("🚀 CSV Normalizer v{}", env!("CARGO_PKG_VERSION"));
+    println!("CSV Normalizer v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
 
-    println!("📃 Input file: {}", args.input_file.display());
+    println!("- Input file: {}", args.input_file.display());
 
     if args.headers.is_some() {
-        println!("🗣  Headers: {:?}", args.headers);
+        println!("- Headers: {:?}", args.headers);
     } else {
-        println!("🗣  Headers: Will be inferred from file.");
+        println!("- Headers: Will be inferred from file.");
     }
 
-    println!("🧼 Clean string: {}", args.clean_string);
+    println!("- Clean string: {}", args.clean_string);
 
-    println!("🗺  Default value map: {:?}", args.default_value_map);
+    println!("- Default value map: {:?}", args.default_value_map);
 
-    println!("🔁 Feedback Interval: {}", args.feedback_interval);
+    println!("- Feedback Interval: {}", args.feedback_interval);
 
     println!(
-        "💡 Note: For performance reasons, malformed CSV lines will be skipped and not logged."
+        "- Note: For performance reasons, malformed CSV lines will be skipped and not logged."
     );
 
     if args.clean_string {

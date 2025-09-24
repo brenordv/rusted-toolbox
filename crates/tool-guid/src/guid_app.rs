@@ -23,7 +23,7 @@ pub fn continuous_generation(interval: f64, silent: bool) -> Result<()> {
     .context("Error setting Ctrl-C handler")?;
 
     if !silent {
-        println!("🚦 Press Ctrl+C to stop...");
+        println!("Press Ctrl+C to stop...");
     }
 
     let duration = Duration::from_secs_f64(interval);
@@ -39,7 +39,7 @@ pub fn continuous_generation(interval: f64, silent: bool) -> Result<()> {
     println!();
 
     if !silent {
-        println!("👋 Stopping guid generation.");
+        println!("Stopping guid generation.");
     }
     Ok(())
 }

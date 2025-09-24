@@ -1,6 +1,6 @@
 [package]
 name = "guid"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Command-line tool for generating UUIDv4s with multiple modes, interval support, and clipboard integration for development workflows."

@@ -72,7 +72,7 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
         total_data_read += bytes_read as u64;
 
         if shutdown_signal.load(Ordering::Relaxed) {
-            println!("\n💾 Saving progress and exiting gracefully...");
+            println!("\n- Saving progress and exiting gracefully...");
             break;
         }
 
@@ -172,7 +172,7 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
 
     println!();
     println!(
-        "\n⌚ Elapsed time: {}",
+        "\n- Elapsed time: {}",
         format_duration_to_string(start_time.get_elapsed_time())
     );
 

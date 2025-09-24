@@ -44,18 +44,18 @@ use shared::constants::general::DASH_LINE;
 /// The function requires the constants `JWT_VERSION` and `DASH_LINE`, as well as the
 /// `JwtArgs` and `JwtPrint` types to be defined elsewhere in the codebase.
 pub fn print_runtime_info(args: &JwtArgs) {
-    println!("🚀 JWT v{}", env!("CARGO_PKG_VERSION"));
+    println!("JWT v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
-    println!("📏 Token length: {}", &args.token.len());
+    println!("- Token length: {}", &args.token.len());
 
     if let Some(copy_to_clipboard) = &args.claim_to_clipboard {
-        println!("📋 Claim to Clipboard: {}", copy_to_clipboard);
+        println!("- Claim to Clipboard: {}", copy_to_clipboard);
     }
 
     match &args.print {
-        JwtPrint::Pretty => println!("✨  Print format: Pretty"),
-        JwtPrint::Csv => println!("🖨 Print format: CSV"),
-        JwtPrint::Json => println!("🧶 Print format: JSON"),
+        JwtPrint::Pretty => println!("- Print format: Pretty"),
+        JwtPrint::Csv => println!("- Print format: CSV"),
+        JwtPrint::Json => println!("- Print format: JSON"),
     }
 
     println!();
@@ -143,11 +143,11 @@ pub fn get_cli_arguments() -> JwtArgs {
 ///
 /// # Behavior
 /// - If `args.token` is empty:
-///   - Prints an error message: "⛔ The token is required."
+///   - Prints an error message: "The token is required."
 ///   - Exits the program with a status code of `1`.
 pub fn validate_cli_arguments(args: &JwtArgs) {
     if args.token.is_empty() {
-        eprintln!("⛔ The token is required.");
+        eprintln!("The token is required.");
         std::process::exit(1);
     }
 }

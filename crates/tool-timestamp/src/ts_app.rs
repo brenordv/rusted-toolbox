@@ -40,7 +40,7 @@ pub fn process_input(input: &str) -> Result<()> {
     if let Ok(unix_timestamp) = i64::from_str(input) {
         if input.len() > 10 {
             // Update to > 11 after - November 20th, 2286.
-            println!("⚠️ Not a standard Unix timestamp. Treating it as time in milliseconds.");
+            println!("- Not a standard Unix timestamp. Treating it as time in milliseconds.");
             convert_unix_to_datetime(unix_timestamp / 1000)?;
         } else {
             convert_unix_to_datetime(unix_timestamp)?;

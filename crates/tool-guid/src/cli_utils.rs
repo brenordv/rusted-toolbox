@@ -7,15 +7,15 @@ use shared::constants::general::DASH_LINE;
 ///
 /// Shows version, silence mode, interval settings, clipboard options, and empty GUID flags.
 pub fn print_runtime_info(args: &GuidArgs) {
-    println!("🚀 Guid v{}", env!("CARGO_PKG_VERSION"));
+    println!("Guid v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
-    println!("🔇 Silence: {}", args.silent);
+    println!("- Silence: {}", args.silent);
 
     if let Some(interval) = args.generate_on_interval {
-        println!("⏰  Generate guid every (s): {}", interval);
+        println!("- Generate guid every (s): {}", interval);
     } else {
-        println!("📋 Copy to clipboard: {}", args.add_to_clipboard);
-        println!("📦 Empty Guid: {}", args.generate_empty_guid);
+        println!("- Copy to clipboard: {}", args.add_to_clipboard);
+        println!("- Empty Guid: {}", args.generate_empty_guid);
     }
 }
 

@@ -107,8 +107,8 @@ pub fn process_file(args: &mut CsvNConfig, shutdown_signal: Arc<AtomicBool>) -> 
     for record in reader.records().filter_map(Result::ok) {
         // Check for a shutdown signal
         if shutdown_signal.load(Ordering::Relaxed) {
-            println!("\n💾 Saving progress and exiting gracefully...");
-            println!("📊 Processed [{}] lines before shutdown", line_count);
+            println!("\n- Saving progress and exiting gracefully...");
+            println!("- Processed [{}] lines before shutdown", line_count);
             break;
         }
 
@@ -133,19 +133,19 @@ pub fn process_file(args: &mut CsvNConfig, shutdown_signal: Arc<AtomicBool>) -> 
         Ok(_) => {
             if shutdown_signal.load(Ordering::Relaxed) {
                 println!(
-                    "✅ Progress saved successfully. {} lines processed.",
+                    "[OK] Progress saved successfully. {} lines processed.",
                     line_count
                 );
             } else {
                 println!(
-                    "✅ File processing completed successfully. {} lines processed.",
+                    "[OK] File processing completed successfully. {} lines processed.",
                     line_count
                 );
             }
             Ok(())
         }
         Err(e) => {
-            eprintln!("❌ Failed to flush output file: {}", e);
+            eprintln!("[FAIL] Failed to flush output file: {}", e);
             Err(anyhow!(e))
         }
     }

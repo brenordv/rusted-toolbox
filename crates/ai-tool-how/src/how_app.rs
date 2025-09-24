@@ -34,7 +34,7 @@ pub async fn start_how_app(config: HowRuntimeConfig) -> Result<()> {
     if config.copy_to_clipboard {
         copy_to_clipboard(&result)
             .map_err(|e| anyhow::anyhow!("Failed to copy result to clipboard: {}", e))?;
-        eprintln!("✅ Copied to clipboard");
+        eprintln!("Copied to clipboard");
     }
 
     Ok(())
@@ -48,7 +48,7 @@ pub async fn start_how_app(config: HowRuntimeConfig) -> Result<()> {
 /// * `shell` - Optional shell information
 ///
 /// # Errors
-/// Returns error if AI request fails or returns invalid response
+/// Returns error if AI request fails or returns an invalid response
 async fn fix_command(command: &str, os: &str, shell: &Option<String>) -> Result<String> {
     let os_info = build_os_info(os, shell);
     let input = format!("command: {}\n{}", command, os_info);

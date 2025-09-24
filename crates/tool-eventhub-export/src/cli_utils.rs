@@ -13,32 +13,29 @@ use shared::eventhub::utils::cli_arguments::CommandCommonExt;
 /// - Version, database paths, export settings, filters, and operational flags
 /// - Formatted with emojis for visual clarity
 pub fn print_runtime_info(config: &mut EventHubConfig) {
-    println!("🚀 EventHub Exporter v{}", env!("CARGO_PKG_VERSION"));
+    println!("EventHub Exporter v{}", env!("CARGO_PKG_VERSION"));
     println!("{}", DASH_LINE);
-    println!("🔊 Verbose: {}", config.verbose);
+    println!("- Verbose: {}", config.verbose);
+    println!("- Source Database: {}", config.inbound_config.database_path);
     println!(
-        "💾 Source Database: {}",
-        config.inbound_config.database_path
-    );
-    println!(
-        "📊 Export Checkpoint Database: {}",
+        "- Export Checkpoint Database: {}",
         config.export_config.database_path
     );
     println!(
-        "📁 Export Base Folder: {}",
+        "- Export Base Folder: {}",
         config.export_config.base_data_folder
     );
-    println!("📄 Export Format: {}", config.export_config.export_format);
+    println!("- Export Format: {}", config.export_config.export_format);
     println!(
-        "🔄 Condense Output: {}",
+        "- Condense Output: {}",
         config.export_config.condense_output
     );
     println!(
-        "📝 Include Metadata: {}",
+        "- Include Metadata: {}",
         config.export_config.include_metadata
     );
     println!(
-        "🔄 Ignore Checkpoint: {}",
+        "- Ignore Checkpoint: {}",
         config.export_config.ignore_checkpoint
     );
     if let Some(filters) = &config.export_config.dump_filter {
@@ -47,18 +44,18 @@ pub fn print_runtime_info(config: &mut EventHubConfig) {
         } else {
             "No filter. All messages will be processed.".to_string()
         };
-        println!("🔍 Dump Filter: {}", dump_filter_message);
+        println!("- Dump Filter: {}", dump_filter_message);
     }
     println!(
-        "⏱️ Feedback: Every {} second(s)",
+        "- Feedback: Every {} second(s)",
         &config.inbound_config.feedback_interval
     );
     println!(
-        "⚠️ Ignore Checkpoint: {}",
+        "- Ignore Checkpoint: {}",
         config.export_config.ignore_checkpoint
     );
-    println!("🌍 Use Local Time: {}", config.export_config.use_local_time);
-    println!("ℹ️ Binary data will be converted to base64 if encountered");
+    println!("- Use Local Time: {}", config.export_config.use_local_time);
+    println!("- Binary data will be converted to base64 if encountered");
     println!();
 }
 
