@@ -190,6 +190,8 @@ install_tools() {
     "imgx"
     "jwt"
     "mock"
+    "mqtt"
+    "qrcode"
     "split"
     "ts"
     "whisper"
