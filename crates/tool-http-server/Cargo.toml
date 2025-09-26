@@ -1,6 +1,6 @@
 [package]
 name = "http"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Lightweight async HTTP server for quickly serving static files with directory browsing, MIME detection, logging, and secure development-focused features."
@@ -9,8 +9,8 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 [dependencies]
 shared = { path = "../shared" }
 tokio = { version = "1.47.1", features = ["full"] }
-clap = "4.5.45"
-warp = { version = "0.4.1", features = ["server"] }
-percent-encoding = "2.3.1"
+clap = "4.5.48"
+warp = { version = "0.4.2", features = ["server"] }
+percent-encoding = "2.3.2"
 mime_guess = "2.0.5"
 tracing = "0.1.41"

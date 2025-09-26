@@ -1,6 +1,6 @@
 [package]
 name = "split"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Tool for splitting large UTF-8 text or CSV files by line count with header preservation, progress feedback, and graceful shutdown."
@@ -8,8 +8,8 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 
 [dependencies]
 shared = { path = "../shared" }
-clap = "4.5.45"
-log = "0.4.27"
-chrono = "0.4.41"
-anyhow = "1.0.99"
+clap = "4.5.48"
+log = "0.4.28"
+chrono = "0.4.42"
+anyhow = "1.0.100"
 tracing = "0.1.41"

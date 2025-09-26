@@ -1,6 +1,6 @@
 [package]
 name = "gitignore"
-version = "1.0.3"
+version = "1.0.4"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Tool that scans the files and gets the appropriate data for creating/updating the gitignore file."
@@ -8,8 +8,8 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 
 [dependencies]
 shared = { path = "../shared" }
-anyhow = "1.0.99"
-clap = "4.5.45"
+anyhow = "1.0.100"
+clap = "4.5.48"
 tracing = "0.1.41"
 walkdir = "2.5.0"
 reqwest = { version = "0.12.23", features = ["json"] }
