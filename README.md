@@ -57,6 +57,9 @@ executable file.
 ### HTTP Server
 ![HTTP Server Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/http-server-demo-0001.mp4)
 
+### QR Code
+![QR Code Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/qrcode-demo-0001.mp4)
+
 ## Installation
 ### Building all tools locally
 Considering you have Rust installed, you can build all tools by running:
@@ -71,16 +74,22 @@ build.bat
 chmod +x ./build.sh
 ./build.sh
 ```
-
-### Convenience build for MacOs
-If you're on a MacOs, you can use the `convenience-build-macos.sh` which will:
-1. Install Rust (using Brew) if you don't already have it;
+### Convenience Scripts
+You can use the convenience scripts which will:
+1. Install Rust if you don't already have it;
 2. Clone the repo;
 3. Build the tools;
 4. Make the tools available globally for the current user;
 
 Running this script again will update the tools (but not Rust).
 
+#### Convenience build for Ubuntu
+Convenience command:
+```bash
+curl -sSL https://raw.githubusercontent.com/brenordv/rusted-toolbox/refs/heads/master/convenience-build-ubuntu.sh | bash
+```
+
+#### Convenience build for MacOs
 Convenience command:
 ```bash
 curl -sSL https://raw.githubusercontent.com/brenordv/rusted-toolbox/refs/heads/master/convenience-build-macos.sh | bash
