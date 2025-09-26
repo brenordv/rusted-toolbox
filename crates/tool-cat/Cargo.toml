@@ -1,6 +1,6 @@
 [package]
 name = "cat"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Port of the Unix cat command."
@@ -8,8 +8,8 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 
 [dependencies]
 shared = { path = "../shared" }
-clap = "4.5.45"
-anyhow = "1.0.99"
+clap = "4.5.48"
+anyhow = "1.0.100"
 rstest = "0.26.1"
-tempfile = "3.20.0"
+tempfile = "3.23.0"
 tracing = "0.1.41"

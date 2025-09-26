@@ -1,6 +1,6 @@
 [package]
 name = "how"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "A CLI tool that helps users with command-line syntax by fixing broken commands and suggesting commands from natural language"
@@ -11,5 +11,5 @@ shared = { path = "../shared" }
 ai-shared = { path = "../ai-shared" }
 ai-macros = { path = "../ai-macros" }
 tokio = "1.47.1"
-anyhow = "1.0.99"
-clap = "4.5.45"
+anyhow = "1.0.100"
+clap = "4.5.48"

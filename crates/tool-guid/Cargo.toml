@@ -1,6 +1,6 @@
 [package]
 name = "guid"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Command-line tool for generating UUIDv4s with multiple modes, interval support, and clipboard integration for development workflows."
@@ -8,7 +8,7 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 
 [dependencies]
 shared = { path = "../shared" }
-clap = "4.5.45"
-anyhow = "1.0.99"
+clap = "4.5.48"
+anyhow = "1.0.100"
 ctrlc = "3.4.7"
 tracing = "0.1.41"
