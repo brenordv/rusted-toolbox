@@ -44,7 +44,7 @@ struct Message {
 }
 
 impl Message {
-    pub fn format(&self) -> Line {
+    pub fn format(&'_ self) -> Line<'_> {
         match self.kind {
             MessageKind::Own => {
                 let color = Color::Green;
