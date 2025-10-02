@@ -1,9 +1,10 @@
-use crate::eventhub::eventhub_traits::{
+use crate::eventhub_traits::{
     default_base_data_folder, default_consumer_group, default_database_path,
     default_export_base_data_folder, default_export_folder, default_export_format,
     default_feedback_interval, default_include_metadata, default_partition_id,
     default_received_msg_path,
 };
+
 use anyhow::{anyhow, Error};
 use azeventhubs::consumer::{EventHubConsumerClient, EventHubConsumerClientOptions};
 use azeventhubs::BasicRetryPolicy;

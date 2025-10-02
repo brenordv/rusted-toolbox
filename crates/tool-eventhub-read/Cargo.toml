@@ -8,6 +8,7 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 
 [dependencies]
 shared = { path = "../shared" }
+shared-eventhub = { path = "../shared-eventhub" }
 clap = "4.5.48"
 anyhow = "1.0.100"
 azeventhubs = "0.20.0"

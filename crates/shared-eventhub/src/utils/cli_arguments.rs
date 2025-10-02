@@ -1,5 +1,5 @@
-use crate::command_line::cli_builder::CommandExt;
 use clap::{Arg, Command};
+use shared::command_line::cli_builder::CommandExt;
 
 pub trait CommandCommonExt {
     fn add_eh_base_shared_args(self) -> Self;

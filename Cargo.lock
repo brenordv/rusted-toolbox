@@ -1022,6 +1022,7 @@ dependencies = [
  "csv",
  "serde_json",
  "shared",
+ "shared-eventhub",
  "sled",
  "tokio",
  "tracing",
@@ -1040,6 +1041,7 @@ dependencies = [
  "futures-util",
  "serde_json",
  "shared",
+ "shared-eventhub",
  "sled",
  "tokio",
  "tracing",
@@ -3878,7 +3880,6 @@ version = "1.1.2"
 dependencies = [
  "anyhow",
  "arboard",
- "azeventhubs",
  "bytes",
  "chrono",
  "clap",
@@ -3888,7 +3889,6 @@ dependencies = [
  "dialoguer",
  "dotenv",
  "futures",
- "log",
  "memmap2",
  "notify",
  "once_cell",
@@ -3900,11 +3900,24 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
- "tracing-log",
  "tracing-subscriber",
- "url",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "shared-eventhub"
+version = "1.1.2"
+dependencies = [
+ "anyhow",
+ "azeventhubs",
+ "chrono",
+ "clap",
+ "rstest",
+ "serde",
+ "shared",
+ "tracing-log",
+ "url",
 ]
 
 [[package]]

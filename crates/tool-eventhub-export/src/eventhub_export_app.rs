@@ -4,8 +4,6 @@ use crate::message_exporters::export_message_json::export_message_json;
 use crate::message_exporters::export_message_txt::export_message_txt;
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
-use shared::eventhub::eventhub_models::{EventHubConfig, InboundMessage};
-use shared::eventhub::utils::extract_eventhub_endpoint_from_connection_string::extract_eventhub_endpoint_from_connection_string;
 use shared::system::resolve_path_with_base::resolve_path_with_base;
 use shared::utils::message_matches_filter::message_matches_filter;
 use sled::Db;
@@ -13,6 +11,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::fs;
+use shared_eventhub::eventhub_models::{EventHubConfig, InboundMessage};
+use shared_eventhub::utils::extract_eventhub_endpoint_from_connection_string::extract_eventhub_endpoint_from_connection_string;
 
 pub struct EventHubExporter {
     config: EventHubConfig,

@@ -1,4 +1,4 @@
-use crate::eventhub::eventhub_models::{ExportConfig, InboundConfig};
+use crate::eventhub_models::{ExportConfig, InboundConfig};
 
 impl Default for InboundConfig {
     fn default() -> Self {
@@ -34,42 +34,52 @@ impl Default for ExportConfig {
     }
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_consumer_group() -> String {
     "$Default".to_string()
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_partition_id() -> i32 {
     -1
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_base_data_folder() -> String {
     ".eh-read-data".to_string()
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_received_msg_path() -> String {
     "inbound".to_string()
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_database_path() -> String {
     "db".to_string()
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_feedback_interval() -> u64 {
     1
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_export_base_data_folder() -> String {
     ".eh-export-data".to_string()
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_export_format() -> String {
     "txt".to_string()
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_include_metadata() -> bool {
     true
 }
 
+#[allow(dead_code)] //Being used as the default value
 pub fn default_export_folder() -> String {
     "exports".to_string()
 }

@@ -1,8 +1,9 @@
-use crate::eventhub::eventhub_models::{EventHubConfig, InboundConfig};
-use crate::system::load_json_file_to_object::load_json_file_to_object;
+
 use clap::ArgMatches;
 use std::path::{Path, PathBuf};
 use tracing_log::log::info;
+use shared::system::load_json_file_to_object::load_json_file_to_object;
+use crate::eventhub_models::{EventHubConfig, InboundConfig};
 
 pub async fn get_base_config_object(
     matches: &ArgMatches,
