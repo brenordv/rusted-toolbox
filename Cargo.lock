@@ -1013,7 +1013,7 @@ checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
 
 [[package]]
 name = "eh-export"
-version = "1.0.2"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1030,7 +1030,7 @@ dependencies = [
 
 [[package]]
 name = "eh-read"
-version = "1.0.2"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "azeventhubs",
@@ -3907,7 +3907,7 @@ dependencies = [
 
 [[package]]
 name = "shared-eventhub"
-version = "1.1.2"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "azeventhubs",

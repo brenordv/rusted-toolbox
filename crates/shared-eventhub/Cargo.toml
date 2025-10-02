@@ -1,9 +1,9 @@
 [package]
 name = "shared-eventhub"
-version = "1.1.2"
+version = "1.0.0"
 edition = "2021"
 authors = ["Breno RdV"]
-description = "Where all shared code lives."
+description = "Where all eventhub specific shared code lives."
 
 [dependencies]
 shared = { path = "../shared" }
