@@ -159,6 +159,12 @@ setup_repository() {
   fi
 }
 
+install_prerequisites() {
+  print_status "Installing pre-requisites"
+  sudo apt-get install -y libssl-dev
+  print_status "Installation completed"
+}
+
 # Build project for Linux
 build_project() {
   print_status "Building project (release)"
@@ -214,6 +220,7 @@ main() {
   check_rust
   create_install_dir
   setup_repository
+  install_prerequisites
   build_project
   install_tools
   update_path

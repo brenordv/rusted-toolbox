@@ -23,8 +23,9 @@ members = [
     "crates/tool-gitignore",
     "crates/tool-image",
     "crates/tool-mqtt",
-    "crates/tool-aiignore"
-, "crates/tool-qrcode"]
+    "crates/tool-aiignore",
+    "crates/tool-qrcode"
+]
 
 [profile.release]
 lto = true

@@ -34,7 +34,7 @@ impl MmapCsvReader {
     }
 
     /// TODO: Add summary
-    pub fn records(&mut self) -> StringRecordsIter<Cursor<&'static [u8]>> {
+    pub fn records(&'_ mut self) -> StringRecordsIter<'_, Cursor<&'static [u8]>> {
         self.reader.records()
     }
 }
