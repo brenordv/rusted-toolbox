@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::ArgMatches;
-use shared::eventhub::eventhub_models::EventHubConfig;
+use shared_eventhub::eventhub_models::EventHubConfig;
 use std::path::{Path, PathBuf};
 
 /// Applies CLI argument overrides to EventHub configuration.

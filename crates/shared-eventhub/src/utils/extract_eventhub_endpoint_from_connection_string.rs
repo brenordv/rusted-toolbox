@@ -1,5 +1,5 @@
-use crate::utils::sanitize_string_for_filename::sanitize_string_for_filename;
 use anyhow::{anyhow, Context, Result};
+use shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
 use url::Url;
 
 /// Extracts the Event Hub endpoint's hostname from a given connection string.

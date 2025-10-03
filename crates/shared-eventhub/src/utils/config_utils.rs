@@ -1,6 +1,6 @@
-use crate::eventhub::eventhub_models::{EventHubConfig, InboundConfig};
-use crate::system::load_json_file_to_object::load_json_file_to_object;
+use crate::eventhub_models::{EventHubConfig, InboundConfig};
 use clap::ArgMatches;
+use shared::system::load_json_file_to_object::load_json_file_to_object;
 use std::path::{Path, PathBuf};
 use tracing_log::log::info;
 
