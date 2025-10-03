@@ -6,8 +6,8 @@ use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::get_current_working_dir::get_current_working_dir;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
-use tracing::error;
 use shared_eventhub::utils::config_utils::get_base_config_object;
+use tracing::error;
 
 mod cli_utils;
 mod eventhub_reader_app;

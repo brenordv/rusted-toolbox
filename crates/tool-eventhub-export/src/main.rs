@@ -2,12 +2,12 @@ use crate::cli_utils::{get_cli_arguments, print_runtime_info};
 use crate::eventhub_export_app::EventHubExporter;
 use crate::runtime_config_utils::{apply_cli_overrides, validate_config};
 use shared::constants::general::EXIT_CODE_INTERRUPTED_BY_USER;
-use shared_eventhub::utils::config_utils::get_base_config_object;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::get_current_working_dir::get_current_working_dir;
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use shared::system::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
+use shared_eventhub::utils::config_utils::get_base_config_object;
 use std::sync::Arc;
 use tracing::{error, info};
 

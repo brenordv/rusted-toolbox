@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use shared::system::ensure_directory_exists::EnsureDirectoryExists;
+use shared_eventhub::eventhub_models::InboundMessage;
 use std::path::PathBuf;
 use tokio::fs;
-use shared_eventhub::eventhub_models::InboundMessage;
 
 /// Exports an InboundMessage to a text file with optional metadata and condensed output.
 ///

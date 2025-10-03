@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
-use std::path::{Path, PathBuf};
 use shared_eventhub::eventhub_models::EventHubConfig;
+use std::path::{Path, PathBuf};
 
 /// Applies command-line overrides to the EventHub configuration.
 ///
