@@ -21,7 +21,7 @@ lookup [OPTIONS] --text "" --path "  "
 ## Options
 - --text <text> The text to search for (case-insensitive)
 - --path <path> Base directory or file to search
-- --ext <ext>... File extensions to include (repeatable). Accepts forms like txt, .txt, *.txt, Md
+- --extension <ext>... File extensions to include (repeatable). Accepts forms like txt, .txt, *.txt, Md
 - --current-only Search only the current directory (no recursion)
 - --line-only Prints only the matching line content (no file:line prefix)
 - --no-header Does not print the final summary line
