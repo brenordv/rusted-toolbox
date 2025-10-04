@@ -25,7 +25,7 @@ members = [
     "crates/tool-mqtt",
     "crates/tool-aiignore",
     "crates/tool-qrcode"
-, "crates/shared-eventhub"]
+, "crates/shared-eventhub", "crates/tool-lookup"]
 
 [profile.release]
 lto = true
