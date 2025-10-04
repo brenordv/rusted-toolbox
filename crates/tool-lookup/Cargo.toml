@@ -1,0 +1,13 @@
+[package]
+name = "lookup"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "Tool to recursively search for text in files"
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+clap = "4.5.48"
+anyhow = "1.0.100"
+tracing = "0.1.41"
