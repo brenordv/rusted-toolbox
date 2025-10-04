@@ -195,6 +195,7 @@ install_tools() {
     "http"
     "imgx"
     "jwt"
+    "lookup"
     "mock"
     "mqtt"
     "qrcode"

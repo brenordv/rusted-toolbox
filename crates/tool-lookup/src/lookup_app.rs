@@ -5,13 +5,16 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+use tracing::error;
 
 pub fn lookup_files(config: &LookupConfig) -> Result<()> {
     let start = Instant::now();
 
     let base_path = PathBuf::from(&config.path);
     if !base_path.exists() {
-        return Err(anyhow!("Path does not exist: {}", base_path.display()));
+        let err_msg = format!("Path does not exist: {}", base_path.display());
+        error!("{}", err_msg);
+        return Err(anyhow!(err_msg));
     }
 
     let normalized_extensions = normalize_extensions(&config.file_extensions);
@@ -29,7 +32,10 @@ pub fn lookup_files(config: &LookupConfig) -> Result<()> {
 
         let file = match File::open(&file_path) {
             Ok(f) => f,
-            Err(_) => continue, // Skip unreadable files silently
+            Err(e) => {
+                error!("Failed to open file '{}': {}", file_path.display(), e);
+                continue;
+            },
         };
         files_read += 1;
 
