@@ -3,6 +3,8 @@
 A simple, fast CLI utility to search for a text snippet inside files in a directory. 
 It supports recursive or current-folder-only scanning, uses file-extension filtering, and configurable output formatting.
 
+Right now, it's just a simple case-insensitive substring search. No regex or fancy features. Maybe some other time.
+
 ## Features
 - Case-insensitive substring search
 - Recursive search or current directory only
