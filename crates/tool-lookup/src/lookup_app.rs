@@ -26,7 +26,7 @@ pub fn lookup_files(config: &LookupConfig) -> Result<()> {
     let mut matches_found: u64 = 0;
 
     for file_path in files_iter {
-        if !path_matches_extensions(&file_path, &normalized_extensions) {
+        if !path_matches_allowed(&file_path, &normalized_extensions) {
             continue;
         }
 
@@ -69,9 +69,10 @@ pub fn lookup_files(config: &LookupConfig) -> Result<()> {
     Ok(())
 }
 
+// Accept patterns like "txt", ".txt", "*.txt", "Md", ".env", "*.env", "env"
 fn normalize_extensions(exts: &[String]) -> Vec<String> {
-    // Accept patterns like "txt", ".txt", "*.txt", "Md"
-    // Normalize to lowercase without leading dots or wildcards: "txt", "md"
+    // Normalize to lowercase; keep either a bare extension (e.g., "txt")
+    // or a leading-dot basename pattern (e.g., ".env") if user intends filename match.
     exts.iter()
         .filter_map(|raw| {
             let trimmed = raw.trim();
@@ -79,8 +80,18 @@ fn normalize_extensions(exts: &[String]) -> Vec<String> {
                 return None;
             }
             let lower = trimmed.to_ascii_lowercase();
-            let no_glob = lower.strip_prefix("*").unwrap_or(&lower);
-            let no_dot = no_glob.strip_prefix(".").unwrap_or(no_glob);
+
+            // Remove a single leading '*' for patterns like "*.txt" or "*.env"
+            let no_glob = lower.strip_prefix('*').unwrap_or(&lower);
+
+            // If it starts with a dot and contains no further dots (like ".env"),
+            // preserve the leading dot to indicate basename matching for dotfiles.
+            if no_glob.starts_with('.') && !no_glob[1..].contains('.') {
+                return Some(no_glob.to_string());
+            }
+
+            // Otherwise, strip a single leading dot to treat as pure extension ("txt", "md")
+            let no_dot = no_glob.strip_prefix('.').unwrap_or(no_glob);
             if no_dot.is_empty() {
                 None
             } else {
@@ -90,19 +101,55 @@ fn normalize_extensions(exts: &[String]) -> Vec<String> {
         .collect()
 }
 
-fn path_matches_extensions(path: &Path, normalized_exts: &[String]) -> bool {
-    if normalized_exts.is_empty() {
-        // If no extensions provided, match all files
+// Decides if a path is allowed by the normalized patterns.
+// - If a pattern list is empty -> allow all files.
+// - If a file has extension -> match against extension entries (e.g., "rs", "md").
+// - Always also try basename match for entries like ".env" or "env".
+fn path_matches_allowed(path: &Path, normalized: &[String]) -> bool {
+    if normalized.is_empty() {
         return true;
     }
-    let Some(ext_os) = path.extension() else {
+
+    // Check basename match for patterns like ".env" or "env"
+    if matches_basename(path, normalized) {
+        return true;
+    }
+
+    // Fallback to extension matching (e.g., "rs", "md", "txt")
+    if let Some(ext_os) = path.extension() {
+        let ext = ext_os.to_string_lossy().to_ascii_lowercase();
+        return normalized.iter().any(|e| e == &ext);
+    }
+
+    false
+}
+
+// Allows matching by exact file name for dotfiles or bare names:
+// - Pattern ".env" matches basename ".env"
+// - Pattern "env" matches basename "env"
+// Note: We only consider entries in `normalized` that either start with '.' or have no '.' at all.
+fn matches_basename(path: &Path, normalized: &[String]) -> bool {
+    let Some(name) = path.file_name().map(|s| s.to_string_lossy().to_string()) else {
         return false;
     };
-    let ext = ext_os.to_string_lossy().to_ascii_lowercase();
-    normalized_exts.iter().any(|e| e == &ext)
+    let name_lc = name.to_ascii_lowercase();
+
+    normalized.iter().any(|p| {
+        // Treat entries like ".env" or "env" as basename candidates
+        if p.starts_with('.') || !p.contains('.') {
+            p == &name_lc
+        } else {
+            false
+        }
+    })
 }
 
 fn list_files(path: &Path, current_only: bool) -> Result<Box<dyn Iterator<Item = PathBuf>>> {
+    // If the input is a file, return that single file directly.
+    if path.is_file() {
+        return Ok(Box::new(std::iter::once(path.to_path_buf())));
+    }
+
     let dir = get_search_dir(path);
     if current_only {
         let iter = std::fs::read_dir(&dir)
