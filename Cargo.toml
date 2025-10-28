@@ -26,7 +26,8 @@ members = [
     "crates/tool-aiignore",
     "crates/tool-qrcode",
     "crates/shared-eventhub",
-    "crates/tool-lookup"
+    "crates/tool-lookup",
+    "crates/tool-pingx"
 ]
 
 [profile.release]
