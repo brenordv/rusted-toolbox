@@ -196,7 +196,7 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
 }
 
 pub fn print_header(args: &PingxArgs, resolved: &ResolvedTargetInfo) {
-    if args.no_header { return; }
+    if args.no_header || args.quiet { return; }
 
     if args.compact_header {
         let header_size = if resolved.ip.is_ipv4() { 20 + 8 } else { 40 + 8 };

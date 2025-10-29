@@ -1,5 +1,5 @@
 use std::net::{IpAddr, ToSocketAddrs};
-use crate::cli_utils::{print_header};
+use crate::cli_utils::print_header;
 use crate::models::{IpMode, OutputMode, PacketResult, PingxArgs, ResolvedTargetInfo};
 use anyhow::Result;
 use chrono::Timelike;
@@ -15,6 +15,9 @@ struct JsonOutput<'a> {
     ip: String,
     reverse_dns: Option<&'a str>,
     size: usize,
+    sent: u64,
+    received: u64,
+    loss_percent: f64,
     packets: Vec<PacketLine>,
 }
 
@@ -61,6 +64,29 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     let resolved = resolve_target(args)?;
     print_header(args, &resolved);
 
+    // Verbose info
+    if args.verbose && !args.quiet {
+        println!("[verbose] target: {}", args.target);
+        println!("[verbose] resolved ip: {}", resolved.ip);
+        println!("[verbose] reverse dns: {}", resolved.reverse_dns.as_deref().unwrap_or("(none)"));
+        println!("[verbose] ip mode: {:?}, payload: {} bytes, ttl: {:?}", args.ip_mode, args.payload_size_bytes, args.ttl);
+        if let Some(src) = args.source {
+            println!("[verbose] source requested: {} (not currently applied)", src);
+        }
+        if args.dont_fragment {
+            println!("[verbose] don't-fragment requested (IPv4) — not currently applied");
+        }
+    }
+
+    // CSV header (once)
+    if matches!(args.output, OutputMode::Csv) && !args.quiet {
+        if args.timestamp_prefix {
+            println!("timestamp,host,ip,reverse_dns,size,icmp_seq,time,ttl");
+        } else {
+            println!("host,ip,reverse_dns,size,icmp_seq,time,ttl");
+        }
+    }
+
     let shutdown = setup_graceful_shutdown(false);
 
     let mut config_builder = ConfigBuilder::default();
@@ -82,6 +108,11 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     let mut received: u64 = 0;
     let mut lines_for_json: Vec<PacketLine> = Vec::new();
 
+    // stats timer
+    let mut next_stats_due = args
+        .stats_every_secs
+        .map(|e| Instant::now() + Duration::from_secs_f64(e));
+
     loop {
         if let Some(deadline) = args.overall_deadline_secs {
             if deadline_start.elapsed() >= Duration::from_secs_f64(deadline) {
@@ -98,7 +129,6 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
         sequence += 1;
         sent += 1;
 
-        let start = Instant::now();
         let timeout = Duration::from_secs_f64(args.per_reply_timeout_secs);
 
         let mut pinger = client.pinger(resolved.ip, identifier).await;
@@ -111,26 +141,29 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
                 received += 1;
                 let time_ms = dur.as_secs_f64() * 1000.0;
                 let packet_res = PacketResult { icmp_seq: sequence, ttl: None, time_ms, error: None };
-                print_packet_line(args, &resolved.host, &resolved.ip.to_string(), &packet_res);
+                print_packet_line(args, &resolved, &packet_res);
                 if matches!(args.output, OutputMode::Json) { lines_for_json.push(PacketLine { icmp_seq: sequence, ttl: None, time: time_ms }); }
             }
             Ok((IcmpPacket::V6(_packet), dur)) => {
                 received += 1;
                 let time_ms = dur.as_secs_f64() * 1000.0;
                 let packet_res = PacketResult { icmp_seq: sequence, ttl: None, time_ms, error: None };
-                print_packet_line(args, &resolved.host, &resolved.ip.to_string(), &packet_res);
+                print_packet_line(args, &resolved, &packet_res);
                 if matches!(args.output, OutputMode::Json) { lines_for_json.push(PacketLine { icmp_seq: sequence, ttl: None, time: time_ms }); }
             }
             Err(e) => {
                 let packet_res = PacketResult { icmp_seq: sequence, ttl: None, time_ms: 0.0, error: Some(e.to_string()) };
-                print_packet_line(args, &resolved.host, &resolved.ip.to_string(), &packet_res);
+                print_packet_line(args, &resolved, &packet_res);
                 if args.beep_on_loss { print!("\x07"); }
             }
         }
 
         if let Some(every) = args.stats_every_secs {
-            if (start.elapsed().as_secs_f64() % every) < args.interval_secs.min(0.5) {
-                print_stats(args, sent, received);
+            if let Some(due) = next_stats_due {
+                if Instant::now() >= due {
+                    print_stats(args, sent, received);
+                    next_stats_due = Some(due + Duration::from_secs_f64(every));
+                }
             }
         }
 
@@ -138,14 +171,20 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     }
 
     // Final stats
-    print_stats(args, sent, received);
+    if matches!(args.output, OutputMode::Default | OutputMode::Csv) {
+        print_stats(args, sent, received);
+    }
 
     if matches!(args.output, OutputMode::Json) {
+        let loss = if sent == 0 { 0.0 } else { ((sent - received) as f64) * 100.0 / (sent as f64) };
         let json = JsonOutput {
             host: &resolved.host,
             ip: resolved.ip.to_string(),
             reverse_dns: resolved.reverse_dns.as_deref(),
             size: args.payload_size_bytes + 8,
+            sent,
+            received,
+            loss_percent: loss,
             packets: lines_for_json,
         };
         println!("{}", serde_json::to_string_pretty(&json)?);
@@ -154,64 +193,120 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     Ok(())
 }
 
-fn print_packet_line(args: &PingxArgs, host: &str, ip: &str, res: &PacketResult) {
+fn replace_ci(s: String, needle_lower: &str, replacement: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0usize;
+    let lower = s.to_ascii_lowercase();
+    while let Some(pos) = lower[i..].find(needle_lower) {
+        let abs = i + pos;
+        out.push_str(&s[i..abs]);
+        out.push_str(replacement);
+        i = abs + needle_lower.len();
+    }
+    out.push_str(&s[i..]);
+    out
+}
+
+fn print_packet_line(args: &PingxArgs, resolved: &ResolvedTargetInfo, res: &PacketResult) {
     if args.quiet { return; }
-    let ts = if args.timestamp_prefix { format!("{} ", chrono::Utc::now().to_rfc3339()) } else { String::new() };
+    let ip_str = resolved.ip.to_string();
+    let mut ts_prefix = args.timestamp_prefix;
+    let ts_val = chrono::Utc::now().to_rfc3339();
+    let ts = if ts_prefix { format!("{} ", ts_val) } else { String::new() };
     match &args.output {
         OutputMode::Default => {
             if let Some(err) = &res.error {
                 println!("{}error: {}", ts, err);
             } else {
+                let from_name = if !args.numeric {
+                    resolved.reverse_dns.as_deref().unwrap_or(&resolved.host)
+                } else { &resolved.host };
+                let ttl_str = res.ttl.map(|v| v.to_string()).unwrap_or_else(|| String::from(""));
                 println!(
-                    "{}{} bytes from {} ({}): icmp_seq={} ttl={} time={:.2} ms",
+                    "{}{} bytes from {} ({}): icmp_seq={}{}{} time={:.2} ms",
                     ts,
                     args.payload_size_bytes + 8,
-                    host,
-                    ip,
+                    from_name,
+                    ip_str,
                     res.icmp_seq,
-                    res.ttl.unwrap_or(0),
+                    if ttl_str.is_empty() { "" } else { " ttl=" },
+                    ttl_str,
                     res.time_ms,
                 );
             }
         }
         OutputMode::Csv => {
-            // host,ip,reverse_dns,size,icmp_seq,time,ttl
-            println!(
-                "{},{},,{}, {},{:.2},{}",
-                host,
-                ip,
-                args.payload_size_bytes + 8,
-                res.icmp_seq,
-                res.time_ms,
-                res.ttl.unwrap_or(0),
-            );
+            // [timestamp,] host,ip,reverse_dns,size,icmp_seq,time,ttl
+            let rdns = resolved.reverse_dns.as_deref().unwrap_or("");
+            if args.timestamp_prefix {
+                println!(
+                    "{},{},{},{},{},{},{:.2},{}",
+                    ts_val,
+                    resolved.host,
+                    ip_str,
+                    rdns,
+                    args.payload_size_bytes + 8,
+                    res.icmp_seq,
+                    res.time_ms,
+                    res.ttl.map(|v| v.to_string()).unwrap_or_default(),
+                );
+            } else {
+                println!(
+                    "{},{},{},{},{},{:.2},{}",
+                    resolved.host,
+                    ip_str,
+                    rdns,
+                    args.payload_size_bytes + 8,
+                    res.icmp_seq,
+                    res.time_ms,
+                    res.ttl.map(|v| v.to_string()).unwrap_or_default(),
+                );
+            }
         }
         OutputMode::Json => { /* aggregated at end */ }
         OutputMode::Template(tpl) => {
+            // Avoid double timestamp prefix if template contains %timestamp%
+            let tpl_lower = tpl.to_ascii_lowercase();
+            if tpl_lower.contains("%timestamp%") { ts_prefix = false; }
             let mut out = tpl.clone();
-            out = out.replace("%host%", host).replace("%HOST%", host);
-            out = out.replace("%ip%", ip).replace("%IP%", ip);
-            out = out.replace("%icmp_seq%", &res.icmp_seq.to_string());
-            out = out.replace("%ttl%", &res.ttl.unwrap_or(0).to_string());
-            out = out.replace("%time%", &format!("{:.2}", res.time_ms));
-            out = out.replace("%timestamp%", &chrono::Utc::now().to_rfc3339());
-            let header_size = if ip.contains(':') { 40 + 8 } else { 20 + 8 };
-            out = out.replace("%size%", &(args.payload_size_bytes + header_size).to_string());
-            out = out.replace("%size_no_headers%", &(args.payload_size_bytes + 8).to_string());
-            if let Some(err) = &res.error { 
-                out = out.replace("%error%", err); 
-            } else {
-                out = out.replace("%error%", "");
+            let header_size = if resolved.ip.is_ipv4() { 20 + 8 } else { 40 + 8 };
+            let kv = [
+                ("%host%", resolved.host.as_str()),
+                ("%ip%", ip_str.as_str()),
+                ("%reverse_dns%", resolved.reverse_dns.as_deref().unwrap_or("")),
+                ("%icmp_seq%", &res.icmp_seq.to_string()),
+                ("%ttl%", &res.ttl.map(|v| v.to_string()).unwrap_or_default()),
+                ("%time%", &format!("{:.2}", res.time_ms)),
+                ("%timestamp%", &ts_val),
+                ("%size%", &(args.payload_size_bytes + header_size).to_string()),
+                ("%size_no_headers%", &args.payload_size_bytes.to_string()),
+                ("%error%", res.error.as_deref().unwrap_or("")),
+            ];
+            for (tag, val) in kv.iter() {
+                out = replace_ci(out, tag.to_ascii_lowercase().as_str(), val);
             }
-            println!("{}{}", ts, out);
+            let ts2 = if ts_prefix { format!("{} ", ts_val) } else { String::new() };
+            println!("{}{}", ts2, out);
         }
     }
 }
 
 fn print_stats(args: &PingxArgs, sent: u64, received: u64) {
     let loss = if sent == 0 { 0.0 } else { ((sent - received) as f64) * 100.0 / (sent as f64) };
-    println!("\n--- statistics ---");
-    println!("{} packets transmitted, {} received, {:.1}% packet loss", sent, received, loss);
+    match &args.output {
+        OutputMode::Default => {
+            println!("\n--- statistics ---");
+            println!("{} packets transmitted, {} received, {:.1}% packet loss", sent, received, loss);
+        }
+        OutputMode::Csv => {
+            // Consistent, machine-readable stats line
+            println!("stats,{},{},{:.1}", sent, received, loss);
+        }
+        OutputMode::Json | OutputMode::Template(_) => {
+            // Suppress periodic human/template stats to avoid breaking format.
+            // Final JSON includes stats; template stats are not defined yet.
+        }
+    }
 }
 
 fn rand_identifier() -> u16 {
