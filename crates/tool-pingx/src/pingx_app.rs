@@ -2,6 +2,7 @@ use std::net::{IpAddr, ToSocketAddrs};
 use crate::cli_utils::{print_header};
 use crate::models::{IpMode, OutputMode, PacketResult, PingxArgs, ResolvedTargetInfo};
 use anyhow::Result;
+use chrono::Timelike;
 use dns_lookup::lookup_addr;
 use serde::Serialize;
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
@@ -197,7 +198,11 @@ fn print_packet_line(args: &PingxArgs, host: &str, ip: &str, res: &PacketResult)
             let header_size = if ip.contains(':') { 40 + 8 } else { 20 + 8 };
             out = out.replace("%size%", &(args.payload_size_bytes + header_size).to_string());
             out = out.replace("%size_no_headers%", &(args.payload_size_bytes + 8).to_string());
-            if let Some(err) = &res.error { out = out.replace("%error%", err); }
+            if let Some(err) = &res.error { 
+                out = out.replace("%error%", err); 
+            } else {
+                out = out.replace("%error%", "");
+            }
             println!("{}{}", ts, out);
         }
     }
@@ -211,5 +216,5 @@ fn print_stats(args: &PingxArgs, sent: u64, received: u64) {
 
 fn rand_identifier() -> u16 {
     // Simple deterministic-ish identifier
-    (std::process::id() as u16) ^ ((chrono::Utc::now().timestamp_nanos() & 0xFFFF) as u16)
+    (std::process::id() as u16) ^ ((chrono::Utc::now().nanosecond() & 0xFFFF) as u16)
 }
