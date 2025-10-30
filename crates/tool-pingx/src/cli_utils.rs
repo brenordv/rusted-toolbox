@@ -2,7 +2,7 @@ use crate::models::{IpMode, OutputMode, PingxArgs, ResolvedTargetInfo};
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
 use shared::constants::general::DASH_LINE;
-use std::net::{IpAddr};
+use std::net::IpAddr;
 
 pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
     let matches = Command::new(env!("CARGO_PKG_NAME"))
@@ -142,7 +142,10 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
     let verbose = matches.get_flag("verbose");
     let numeric = matches.get_flag("numeric");
     let dont_fragment = matches.get_flag("no-fragment");
-    let output = match matches.get_one::<String>("output").map(|s| s.to_lowercase()) {
+    let output = match matches
+        .get_one::<String>("output")
+        .map(|s| s.to_lowercase())
+    {
         None => OutputMode::Default,
         Some(ref s) if s == "default" => OutputMode::Default,
         Some(ref s) if s == "json" => OutputMode::Json,
@@ -191,10 +194,16 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
 }
 
 pub fn print_header(args: &PingxArgs, resolved: &ResolvedTargetInfo) {
-    if args.no_header || args.quiet { return; }
+    if args.no_header || args.quiet {
+        return;
+    }
 
     if args.compact_header {
-        let header_size = if resolved.ip.is_ipv4() { 20 + 8 } else { 40 + 8 };
+        let header_size = if resolved.ip.is_ipv4() {
+            20 + 8
+        } else {
+            40 + 8
+        };
         println!(
             "PING {} ({}) {}({}) bytes of data.",
             resolved.host,
@@ -209,9 +218,20 @@ pub fn print_header(args: &PingxArgs, resolved: &ResolvedTargetInfo) {
     println!("{}", DASH_LINE);
     println!("- Host: {}", resolved.host);
     println!("- IP: {}", resolved.ip);
-    println!("- Reverse DNS: {}", resolved.reverse_dns.as_deref().unwrap_or("(disabled)"));
-    let header_size = if resolved.ip.is_ipv4() { 20 + 8 } else { 40 + 8 };
-    println!("- Packet Size: {} (with headers: {})", args.payload_size_bytes, args.payload_size_bytes + header_size);
+    println!(
+        "- Reverse DNS: {}",
+        resolved.reverse_dns.as_deref().unwrap_or("(disabled)")
+    );
+    let header_size = if resolved.ip.is_ipv4() {
+        20 + 8
+    } else {
+        40 + 8
+    };
+    println!(
+        "- Packet Size: {} (with headers: {})",
+        args.payload_size_bytes,
+        args.payload_size_bytes + header_size
+    );
     if args.is_infinite() {
         println!("- Continuous mode");
     } else {
@@ -223,8 +243,16 @@ pub fn print_header(args: &PingxArgs, resolved: &ResolvedTargetInfo) {
 fn template_has_any_tag(template: &str) -> bool {
     let t = template.to_ascii_lowercase();
     let tags = [
-        "%host%", "%ip%", "%reverse_dns%", "%size%", "%size_no_headers%", "%icmp_seq%",
-        "%ttl%", "%time%", "%timestamp%", "%error%",
+        "%host%",
+        "%ip%",
+        "%reverse_dns%",
+        "%size%",
+        "%size_no_headers%",
+        "%icmp_seq%",
+        "%ttl%",
+        "%time%",
+        "%timestamp%",
+        "%error%",
     ];
     tags.iter().any(|tag| t.contains(tag))
 }

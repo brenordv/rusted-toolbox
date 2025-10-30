@@ -1,5 +1,5 @@
-mod models;
 mod cli_utils;
+mod models;
 mod pingx_app;
 
 use anyhow::Result;

@@ -18,9 +18,9 @@ pub enum OutputMode {
 #[derive(Clone, Debug)]
 pub struct PingxArgs {
     pub target: String,
-    pub count: i64,                 // -1 for infinite
-    pub interval_secs: f64,         // seconds (fractional allowed)
-    pub payload_size_bytes: usize,  // ICMP payload
+    pub count: i64,                // -1 for infinite
+    pub interval_secs: f64,        // seconds (fractional allowed)
+    pub payload_size_bytes: usize, // ICMP payload
     pub ttl: Option<u8>,
     pub per_reply_timeout_secs: f64,
     pub overall_deadline_secs: Option<f64>,
@@ -37,7 +37,7 @@ pub struct PingxArgs {
     pub beep_on_loss: bool,
     pub compact_header: bool,
     pub no_header: bool,
-    pub stop_on_error: bool,        // stop on first error when running with only default options
+    pub stop_on_error: bool, // stop on first error when running with only default options
 }
 
 impl PingxArgs {

@@ -1,4 +1,3 @@
-use std::net::{IpAddr, ToSocketAddrs};
 use crate::cli_utils::print_header;
 use crate::models::{IpMode, OutputMode, PacketResult, PingxArgs, ResolvedTargetInfo};
 use anyhow::Result;
@@ -6,6 +5,7 @@ use chrono::Timelike;
 use dns_lookup::lookup_addr;
 use serde::Serialize;
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
+use std::net::{IpAddr, ToSocketAddrs};
 use surge_ping::{Client, ConfigBuilder, IcmpPacket, PingIdentifier, PingSequence, ICMP};
 use tokio::time::{sleep, Duration, Instant};
 
@@ -39,8 +39,16 @@ pub fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
             let ip = s.ip();
             match args.ip_mode {
                 IpMode::Auto => addrs.push(ip),
-                IpMode::V4 => if ip.is_ipv4() { addrs.push(ip) },
-                IpMode::V6 => if ip.is_ipv6() { addrs.push(ip) },
+                IpMode::V4 => {
+                    if ip.is_ipv4() {
+                        addrs.push(ip)
+                    }
+                }
+                IpMode::V6 => {
+                    if ip.is_ipv6() {
+                        addrs.push(ip)
+                    }
+                }
             }
         }
     } else if let Ok(ip) = host.parse::<IpAddr>() {
@@ -50,14 +58,26 @@ pub fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
             IpMode::V4 => ip.is_ipv4(),
             IpMode::V6 => ip.is_ipv6(),
         };
-        if is_ok { addrs.push(ip); }
+        if is_ok {
+            addrs.push(ip);
+        }
     }
 
-    let ip = *addrs.first().ok_or_else(|| anyhow::anyhow!("Failed to resolve target"))?;
+    let ip = *addrs
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("Failed to resolve target"))?;
 
-    let reverse_dns = if args.numeric { None } else { lookup_addr(&ip).ok() };
+    let reverse_dns = if args.numeric {
+        None
+    } else {
+        lookup_addr(&ip).ok()
+    };
 
-    Ok(ResolvedTargetInfo { host, ip, reverse_dns })
+    Ok(ResolvedTargetInfo {
+        host,
+        ip,
+        reverse_dns,
+    })
 }
 
 pub async fn run_ping(args: &PingxArgs) -> Result<()> {
@@ -68,10 +88,19 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     if args.verbose && !args.quiet {
         println!("[verbose] target: {}", args.target);
         println!("[verbose] resolved ip: {}", resolved.ip);
-        println!("[verbose] reverse dns: {}", resolved.reverse_dns.as_deref().unwrap_or("(none)"));
-        println!("[verbose] ip mode: {:?}, payload: {} bytes, ttl: {:?}", args.ip_mode, args.payload_size_bytes, args.ttl);
+        println!(
+            "[verbose] reverse dns: {}",
+            resolved.reverse_dns.as_deref().unwrap_or("(none)")
+        );
+        println!(
+            "[verbose] ip mode: {:?}, payload: {} bytes, ttl: {:?}",
+            args.ip_mode, args.payload_size_bytes, args.ttl
+        );
         if let Some(src) = args.source {
-            println!("[verbose] source requested: {} (not currently applied)", src);
+            println!(
+                "[verbose] source requested: {} (not currently applied)",
+                src
+            );
         }
         if args.dont_fragment {
             println!("[verbose] don't-fragment requested (IPv4) — not currently applied");
@@ -95,7 +124,11 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
         config_builder = config_builder.ttl(ttl as u32);
     }
 
-    let icmp = if resolved.ip.is_ipv4() { ICMP::V4 } else { ICMP::V6 };
+    let icmp = if resolved.ip.is_ipv4() {
+        ICMP::V4
+    } else {
+        ICMP::V6
+    };
     config_builder = config_builder.kind(icmp);
 
     let config = config_builder.build();
@@ -124,7 +157,9 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
             break;
         }
 
-        if shutdown.load(std::sync::atomic::Ordering::Relaxed) { break; }
+        if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
 
         sequence += 1;
         sent += 1;
@@ -141,22 +176,51 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
             Ok((IcmpPacket::V4(_packet), dur)) => {
                 received += 1;
                 let time_ms = dur.as_secs_f64() * 1000.0;
-                let packet_res = PacketResult { icmp_seq: sequence, ttl: None, time_ms, error: None };
+                let packet_res = PacketResult {
+                    icmp_seq: sequence,
+                    ttl: None,
+                    time_ms,
+                    error: None,
+                };
                 print_packet_line(args, &resolved, &packet_res);
-                if matches!(args.output, OutputMode::Json) { lines_for_json.push(PacketLine { icmp_seq: sequence, ttl: None, time: time_ms }); }
+                if matches!(args.output, OutputMode::Json) {
+                    lines_for_json.push(PacketLine {
+                        icmp_seq: sequence,
+                        ttl: None,
+                        time: time_ms,
+                    });
+                }
             }
             Ok((IcmpPacket::V6(_packet), dur)) => {
                 received += 1;
                 let time_ms = dur.as_secs_f64() * 1000.0;
-                let packet_res = PacketResult { icmp_seq: sequence, ttl: None, time_ms, error: None };
+                let packet_res = PacketResult {
+                    icmp_seq: sequence,
+                    ttl: None,
+                    time_ms,
+                    error: None,
+                };
                 print_packet_line(args, &resolved, &packet_res);
-                if matches!(args.output, OutputMode::Json) { lines_for_json.push(PacketLine { icmp_seq: sequence, ttl: None, time: time_ms }); }
+                if matches!(args.output, OutputMode::Json) {
+                    lines_for_json.push(PacketLine {
+                        icmp_seq: sequence,
+                        ttl: None,
+                        time: time_ms,
+                    });
+                }
             }
             Err(e) => {
                 had_error = true;
-                let packet_res = PacketResult { icmp_seq: sequence, ttl: None, time_ms: 0.0, error: Some(e.to_string()) };
+                let packet_res = PacketResult {
+                    icmp_seq: sequence,
+                    ttl: None,
+                    time_ms: 0.0,
+                    error: Some(e.to_string()),
+                };
                 print_packet_line(args, &resolved, &packet_res);
-                if args.beep_on_loss { print!("\x07"); }
+                if args.beep_on_loss {
+                    print!("\x07");
+                }
             }
         }
         if had_error && args.stop_on_error {
@@ -181,7 +245,11 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     }
 
     if matches!(args.output, OutputMode::Json) {
-        let loss = if sent == 0 { 0.0 } else { ((sent - received) as f64) * 100.0 / (sent as f64) };
+        let loss = if sent == 0 {
+            0.0
+        } else {
+            ((sent - received) as f64) * 100.0 / (sent as f64)
+        };
         let json = JsonOutput {
             host: &resolved.host,
             ip: resolved.ip.to_string(),
@@ -213,11 +281,17 @@ fn replace_ci(s: String, needle_lower: &str, replacement: &str) -> String {
 }
 
 fn print_packet_line(args: &PingxArgs, resolved: &ResolvedTargetInfo, res: &PacketResult) {
-    if args.quiet { return; }
+    if args.quiet {
+        return;
+    }
     let ip_str = resolved.ip.to_string();
     let mut ts_prefix = args.timestamp_prefix;
     let ts_val = chrono::Utc::now().to_rfc3339();
-    let ts = if ts_prefix { format!("{} ", ts_val) } else { String::new() };
+    let ts = if ts_prefix {
+        format!("{} ", ts_val)
+    } else {
+        String::new()
+    };
     match &args.output {
         OutputMode::Default => {
             if let Some(err) = &res.error {
@@ -225,8 +299,13 @@ fn print_packet_line(args: &PingxArgs, resolved: &ResolvedTargetInfo, res: &Pack
             } else {
                 let from_name = if !args.numeric {
                     resolved.reverse_dns.as_deref().unwrap_or(&resolved.host)
-                } else { &resolved.host };
-                let ttl_str = res.ttl.map(|v| v.to_string()).unwrap_or_else(|| String::from(""));
+                } else {
+                    &resolved.host
+                };
+                let ttl_str = res
+                    .ttl
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| String::from(""));
                 println!(
                     "{}{} bytes from {} ({}): icmp_seq={}{}{} time={:.2} ms",
                     ts,
@@ -272,36 +351,59 @@ fn print_packet_line(args: &PingxArgs, resolved: &ResolvedTargetInfo, res: &Pack
         OutputMode::Template(tpl) => {
             // Avoid double timestamp prefix if template contains %timestamp%
             let tpl_lower = tpl.to_ascii_lowercase();
-            if tpl_lower.contains("%timestamp%") { ts_prefix = false; }
+            if tpl_lower.contains("%timestamp%") {
+                ts_prefix = false;
+            }
             let mut out = tpl.clone();
-            let header_size = if resolved.ip.is_ipv4() { 20 + 8 } else { 40 + 8 };
+            let header_size = if resolved.ip.is_ipv4() {
+                20 + 8
+            } else {
+                40 + 8
+            };
             let kv = [
                 ("%host%", resolved.host.as_str()),
                 ("%ip%", ip_str.as_str()),
-                ("%reverse_dns%", resolved.reverse_dns.as_deref().unwrap_or("")),
+                (
+                    "%reverse_dns%",
+                    resolved.reverse_dns.as_deref().unwrap_or(""),
+                ),
                 ("%icmp_seq%", &res.icmp_seq.to_string()),
                 ("%ttl%", &res.ttl.map(|v| v.to_string()).unwrap_or_default()),
                 ("%time%", &format!("{:.2}", res.time_ms)),
                 ("%timestamp%", &ts_val),
-                ("%size%", &(args.payload_size_bytes + header_size).to_string()),
+                (
+                    "%size%",
+                    &(args.payload_size_bytes + header_size).to_string(),
+                ),
                 ("%size_no_headers%", &args.payload_size_bytes.to_string()),
                 ("%error%", res.error.as_deref().unwrap_or("")),
             ];
             for (tag, val) in kv.iter() {
                 out = replace_ci(out, tag.to_ascii_lowercase().as_str(), val);
             }
-            let ts2 = if ts_prefix { format!("{} ", ts_val) } else { String::new() };
+            let ts2 = if ts_prefix {
+                format!("{} ", ts_val)
+            } else {
+                String::new()
+            };
             println!("{}{}", ts2, out);
         }
     }
 }
 
 fn print_stats(args: &PingxArgs, sent: u64, received: u64) {
-    let loss = if sent == 0 { 0.0 } else { ((sent - received) as f64) * 100.0 / (sent as f64) };
+    let loss = if sent == 0 {
+        0.0
+    } else {
+        ((sent - received) as f64) * 100.0 / (sent as f64)
+    };
     match &args.output {
         OutputMode::Default => {
             println!("\n--- statistics ---");
-            println!("{} packets transmitted, {} received, {:.1}% packet loss", sent, received, loss);
+            println!(
+                "{} packets transmitted, {} received, {:.1}% packet loss",
+                sent, received, loss
+            );
         }
         OutputMode::Csv => {
             // Consistent, machine-readable stats line
