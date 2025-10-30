@@ -136,6 +136,7 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
         pinger.timeout(timeout);
 
         let payload = vec![0u8; args.payload_size_bytes];
+        let mut had_error = false;
         match pinger.ping(PingSequence(sequence as u16), &payload).await {
             Ok((IcmpPacket::V4(_packet), dur)) => {
                 received += 1;
@@ -152,10 +153,14 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
                 if matches!(args.output, OutputMode::Json) { lines_for_json.push(PacketLine { icmp_seq: sequence, ttl: None, time: time_ms }); }
             }
             Err(e) => {
+                had_error = true;
                 let packet_res = PacketResult { icmp_seq: sequence, ttl: None, time_ms: 0.0, error: Some(e.to_string()) };
                 print_packet_line(args, &resolved, &packet_res);
                 if args.beep_on_loss { print!("\x07"); }
             }
+        }
+        if had_error && args.stop_on_error {
+            break;
         }
 
         if let Some(every) = args.stats_every_secs {

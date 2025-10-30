@@ -37,6 +37,7 @@ pub struct PingxArgs {
     pub beep_on_loss: bool,
     pub compact_header: bool,
     pub no_header: bool,
+    pub stop_on_error: bool,        // stop on first error when running with only default options
 }
 
 impl PingxArgs {
@@ -59,5 +60,3 @@ pub struct PacketResult {
     pub time_ms: f64,
     pub error: Option<String>,
 }
-
-

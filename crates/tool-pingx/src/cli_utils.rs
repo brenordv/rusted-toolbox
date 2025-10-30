@@ -4,16 +4,6 @@ use shared::command_line::cli_builder::CommandExt;
 use shared::constants::general::DASH_LINE;
 use std::net::{IpAddr};
 
-
-pub(crate) fn template_has_any_tag(template: &str) -> bool {
-    let t = template.to_ascii_lowercase();
-    let tags = [
-        "%host%", "%ip%", "%reverse_dns%", "%size%", "%size_no_headers%", "%icmp_seq%",
-        "%ttl%", "%time%", "%timestamp%", "%error%",
-    ];
-    tags.iter().any(|tag| t.contains(tag))
-}
-
 pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
     let matches = Command::new(env!("CARGO_PKG_NAME"))
         .add_basic_metadata(
@@ -171,6 +161,10 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
     let compact_header = matches.get_flag("compact-header");
     let no_header = matches.get_flag("no-header");
 
+    let explicit_count_inf = matches.value_source("count").is_some() && count == -1;
+
+    let stop_on_error = continuous || explicit_count_inf;
+
     Ok(PingxArgs {
         target,
         count,
@@ -192,6 +186,7 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
         beep_on_loss,
         compact_header,
         no_header,
+        stop_on_error,
     })
 }
 
@@ -218,9 +213,18 @@ pub fn print_header(args: &PingxArgs, resolved: &ResolvedTargetInfo) {
     let header_size = if resolved.ip.is_ipv4() { 20 + 8 } else { 40 + 8 };
     println!("- Packet Size: {} (with headers: {})", args.payload_size_bytes, args.payload_size_bytes + header_size);
     if args.is_infinite() {
-        println!("- Count: - Continuous mode");
+        println!("- Continuous mode");
     } else {
         println!("- Count: {}", args.count);
     }
     println!();
+}
+
+fn template_has_any_tag(template: &str) -> bool {
+    let t = template.to_ascii_lowercase();
+    let tags = [
+        "%host%", "%ip%", "%reverse_dns%", "%size%", "%size_no_headers%", "%icmp_seq%",
+        "%ttl%", "%time%", "%timestamp%", "%error%",
+    ];
+    tags.iter().any(|tag| t.contains(tag))
 }
