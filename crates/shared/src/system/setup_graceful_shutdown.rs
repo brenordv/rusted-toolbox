@@ -7,9 +7,9 @@ fn create_manual_shutdown_handler(immediate_exit: bool) -> Result<Arc<AtomicBool
     let shutdown_clone = Arc::clone(&shutdown);
 
     ctrlc::set_handler(move || {
-        println!("\n🛑 Shutdown signal received, stopping application...");
+        println!("\n[X] Shutdown signal received, stopping application...");
         if immediate_exit {
-            println!("🛑 Application terminated by the user...");
+            println!("[X] Application terminated by the user...");
             exit_success();
         } else {
             shutdown_clone.store(true, std::sync::atomic::Ordering::Relaxed);
