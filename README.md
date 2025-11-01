@@ -23,6 +23,7 @@ We currently have the following tools:
 19. A tool called [aiignore](crates/tool-aiignore/readme.md) that, similarly to gitignore, generates/updates known ai-ignore files for your project automatically;
 20. A tool to generate [QRCodes](crates/tool-qrcode/readme.md) that, as the name suggests, can be used to generate QRCodes to file or just printing them to the terminal.
 21. A tool to [lookup](crates/tool-lookup/readme.md) text in multiple files (recursively).
+22. A tool that is like ping, but with extra features. It is called [pingx](crates/tool-pingx/readme.md).
 
 ## Ok, but why?
 Well, three main reasons:

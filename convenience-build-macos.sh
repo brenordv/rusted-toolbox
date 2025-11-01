@@ -133,6 +133,7 @@ install_tools() {
     "lookup"
     "mock"
     "mqtt"
+    "pingx"
     "qrcode"
     "split"
     "ts"

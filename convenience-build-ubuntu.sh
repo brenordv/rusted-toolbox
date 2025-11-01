@@ -196,6 +196,7 @@ install_tools() {
     "imgx"
     "jwt"
     "lookup"
+    "pingx"
     "mock"
     "mqtt"
     "qrcode"
