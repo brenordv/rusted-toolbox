@@ -89,7 +89,7 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
                         Some(s) => s,
                         None => continue, // skip invalid utf-8 names
                     };
-                    if is_match(&matcher, cfg.pattern_mode, name) {
+                    if is_match(&matcher, name) {
                         matches_count += 1;
                         // Clear progress line before printing a match to avoid overlap
                         if !cfg.no_progress {
@@ -141,7 +141,7 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
                     Some(s) => s,
                     None => continue,
                 };
-                if is_match(&matcher, cfg.pattern_mode, name) {
+                if is_match(&matcher, name) {
                     matches_count += 1;
                     if !cfg.no_progress { clear_progress_line(); }
                     let abs = absolute_path_str(&path);
@@ -166,7 +166,7 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
 }
 
 fn print_progress_once(last_dir_printed: &mut Option<PathBuf>, current: &Path) {
-    // Only print when directory changes to reduce noise.
+    // Only print when the directory changes to reduce noise.
     let cur_dir = if current.is_dir() {
         current
     } else {
@@ -225,7 +225,7 @@ fn build_regexset(patterns: &[String], case_sensitive: bool) -> Result<Matcher> 
     }
 }
 
-fn is_match(m: &Matcher, mode: PatternMode, file_name: &str) -> bool {
+fn is_match(m: &Matcher, file_name: &str) -> bool {
     match m {
         Matcher::Glob(gs) => gs.is_match(file_name),
         Matcher::RegexSet(rs) => rs.is_match(file_name),
