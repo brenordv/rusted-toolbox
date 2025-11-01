@@ -1,3 +1,6 @@
+# 2.0.0 (2025-10-31)
+- TBD
+
 # 1.0.1 (2025-10-03)
 - Added support for matching by exact file name for dotfiles or bare names.
   - Pattern ".env" matches basename ".env"
