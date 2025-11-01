@@ -11,3 +11,6 @@ shared = { path = "../shared" }
 clap = "4.5.51"
 anyhow = "1.0.100"
 tracing = "0.1.41"
+regex = "1.12.2"
+globset = "0.4.14"
+walkdir = "2.5.0"
