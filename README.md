@@ -22,7 +22,7 @@ We currently have the following tools:
 18. An [MQTT cli tool](crates/tool-mqtt/readme.md) that can be used to quickly send or receive messages from a specific topic.
 19. A tool called [aiignore](crates/tool-aiignore/readme.md) that, similarly to gitignore, generates/updates known ai-ignore files for your project automatically;
 20. A tool to generate [QRCodes](crates/tool-qrcode/readme.md) that, as the name suggests, can be used to generate QRCodes to file or just printing them to the terminal.
-21. A tool to [lookup](crates/tool-lookup/readme.md) text in multiple files (recursively).
+21. A tool to [lookup](crates/tool-lookup/readme.md) that can either find text in multiple files or find files where the filename contains a specific text/pattern/regex.
 22. A tool that is like ping, but with extra features. It is called [pingx](crates/tool-pingx/readme.md).
 
 ## Ok, but why?
