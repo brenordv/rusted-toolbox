@@ -26,12 +26,10 @@ pub struct PingxArgs {
     pub overall_deadline_secs: Option<f64>,
     pub continuous: bool,
     pub ip_mode: IpMode,
-    pub source: Option<IpAddr>,
     pub timestamp_prefix: bool,
     pub quiet: bool,
     pub verbose: bool,
     pub numeric: bool,
-    pub dont_fragment: bool,
     pub output: OutputMode,
     pub stats_every_secs: Option<f64>,
     pub beep_on_loss: bool,
@@ -56,7 +54,6 @@ pub struct ResolvedTargetInfo {
 #[derive(Clone, Debug)]
 pub struct PacketResult {
     pub icmp_seq: u64,
-    pub ttl: Option<u8>,
     pub time_ms: f64,
     pub error: Option<String>,
 }

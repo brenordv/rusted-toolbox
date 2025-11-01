@@ -24,7 +24,6 @@ struct JsonOutput<'a> {
 #[derive(Serialize)]
 struct PacketLine {
     icmp_seq: u64,
-    ttl: Option<u8>,
     time: f64,
 }
 
@@ -96,23 +95,14 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
             "[verbose] ip mode: {:?}, payload: {} bytes, ttl: {:?}",
             args.ip_mode, args.payload_size_bytes, args.ttl
         );
-        if let Some(src) = args.source {
-            println!(
-                "[verbose] source requested: {} (not currently applied)",
-                src
-            );
-        }
-        if args.dont_fragment {
-            println!("[verbose] don't-fragment requested (IPv4) — not currently applied");
-        }
     }
 
     // CSV header (once)
     if matches!(args.output, OutputMode::Csv) && !args.quiet {
         if args.timestamp_prefix {
-            println!("timestamp,host,ip,reverse_dns,size,icmp_seq,time,ttl");
+            println!("timestamp,host,ip,reverse_dns,size,icmp_seq,time");
         } else {
-            println!("host,ip,reverse_dns,size,icmp_seq,time,ttl");
+            println!("host,ip,reverse_dns,size,icmp_seq,time");
         }
     }
 
@@ -178,7 +168,6 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
                 let time_ms = dur.as_secs_f64() * 1000.0;
                 let packet_res = PacketResult {
                     icmp_seq: sequence,
-                    ttl: None,
                     time_ms,
                     error: None,
                 };
@@ -186,7 +175,6 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
                 if matches!(args.output, OutputMode::Json) {
                     lines_for_json.push(PacketLine {
                         icmp_seq: sequence,
-                        ttl: None,
                         time: time_ms,
                     });
                 }
@@ -196,7 +184,6 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
                 let time_ms = dur.as_secs_f64() * 1000.0;
                 let packet_res = PacketResult {
                     icmp_seq: sequence,
-                    ttl: None,
                     time_ms,
                     error: None,
                 };
@@ -204,7 +191,6 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
                 if matches!(args.output, OutputMode::Json) {
                     lines_for_json.push(PacketLine {
                         icmp_seq: sequence,
-                        ttl: None,
                         time: time_ms,
                     });
                 }
@@ -213,7 +199,6 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
                 had_error = true;
                 let packet_res = PacketResult {
                     icmp_seq: sequence,
-                    ttl: None,
                     time_ms: 0.0,
                     error: Some(e.to_string()),
                 };
@@ -302,29 +287,23 @@ fn print_packet_line(args: &PingxArgs, resolved: &ResolvedTargetInfo, res: &Pack
                 } else {
                     &resolved.host
                 };
-                let ttl_str = res
-                    .ttl
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| String::from(""));
                 println!(
-                    "{}{} bytes from {} ({}): icmp_seq={}{}{} time={:.2} ms",
+                    "{}{} bytes from {} ({}): icmp_seq={} time={:.2} ms",
                     ts,
                     args.payload_size_bytes + 8,
                     from_name,
                     ip_str,
                     res.icmp_seq,
-                    if ttl_str.is_empty() { "" } else { " ttl=" },
-                    ttl_str,
                     res.time_ms,
                 );
             }
         }
         OutputMode::Csv => {
-            // [timestamp,] host,ip,reverse_dns,size,icmp_seq,time,ttl
+            // [timestamp,] host,ip,reverse_dns,size,icmp_seq,time
             let rdns = resolved.reverse_dns.as_deref().unwrap_or("");
             if args.timestamp_prefix {
                 println!(
-                    "{},{},{},{},{},{},{:.2},{}",
+                    "{},{},{},{},{},{},{:.2}",
                     ts_val,
                     resolved.host,
                     ip_str,
@@ -332,18 +311,16 @@ fn print_packet_line(args: &PingxArgs, resolved: &ResolvedTargetInfo, res: &Pack
                     args.payload_size_bytes + 8,
                     res.icmp_seq,
                     res.time_ms,
-                    res.ttl.map(|v| v.to_string()).unwrap_or_default(),
                 );
             } else {
                 println!(
-                    "{},{},{},{},{},{:.2},{}",
+                    "{},{},{},{},{},{:.2}",
                     resolved.host,
                     ip_str,
                     rdns,
                     args.payload_size_bytes + 8,
                     res.icmp_seq,
                     res.time_ms,
-                    res.ttl.map(|v| v.to_string()).unwrap_or_default(),
                 );
             }
         }
@@ -368,7 +345,6 @@ fn print_packet_line(args: &PingxArgs, resolved: &ResolvedTargetInfo, res: &Pack
                     resolved.reverse_dns.as_deref().unwrap_or(""),
                 ),
                 ("%icmp_seq%", &res.icmp_seq.to_string()),
-                ("%ttl%", &res.ttl.map(|v| v.to_string()).unwrap_or_default()),
                 ("%time%", &format!("{:.2}", res.time_ms)),
                 ("%timestamp%", &ts_val),
                 (

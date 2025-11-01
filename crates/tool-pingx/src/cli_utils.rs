@@ -2,7 +2,6 @@ use crate::models::{IpMode, OutputMode, PingxArgs, ResolvedTargetInfo};
 use clap::{Arg, Command};
 use shared::command_line::cli_builder::CommandExt;
 use shared::constants::general::DASH_LINE;
-use std::net::IpAddr;
 
 pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
     let matches = Command::new(env!("CARGO_PKG_NAME"))
@@ -45,15 +44,6 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
                 .required(false),
         )
         .arg(
-            Arg::new("ttl")
-                .short('t')
-                .long("ttl")
-                .value_name("HOPS")
-                .help("Set Time To Live hop limit")
-                .value_parser(clap::value_parser!(u8))
-                .required(false),
-        )
-        .arg(
             Arg::new("timeout")
                 .short('w')
                 .long("timeout")
@@ -80,19 +70,10 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
         )
         .arg(Arg::new("ipv4").short('4').long("ipv4").action(clap::ArgAction::SetTrue).help("Force IPv4"))
         .arg(Arg::new("ipv6").short('6').long("ipv6").action(clap::ArgAction::SetTrue).help("Force IPv6"))
-        .arg(
-            Arg::new("source")
-                .short('S')
-                .long("source")
-                .value_name("IP")
-                .help("Specify source IP to bind from")
-                .required(false),
-        )
         .arg(Arg::new("timestamp").short('D').long("timestamp").action(clap::ArgAction::SetTrue).help("Prefix each reply with timestamp"))
         .arg(Arg::new("quiet").short('q').long("quiet").action(clap::ArgAction::SetTrue).help("Quiet mode: only summary"))
         .arg(Arg::new("verbose").short('v').long("verbose").action(clap::ArgAction::SetTrue).help("Verbose output"))
         .arg(Arg::new("numeric").short('n').long("numeric").action(clap::ArgAction::SetTrue).help("Don't resolve reverse DNS"))
-        .arg(Arg::new("no-fragment").short('f').long("no-fragment").action(clap::ArgAction::SetTrue).help("Don't Fragment (IPv4)"))
         .arg(
             Arg::new("output")
                 .short('o')
@@ -132,16 +113,10 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
         (false, true) => IpMode::V6,
         (false, false) => IpMode::Auto,
     };
-    let source = matches
-        .get_one::<String>("source")
-        .map(|s| s.parse::<IpAddr>())
-        .transpose()
-        .map_err(|_| anyhow::anyhow!("Invalid --source IP address"))?;
     let timestamp_prefix = matches.get_flag("timestamp");
     let quiet = matches.get_flag("quiet");
     let verbose = matches.get_flag("verbose");
     let numeric = matches.get_flag("numeric");
-    let dont_fragment = matches.get_flag("no-fragment");
     let output = match matches
         .get_one::<String>("output")
         .map(|s| s.to_lowercase())
@@ -178,12 +153,10 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
         overall_deadline_secs,
         continuous,
         ip_mode,
-        source,
         timestamp_prefix,
         quiet,
         verbose,
         numeric,
-        dont_fragment,
         output,
         stats_every_secs,
         beep_on_loss,
@@ -249,7 +222,6 @@ fn template_has_any_tag(template: &str) -> bool {
         "%size%",
         "%size_no_headers%",
         "%icmp_seq%",
-        "%ttl%",
         "%time%",
         "%timestamp%",
         "%error%",
