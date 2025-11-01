@@ -35,7 +35,7 @@ pub fn lookup_files(config: &LookupConfig) -> Result<()> {
             Err(e) => {
                 error!("Failed to open file '{}': {}", file_path.display(), e);
                 continue;
-            },
+            }
         };
         files_read += 1;
 
