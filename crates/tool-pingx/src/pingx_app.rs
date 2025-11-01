@@ -30,41 +30,70 @@ struct PacketLine {
 pub fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
     let host = args.target.clone();
 
-    // Try to resolve using ToSocketAddrs to respect system resolver
-    // Default port 0 just for resolution
-    let mut addrs: Vec<IpAddr> = Vec::new();
-    if let Ok(iter) = (host.as_str(), 0).to_socket_addrs() {
-        for s in iter {
-            let ip = s.ip();
-            match args.ip_mode {
-                IpMode::Auto => addrs.push(ip),
-                IpMode::V4 => {
-                    if ip.is_ipv4() {
-                        addrs.push(ip)
-                    }
-                }
-                IpMode::V6 => {
-                    if ip.is_ipv6() {
-                        addrs.push(ip)
+    let ip: IpAddr = loop {
+        let mut addrs: Vec<IpAddr> = Vec::new();
+        let mut last_err: Option<String> = None;
+
+        match (host.as_str(), 0).to_socket_addrs() {
+            Ok(iter) => {
+                for s in iter {
+                    let ip = s.ip();
+                    match args.ip_mode {
+                        IpMode::Auto => addrs.push(ip),
+                        IpMode::V4 => {
+                            if ip.is_ipv4() {
+                                addrs.push(ip)
+                            }
+                        }
+                        IpMode::V6 => {
+                            if ip.is_ipv6() {
+                                addrs.push(ip)
+                            }
+                        }
                     }
                 }
             }
+            Err(e) => {
+                last_err = Some(format!("DNS resolution failed: {}", e));
+            }
         }
-    } else if let Ok(ip) = host.parse::<IpAddr>() {
-        // Fallback: direct parse
-        let is_ok = match args.ip_mode {
-            IpMode::Auto => true,
-            IpMode::V4 => ip.is_ipv4(),
-            IpMode::V6 => ip.is_ipv6(),
-        };
-        if is_ok {
-            addrs.push(ip);
-        }
-    }
 
-    let ip = *addrs
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("Failed to resolve target"))?;
+        // Fallback: direct parse
+        if addrs.is_empty() {
+            if let Ok(ip) = host.parse::<IpAddr>() {
+                let is_ok = match args.ip_mode {
+                    IpMode::Auto => true,
+                    IpMode::V4 => ip.is_ipv4(),
+                    IpMode::V6 => ip.is_ipv6(),
+                };
+                if is_ok {
+                    addrs.push(ip);
+                }
+            } else if last_err.is_none() {
+                last_err = Some("Failed to parse host as IP address".to_string());
+            }
+        }
+
+        if let Some(first) = addrs.first().copied() {
+            break first;
+        }
+
+        // No address resolved; decide whether to stop or keep trying
+        if args.stop_on_error {
+            let msg = last_err.unwrap_or_else(|| "Failed to resolve target".to_string());
+            return Err(anyhow::anyhow!(msg));
+        } else {
+            if !args.quiet {
+                if let Some(msg) = &last_err {
+                    eprintln!("resolve error for '{}': {}", host, msg);
+                } else {
+                    eprintln!("resolve error for '{}': no addresses found", host);
+                }
+            }
+            // simple retry delay
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    };
 
     let reverse_dns = if args.numeric {
         None
