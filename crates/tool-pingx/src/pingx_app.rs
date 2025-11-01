@@ -92,8 +92,8 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
             resolved.reverse_dns.as_deref().unwrap_or("(none)")
         );
         println!(
-            "[verbose] ip mode: {:?}, payload: {} bytes, ttl: {:?}",
-            args.ip_mode, args.payload_size_bytes, args.ttl
+            "[verbose] ip mode: {:?}, payload: {} bytes",
+            args.ip_mode, args.payload_size_bytes
         );
     }
 
@@ -110,15 +110,12 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
 
     let mut config_builder = ConfigBuilder::default();
 
-    if let Some(ttl) = args.ttl {
-        config_builder = config_builder.ttl(ttl as u32);
-    }
-
     let icmp = if resolved.ip.is_ipv4() {
         ICMP::V4
     } else {
         ICMP::V6
     };
+
     config_builder = config_builder.kind(icmp);
 
     let config = config_builder.build();

@@ -97,16 +97,10 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
         .get_matches();
 
     let target = matches.get_one::<String>("target").unwrap().to_string();
-    let count = matches.get_one::<i64>("count").copied().unwrap_or(-1);
-    if count == 0 || count < -1 {
-        anyhow::bail!("--count must be -1 (for infinite, but in this case you can also use --continuous) or >= 1");
-    }
     let interval_secs = matches.get_one::<f64>("interval").copied().unwrap_or(1.0);
     let payload_size_bytes = matches.get_one::<usize>("size").copied().unwrap_or(56);
-    let ttl = matches.get_one::<u8>("ttl").copied();
     let per_reply_timeout_secs = matches.get_one::<f64>("timeout").copied().unwrap_or(2.0);
     let overall_deadline_secs = matches.get_one::<f64>("deadline").copied();
-    let continuous = matches.get_flag("continuous");
     let ip_mode = match (matches.get_flag("ipv4"), matches.get_flag("ipv6")) {
         (true, true) => anyhow::bail!("--ipv4 and --ipv6 are mutually exclusive"),
         (true, false) => IpMode::V4,
@@ -139,16 +133,19 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
     let compact_header = matches.get_flag("compact-header");
     let no_header = matches.get_flag("no-header");
 
+    let count = matches.get_one::<i64>("count").copied().unwrap_or(-1);
+    if count == 0 || count < -1 {
+        anyhow::bail!("--count must be -1 (for infinite, but in this case you can also use --continuous) or >= 1");
+    }
     let explicit_count_inf = matches.value_source("count").is_some() && count == -1;
-
-    let stop_on_error = continuous || explicit_count_inf;
+    let continuous = matches.get_flag("continuous");
+    let stop_on_error = !continuous && !explicit_count_inf;
 
     Ok(PingxArgs {
         target,
         count,
         interval_secs,
         payload_size_bytes,
-        ttl,
         per_reply_timeout_secs,
         overall_deadline_secs,
         continuous,
@@ -210,6 +207,20 @@ pub fn print_header(args: &PingxArgs, resolved: &ResolvedTargetInfo) {
     } else {
         println!("- Count: {}", args.count);
     }
+    println!("- Interval: {} seconds", args.interval_secs);
+    println!("- Timeout: {} seconds", args.per_reply_timeout_secs);
+    if let Some(deadline) = args.overall_deadline_secs {
+        println!("- Stop after total elapsed: {} seconds", deadline);
+    }
+    println!("- Stop on error: {}", args.stop_on_error);
+    let output_mode = match &args.output {
+        OutputMode::Default => "default".to_string(),
+        OutputMode::Json => "json".to_string(),
+        OutputMode::Csv => "csv".to_string(),
+        OutputMode::Template(template) => format!("template: {}", template),
+    };
+    println!("- Output: {}", output_mode);
+
     println!();
 }
 
