@@ -80,7 +80,18 @@ check_rust() {
 
 install_prerequisites() {
   print_status "Installing pre-requisites"
-  xcode-select --install
+
+  if ! xcode-select -p &>/dev/null; then
+    print_status "Installing Xcode Command Line Tools..."
+    xcode-select --install
+    # Wait until installation finishes (optional)
+    until xcode-select -p &>/dev/null; do
+      sleep 5
+    done
+  else
+    print_status "Xcode Command Line Tools already installed."
+  fi
+
   brew install pkg-config
   print_status "Installation completed"
 }
