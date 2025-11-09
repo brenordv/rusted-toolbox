@@ -3,8 +3,7 @@ Whurl, a Wrapper for Hurl, orchestrates composable Hurl request suites. It disco
 expands top-of-file `@include` directives, and runs the merged document with the embedded Hurl
 engine so you can chain requests, reuse captures, and ship curated collections.
 
-The actual requesting, assertion, reporting, capturing, etc is done by Hurl, so it will work with your existing 
-Hurl files!
+Hurl handles the actual requests, assertions, reporting, capturing, etc., so it will work with your existing `hurl` files!
 
 ## What It Does
 - Discovers APIs and Hurl files under a `requests/<api>/` hierarchy (or a custom `REQUEST_HOME`).
