@@ -123,12 +123,12 @@ TL;DR:
 ## Todo
 - **#1**: (EH tools) Change this to avoid needing the full connection string just to export messages.
 - **#2**: Some files are way too big. Partly due to the documentation + testing. Some methods should be moved to different files.
-- **#3**: Do a better job at showing the default values for CLI arguments + do it in a unified way.
-- **#4**: Add to all the command lines the possibility of changing the log level.
+- **#3**: Do a better job at showing, in a unified way, the default values for CLI arguments.
+- **#4**: Add to all the command lines tools the possibility of changing the log level.
 
 ## Building on Linux
 TODO: Improve this later
 ```bash
 sudo apt-get update
-sudo apt-get install -y build-essential libssl-dev pkg-config
+sudo apt-get install -y build-essential pkg-config libssl-dev libcurl4-openssl-dev libxml2-dev libclang-dev
 ```
