@@ -1,0 +1,20 @@
+[package]
+name = "whurl"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "Wrapper for Hurl with a few additional features."
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+anyhow = "1.0.100"
+camino = "1.2.1"
+clap = { version = "4.5.51", features = ["derive"] }
+hurl = { git = "https://github.com/Orange-OpenSource/hurl", tag = "7.0.0" }
+hurl_core = { git = "https://github.com/Orange-OpenSource/hurl", tag = "7.0.0" }
+once_cell = "1.21.3"
+regex = "1.12.2"
+serde_json = "1.0.145"
+thiserror = "2.0.17"
+tracing = "0.1.41"

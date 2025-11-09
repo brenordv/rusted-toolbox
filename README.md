@@ -24,6 +24,7 @@ We currently have the following tools:
 20. A tool to generate [QRCodes](crates/tool-qrcode/readme.md) that, as the name suggests, can be used to generate QRCodes to file or just printing them to the terminal.
 21. A tool to [lookup](crates/tool-lookup/readme.md) that can either find text in multiple files or find files where the filename contains a specific text/pattern/regex.
 22. A tool that is like ping, but with extra features. It is called [pingx](crates/tool-pingx/readme.md).
+23. A wrapper tool called [Whurl](crates/tool-whurl/readme.md), that allows referencing one hurl file in another.
 
 ## Ok, but why?
 Well, three main reasons:

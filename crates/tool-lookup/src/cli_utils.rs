@@ -56,8 +56,7 @@ pub fn get_cli_arguments() -> Result<LookupCommand> {
                 .required(true)
                 .help("File extension to look for. May be specified multiple times."),
         )
-        .group(ArgGroup::new("text_input").args(["TEXT", "text"]))
-        ;
+        .group(ArgGroup::new("text_input").args(["TEXT", "text"]));
 
     let files_cmd = Command::new("files")
         .about("Search for files by name (case-insensitive by default)")
@@ -132,7 +131,7 @@ pub fn get_cli_arguments() -> Result<LookupCommand> {
         .add_basic_metadata(
             env!("CARGO_PKG_VERSION"),
             env!("CARGO_PKG_DESCRIPTION"),
-            "Search for text in files or find files by name."
+            "Search for text in files or find files by name.",
         )
         .subcommand(text_cmd)
         .subcommand(files_cmd)
