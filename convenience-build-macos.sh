@@ -78,6 +78,13 @@ check_rust() {
   fi
 }
 
+install_prerequisites() {
+  print_status "Installing pre-requisites"
+  xcode-select --install
+  brew install pkg-config
+  print_status "Installation completed"
+}
+
 # Clone or update repository
 setup_repository() {
   mkdir -p "$CLONE_BASE"
@@ -138,6 +145,7 @@ install_tools() {
     "split"
     "ts"
     "whisper"
+    "whurl"
   )
 
   for tool in "${tools[@]}"; do
@@ -164,6 +172,7 @@ main() {
   check_rust
   create_install_dir
   setup_repository
+  install_prerequisites
   build_project
   install_tools
   update_path
