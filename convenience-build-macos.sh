@@ -145,6 +145,7 @@ install_tools() {
     "split"
     "ts"
     "whisper"
+    "whurl"
   )
 
   for tool in "${tools[@]}"; do
