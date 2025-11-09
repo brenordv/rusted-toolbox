@@ -7,10 +7,10 @@ use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 
 mod cli_utils;
+mod lookup_files_app;
+mod lookup_shared;
 mod lookup_text_app;
 mod models;
-mod lookup_shared;
-mod lookup_files_app;
 
 fn main() -> Result<()> {
     initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Error);

@@ -105,7 +105,10 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
                         if !cfg.no_progress {
                             clear_progress_line();
                         }
-                        let p = e.path().map(|p| p.display().to_string()).unwrap_or_else(|| "<unknown>".to_string());
+                        let p = e
+                            .path()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|| "<unknown>".to_string());
                         println!("{}: {}", brief_walkdir_error(&e), p);
                     }
                     // keep going
@@ -127,7 +130,9 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
             Ok(it) => it,
             Err(e) => {
                 if !cfg.no_errors {
-                    if !cfg.no_progress { clear_progress_line(); }
+                    if !cfg.no_progress {
+                        clear_progress_line();
+                    }
                     println!("{}: {}", e, base_path.display());
                 }
                 return Ok(());
@@ -143,7 +148,9 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
                 };
                 if is_match(&matcher, name) {
                     matches_count += 1;
-                    if !cfg.no_progress { clear_progress_line(); }
+                    if !cfg.no_progress {
+                        clear_progress_line();
+                    }
                     let abs = absolute_path_str(&path);
                     println!("{}", abs);
                 }
