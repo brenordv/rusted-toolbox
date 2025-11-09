@@ -161,7 +161,7 @@ setup_repository() {
 
 install_prerequisites() {
   print_status "Installing pre-requisites"
-  sudo apt-get install -y libssl-dev
+  sudo apt-get install -y build-essential pkg-config libssl-dev libcurl4-openssl-dev libxml2-dev libclang-dev
   print_status "Installation completed"
 }
 
@@ -203,6 +203,7 @@ install_tools() {
     "split"
     "ts"
     "whisper"
+    "whurl"
   )
 
   for tool in "${tools[@]}"; do
