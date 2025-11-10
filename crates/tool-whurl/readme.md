@@ -6,22 +6,22 @@ engine so you can chain requests, reuse captures, and ship curated collections.
 Hurl handles the actual requests, assertions, reporting, capturing, etc., so it will work with your existing `hurl` files!
 
 ## What It Does
-- Discovers APIs and Hurl files under a `requests/<api>/` hierarchy (or a custom `REQUEST_HOME`).
+- Discovers APIs and Hurl files under a `requests/<api>/` hierarchy (or a custom `WHURL_REQUEST_HOME`).
 - Resolves `# @include ...` directives before execution, including `quiet` and `silent` modifiers.
   - Modifiers can be added with the following syntax: `# @include:[modifier1, modifier2,...modifierN]  <file>` 
 - Provides commands to list collections, preview the merged document, and execute through Hurl.
 - Surfaces rich reporting: optional JSON artifacts, test-friendly summaries, and source remapping.
 
 ## Features
-- Automatic `requests/` root detection (crate-relative, binary-relative, or `REQUEST_HOME` override).
+- Automatic `requests/` root detection (crate-relative, binary-relative, or `WHURL_REQUEST_HOME` override).
 - Include graph cycle detection plus optional boundary markers for readability.
 - Source-to-merged line mapping so failures are reported against original files.
 - Variable layering from `HURL_*` environment variables, named env files, arbitrary files, and `--var`.
 - Secret-aware variable injection (keys containing `token`, `secret`, etc. stay hidden in logs).
 - Embedded Hurl runner with controllable verbosity (`-v` / `-vv`) and context-aware file resolution.
 
-### REQUEST_HOME
-The `REQUEST_HOME` environment variable can be used to override the default `requests/` root.
+### WHURL_REQUEST_HOME
+The `WHURL_REQUEST_HOME` environment variable can be used to override the default `requests/` root.
 
 By default, Whurl will look for `requests/` in the current working directory, and if not found, in the binary's 
 directory.
@@ -135,7 +135,7 @@ requests/
 ```
 - Each API gets its own directory; request files use the `.hurl` extension.
 - `_vars/` holds named environment files addressed by `--env`.
-- Override the root directory by setting `REQUEST_HOME=/path/to/requests`.
+- Override the root directory by setting `WHURL_REQUEST_HOME=/path/to/requests`.
 
 ## Subcommands
 ### list
