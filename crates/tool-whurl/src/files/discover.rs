@@ -5,7 +5,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum DiscoverError {
-    #[error("REQUEST_HOME must be a valid UTF-8 path")]
+    #[error("WHURL_REQUEST_HOME must be a valid UTF-8 path")]
     InvalidUtf8Env,
     #[error("encountered non UTF-8 path")]
     NonUtf8Path(PathBuf),
@@ -26,7 +26,7 @@ pub enum DiscoverError {
 }
 
 pub fn locate_requests_root() -> Result<Utf8PathBuf, DiscoverError> {
-    if let Ok(env_path) = env::var("REQUEST_HOME") {
+    if let Ok(env_path) = env::var("WHURL_REQUEST_HOME") {
         let root = Utf8PathBuf::from(env_path);
         if !root.is_dir() {
             return Err(DiscoverError::RequestsDirMissing(root));
