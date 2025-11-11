@@ -1,5 +1,8 @@
 use std::{env, fs, io, path::PathBuf};
 
+use crate::files::{FileResolver, ResolveError, ResolvedRunContext};
+use crate::models::ToolResult;
+use crate::vars::{parse_variables_file, VariableMap};
 use camino::{Utf8Path, Utf8PathBuf};
 use thiserror::Error;
 
@@ -116,4 +119,48 @@ pub fn list_requests(requests_root: &Utf8Path, api: &str) -> Result<Vec<String>,
 
     requests.sort_unstable();
     Ok(requests)
+}
+
+pub fn resolve_vars_file_path(api_root: &Utf8Path, vars_file: &Utf8PathBuf) -> Utf8PathBuf {
+    if vars_file.is_absolute() {
+        vars_file.clone()
+    } else if vars_file.as_path().is_file() {
+        vars_file.clone()
+    } else {
+        let candidate = api_root.join(vars_file);
+        if candidate.as_path().is_file() {
+            candidate
+        } else {
+            vars_file.clone()
+        }
+    }
+}
+
+pub fn resolve_file_root(
+    context: &ResolvedRunContext,
+    file_root: Option<&Utf8PathBuf>,
+) -> Option<Utf8PathBuf> {
+    let file_root = file_root?;
+
+    if file_root.is_absolute() {
+        Some(file_root.clone())
+    } else {
+        Some(context.resolution.api_root.join(file_root))
+    }
+}
+
+pub fn load_env_file(
+    resolver: &FileResolver,
+    api: &str,
+    env_name: &str,
+    required: bool,
+) -> ToolResult<Option<(Utf8PathBuf, VariableMap)>> {
+    match resolver.resolve_env_file(api, env_name) {
+        Ok(path) => {
+            let vars = parse_variables_file(path.as_path())?;
+            Ok(Some((path, vars)))
+        }
+        Err(ResolveError::FileNotFound { .. }) if !required => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }

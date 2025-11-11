@@ -1,7 +1,7 @@
 mod collect;
 mod envfile;
 
-pub use collect::{gather_process_env_variables, merge_variable_sources};
+pub use collect::gather_process_env_variables;
 pub use envfile::parse_variables_file;
 
 use std::collections::BTreeMap;

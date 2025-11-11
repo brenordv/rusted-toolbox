@@ -20,23 +20,3 @@ pub fn gather_process_env_variables() -> VariableMap {
 
     variables
 }
-
-pub fn merge_variable_sources(
-    env_vars: VariableMap,
-    file_vars: Option<VariableMap>,
-    inline_vars: &[(String, String)],
-) -> VariableMap {
-    let mut merged = env_vars;
-
-    if let Some(file_vars) = file_vars {
-        for (key, value) in file_vars {
-            merged.insert(key, value);
-        }
-    }
-
-    for (key, value) in inline_vars {
-        merged.insert(key.clone(), value.clone());
-    }
-
-    merged
-}

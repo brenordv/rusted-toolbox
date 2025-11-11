@@ -3,6 +3,8 @@ GET https://httpbin.org/anything
 [QueryStringParams]
 environment: {{ env_name }}
 message: {{ message }}
+get_answer: {{ question }}
+
 HTTP 200
 
 [Asserts]
