@@ -6,6 +6,7 @@ mod models;
 mod output;
 mod vars;
 mod whurl_app;
+mod whurl_utils;
 
 use crate::cli_utils::get_cli_arguments;
 use crate::whurl_app::{execute, print_error, resolve_log_level};

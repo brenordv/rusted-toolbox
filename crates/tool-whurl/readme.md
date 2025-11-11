@@ -1,9 +1,22 @@
 # Whurl
-Whurl, a Wrapper for Hurl, orchestrates composable Hurl request suites. It discovers requests under `requests/`,
-expands top-of-file `@include` directives, and runs the merged document with the embedded Hurl
-engine so you can chain requests, reuse captures, and ship curated collections.
+Whurl, a Wrapper for [Hurl](https://hurl.dev/), that orchestrates composable Hurl request suites. 
+It discovers requests under `requests/`, expands top-of-file `@include` directives, and runs the merged document with
+the embedded Hurl engine so you can chain requests, reuse captures, and ship curated collections.
 
 Hurl handles the actual requests, assertions, reporting, capturing, etc., so it will work with your existing `hurl` files!
+
+## Why?
+While I love the simplicity of Hurl, I hate the idea of having to repeat the same requests on multiple files. This would
+make my request library way less maintainable.
+
+For instance, when using it to test a medium to large API, where all endpoints are behind authentication, I would need
+to repeat the request to get a token on all the request files.
+
+To avoid this, I created this tool that allows me to include one request into another, while still relying on Hurl to
+do the heavy work. This way, I can reuse the same request in multiple files, and I can also share variables between
+them.
+
+It's not perfect, but it's a good start, and helps me solve this problem.
 
 ## What It Does
 - Discovers APIs and Hurl files under a `requests/<api>/` hierarchy (or a custom `WHURL_REQUEST_HOME`).
@@ -16,7 +29,7 @@ Hurl handles the actual requests, assertions, reporting, capturing, etc., so it 
 - Automatic `requests/` root detection (crate-relative, binary-relative, or `WHURL_REQUEST_HOME` override).
 - Include graph cycle detection plus optional boundary markers for readability.
 - Source-to-merged line mapping so failures are reported against original files.
-- Variable layering from `HURL_*` environment variables, named env files, arbitrary files, and `--var`.
+- Variable layering from `HURL_*` environment variables, shared `_global.hurlvars`, named env files, arbitrary files, and `--var`.
 - Secret-aware variable injection (keys containing `token`, `secret`, etc. stay hidden in logs).
 - Embedded Hurl runner with controllable verbosity (`-v` / `-vv`) and context-aware file resolution.
 
@@ -26,7 +39,8 @@ The `WHURL_REQUEST_HOME` environment variable can be used to override the defaul
 By default, Whurl will look for `requests/` in the current working directory, and if not found, in the binary's 
 directory.
 
-### Include files
+## Syntax
+### #@include
 The star of the show for this app is the ability to reference one `hurl` file from another.
 This is done with the `# @include` directive. 
 When used, Whurl resolves the file path relative to the file it's included in, and merges the content into a single 
@@ -39,6 +53,18 @@ Multiple includes can be used, one per line, and they will be executed in the or
 nested includes (including a file that contains another include).
 
 Whurl will do all that in memory, keeping the original files untouched.
+
+### Hurl files
+This app still relies on [Hurl files](https://hurl.dev/docs/hurl-file.html), and its syntax.
+So, if you need to learn or a refresher, check the official docs:
+- [Entry](https://hurl.dev/docs/entry.html)
+- [Request](https://hurl.dev/docs/request.html)
+- [Response](https://hurl.dev/docs/response.html)
+- [Capturing Response](https://hurl.dev/docs/capturing-response.html)
+- [Asserting Response](https://hurl.dev/docs/asserting-response.html)
+- [Filters](https://hurl.dev/docs/filters.html)
+- [Templates](https://hurl.dev/docs/templates.html)
+- [Grammar](https://hurl.dev/docs/grammar.html)
 
 ## Request Examples
 Here's a basic hurl request:
@@ -150,12 +176,40 @@ whurl run <API> <FILE> [OPTIONS]
 - `--env NAME` — load `_vars/NAME.hurlvars` (or `<API>/NAME.hurlvars`).
 - `--vars-file PATH` — merge variables from an arbitrary file.
 - `--var KEY=VALUE` — inline variable overrides (repeatable, highest precedence).
-- `--file-root PATH` — adjust the base directory for response/file assertions.
+- `--file-root PATH` — adjust the base directory for response/file assertions (relative values are resolved against the API directory; this does **not** change where Whurl discovers request files).
 - `--json PATH` — emit the Hurl JSON report alongside console output.
 - `--print-only-result` — suppress header/logs and stream the JSON report to stdout.
 - `--silent` — suppress runtime header/log info (includes marked `[quiet]` / `[silent]` also hush logs).
 - `--test` — print a concise summary with failure snippets after execution.
 - `-v` / `-vv` — increase embedded Hurl verbosity (request/response debug logs).
+
+#### About `--file-root`
+Whurl resolves relative paths in the `.hurl` file against the API directory.
+This is useful for when you want to use a file from the API directory as a payload, but you don't want to copy it 
+into the API directory.
+Consider the following file structure:
+
+```
+requests/
+  httpbin/
+    send-json.hurl
+payloads/
+  fixtures/
+    create-user.json
+```
+
+and the following request:
+```hurl
+POST https://httpbin.org/post
+
+[Body]
+file,"fixtures/create-user.json"
+```
+
+To run this, you should use the following command:
+```bash
+whurl run httpbin send-json --file-root /path/to/payloads
+```
 
 ### dry-run
 ```
@@ -167,6 +221,9 @@ whurl dry-run <API> <FILE> [--show-boundaries <true|false>] [other exec flags]
 
 ## Variables & Secrets
 - `HURL_*` process environment variables are ingested automatically (prefix stripped, key lower-cased).
+- Add an optional `_global.hurlvars` alongside each API (either directly under the API folder or inside `_vars/`). 
+Whurl loads it automatically for every run, so you only keep truly shared values there. When a request includes another
+API, that API’s global file is pulled in as well.
 - Named env files live in the API directory or `_vars/` subdirectory.
 - `--vars-file` supports absolute paths or paths relative to the API directory.
 - Inline `--var KEY=VALUE` flags win last and are ideal for ad-hoc overrides.
@@ -194,6 +251,10 @@ logs so you don’t leak credentials.
 - Run with an environment file, inline override, JSON artifact, and verbose logging:
   ```bash
   whurl run httpbin env-demo --env production --var message="Smoke test" --json reports/httpbin.json -v
+  ```
+- Read payload fixtures outside the API directory by setting a file root:
+  ```bash
+  whurl run httpbin send-json --file-root Z:\dev\projects\rust\rusted-toolbox\payloads
   ```
 - Export only the execution result (no logs):
   ```bash

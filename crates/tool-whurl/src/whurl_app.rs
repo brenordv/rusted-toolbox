@@ -1,16 +1,20 @@
+use std::collections::BTreeSet;
+
 use crate::cli_utils::print_runtime_info;
 use crate::engine::run_hurl;
+use crate::files::discover::{load_env_file, resolve_file_root, resolve_vars_file_path};
 use crate::files::{
     list_apis, list_requests, locate_requests_root, FileResolver, ResolvedRunContext,
 };
 use crate::includer;
 use crate::includer::Includer;
-use crate::models::{Cli, Command, DryRunArgs, ListArgs, RunArgs, ToolError, ToolResult};
-use crate::output::{print_test_summary, write_json_report};
-use crate::vars::{
-    gather_process_env_variables, merge_variable_sources, parse_variables_file, VariableMap,
+use crate::models::{
+    Cli, Command, DryRunArgs, ListArgs, RunArgs, ToolError, ToolResult, VariableAccumulator,
 };
-use camino::{Utf8Path, Utf8PathBuf};
+use crate::output::{print_test_summary, write_json_report};
+use crate::vars::{gather_process_env_variables, parse_variables_file, VariableMap};
+use crate::whurl_utils::display_relative_path;
+use camino::Utf8Path;
 use shared::logging::app_logger::LogLevel;
 use tracing::info;
 
@@ -99,7 +103,7 @@ fn handle_run(args: RunArgs) -> ToolResult<()> {
         print_runtime_info(&context, &args);
     }
 
-    let variables = build_variables(&resolver, &context, &args)?;
+    let variables = build_variables(&resolver, &context, &include_result, &args, silent_mode)?;
     let file_root = resolve_file_root(&context, args.exec.file_root.as_ref());
 
     let result = run_hurl(
@@ -222,69 +226,74 @@ fn format_response_body(call: &hurl::http::Call) -> Option<String> {
 fn build_variables(
     resolver: &FileResolver,
     context: &ResolvedRunContext,
+    include_result: &includer::IncludeResult,
     args: &RunArgs,
+    silent_mode: bool,
 ) -> ToolResult<VariableMap> {
-    let mut file_vars = VariableMap::new();
+    let mut merger = VariableAccumulator::new(!silent_mode);
+    let env_vars = gather_process_env_variables();
+    merger.extend_from_map(env_vars, "process environment (HURL_*)");
 
-    if let Some(env_name) = args.exec.env.as_ref() {
-        let env_file = resolver.resolve_env_file(&context.resolution.api, env_name)?;
-        let parsed = parse_variables_file(env_file.as_path())?;
-        file_vars.extend(parsed);
+    let primary_api = context.resolution.api.clone();
+    let mut additional_apis = BTreeSet::new();
+    let requests_root = resolver.requests_root();
+
+    for path in include_result.behaviors.keys() {
+        if let Ok(relative) = path.strip_prefix(requests_root) {
+            let mut components = relative.components();
+            let Some(first) = components.next() else {
+                continue;
+            };
+            let api_name = first.as_str();
+            if api_name != primary_api {
+                additional_apis.insert(api_name.to_string());
+            }
+        }
+    }
+
+    let mut apis: Vec<String> = Vec::with_capacity(1 + additional_apis.len());
+    apis.push(primary_api.clone());
+    apis.extend(additional_apis.into_iter());
+
+    for api in apis {
+        let is_primary = api == primary_api;
+
+        if let Some((path, vars)) = load_env_file(resolver, &api, "_global", false)? {
+            let origin = format!(
+                "global vars file `{}`",
+                display_relative_path(resolver, path.as_path())
+            );
+            merger.extend_from_map(vars, origin);
+        }
+
+        if let Some(env_name) = args.exec.env.as_ref() {
+            if let Some((path, vars)) = load_env_file(resolver, &api, env_name, is_primary)? {
+                let origin = format!(
+                    "environment file `{}`",
+                    display_relative_path(resolver, path.as_path())
+                );
+                merger.extend_from_map(vars, origin);
+            }
+        }
     }
 
     if let Some(vars_file) = args.exec.vars_file.as_ref() {
         let resolved = resolve_vars_file_path(&context.resolution.api_root, vars_file);
         let parsed = parse_variables_file(resolved.as_path())?;
-        for (key, value) in parsed {
-            file_vars.insert(key, value);
-        }
+        let origin = format!(
+            "vars file `{}`",
+            display_relative_path(resolver, resolved.as_path())
+        );
+        merger.extend_from_map(parsed, origin);
     }
 
-    let inline_vars = args
-        .exec
-        .inline_vars
-        .iter()
-        .map(|kv| (kv.key.clone(), kv.value.clone()))
-        .collect::<Vec<_>>();
-
-    let env_vars = gather_process_env_variables();
-    let file_vars_option = if file_vars.is_empty() {
-        None
-    } else {
-        Some(file_vars)
-    };
-
-    Ok(merge_variable_sources(
-        env_vars,
-        file_vars_option,
-        &inline_vars,
-    ))
-}
-
-fn resolve_vars_file_path(api_root: &Utf8Path, vars_file: &Utf8PathBuf) -> Utf8PathBuf {
-    if vars_file.is_absolute() {
-        vars_file.clone()
-    } else if vars_file.as_path().is_file() {
-        vars_file.clone()
-    } else {
-        let candidate = api_root.join(vars_file);
-        if candidate.as_path().is_file() {
-            candidate
-        } else {
-            vars_file.clone()
-        }
+    for kv in &args.exec.inline_vars {
+        merger.insert(
+            kv.key.clone(),
+            kv.value.clone(),
+            format!("inline argument `{}`", kv),
+        );
     }
-}
 
-fn resolve_file_root(
-    context: &ResolvedRunContext,
-    file_root: Option<&Utf8PathBuf>,
-) -> Option<Utf8PathBuf> {
-    let file_root = file_root?;
-
-    if file_root.is_absolute() {
-        Some(file_root.clone())
-    } else {
-        Some(context.resolution.api_root.join(file_root))
-    }
+    Ok(merger.finish())
 }

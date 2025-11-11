@@ -1,6 +1,6 @@
 [package]
 name = "whurl"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Wrapper for Hurl with a few additional features."
