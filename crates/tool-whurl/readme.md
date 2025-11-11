@@ -16,7 +16,7 @@ Hurl handles the actual requests, assertions, reporting, capturing, etc., so it 
 - Automatic `requests/` root detection (crate-relative, binary-relative, or `WHURL_REQUEST_HOME` override).
 - Include graph cycle detection plus optional boundary markers for readability.
 - Source-to-merged line mapping so failures are reported against original files.
-- Variable layering from `HURL_*` environment variables, named env files, arbitrary files, and `--var`.
+- Variable layering from `HURL_*` environment variables, shared `_global.hurlvars`, named env files, arbitrary files, and `--var`.
 - Secret-aware variable injection (keys containing `token`, `secret`, etc. stay hidden in logs).
 - Embedded Hurl runner with controllable verbosity (`-v` / `-vv`) and context-aware file resolution.
 
@@ -167,6 +167,9 @@ whurl dry-run <API> <FILE> [--show-boundaries <true|false>] [other exec flags]
 
 ## Variables & Secrets
 - `HURL_*` process environment variables are ingested automatically (prefix stripped, key lower-cased).
+- Add an optional `_global.hurlvars` alongside each API (either directly under the API folder or inside `_vars/`). 
+Whurl loads it automatically for every run, so you only keep truly shared values there. When a request includes another
+API, that API’s global file is pulled in as well.
 - Named env files live in the API directory or `_vars/` subdirectory.
 - `--vars-file` supports absolute paths or paths relative to the API directory.
 - Inline `--var KEY=VALUE` flags win last and are ideal for ad-hoc overrides.
