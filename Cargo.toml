@@ -28,7 +28,8 @@ members = [
     "crates/shared-eventhub",
     "crates/tool-lookup",
     "crates/tool-pingx",
-    "crates/tool-whurl"
+    "crates/tool-whurl",
+    "crates/tool-b64"
 ]
 
 [profile.release]

@@ -327,6 +327,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "b64"
+version = "1.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "clap",
+ "shared",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
