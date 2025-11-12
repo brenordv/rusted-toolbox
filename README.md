@@ -25,10 +25,11 @@ We currently have the following tools:
 21. A tool to [lookup](crates/tool-lookup/readme.md) that can either find text in multiple files or find files where the filename contains a specific text/pattern/regex.
 22. A tool that is like ping, but with extra features. It is called [pingx](crates/tool-pingx/readme.md).
 23. A wrapper tool called [Whurl](crates/tool-whurl/readme.md), that allows referencing one hurl file in another.
+24. A drop-in replacement for base64 called [b64](crates/tool-b64/readme.md) that comes with a few extra features.
 
 ## Ok, but why?
 Well, three main reasons:
-1st: I have a few tools and helpers made using Go, like my [Azure Eventhub Tools](https://github.com/brenordv/azure-eventhub-tools),
+- **1st**: I have a few tools and helpers made using Go, like my [Azure Eventhub Tools](https://github.com/brenordv/azure-eventhub-tools),
 the [go Whisper](https://github.com/brenordv/go-whisper), [gitignore](https://github.com/brenordv/gitignore), and the [go help tools](https://github.com/brenordv/go-help).
 
 While I love Golang, it had a few incidents where malicious software was sneakily added to legit packages:
@@ -39,13 +40,13 @@ So I decided to recreate them using Rust. I'm not abandoning Go or saying we sho
 I still love Go, I'm using those incidents as an opportunity to improve my knowledge in another great programming 
 language and centralizing my tools and helpers in one place.
 
-2nd: I use a couple of tools that are spread around a bunch of repositories, and that's a bit annoying to set up on new
+- **2nd**: I use a couple of tools that are spread around a bunch of repositories, and that's a bit annoying to set up on new
 machines. So I also ported the [JWT decoder tool](https://github.com/brenordv/python-snippets/tree/master/jwt_decoder_cli) 
 that I created using Python, and the Split tool is an evolution of a powershell script I wrote a long time ago in a blog
 post.
 
-3rd: Nice to have all the tools being cross-platform, centralized in a single repository, and each compiled to a single
-executable file.
+- **3rd**: Nice to have all the tools in a single repository, and being to generate a cross-platform executable, which
+helps a lot when you have to use Linux, MacOS, and Windows machines frequently.
 
 ## Demos
 ### AI Chatbot

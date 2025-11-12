@@ -139,6 +139,7 @@ install_tools() {
   local tools=(
     "how"
     "aiignore"
+    "b64"
     "csvn"
     "eh-export"
     "eh-read"

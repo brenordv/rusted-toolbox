@@ -42,7 +42,20 @@ Each tool follows a few principles I try to stick to:
 4. If the execution fails, use `exit_error()` function to exit the app (from the entrypoint file only). Right now, I'm not using different exit codes;
 5. Unless mimicking another tool, every tool/agent should have an implementation of a `print_runtime_info` method;
 
+## Coding principles
+- Favor small, well-factored modules and explicit types over cleverness.
+- Respect existing patterns; follow the repo’s conventions over personal preference.
+- Functions ≲ ~50 LOC when feasible; extract pure helpers for parsing, graph building, and process execution.
+- Never use nested ternaries (Rust’s `if/else if/else` or match statements keep control flow clear).
+- Avoid `unwrap`/`expect` in library code; return typed errors. Use `?` (from `anyhow`) for propagation and convert to a single error type at the boundary.
+- Use the repo’s `edition` from `Cargo.toml`; don’t change it without approval.
+- When defining the CLI options, follow the examples of the other tools (tool-*).
+- Use the repo’s `rustfmt` and `clippy` settings; don’t change them.
+- Fix all warnings;
+- Forbid `unsafe_code` unless an explicit, justified exception is approved.
+- Before creating a new tool/utility, check if it is already covered by the `shared` crate.
+- When planning tests, and usages, consider edge cases, but within reason.  
+
 ## Other
-1. I might have forgotten something;
-2. YAGNI: Let's try to keep the code simple, adding parallelism and more complex features as the need arises;
-3. Be nice;
+1. YAGNI: Let's try to keep the code simple, adding parallelism and more complex features as the need arises.
+2. Be nice.
