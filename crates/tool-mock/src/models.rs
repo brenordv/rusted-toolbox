@@ -33,6 +33,7 @@ pub enum DataType {
     ColorRgb,
     Integer,
     Float,
+    CarBrand,
 
     // Commerce
     Company,
@@ -77,6 +78,7 @@ impl DataType {
             "random.color-rgb" => Ok(DataType::ColorRgb),
             "random.integer" => Ok(DataType::Integer),
             "random.float" => Ok(DataType::Float),
+            "random.car-brand" => Ok(DataType::CarBrand),
 
             // Commerce
             "commerce.company" => Ok(DataType::Company),
@@ -123,6 +125,7 @@ impl DataType {
             "  random.color-rgb      - Generate RGB color values",
             "  random.integer        - Generate an integer (with --min, --max options)",
             "  random.float          - Generate a float (with --min, --max, --precision options)",
+            "  random.car-brand      - Generate a car brand name",
             "",
             "Commerce:",
             "  commerce.company      - Generate a company name",

@@ -6,7 +6,7 @@ A fast and intuitive CLI tool for generating various types of mock data for test
 
 - **Personal Information**: Names, emails, addresses, phone numbers, birthdays
 - **Internet & Tech**: Usernames, passwords, URLs, image URLs, file URLs
-- **Random Data**: Dates, times, colors, integers, floats
+- **Random Data**: Dates, times, colors, integers, floats, car brands
 - **Commerce**: Company names, products, job titles, industries, buzzwords
 - **Flexible Options**: Support for ranges, locales, and data constraints
 - **Simple Output**: Only prints the requested value, no extra formatting
@@ -34,6 +34,7 @@ mock internet.url
 mock random.integer --min 1 --max 100
 mock random.date --past
 mock random.color-hex
+mock random.car-brand
 
 # Commerce
 mock commerce.company
@@ -73,6 +74,7 @@ mock commerce.job-title
 - `random.color-rgb` - Generate RGB color values
 - `random.integer` - Generate an integer (with `--min`, `--max` options)
 - `random.float` - Generate a float (with `--min`, `--max`, `--precision` options)
+- `random.car-brand` - Generate a car brand name
 
 ### Commerce
 - `commerce.company` - Generate a company name

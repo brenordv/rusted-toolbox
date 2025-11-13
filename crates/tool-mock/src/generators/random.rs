@@ -123,3 +123,41 @@ pub fn generate_float(options: &MockOptions) -> Result<String> {
 
     Ok(format!("{:.1$}", value, precision as usize))
 }
+
+/// Generate a random car brand name
+pub fn generate_car_brand(_options: &MockOptions) -> Result<String> {
+    let car_brands = [
+        "Toyota",
+        "Volkswagen",
+        "Ford",
+        "Honda",
+        "Chevrolet",
+        "Mercedes-Benz",
+        "BMW",
+        "Audi",
+        "Hyundai",
+        "Nissan",
+        "Kia",
+        "Subaru",
+        "Volvo",
+        "Porsche",
+        "Lexus",
+        "Mazda",
+        "Jeep",
+        "Ferrari",
+        "Lamborghini",
+        "Tesla",
+        "Jaguar",
+        "Land Rover",
+        "Peugeot",
+        "Renault",
+        "Mitsubishi",
+        "Fiat",
+        "Chrysler",
+        "Acura",
+        "Infiniti",
+    ];
+
+    let brand = car_brands[rand::rng().random_range(0..car_brands.len())];
+    Ok(brand.to_string())
+}
