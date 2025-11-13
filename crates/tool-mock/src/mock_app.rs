@@ -35,6 +35,7 @@ pub fn generate_mock_data(options: &MockOptions) -> Result<String> {
         DataType::ColorRgb => generate_color_rgb(options),
         DataType::Integer => generate_integer(options),
         DataType::Float => generate_float(options),
+        DataType::CarBrand => generate_car_brand(options),
 
         // Commerce
         DataType::Company => generate_company(options),

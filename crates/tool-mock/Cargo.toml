@@ -1,6 +1,6 @@
 [package]
 name = "mock"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Mock data generator CLI tool."

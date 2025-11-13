@@ -34,6 +34,7 @@ Random Data:
   random.color-rgb      - Generate RGB color values
   random.integer        - Generate an integer (with --min, --max options)
   random.float          - Generate a float (with --min, --max, --precision options)
+  random.car-brand      - Generate a car brand name
 
 Commerce:
   commerce.company      - Generate a company name
