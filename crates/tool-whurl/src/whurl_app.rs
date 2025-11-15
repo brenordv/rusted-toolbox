@@ -17,7 +17,7 @@ use crate::output::{print_test_summary, write_json_report};
 use crate::vars::{gather_process_env_variables, parse_variables_file, VariableMap};
 use crate::whurl_utils::display_relative_path;
 use anyhow::anyhow;
-use camino::{Utf8PathBuf};
+use camino::Utf8PathBuf;
 use shared::logging::app_logger::LogLevel;
 use tracing::info;
 
@@ -240,10 +240,15 @@ fn print_full_response_pretty(
     merged: &str,
     display_path: &str,
 ) -> ToolResult<()> {
-    let identifier = format!("whurl-full-response-{}-{}.json", std::process::id(), rand::random::<u64>());
+    let identifier = format!(
+        "whurl-full-response-{}-{}.json",
+        std::process::id(),
+        rand::random::<u64>()
+    );
     let temp_dir = std::env::temp_dir();
     let std_path = temp_dir.join(&identifier);
-    let utf8_path = Utf8PathBuf::from_path_buf(std_path.clone()).unwrap_or_else(|_| Utf8PathBuf::from(identifier.clone()));
+    let utf8_path = Utf8PathBuf::from_path_buf(std_path.clone())
+        .unwrap_or_else(|_| Utf8PathBuf::from(identifier.clone()));
 
     write_json_report(result, merged, display_path, utf8_path.as_path())?;
 
