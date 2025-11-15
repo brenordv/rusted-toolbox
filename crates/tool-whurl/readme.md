@@ -200,7 +200,8 @@ whurl run <API> <FILE> [OPTIONS]
 - `--var KEY=VALUE` — inline variable overrides (repeatable, highest precedence).
 - `--file-root PATH` — adjust the base directory for response/file assertions (relative values are resolved against the API directory; this does **not** change where Whurl discovers request files).
 - `--json PATH` — emit the Hurl JSON report alongside console output.
-- `--print-only-result` — suppress header/logs and stream the JSON report to stdout.
+- `--print-only-full-response` — suppress header/logs and stream the JSON report to stdout.
+- `--print-only-response-body` — suppress header/logs and print only the last response body.
 - `--silent` — suppress runtime header/log info (includes marked `[quiet]` / `[silent]` also hush logs).
 - `--test` — print a concise summary with failure snippets after execution.
 - `-v` / `-vv` — increase embedded Hurl verbosity (request/response debug logs).
@@ -258,7 +259,7 @@ logs so you don’t leak credentials.
 - Default runs print a header with API/request context plus info-level per-entry logs.
 - Includes tagged `quiet` skip response body logging; `silent` suppresses logs entirely for that file.
 - `--test` mode summarizes pass/fail counts and annotates failures with source file/line snippets.
-- `--json PATH` writes the canonical Hurl JSON report; combine with `--print-only-result` for pipelines.
+- `--json PATH` writes the canonical Hurl JSON report; combine with `--print-only-full-response` for pipelines.
 - Non-zero exit codes reflect either include/resolve errors or Hurl assertion failures (exit code 1).
 
 ## Examples
@@ -280,7 +281,11 @@ logs so you don’t leak credentials.
   ```
 - Export only the execution result (no logs):
   ```bash
-  whurl run httpbin basic --print-only-result > result.json
+  whurl run httpbin basic --print-only-full-response > result.json
+  ```
+- Print only the final response body:
+  ```bash
+  whurl run httpbin basic --print-only-response-body
   ```
 
 # Build

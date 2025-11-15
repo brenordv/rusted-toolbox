@@ -17,7 +17,7 @@ use crate::output::{print_test_summary, write_json_report};
 use crate::vars::{gather_process_env_variables, parse_variables_file, VariableMap};
 use crate::whurl_utils::display_relative_path;
 use anyhow::anyhow;
-use camino::Utf8Path;
+use camino::{Utf8PathBuf};
 use shared::logging::app_logger::LogLevel;
 use tracing::info;
 
@@ -31,7 +31,11 @@ pub fn execute(cli: Cli) -> ToolResult<()> {
 
 pub fn resolve_log_level(cli: &Cli) -> LogLevel {
     match &cli.command {
-        Command::Run(args) if args.print_only_result || args.silent => LogLevel::Error,
+        Command::Run(args)
+            if args.print_only_full_response || args.print_only_response_body || args.silent =>
+        {
+            LogLevel::Error
+        }
         _ => LogLevel::Info,
     }
 }
@@ -96,7 +100,7 @@ fn handle_run(args: RunArgs) -> ToolResult<()> {
     let requests_root = locate_requests_root()?;
     let resolver = FileResolver::new(requests_root.clone());
 
-    let silent_mode = args.silent || args.print_only_result;
+    let silent_mode = args.silent || args.print_only_full_response || args.print_only_response_body;
 
     let context = resolver.resolve_run_context(&args.exec.api, &args.exec.file)?;
     let include_result =
@@ -126,14 +130,14 @@ fn handle_run(args: RunArgs) -> ToolResult<()> {
         )?;
     }
 
-    if args.print_only_result {
-        let stdout_path = Utf8Path::new("-");
-        write_json_report(
+    if args.print_only_full_response {
+        print_full_response_pretty(
             &result,
             include_result.merged.as_str(),
             &context.display_path,
-            stdout_path,
         )?;
+    } else if args.print_only_response_body {
+        print_only_response_body(&result);
     } else {
         if !silent_mode {
             log_execution_details(&result, &include_result);
@@ -195,6 +199,86 @@ fn log_execution_details(result: &hurl::runner::HurlResult, includes: &includer:
             }
         }
     }
+}
+
+fn print_only_response_body(result: &hurl::runner::HurlResult) {
+    let last_call = result
+        .entries
+        .iter()
+        .flat_map(|entry| entry.calls.iter())
+        .last();
+
+    let Some(call) = last_call else {
+        println!();
+        return;
+    };
+
+    let status_is_204 = call.response.status.to_string().trim() == "204";
+    if status_is_204 {
+        println!();
+        return;
+    }
+
+    let Some(formatted_body) = format_response_body(call) else {
+        println!();
+        return;
+    };
+
+    if formatted_body.is_empty() {
+        println!();
+        return;
+    }
+
+    print!("{}", formatted_body);
+    if !formatted_body.ends_with('\n') {
+        println!();
+    }
+}
+
+fn print_full_response_pretty(
+    result: &hurl::runner::HurlResult,
+    merged: &str,
+    display_path: &str,
+) -> ToolResult<()> {
+    let identifier = format!("whurl-full-response-{}-{}.json", std::process::id(), rand::random::<u64>());
+    let temp_dir = std::env::temp_dir();
+    let std_path = temp_dir.join(&identifier);
+    let utf8_path = Utf8PathBuf::from_path_buf(std_path.clone()).unwrap_or_else(|_| Utf8PathBuf::from(identifier.clone()));
+
+    write_json_report(result, merged, display_path, utf8_path.as_path())?;
+
+    let contents = match std::fs::read_to_string(utf8_path.as_std_path()) {
+        Ok(data) => {
+            let _ = std::fs::remove_file(utf8_path.as_std_path());
+            data
+        }
+        Err(source) => {
+            let _ = std::fs::remove_file(utf8_path.as_std_path());
+            return Err(ToolError::Other(anyhow!(
+                "failed to read temporary JSON report `{}`: {source}",
+                utf8_path
+            )));
+        }
+    };
+
+    if contents.trim().is_empty() {
+        println!();
+        return Ok(());
+    }
+
+    match serde_json::from_str::<serde_json::Value>(&contents) {
+        Ok(value) => {
+            let pretty = serde_json::to_string_pretty(&value).map_err(|source| {
+                ToolError::Other(anyhow!("failed to pretty print JSON report: {source}"))
+            })?;
+            println!("{pretty}");
+        }
+        Err(_) => {
+            println!("{contents}");
+        }
+    }
+
+    Ok(())
 }
 
 fn format_response_body(call: &hurl::http::Call) -> Option<String> {
