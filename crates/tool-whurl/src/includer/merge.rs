@@ -6,7 +6,7 @@ use hurl_core::ast::SourceInfo;
 use crate::files::resolve::{FileResolver, ResolvedInclude};
 
 use super::graph::IncludeTracker;
-use super::parse::{parse_top_comment_includes, IncludeDirective};
+use super::parse::{parse_top_comment_directives, FileDirectives, IncludeDirective, VarsDirective};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IncludeBehavior {
@@ -25,6 +25,7 @@ pub struct IncludeResult {
     pub merged: String,
     pub line_map: Vec<LineMapping>,
     pub behaviors: HashMap<Utf8PathBuf, IncludeBehavior>,
+    pub vars: HashMap<Utf8PathBuf, Vec<VarsDirective>>,
 }
 
 impl IncludeResult {
@@ -118,9 +119,10 @@ impl Includer {
             source,
         })?;
 
-        let directives = parse_top_comment_includes(&contents);
+        let FileDirectives { includes, vars } = parse_top_comment_directives(&contents);
+        state.register_vars(file_path, &vars);
 
-        for directive in directives {
+        for directive in includes {
             let resolved = self
                 .resolve_include(file_path, &directive)
                 .map_err(|source_error| source_error)?;
@@ -179,6 +181,7 @@ struct MergeState {
     show_boundaries: bool,
     trailing_newline: bool,
     behaviors: HashMap<Utf8PathBuf, IncludeBehavior>,
+    vars: HashMap<Utf8PathBuf, Vec<VarsDirective>>,
 }
 
 impl MergeState {
@@ -188,6 +191,7 @@ impl MergeState {
             show_boundaries,
             trailing_newline: false,
             behaviors: HashMap::new(),
+            vars: HashMap::new(),
         }
     }
 
@@ -225,6 +229,15 @@ impl MergeState {
             .or_insert(behavior);
     }
 
+    fn register_vars(&mut self, path: &Utf8Path, directives: &[VarsDirective]) {
+        if directives.is_empty() {
+            return;
+        }
+
+        let entry = self.vars.entry(path.to_path_buf()).or_insert_with(Vec::new);
+        entry.extend(directives.iter().cloned());
+    }
+
     fn finish(self) -> IncludeResult {
         let mut merged = self
             .lines
@@ -247,6 +260,7 @@ impl MergeState {
             merged,
             line_map,
             behaviors: self.behaviors,
+            vars: self.vars,
         }
     }
 }

@@ -1,0 +1,5 @@
+# Dynamic variables for the dev environment.
+timestamp=$now
+request_id=$uuid
+window_end=$date[+3]
+

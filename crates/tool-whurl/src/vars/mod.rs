@@ -1,7 +1,9 @@
 mod collect;
+mod dynamic;
 mod envfile;
 
 pub use collect::gather_process_env_variables;
+pub use dynamic::parse_dynamic_variables_file;
 pub use envfile::parse_variables_file;
 
 use std::collections::BTreeMap;

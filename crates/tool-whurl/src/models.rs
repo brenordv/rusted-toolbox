@@ -28,7 +28,8 @@ pub struct RunArgs {
     pub exec: ExecutionArgs,
     pub json_output: Option<Utf8PathBuf>,
     pub test_mode: bool,
-    pub print_only_result: bool,
+    pub print_only_full_response: bool,
+    pub print_only_response_body: bool,
     pub silent: bool,
 }
 

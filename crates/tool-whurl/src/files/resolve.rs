@@ -147,6 +147,32 @@ impl FileResolver {
         })
     }
 
+    pub fn resolve_dynamic_vars_file(
+        &self,
+        api: &str,
+        vars_name: &str,
+    ) -> Result<Utf8PathBuf, ResolveError> {
+        let api_root = self.resolve_api_root(api)?;
+        let mut vars_relative = sanitize_relative(vars_name)?;
+        ensure_extension_with(&mut vars_relative, "dvars");
+
+        let mut candidate_order = Vec::with_capacity(2);
+        candidate_order.push(api_root.join(vars_relative.as_path()));
+
+        let vars_dir = api_root.join(ENVS_DIR_NAME);
+        candidate_order.push(vars_dir.join(vars_relative.as_path()));
+
+        for candidate in candidate_order {
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+
+        Err(ResolveError::FileNotFound {
+            path: api_root.join(vars_relative),
+        })
+    }
+
     fn resolve_api_root(&self, api: &str) -> Result<Utf8PathBuf, ResolveError> {
         validate_component(api)?;
         let candidate = self.requests_root.join(api);

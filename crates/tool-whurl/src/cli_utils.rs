@@ -104,10 +104,16 @@ fn build_run_subcommand() -> ClapCommand {
                     .help("Emit a concise test-style summary after execution."),
             )
             .arg(
-                Arg::new("print-only-result")
-                    .long("print-only-result")
+                Arg::new("print-only-full-response")
+                    .long("print-only-full-response")
                     .action(ArgAction::SetTrue)
                     .help("Suppress header/log output and print only the final result object as JSON."),
+            )
+            .arg(
+                Arg::new("print-only-response-body")
+                    .long("print-only-response-body")
+                    .action(ArgAction::SetTrue)
+                    .help("Suppress header/log output and print only the last response body."),
             )
             .arg(
                 Arg::new("silent")
@@ -146,7 +152,8 @@ fn parse_run_args(matches: &ArgMatches) -> RunArgs {
         exec: parse_execution_args(matches),
         json_output: matches.get_one::<Utf8PathBuf>("json").cloned(),
         test_mode: matches.get_flag("test"),
-        print_only_result: matches.get_flag("print-only-result"),
+        print_only_full_response: matches.get_flag("print-only-full-response"),
+        print_only_response_body: matches.get_flag("print-only-response-body"),
         silent: matches.get_flag("silent"),
     }
 }

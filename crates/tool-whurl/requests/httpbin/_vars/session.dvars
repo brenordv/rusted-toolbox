@@ -1,0 +1,5 @@
+call_id=$uuid
+expires_at=$utcdate[+1]
+first_name=$shell(mock person.first-name)
+food=$random["apple", "banana", "carrot", "bacon", "cheese"]
+score=$int[350, 900]

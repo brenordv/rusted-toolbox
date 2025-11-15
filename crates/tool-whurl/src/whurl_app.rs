@@ -1,8 +1,10 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::cli_utils::print_runtime_info;
 use crate::engine::run_hurl;
-use crate::files::discover::{load_env_file, resolve_file_root, resolve_vars_file_path};
+use crate::files::discover::{
+    load_dynamic_vars_file, load_env_file, resolve_file_root, resolve_vars_file_path,
+};
 use crate::files::{
     list_apis, list_requests, locate_requests_root, FileResolver, ResolvedRunContext,
 };
@@ -14,7 +16,8 @@ use crate::models::{
 use crate::output::{print_test_summary, write_json_report};
 use crate::vars::{gather_process_env_variables, parse_variables_file, VariableMap};
 use crate::whurl_utils::display_relative_path;
-use camino::Utf8Path;
+use anyhow::anyhow;
+use camino::Utf8PathBuf;
 use shared::logging::app_logger::LogLevel;
 use tracing::info;
 
@@ -28,7 +31,11 @@ pub fn execute(cli: Cli) -> ToolResult<()> {
 
 pub fn resolve_log_level(cli: &Cli) -> LogLevel {
     match &cli.command {
-        Command::Run(args) if args.print_only_result || args.silent => LogLevel::Error,
+        Command::Run(args)
+            if args.print_only_full_response || args.print_only_response_body || args.silent =>
+        {
+            LogLevel::Error
+        }
         _ => LogLevel::Info,
     }
 }
@@ -93,7 +100,7 @@ fn handle_run(args: RunArgs) -> ToolResult<()> {
     let requests_root = locate_requests_root()?;
     let resolver = FileResolver::new(requests_root.clone());
 
-    let silent_mode = args.silent || args.print_only_result;
+    let silent_mode = args.silent || args.print_only_full_response || args.print_only_response_body;
 
     let context = resolver.resolve_run_context(&args.exec.api, &args.exec.file)?;
     let include_result =
@@ -123,14 +130,14 @@ fn handle_run(args: RunArgs) -> ToolResult<()> {
         )?;
     }
 
-    if args.print_only_result {
-        let stdout_path = Utf8Path::new("-");
-        write_json_report(
+    if args.print_only_full_response {
+        print_full_response_pretty(
             &result,
             include_result.merged.as_str(),
             &context.display_path,
-            stdout_path,
         )?;
+    } else if args.print_only_response_body {
+        print_only_response_body(&result);
     } else {
         if !silent_mode {
             log_execution_details(&result, &include_result);
@@ -194,6 +201,91 @@ fn log_execution_details(result: &hurl::runner::HurlResult, includes: &includer:
     }
 }
 
+fn print_only_response_body(result: &hurl::runner::HurlResult) {
+    let last_call = result
+        .entries
+        .iter()
+        .flat_map(|entry| entry.calls.iter())
+        .last();
+
+    let Some(call) = last_call else {
+        println!();
+        return;
+    };
+
+    let status_is_204 = call.response.status.to_string().trim() == "204";
+    if status_is_204 {
+        println!();
+        return;
+    }
+
+    let Some(formatted_body) = format_response_body(call) else {
+        println!();
+        return;
+    };
+
+    if formatted_body.is_empty() {
+        println!();
+        return;
+    }
+
+    print!("{}", formatted_body);
+    if !formatted_body.ends_with('\n') {
+        println!();
+    }
+}
+
+fn print_full_response_pretty(
+    result: &hurl::runner::HurlResult,
+    merged: &str,
+    display_path: &str,
+) -> ToolResult<()> {
+    let identifier = format!(
+        "whurl-full-response-{}-{}.json",
+        std::process::id(),
+        rand::random::<u64>()
+    );
+    let temp_dir = std::env::temp_dir();
+    let std_path = temp_dir.join(&identifier);
+    let utf8_path = Utf8PathBuf::from_path_buf(std_path.clone())
+        .unwrap_or_else(|_| Utf8PathBuf::from(identifier.clone()));
+
+    write_json_report(result, merged, display_path, utf8_path.as_path())?;
+
+    let contents = match std::fs::read_to_string(utf8_path.as_std_path()) {
+        Ok(data) => {
+            let _ = std::fs::remove_file(utf8_path.as_std_path());
+            data
+        }
+        Err(source) => {
+            let _ = std::fs::remove_file(utf8_path.as_std_path());
+            return Err(ToolError::Other(anyhow!(
+                "failed to read temporary JSON report `{}`: {source}",
+                utf8_path
+            )));
+        }
+    };
+
+    if contents.trim().is_empty() {
+        println!();
+        return Ok(());
+    }
+
+    match serde_json::from_str::<serde_json::Value>(&contents) {
+        Ok(value) => {
+            let pretty = serde_json::to_string_pretty(&value).map_err(|source| {
+                ToolError::Other(anyhow!("failed to pretty print JSON report: {source}"))
+            })?;
+            println!("{pretty}");
+        }
+        Err(_) => {
+            println!("{contents}");
+        }
+    }
+
+    Ok(())
+}
+
 fn format_response_body(call: &hurl::http::Call) -> Option<String> {
     if call.response.body.is_empty() {
         return None;
@@ -234,6 +326,15 @@ fn build_variables(
     let env_vars = gather_process_env_variables();
     merger.extend_from_map(env_vars, "process environment (HURL_*)");
 
+    let allow_shell = std::env::var("WHURL_ALLOW_DYN_SHELL_VARS")
+        .map(|value| value.eq_ignore_ascii_case("true"))
+        .unwrap_or_else(|_| {
+            std::env::var("WHURL_ALLOW_DYN_BASH_VARS")
+                .map(|value| value.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+        });
+    let log_dynamic = !silent_mode;
+
     let primary_api = context.resolution.api.clone();
     let mut additional_apis = BTreeSet::new();
     let requests_root = resolver.requests_root();
@@ -251,13 +352,37 @@ fn build_variables(
         }
     }
 
-    let mut apis: Vec<String> = Vec::with_capacity(1 + additional_apis.len());
-    apis.push(primary_api.clone());
-    apis.extend(additional_apis.into_iter());
+    let mut included_vars_by_api: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut current_file_vars: Vec<String> = Vec::new();
 
-    for api in apis {
-        let is_primary = api == primary_api;
+    for (path, directives) in &include_result.vars {
+        if path == context.resolution.file_path.as_path() {
+            for directive in directives {
+                push_unique_case_insensitive(&mut current_file_vars, &directive.name);
+            }
+            continue;
+        }
 
+        if let Ok(relative) = path.strip_prefix(requests_root) {
+            let mut components = relative.components();
+            let Some(first) = components.next() else {
+                continue;
+            };
+            let api_name = first.as_str().to_string();
+            let entry = included_vars_by_api.entry(api_name).or_default();
+            for directive in directives {
+                push_unique_case_insensitive(entry, &directive.name);
+            }
+        }
+    }
+
+    let mut included_api_list: Vec<String> = additional_apis.into_iter().collect();
+    included_api_list.sort();
+
+    let mut loaded_dynamic: BTreeSet<(String, String)> = BTreeSet::new();
+
+    // Included API calls (cross-API includes) hierarchy.
+    for api in &included_api_list {
         if let Some((path, vars)) = load_env_file(resolver, &api, "_global", false)? {
             let origin = format!(
                 "global vars file `{}`",
@@ -266,15 +391,137 @@ fn build_variables(
             merger.extend_from_map(vars, origin);
         }
 
+        let _ = merge_dynamic_vars(
+            &mut merger,
+            resolver,
+            &mut loaded_dynamic,
+            &api,
+            "_global",
+            false,
+            allow_shell,
+            log_dynamic,
+        )?;
+
         if let Some(env_name) = args.exec.env.as_ref() {
-            if let Some((path, vars)) = load_env_file(resolver, &api, env_name, is_primary)? {
+            let mut env_present = false;
+            if let Some((path, vars)) = load_env_file(resolver, &api, env_name, false)? {
                 let origin = format!(
                     "environment file `{}`",
                     display_relative_path(resolver, path.as_path())
                 );
                 merger.extend_from_map(vars, origin);
+                env_present = true;
+            }
+
+            let dyn_present = merge_dynamic_vars(
+                &mut merger,
+                resolver,
+                &mut loaded_dynamic,
+                &api,
+                env_name,
+                false,
+                allow_shell,
+                log_dynamic,
+            )?;
+
+            if dyn_present {
+                env_present = true;
+            }
+
+            if !env_present {
+                return Err(ToolError::Other(anyhow!(
+                    "environment `{}` not found for api `{}`",
+                    env_name,
+                    api
+                )));
             }
         }
+    }
+
+    // Imported dynamic vars from included files (any API).
+    let mut included_dyn_entries: Vec<_> = included_vars_by_api.into_iter().collect();
+    included_dyn_entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (api, names) in included_dyn_entries {
+        for name in names {
+            let _ = merge_dynamic_vars(
+                &mut merger,
+                resolver,
+                &mut loaded_dynamic,
+                &api,
+                &name,
+                true,
+                allow_shell,
+                log_dynamic,
+            )?;
+        }
+    }
+
+    // Current API hierarchy.
+    if let Some((path, vars)) = load_env_file(resolver, &primary_api, "_global", false)? {
+        let origin = format!(
+            "global vars file `{}`",
+            display_relative_path(resolver, path.as_path())
+        );
+        merger.extend_from_map(vars, origin);
+    }
+
+    let _ = merge_dynamic_vars(
+        &mut merger,
+        resolver,
+        &mut loaded_dynamic,
+        &primary_api,
+        "_global",
+        false,
+        allow_shell,
+        log_dynamic,
+    )?;
+
+    if let Some(env_name) = args.exec.env.as_ref() {
+        let mut env_present = false;
+        if let Some((path, vars)) = load_env_file(resolver, &primary_api, env_name, false)? {
+            let origin = format!(
+                "environment file `{}`",
+                display_relative_path(resolver, path.as_path())
+            );
+            merger.extend_from_map(vars, origin);
+            env_present = true;
+        }
+
+        let dyn_present = merge_dynamic_vars(
+            &mut merger,
+            resolver,
+            &mut loaded_dynamic,
+            &primary_api,
+            env_name,
+            true,
+            allow_shell,
+            log_dynamic,
+        )?;
+
+        if dyn_present {
+            env_present = true;
+        }
+
+        if !env_present {
+            return Err(ToolError::Other(anyhow!(
+                "environment `{}` not found for api `{}`",
+                env_name,
+                primary_api
+            )));
+        }
+    }
+
+    for name in current_file_vars {
+        let _ = merge_dynamic_vars(
+            &mut merger,
+            resolver,
+            &mut loaded_dynamic,
+            &primary_api,
+            &name,
+            true,
+            allow_shell,
+            log_dynamic,
+        )?;
     }
 
     if let Some(vars_file) = args.exec.vars_file.as_ref() {
@@ -296,4 +543,47 @@ fn build_variables(
     }
 
     Ok(merger.finish())
+}
+
+fn merge_dynamic_vars(
+    merger: &mut VariableAccumulator,
+    resolver: &FileResolver,
+    loaded_dynamic: &mut BTreeSet<(String, String)>,
+    api: &str,
+    name: &str,
+    required: bool,
+    allow_shell: bool,
+    log_dynamic: bool,
+) -> ToolResult<bool> {
+    let key = (api.to_ascii_lowercase(), name.to_ascii_lowercase());
+    if loaded_dynamic.contains(&key) {
+        return Ok(true);
+    }
+
+    if let Some((path, vars)) =
+        load_dynamic_vars_file(resolver, api, name, required, allow_shell, log_dynamic)?
+    {
+        let origin = format!(
+            "dynamic vars file `{}`",
+            display_relative_path(resolver, path.as_path())
+        );
+        merger.extend_from_map(vars, origin);
+        loaded_dynamic.insert(key);
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn push_unique_case_insensitive(vec: &mut Vec<String>, value: &str) {
+    if value.is_empty() {
+        return;
+    }
+
+    if !vec
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(value))
+    {
+        vec.push(value.to_string());
+    }
 }
