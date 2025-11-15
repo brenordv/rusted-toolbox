@@ -4,10 +4,12 @@ GET https://httpbin.org/anything
 environment: {{ env_name }}
 message: {{ message }}
 get_answer: {{ question }}
+timestamp: {{ timestamp }}
 
 HTTP 200
 
 [Asserts]
 jsonpath "$.args.environment" == "{{ env_name }}"
 jsonpath "$.args.message" == "{{ message }}"
+jsonpath "$.args.timestamp" matches ".+"
 

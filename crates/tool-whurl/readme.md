@@ -30,6 +30,7 @@ It's not perfect, but it's a good start, and helps me solve this problem.
 - Include graph cycle detection plus optional boundary markers for readability.
 - Source-to-merged line mapping so failures are reported against original files.
 - Variable layering from `HURL_*` environment variables, shared `_global.hurlvars`, named env files, arbitrary files, and `--var`.
+- Dynamic variables via `_vars/*.dvars` files and `# @vars` directives, including generators like `$uuid`, `$date[+2]`, `$random["a", "b"]`, and guarded `$shell(...)` execution.
 - Secret-aware variable injection (keys containing `token`, `secret`, etc. stay hidden in logs).
 - Embedded Hurl runner with controllable verbosity (`-v` / `-vv`) and context-aware file resolution.
 
@@ -53,6 +54,27 @@ Multiple includes can be used, one per line, and they will be executed in the or
 nested includes (including a file that contains another include).
 
 Whurl will do all that in memory, keeping the original files untouched.
+
+### #@vars
+Top-of-file `# @vars <name>` directives load dynamic variables from `_vars/<name>.dvars` (extension optional and case-insensitive).
+These files use the same `KEY=VALUE` format as `.hurlvars`, but each value is a generator expression evaluated at runtime.
+Whurl automatically layers `_vars/_global.dvars` and `<env>.dvars` (when present) for the primary API **and** any cross-API includes before applying CLI overrides.
+
+Supported generators include:
+- `$now`, `$utcnow` — ISO8601 timestamps (local or UTC).
+- `$date`, `$date[+N]`, `$utcdate`, `$utcdate[-N]` — dates in `YYYY-mm-dd`.
+- `$time`, `$time[+N]`, `$utctime`, `$utctime[-N]` — times in `HH:mm:ss` (offsets in seconds).
+- `$uuid` — random UUIDv4 values.
+- `$int`, `$int[min, max]` — random integers (inclusive, negatives allowed, `min < max`).
+- `$float`, `$float[min, max]` — random floats (inclusive, negatives allowed, `min < max`).
+- `$random["option1", "option2", ...]` — pick a random quoted option (commas allowed inside the quotes).
+- `$shell(<command>)` — run a shell command (only when `WHURL_ALLOW_DYN_SHELL_VARS=true`; legacy `WHURL_ALLOW_DYN_BASH_VARS=true` is still respected; destructive commands are blocked and the detected shell is platform-aware).
+
+On Windows, Whurl uses `cmd /C` for `$shell(...)` commands. On Linux and macOS it honors the `SHELL` environment variable, falling back to `sh` when it is unset.
+
+> **Note:** When you pass `--env NAME`, every API involved (the main request and any included APIs) must provide either `NAME.hurlvars` or `NAME.dvars`. Whurl raises an error if both files are missing so you can catch incomplete environment definitions early.
+
+When not running in silent mode Whurl logs the generated values so you can see the resolved dynamic environment.
 
 ### Hurl files
 This app still relies on [Hurl files](https://hurl.dev/docs/hurl-file.html), and its syntax.

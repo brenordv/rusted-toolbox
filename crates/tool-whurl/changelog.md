@@ -1,3 +1,9 @@
+# 1.2.0 (2025-11-14)
+- Added runtime dynamic variables (`.dvars`) with generators for timestamps, random data, and optional shell execution.
+- Introduced the `# @vars` directive and automatic loading of `_global.dvars` and `<env>.dvars` across include graphs.
+- Hardened `$shell(...)` dynamic values with an allow-list toggle, cross-platform shell selection, and destructive command detection.
+- Require at least one `<env>.hurlvars` or `<env>.dvars` file whenever `--env` is used, preventing partially defined environments.
+
 # 1.1.0 (2025-11-11)
 - Added support for per-API `_global.hurlvars` files that always load alongside the selected environment.
 - Automatically load env/global variable files for cross-API includes to keep shared requests in sync.

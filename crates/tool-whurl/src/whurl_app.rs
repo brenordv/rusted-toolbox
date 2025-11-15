@@ -1,8 +1,10 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::cli_utils::print_runtime_info;
 use crate::engine::run_hurl;
-use crate::files::discover::{load_env_file, resolve_file_root, resolve_vars_file_path};
+use crate::files::discover::{
+    load_dynamic_vars_file, load_env_file, resolve_file_root, resolve_vars_file_path,
+};
 use crate::files::{
     list_apis, list_requests, locate_requests_root, FileResolver, ResolvedRunContext,
 };
@@ -14,6 +16,7 @@ use crate::models::{
 use crate::output::{print_test_summary, write_json_report};
 use crate::vars::{gather_process_env_variables, parse_variables_file, VariableMap};
 use crate::whurl_utils::display_relative_path;
+use anyhow::anyhow;
 use camino::Utf8Path;
 use shared::logging::app_logger::LogLevel;
 use tracing::info;
@@ -234,6 +237,15 @@ fn build_variables(
     let env_vars = gather_process_env_variables();
     merger.extend_from_map(env_vars, "process environment (HURL_*)");
 
+    let allow_shell = std::env::var("WHURL_ALLOW_DYN_SHELL_VARS")
+        .map(|value| value.eq_ignore_ascii_case("true"))
+        .unwrap_or_else(|_| {
+            std::env::var("WHURL_ALLOW_DYN_BASH_VARS")
+                .map(|value| value.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+        });
+    let log_dynamic = !silent_mode;
+
     let primary_api = context.resolution.api.clone();
     let mut additional_apis = BTreeSet::new();
     let requests_root = resolver.requests_root();
@@ -251,13 +263,37 @@ fn build_variables(
         }
     }
 
-    let mut apis: Vec<String> = Vec::with_capacity(1 + additional_apis.len());
-    apis.push(primary_api.clone());
-    apis.extend(additional_apis.into_iter());
+    let mut included_vars_by_api: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut current_file_vars: Vec<String> = Vec::new();
 
-    for api in apis {
-        let is_primary = api == primary_api;
+    for (path, directives) in &include_result.vars {
+        if path == context.resolution.file_path.as_path() {
+            for directive in directives {
+                push_unique_case_insensitive(&mut current_file_vars, &directive.name);
+            }
+            continue;
+        }
 
+        if let Ok(relative) = path.strip_prefix(requests_root) {
+            let mut components = relative.components();
+            let Some(first) = components.next() else {
+                continue;
+            };
+            let api_name = first.as_str().to_string();
+            let entry = included_vars_by_api.entry(api_name).or_default();
+            for directive in directives {
+                push_unique_case_insensitive(entry, &directive.name);
+            }
+        }
+    }
+
+    let mut included_api_list: Vec<String> = additional_apis.into_iter().collect();
+    included_api_list.sort();
+
+    let mut loaded_dynamic: BTreeSet<(String, String)> = BTreeSet::new();
+
+    // Included API calls (cross-API includes) hierarchy.
+    for api in &included_api_list {
         if let Some((path, vars)) = load_env_file(resolver, &api, "_global", false)? {
             let origin = format!(
                 "global vars file `{}`",
@@ -266,15 +302,137 @@ fn build_variables(
             merger.extend_from_map(vars, origin);
         }
 
+        let _ = merge_dynamic_vars(
+            &mut merger,
+            resolver,
+            &mut loaded_dynamic,
+            &api,
+            "_global",
+            false,
+            allow_shell,
+            log_dynamic,
+        )?;
+
         if let Some(env_name) = args.exec.env.as_ref() {
-            if let Some((path, vars)) = load_env_file(resolver, &api, env_name, is_primary)? {
+            let mut env_present = false;
+            if let Some((path, vars)) = load_env_file(resolver, &api, env_name, false)? {
                 let origin = format!(
                     "environment file `{}`",
                     display_relative_path(resolver, path.as_path())
                 );
                 merger.extend_from_map(vars, origin);
+                env_present = true;
+            }
+
+            let dyn_present = merge_dynamic_vars(
+                &mut merger,
+                resolver,
+                &mut loaded_dynamic,
+                &api,
+                env_name,
+                false,
+                allow_shell,
+                log_dynamic,
+            )?;
+
+            if dyn_present {
+                env_present = true;
+            }
+
+            if !env_present {
+                return Err(ToolError::Other(anyhow!(
+                    "environment `{}` not found for api `{}`",
+                    env_name,
+                    api
+                )));
             }
         }
+    }
+
+    // Imported dynamic vars from included files (any API).
+    let mut included_dyn_entries: Vec<_> = included_vars_by_api.into_iter().collect();
+    included_dyn_entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (api, names) in included_dyn_entries {
+        for name in names {
+            let _ = merge_dynamic_vars(
+                &mut merger,
+                resolver,
+                &mut loaded_dynamic,
+                &api,
+                &name,
+                true,
+                allow_shell,
+                log_dynamic,
+            )?;
+        }
+    }
+
+    // Current API hierarchy.
+    if let Some((path, vars)) = load_env_file(resolver, &primary_api, "_global", false)? {
+        let origin = format!(
+            "global vars file `{}`",
+            display_relative_path(resolver, path.as_path())
+        );
+        merger.extend_from_map(vars, origin);
+    }
+
+    let _ = merge_dynamic_vars(
+        &mut merger,
+        resolver,
+        &mut loaded_dynamic,
+        &primary_api,
+        "_global",
+        false,
+        allow_shell,
+        log_dynamic,
+    )?;
+
+    if let Some(env_name) = args.exec.env.as_ref() {
+        let mut env_present = false;
+        if let Some((path, vars)) = load_env_file(resolver, &primary_api, env_name, false)? {
+            let origin = format!(
+                "environment file `{}`",
+                display_relative_path(resolver, path.as_path())
+            );
+            merger.extend_from_map(vars, origin);
+            env_present = true;
+        }
+
+        let dyn_present = merge_dynamic_vars(
+            &mut merger,
+            resolver,
+            &mut loaded_dynamic,
+            &primary_api,
+            env_name,
+            true,
+            allow_shell,
+            log_dynamic,
+        )?;
+
+        if dyn_present {
+            env_present = true;
+        }
+
+        if !env_present {
+            return Err(ToolError::Other(anyhow!(
+                "environment `{}` not found for api `{}`",
+                env_name,
+                primary_api
+            )));
+        }
+    }
+
+    for name in current_file_vars {
+        let _ = merge_dynamic_vars(
+            &mut merger,
+            resolver,
+            &mut loaded_dynamic,
+            &primary_api,
+            &name,
+            true,
+            allow_shell,
+            log_dynamic,
+        )?;
     }
 
     if let Some(vars_file) = args.exec.vars_file.as_ref() {
@@ -296,4 +454,47 @@ fn build_variables(
     }
 
     Ok(merger.finish())
+}
+
+fn merge_dynamic_vars(
+    merger: &mut VariableAccumulator,
+    resolver: &FileResolver,
+    loaded_dynamic: &mut BTreeSet<(String, String)>,
+    api: &str,
+    name: &str,
+    required: bool,
+    allow_shell: bool,
+    log_dynamic: bool,
+) -> ToolResult<bool> {
+    let key = (api.to_ascii_lowercase(), name.to_ascii_lowercase());
+    if loaded_dynamic.contains(&key) {
+        return Ok(true);
+    }
+
+    if let Some((path, vars)) =
+        load_dynamic_vars_file(resolver, api, name, required, allow_shell, log_dynamic)?
+    {
+        let origin = format!(
+            "dynamic vars file `{}`",
+            display_relative_path(resolver, path.as_path())
+        );
+        merger.extend_from_map(vars, origin);
+        loaded_dynamic.insert(key);
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn push_unique_case_insensitive(vec: &mut Vec<String>, value: &str) {
+    if value.is_empty() {
+        return;
+    }
+
+    if !vec
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(value))
+    {
+        vec.push(value.to_string());
+    }
 }

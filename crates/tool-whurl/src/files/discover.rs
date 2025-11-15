@@ -2,7 +2,7 @@ use std::{env, fs, io, path::PathBuf};
 
 use crate::files::{FileResolver, ResolveError, ResolvedRunContext};
 use crate::models::ToolResult;
-use crate::vars::{parse_variables_file, VariableMap};
+use crate::vars::{parse_dynamic_variables_file, parse_variables_file, VariableMap};
 use camino::{Utf8Path, Utf8PathBuf};
 use thiserror::Error;
 
@@ -158,6 +158,24 @@ pub fn load_env_file(
     match resolver.resolve_env_file(api, env_name) {
         Ok(path) => {
             let vars = parse_variables_file(path.as_path())?;
+            Ok(Some((path, vars)))
+        }
+        Err(ResolveError::FileNotFound { .. }) if !required => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn load_dynamic_vars_file(
+    resolver: &FileResolver,
+    api: &str,
+    vars_name: &str,
+    required: bool,
+    allow_shell: bool,
+    log_assignments: bool,
+) -> ToolResult<Option<(Utf8PathBuf, VariableMap)>> {
+    match resolver.resolve_dynamic_vars_file(api, vars_name) {
+        Ok(path) => {
+            let vars = parse_dynamic_variables_file(path.as_path(), allow_shell, log_assignments)?;
             Ok(Some((path, vars)))
         }
         Err(ResolveError::FileNotFound { .. }) if !required => Ok(None),
