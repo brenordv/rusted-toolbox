@@ -493,7 +493,7 @@ fn build_variables(
             &mut loaded_dynamic,
             &primary_api,
             env_name,
-            true,
+            false,
             allow_shell,
             log_dynamic,
         )?;

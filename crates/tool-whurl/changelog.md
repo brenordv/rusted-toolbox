@@ -1,3 +1,6 @@
+# 1.2.1 (2025-11-18)
+- Fixed `--env` resolution to accept either `<env>.hurlvars` or `<env>.dvars`, instead of requiring both files to exist.
+
 # 1.2.0 (2025-11-14)
 - Added runtime dynamic variables (`.dvars`) with generators for timestamps, random data, and optional shell execution.
 - Introduced the `# @vars` directive and automatic loading of `_global.dvars` and `<env>.dvars` across include graphs.
