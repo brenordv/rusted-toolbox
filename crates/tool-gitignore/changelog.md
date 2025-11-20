@@ -1,3 +1,7 @@
+# 1.1.0 (2025-11-19)
+- Added `.slnx` to the watched list of files for C#.
+- Updated dependencies.
+
 # 1.0.4 (2025-09-25)
 - Updated dependencies.
 
