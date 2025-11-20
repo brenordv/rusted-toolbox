@@ -94,12 +94,15 @@ impl Config {
             "https://raw.githubusercontent.com/github/gitignore/main/R.gitignore".to_string(),
         );
 
-        ".cs|.sln|.csproj".to_string().split("|").for_each(|key| {
-            mappings.insert(
-                key.to_string(),
-                "https://raw.githubusercontent.com/dotnet/core/main/.gitignore".to_string(),
-            );
-        });
+        ".cs|.sln|.csproj|.slnx"
+            .to_string()
+            .split("|")
+            .for_each(|key| {
+                mappings.insert(
+                    key.to_string(),
+                    "https://raw.githubusercontent.com/dotnet/core/main/.gitignore".to_string(),
+                );
+            });
 
         ".sqlite|.sqlite3|.db|.db3|.s3db|.sdb|.sl3|.db-shm|.db-wal|.db-journal".to_string().split("|").for_each(|key| {
             mappings.insert(
