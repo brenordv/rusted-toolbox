@@ -1,5 +1,7 @@
-# Unreleased
+# 1.3.0 (2025-11-22)
 - Allow `# @vars` directives to load matching `.hurlvars` files before `.dvars`, and fail fast when neither exists (plus regression tests).
+- Some house cleaning.
+- Updated the macOS convenience script to only install pkg-config if it is missing.
 
 # 1.2.1 (2025-11-18)
 - Fixed `--env` resolution to accept either `<env>.hurlvars` or `<env>.dvars`, instead of requiring both files to exist.
