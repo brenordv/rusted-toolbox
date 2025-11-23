@@ -380,6 +380,7 @@ fn build_variables(
     included_api_list.sort();
 
     let mut loaded_dynamic: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut loaded_static_directives: BTreeSet<(String, String)> = BTreeSet::new();
 
     // Included API calls (cross-API includes) hierarchy.
     for api in &included_api_list {
@@ -403,38 +404,15 @@ fn build_variables(
         )?;
 
         if let Some(env_name) = args.exec.env.as_ref() {
-            let mut env_present = false;
-            if let Some((path, vars)) = load_env_file(resolver, &api, env_name, false)? {
-                let origin = format!(
-                    "environment file `{}`",
-                    display_relative_path(resolver, path.as_path())
-                );
-                merger.extend_from_map(vars, origin);
-                env_present = true;
-            }
-
-            let dyn_present = merge_dynamic_vars(
+            merge_env_layers(
                 &mut merger,
                 resolver,
                 &mut loaded_dynamic,
                 &api,
                 env_name,
-                false,
                 allow_shell,
                 log_dynamic,
             )?;
-
-            if dyn_present {
-                env_present = true;
-            }
-
-            if !env_present {
-                return Err(ToolError::Other(anyhow!(
-                    "environment `{}` not found for api `{}`",
-                    env_name,
-                    api
-                )));
-            }
         }
     }
 
@@ -443,13 +421,13 @@ fn build_variables(
     included_dyn_entries.sort_by(|(left, _), (right, _)| left.cmp(right));
     for (api, names) in included_dyn_entries {
         for name in names {
-            let _ = merge_dynamic_vars(
+            merge_directive_vars(
                 &mut merger,
                 resolver,
+                &mut loaded_static_directives,
                 &mut loaded_dynamic,
                 &api,
                 &name,
-                true,
                 allow_shell,
                 log_dynamic,
             )?;
@@ -477,48 +455,25 @@ fn build_variables(
     )?;
 
     if let Some(env_name) = args.exec.env.as_ref() {
-        let mut env_present = false;
-        if let Some((path, vars)) = load_env_file(resolver, &primary_api, env_name, false)? {
-            let origin = format!(
-                "environment file `{}`",
-                display_relative_path(resolver, path.as_path())
-            );
-            merger.extend_from_map(vars, origin);
-            env_present = true;
-        }
-
-        let dyn_present = merge_dynamic_vars(
+        merge_env_layers(
             &mut merger,
             resolver,
             &mut loaded_dynamic,
             &primary_api,
             env_name,
-            false,
             allow_shell,
             log_dynamic,
         )?;
-
-        if dyn_present {
-            env_present = true;
-        }
-
-        if !env_present {
-            return Err(ToolError::Other(anyhow!(
-                "environment `{}` not found for api `{}`",
-                env_name,
-                primary_api
-            )));
-        }
     }
 
     for name in current_file_vars {
-        let _ = merge_dynamic_vars(
+        merge_directive_vars(
             &mut merger,
             resolver,
+            &mut loaded_static_directives,
             &mut loaded_dynamic,
             &primary_api,
             &name,
-            true,
             allow_shell,
             log_dynamic,
         )?;
@@ -575,6 +530,110 @@ fn merge_dynamic_vars(
     Ok(false)
 }
 
+fn merge_env_layers(
+    merger: &mut VariableAccumulator,
+    resolver: &FileResolver,
+    loaded_dynamic: &mut BTreeSet<(String, String)>,
+    api: &str,
+    env_name: &str,
+    allow_shell: bool,
+    log_dynamic: bool,
+) -> ToolResult<()> {
+    let mut env_present = false;
+    if let Some((path, vars)) = load_env_file(resolver, api, env_name, false)? {
+        let origin = format!(
+            "environment file `{}`",
+            display_relative_path(resolver, path.as_path())
+        );
+        merger.extend_from_map(vars, origin);
+        env_present = true;
+    }
+
+    let dyn_present = merge_dynamic_vars(
+        merger,
+        resolver,
+        loaded_dynamic,
+        api,
+        env_name,
+        false,
+        allow_shell,
+        log_dynamic,
+    )?;
+
+    if dyn_present {
+        env_present = true;
+    }
+
+    if !env_present {
+        return Err(ToolError::Other(anyhow!(
+            "environment `{}` not found for api `{}`",
+            env_name,
+            api
+        )));
+    }
+
+    Ok(())
+}
+
+fn merge_directive_vars(
+    merger: &mut VariableAccumulator,
+    resolver: &FileResolver,
+    loaded_static: &mut BTreeSet<(String, String)>,
+    loaded_dynamic: &mut BTreeSet<(String, String)>,
+    api: &str,
+    name: &str,
+    allow_shell: bool,
+    log_dynamic: bool,
+) -> ToolResult<()> {
+    let static_present = merge_static_vars(merger, resolver, loaded_static, api, name)?;
+    let dynamic_present = merge_dynamic_vars(
+        merger,
+        resolver,
+        loaded_dynamic,
+        api,
+        name,
+        false,
+        allow_shell,
+        log_dynamic,
+    )?;
+
+    if !static_present && !dynamic_present {
+        return Err(ToolError::Other(anyhow!(
+            "vars directive `{}` not found for api `{}`; expected either `{name}.hurlvars` or `{name}.dvars`",
+            name,
+            api
+        )));
+    }
+
+    Ok(())
+}
+
+fn merge_static_vars(
+    merger: &mut VariableAccumulator,
+    resolver: &FileResolver,
+    loaded_static: &mut BTreeSet<(String, String)>,
+    api: &str,
+    name: &str,
+) -> ToolResult<bool> {
+    let key = (api.to_ascii_lowercase(), name.to_ascii_lowercase());
+    if loaded_static.contains(&key) {
+        return Ok(true);
+    }
+
+    if let Some((path, vars)) = load_env_file(resolver, api, name, false)? {
+        let origin = format!(
+            "# @vars `{}` hurlvars `{}`",
+            name,
+            display_relative_path(resolver, path.as_path())
+        );
+        merger.extend_from_map(vars, origin);
+        loaded_static.insert(key);
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
 fn push_unique_case_insensitive(vec: &mut Vec<String>, value: &str) {
     if value.is_empty() {
         return;
@@ -585,5 +644,78 @@ fn push_unique_case_insensitive(vec: &mut Vec<String>, value: &str) {
         .any(|existing| existing.eq_ignore_ascii_case(value))
     {
         vec.push(value.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use camino::Utf8PathBuf;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn create_resolver() -> (tempfile::TempDir, FileResolver) {
+        let temp = tempdir().expect("tempdir");
+        let root_path = temp.path().join("requests");
+        fs::create_dir_all(root_path.join("api/_vars")).expect("requests dirs");
+        let root_utf8 = Utf8PathBuf::from_path_buf(root_path).expect("utf8 path");
+        let resolver = FileResolver::new(root_utf8);
+        (temp, resolver)
+    }
+
+    #[test]
+    fn vars_directive_loads_hurlvars_before_dvars() {
+        let (temp, resolver) = create_resolver();
+        let vars_dir = temp.path().join("requests/api/_vars");
+        fs::write(vars_dir.join("session.hurlvars"), "TOKEN=static\n").unwrap();
+        fs::write(
+            vars_dir.join("session.dvars"),
+            r#"TOKEN=$random["dynamic"]"#,
+        )
+        .unwrap();
+
+        let mut merger = VariableAccumulator::new(false);
+        let mut loaded_static = BTreeSet::new();
+        let mut loaded_dynamic = BTreeSet::new();
+
+        merge_directive_vars(
+            &mut merger,
+            &resolver,
+            &mut loaded_static,
+            &mut loaded_dynamic,
+            "api",
+            "session",
+            false,
+            false,
+        )
+        .expect("merge directive vars");
+
+        let vars = merger.finish();
+        assert_eq!(vars.get("TOKEN").map(|s| s.as_str()), Some("dynamic"));
+    }
+
+    #[test]
+    fn vars_directive_requires_at_least_one_file() {
+        let (_temp, resolver) = create_resolver();
+        let mut merger = VariableAccumulator::new(false);
+        let mut loaded_static = BTreeSet::new();
+        let mut loaded_dynamic = BTreeSet::new();
+
+        let err = merge_directive_vars(
+            &mut merger,
+            &resolver,
+            &mut loaded_static,
+            &mut loaded_dynamic,
+            "api",
+            "missing",
+            false,
+            false,
+        )
+        .expect_err("missing vars should fail");
+
+        assert!(matches!(err, ToolError::Other(_)));
+        assert!(err
+            .to_string()
+            .contains("vars directive `missing` not found for api `api`"));
     }
 }

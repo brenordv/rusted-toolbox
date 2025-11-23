@@ -92,7 +92,18 @@ install_prerequisites() {
     print_status "Xcode Command Line Tools already installed."
   fi
 
-  brew install pkg-config
+  if command_exists pkg-config; then
+    print_success "pkg-config already installed ($(pkg-config --version))"
+  else
+    if command_exists brew; then
+      print_status "pkg-config not found. Installing with Homebrew..."
+      brew install pkg-config
+      print_success "pkg-config installed"
+    else
+      print_warning "Homebrew not found. Please install pkg-config manually."
+    fi
+  fi
+
   print_status "Installation completed"
 }
 
