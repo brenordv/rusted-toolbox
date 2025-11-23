@@ -50,3 +50,4 @@ cmFjY29vbi5uaW5qYQ==
 `b64` returns `0` on success. 
 Typical failure modes include unreadable input files, invalid Base64 data when decoding, or write errors on the
 destination. A broken pipe (for example, when piping into `head`) is treated as a successful run.
+

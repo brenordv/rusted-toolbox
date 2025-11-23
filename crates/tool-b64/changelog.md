@@ -5,3 +5,4 @@
 - Supports Base64 encode/decode from stdin, files, or inline text.
 - Adds auto-detect input mode plus `--file`/`--text` overrides.
 - Provides configurable wrapping and tolerant decode with `--ignore-garbage`.
+
