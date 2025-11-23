@@ -1,3 +1,6 @@
+# Unreleased
+- Allow `# @vars` directives to load matching `.hurlvars` files before `.dvars`, and fail fast when neither exists (plus regression tests).
+
 # 1.2.1 (2025-11-18)
 - Fixed `--env` resolution to accept either `<env>.hurlvars` or `<env>.dvars`, instead of requiring both files to exist.
 

@@ -56,9 +56,10 @@ nested includes (including a file that contains another include).
 Whurl will do all that in memory, keeping the original files untouched.
 
 ### #@vars
-Top-of-file `# @vars <name>` directives load dynamic variables from `_vars/<name>.dvars` (extension optional and case-insensitive).
-These files use the same `KEY=VALUE` format as `.hurlvars`, but each value is a generator expression evaluated at runtime.
-Whurl automatically layers `_vars/_global.dvars` and `<env>.dvars` (when present) for the primary API **and** any cross-API includes before applying CLI overrides.
+Top-of-file `# @vars <name>` directives load `_vars/<name>.hurlvars` first (when present) followed by `_vars/<name>.dvars` (extensions optional and case-insensitive).
+The `.hurlvars` files provide static `KEY=VALUE` entries while `.dvars` files use generator expressions evaluated at runtime.
+Whurl automatically layers `_vars/_global.{hurlvars|dvars}` and `<env>.{hurlvars|dvars}` (when present) for the primary API **and** any cross-API includes before applying CLI overrides.
+It now errors when a directive references a name with no matching files so missing variables are surfaced early.
 
 Supported generators include:
 - `$now`, `$utcnow` — ISO8601 timestamps (local or UTC).
