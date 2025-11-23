@@ -404,38 +404,15 @@ fn build_variables(
         )?;
 
         if let Some(env_name) = args.exec.env.as_ref() {
-            let mut env_present = false;
-            if let Some((path, vars)) = load_env_file(resolver, &api, env_name, false)? {
-                let origin = format!(
-                    "environment file `{}`",
-                    display_relative_path(resolver, path.as_path())
-                );
-                merger.extend_from_map(vars, origin);
-                env_present = true;
-            }
-
-            let dyn_present = merge_dynamic_vars(
+            merge_env_layers(
                 &mut merger,
                 resolver,
                 &mut loaded_dynamic,
                 &api,
                 env_name,
-                false,
                 allow_shell,
                 log_dynamic,
             )?;
-
-            if dyn_present {
-                env_present = true;
-            }
-
-            if !env_present {
-                return Err(ToolError::Other(anyhow!(
-                    "environment `{}` not found for api `{}`",
-                    env_name,
-                    api
-                )));
-            }
         }
     }
 
@@ -478,38 +455,15 @@ fn build_variables(
     )?;
 
     if let Some(env_name) = args.exec.env.as_ref() {
-        let mut env_present = false;
-        if let Some((path, vars)) = load_env_file(resolver, &primary_api, env_name, false)? {
-            let origin = format!(
-                "environment file `{}`",
-                display_relative_path(resolver, path.as_path())
-            );
-            merger.extend_from_map(vars, origin);
-            env_present = true;
-        }
-
-        let dyn_present = merge_dynamic_vars(
+        merge_env_layers(
             &mut merger,
             resolver,
             &mut loaded_dynamic,
             &primary_api,
             env_name,
-            false,
             allow_shell,
             log_dynamic,
         )?;
-
-        if dyn_present {
-            env_present = true;
-        }
-
-        if !env_present {
-            return Err(ToolError::Other(anyhow!(
-                "environment `{}` not found for api `{}`",
-                env_name,
-                primary_api
-            )));
-        }
     }
 
     for name in current_file_vars {
@@ -574,6 +528,51 @@ fn merge_dynamic_vars(
     }
 
     Ok(false)
+}
+
+fn merge_env_layers(
+    merger: &mut VariableAccumulator,
+    resolver: &FileResolver,
+    loaded_dynamic: &mut BTreeSet<(String, String)>,
+    api: &str,
+    env_name: &str,
+    allow_shell: bool,
+    log_dynamic: bool,
+) -> ToolResult<()> {
+    let mut env_present = false;
+    if let Some((path, vars)) = load_env_file(resolver, api, env_name, false)? {
+        let origin = format!(
+            "environment file `{}`",
+            display_relative_path(resolver, path.as_path())
+        );
+        merger.extend_from_map(vars, origin);
+        env_present = true;
+    }
+
+    let dyn_present = merge_dynamic_vars(
+        merger,
+        resolver,
+        loaded_dynamic,
+        api,
+        env_name,
+        false,
+        allow_shell,
+        log_dynamic,
+    )?;
+
+    if dyn_present {
+        env_present = true;
+    }
+
+    if !env_present {
+        return Err(ToolError::Other(anyhow!(
+            "environment `{}` not found for api `{}`",
+            env_name,
+            api
+        )));
+    }
+
+    Ok(())
 }
 
 fn merge_directive_vars(
