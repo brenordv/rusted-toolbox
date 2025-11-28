@@ -1,3 +1,5 @@
+**/crates/tool-whurl/requests/media-api
+**/crates/tool-whurl/requests/sweet-spot
 !.env.example
 !.yarn/patches
 !.yarn/plugins
