@@ -5,6 +5,8 @@ the embedded Hurl engine so you can chain requests, reuse captures, and ship cur
 
 Hurl handles the actual requests, assertions, reporting, capturing, etc., so it will work with your existing `hurl` files!
 
+This kind of replaces my old one made using Go ([go-request](https://github.com/brenordv/go-request)).
+
 ## Why?
 While I love the simplicity of Hurl, I hate the idea of having to repeat the same requests on multiple files. This would
 make my request library way less maintainable.
