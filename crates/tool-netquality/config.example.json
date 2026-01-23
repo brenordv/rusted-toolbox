@@ -1,0 +1,40 @@
+{
+  "storage": {
+    "db_path": "netquality.db"
+  },
+  "connectivity": {
+    "delay_secs": 10,
+    "timeout_secs": 1,
+    "outage_backoff_secs": 10,
+    "outage_backoff_max_secs": 3600,
+    "url_mode": "merge",
+    "urls": [
+      "https://example.com/health",
+      "https://1.1.1.1"
+    ]
+  },
+  "speed": {
+    "expected_download_mbps": 100.0,
+    "expected_upload_mbps": 20.0,
+    "delay_secs": 14400,
+    "download_thresholds": {
+      "very_slow": 30.0,
+      "slow": 50.0,
+      "medium": 65.0,
+      "medium_fast": 85.0
+    },
+    "upload_thresholds": {
+      "very_slow": 30.0,
+      "slow": 50.0,
+      "medium": 65.0,
+      "medium_fast": 85.0
+    }
+  },
+  "notifications": {
+    "telegram": {
+      "bot_token": "YOUR_BOT_TOKEN",
+      "chat_id": "YOUR_CHAT_ID"
+    },
+    "otel_endpoint": "http://localhost:4318"
+  }
+}
