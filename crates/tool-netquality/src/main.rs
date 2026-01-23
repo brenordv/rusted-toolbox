@@ -1,11 +1,13 @@
 mod checks;
 mod cli_utils;
 mod models;
-mod netquality_app;
+mod netqualify_app;
 mod notifiers;
 mod persistence;
+mod runtime_state;
 
-use crate::cli_utils::get_cli_arguments;
+use crate::cli_utils::cli_utils::get_cli_arguments;
+use crate::netqualify_app::run_app;
 use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 use shared::system::tool_exit_helpers::{exit_error, exit_success};
@@ -29,7 +31,7 @@ async fn main() {
 
     initialize_log(env!("CARGO_PKG_NAME"), log_level);
 
-    match netquality_app::run_app(&args).await {
+    match run_app(&args).await {
         Ok(_) => exit_success(),
         Err(error) => {
             eprintln!("{error}");

@@ -1,25 +1,24 @@
-mod config;
-mod runtime;
-pub mod state;
-
 use crate::checks::connectivity_check::run_connectivity_check;
-use crate::checks::speed_test_check::run_speed_check;
 use crate::checks::database_clean_up::run_database_cleanup;
-use crate::cli_utils::print_runtime_info;
+use crate::checks::speed_test_check::run_speed_check;
+
+use crate::cli_utils::cli_utils::print_runtime_info;
+use crate::cli_utils::config_parser;
+use crate::cli_utils::runtime_info_builder::build_runtime_info;
 use crate::models::NetQualityCliArgs;
 use crate::notifiers::Notifier;
 use crate::persistence::db;
+use crate::runtime_state;
 use anyhow::{Context, Result};
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
-use rusqlite::Connection;
-use tracing::{info, trace, warn};
+use tracing::{info, trace};
 
 pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
-    let (config, config_label) = config::load_config(args).await?;
+    let (config, config_label) = config_parser::load_config(args).await?;
 
-    print_runtime_info(&config_label, &runtime::build_runtime_info(&config));
+    print_runtime_info(&config_label, &build_runtime_info(&config));
 
     if config.notifications.telegram.is_none() {
         info!("Telegram notifications disabled.");
@@ -44,7 +43,7 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
     };
 
     let shutdown = setup_graceful_shutdown(false);
-    let mut state = state::LoopState::new(&config);
+    let mut state = runtime_state::LoopState::new(&config);
 
     while !shutdown.load(Ordering::Relaxed) {
         let mut connectivity_id = None;
@@ -61,10 +60,10 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
                     .context("Failed to store connectivity activity")?,
             );
 
-            state::handle_connectivity_state(&config, &mut state, &connectivity_result);
+            runtime_state::handle_connectivity_state(&config, &mut state, &connectivity_result);
         }
 
-        let should_run_speed = state::should_run_speed_check(&state);
+        let should_run_speed = runtime_state::should_run_speed_check(&state);
 
         if should_run_speed {
             if state.last_connectivity_success {
@@ -77,7 +76,13 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
                         .context("Failed to store speed activity")?,
                 );
 
-                state::handle_speed_state(&config, &mut state, &mut notifier, &speed_result).await;
+                runtime_state::handle_speed_state(
+                    &config,
+                    &mut state,
+                    &mut notifier,
+                    &speed_result,
+                )
+                .await;
             } else {
                 trace!("Skipping speed check because connectivity is down.");
             }
@@ -102,5 +107,3 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
     info!("NetQuality shutdown complete.");
     Ok(())
 }
-
-

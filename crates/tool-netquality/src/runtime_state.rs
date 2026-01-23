@@ -6,21 +6,21 @@ use chrono::{DateTime, Utc};
 use std::time::{Duration, Instant};
 
 pub(crate) struct LoopState {
-    pub(super) next_connectivity_at: Instant,
-    pub(super) next_speed_at: Instant,
-    pub(super) current_connectivity_delay: Duration,
-    pub(super) next_url_index: usize,
-    pub(super) outage_active: bool,
-    pub(super) outage_start: Option<DateTime<Utc>>,
-    pub(super) pending_outage_end: Option<OutageInfo>,
-    pub(super) pending_speed_after_restore: bool,
-    pub(super) last_connectivity_success: bool,
-    pub(super) last_download_threshold: Option<ThresholdCategory>,
-    pub(super) last_upload_threshold: Option<ThresholdCategory>,
+    pub(crate) next_connectivity_at: Instant,
+    pub(crate) next_speed_at: Instant,
+    pub(crate) current_connectivity_delay: Duration,
+    pub(crate) next_url_index: usize,
+    pub(crate) outage_active: bool,
+    pub(crate) outage_start: Option<DateTime<Utc>>,
+    pub(crate) pending_outage_end: Option<OutageInfo>,
+    pub(crate) pending_speed_after_restore: bool,
+    pub(crate) last_connectivity_success: bool,
+    pub(crate) last_download_threshold: Option<ThresholdCategory>,
+    pub(crate) last_upload_threshold: Option<ThresholdCategory>,
 }
 
 impl LoopState {
-    pub(super) fn new(config: &NetQualityConfig) -> Self {
+    pub(crate) fn new(config: &NetQualityConfig) -> Self {
         let now = Instant::now();
         Self {
             next_connectivity_at: now,
@@ -46,7 +46,7 @@ impl LoopState {
     }
 }
 
-pub(super) fn handle_connectivity_state(
+pub(crate) fn handle_connectivity_state(
     config: &NetQualityConfig,
     state: &mut LoopState,
     result: &ConnectivityResult,
@@ -82,7 +82,7 @@ pub(super) fn handle_connectivity_state(
     state.next_connectivity_at = Instant::now() + state.current_connectivity_delay;
 }
 
-pub(super) fn should_run_speed_check(state: &LoopState) -> bool {
+pub(crate) fn should_run_speed_check(state: &LoopState) -> bool {
     if state.pending_speed_after_restore {
         return true;
     }
@@ -90,7 +90,7 @@ pub(super) fn should_run_speed_check(state: &LoopState) -> bool {
     Instant::now() >= state.next_speed_at
 }
 
-pub(super) async fn handle_speed_state(
+pub(crate) async fn handle_speed_state(
     config: &NetQualityConfig,
     state: &mut LoopState,
     notifier: &mut Notifier,

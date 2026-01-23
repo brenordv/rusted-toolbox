@@ -1,6 +1,6 @@
 use crate::models::NetQualityConfig;
 
-pub(super) fn build_runtime_info(config: &NetQualityConfig) -> Vec<(&str, String)> {
+pub fn build_runtime_info(config: &NetQualityConfig) -> Vec<(&str, String)> {
     let cleanup_interval_days = config.storage.cleanup_interval.as_secs() / 86_400;
     let cleanup_status = if config.storage.cleanup_enabled {
         format!("enabled (every {} days)", cleanup_interval_days)

@@ -19,7 +19,7 @@ const DEFAULT_MIN_UPLOAD_NOTIFY_THRESHOLD: ThresholdCategory = ThresholdCategory
 const DEFAULT_STORAGE_CLEANUP_ENABLED: bool = true;
 const DEFAULT_STORAGE_CLEANUP_INTERVAL_DAYS: u64 = 365;
 
-pub(super) async fn load_config(args: &NetQualityCliArgs) -> Result<(NetQualityConfig, String)> {
+pub(crate) async fn load_config(args: &NetQualityCliArgs) -> Result<(NetQualityConfig, String)> {
     let config_paths = resolve_config_paths(args)?;
     let config_label = if config_paths.is_empty() {
         "defaults".to_string()
@@ -58,7 +58,7 @@ fn resolve_config_paths(args: &NetQualityCliArgs) -> Result<Vec<PathBuf>> {
     }
 
     let cwd_path = std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
+        .unwrap_or_else(|_| PathBuf::from("../../../.."))
         .join("config.json");
     if cwd_path.exists() {
         paths.push(cwd_path);

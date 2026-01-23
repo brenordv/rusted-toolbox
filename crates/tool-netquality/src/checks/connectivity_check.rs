@@ -1,7 +1,5 @@
-use crate::models::{
-    ConnectivityResult, NetQualityConfig,
-};
-use crate::netquality_app::state::LoopState;
+use crate::models::{ConnectivityResult, NetQualityConfig};
+use crate::runtime_state::LoopState;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use reqwest::Client;
