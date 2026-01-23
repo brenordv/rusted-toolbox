@@ -1,16 +1,12 @@
 use crate::models::{
-    ConnectivityResult, NetQualityConfig, SpeedResult, ThresholdCategory, Thresholds,
+    ConnectivityResult, NetQualityConfig,
 };
 use crate::netquality_app::state::LoopState;
 use anyhow::{Context, Result};
-use cfspeedtest::{OutputFormat, SpeedTestCLIOptions};
 use chrono::Utc;
 use reqwest::Client;
-use serde::Deserialize;
-use std::process::Command;
-use std::time::{Duration, Instant};
-use tokio::task::spawn_blocking;
-use tracing::{info, trace};
+use std::time::Instant;
+use tracing::trace;
 
 pub async fn run_connectivity_check(
     config: &NetQualityConfig,

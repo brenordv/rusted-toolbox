@@ -4,6 +4,7 @@ pub mod state;
 
 use crate::checks::connectivity_check::run_connectivity_check;
 use crate::checks::speed_test_check::run_speed_check;
+use crate::checks::database_clean_up::run_database_cleanup;
 use crate::cli_utils::print_runtime_info;
 use crate::models::NetQualityCliArgs;
 use crate::notifiers::Notifier;
@@ -12,6 +13,7 @@ use anyhow::{Context, Result};
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
+use rusqlite::Connection;
 use tracing::{info, trace, warn};
 
 pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
@@ -35,17 +37,7 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
         db::create_database(db_path).context("Failed to initialize SQLite database")?;
 
     let mut next_cleanup_at = if config.storage.cleanup_enabled {
-        match db::cleanup_old_activity(&mut connection) {
-            Ok(stats) => {
-                info!(
-                    "Database cleanup complete: {} sessions, {} connectivity, {} speed rows removed.",
-                    stats.sessions_deleted, stats.connectivity_deleted, stats.speed_deleted
-                );
-            }
-            Err(error) => {
-                warn!("Database cleanup failed: {error:#}");
-            }
-        }
+        run_database_cleanup(&mut connection);
         Some(Instant::now() + config.storage.cleanup_interval)
     } else {
         None
@@ -98,17 +90,7 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
 
         if let Some(next_cleanup_due) = next_cleanup_at {
             if now >= next_cleanup_due {
-                match db::cleanup_old_activity(&mut connection) {
-                    Ok(stats) => {
-                        info!(
-                            "Database cleanup complete: {} sessions, {} connectivity, {} speed rows removed.",
-                            stats.sessions_deleted, stats.connectivity_deleted, stats.speed_deleted
-                        );
-                    }
-                    Err(error) => {
-                        warn!("Database cleanup failed: {error:#}");
-                    }
-                }
+                run_database_cleanup(&mut connection);
                 next_cleanup_at = Some(Instant::now() + config.storage.cleanup_interval);
             }
         }
@@ -120,3 +102,5 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
     info!("NetQuality shutdown complete.");
     Ok(())
 }
+
+
