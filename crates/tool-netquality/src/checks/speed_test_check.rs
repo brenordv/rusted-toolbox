@@ -233,3 +233,93 @@ fn evaluate_threshold(
         ThresholdCategory::Expected
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cfspeedtest::measurements::Measurement;
+    use cfspeedtest::speedtest::TestType;
+
+    #[test]
+    fn bytes_per_sec_conversion_to_mbps() {
+        let mbps = bytes_per_sec_to_mbps(1_250_000.0);
+        assert!((mbps - 10.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn evaluate_threshold_respects_boundaries() {
+        let thresholds = Thresholds::default_thresholds();
+
+        assert_eq!(
+            evaluate_threshold(30.0, 100.0, &thresholds),
+            ThresholdCategory::VerySlow
+        );
+        assert_eq!(
+            evaluate_threshold(50.0, 100.0, &thresholds),
+            ThresholdCategory::Slow
+        );
+        assert_eq!(
+            evaluate_threshold(65.0, 100.0, &thresholds),
+            ThresholdCategory::Medium
+        );
+        assert_eq!(
+            evaluate_threshold(85.0, 100.0, &thresholds),
+            ThresholdCategory::MediumFast
+        );
+        assert_eq!(
+            evaluate_threshold(90.0, 100.0, &thresholds),
+            ThresholdCategory::Expected
+        );
+    }
+
+    #[test]
+    fn average_mbit_uses_max_payload_size() {
+        let measurements = vec![
+            Measurement {
+                test_type: TestType::Download,
+                payload_size: 1_000,
+                mbit: 5.0,
+            },
+            Measurement {
+                test_type: TestType::Download,
+                payload_size: 2_000,
+                mbit: 10.0,
+            },
+            Measurement {
+                test_type: TestType::Download,
+                payload_size: 2_000,
+                mbit: 20.0,
+            },
+            Measurement {
+                test_type: TestType::Upload,
+                payload_size: 2_000,
+                mbit: 30.0,
+            },
+        ];
+
+        let average = average_mbit(&measurements, TestType::Download).expect("average");
+        assert!((average - 15.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn build_speed_result_sets_upload_threshold_when_expected() {
+        let thresholds = Thresholds::default_thresholds();
+        let measurement = SpeedTestMeasurement {
+            download_mbps: 80.0,
+            upload_mbps: Some(20.0),
+            elapsed_ms: 1200,
+        };
+
+        let result = build_speed_result(
+            measurement,
+            100.0,
+            Some(25.0),
+            &thresholds,
+            &thresholds,
+        );
+
+        assert_eq!(result.download_threshold, ThresholdCategory::MediumFast);
+        assert_eq!(result.upload_threshold, Some(ThresholdCategory::MediumFast));
+        assert!(result.success);
+    }
+}

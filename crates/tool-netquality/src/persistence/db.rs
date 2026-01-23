@@ -194,3 +194,125 @@ pub(crate) fn cleanup_old_activity(conn: &mut Connection) -> Result<CleanupStats
         speed_deleted,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ThresholdCategory;
+    use chrono::Utc;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn create_temp_db_path() -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir().join(format!("netquality-test-{}.db", nanos))
+    }
+
+    fn create_test_connection() -> (Connection, std::path::PathBuf) {
+        let path = create_temp_db_path();
+        let conn = create_database(&path).expect("create_database should succeed");
+        (conn, path)
+    }
+
+    fn build_connectivity_result() -> ConnectivityResult {
+        ConnectivityResult {
+            timestamp: Utc::now(),
+            url: "https://example.com/health".to_string(),
+            result: "204".to_string(),
+            elapsed_ms: 42,
+            success: true,
+        }
+    }
+
+    fn build_speed_result() -> SpeedResult {
+        SpeedResult {
+            timestamp: Utc::now(),
+            download_mbps: 120.5,
+            upload_mbps: Some(24.9),
+            download_threshold: ThresholdCategory::Expected,
+            upload_threshold: Some(ThresholdCategory::MediumFast),
+            elapsed_ms: 812,
+            success: true,
+        }
+    }
+
+    #[test]
+    fn insert_activity_rows_roundtrip() {
+        let (conn, path) = create_test_connection();
+
+        let connectivity = build_connectivity_result();
+        let connectivity_id =
+            insert_connectivity_activity(&conn, &connectivity).expect("insert connectivity");
+
+        let speed = build_speed_result();
+        let speed_id = insert_speed_activity(&conn, &speed).expect("insert speed");
+
+        let (stored_url, stored_result, stored_success): (String, String, i64) = conn
+            .query_row(
+                "SELECT url, result, success FROM activity_connectivity WHERE activity_id = ?1",
+                params![connectivity_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("query connectivity");
+
+        assert_eq!(stored_url, connectivity.url);
+        assert_eq!(stored_result, connectivity.result);
+        assert_eq!(stored_success, 1);
+
+        let (stored_download, stored_upload, stored_success): (f64, Option<f64>, i64) = conn
+            .query_row(
+                "SELECT download_speed, upload_speed, success FROM activity_speed WHERE activity_id = ?1",
+                params![speed_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("query speed");
+
+        assert_eq!(stored_download, speed.download_mbps);
+        assert_eq!(stored_upload, speed.upload_mbps);
+        assert_eq!(stored_success, 1);
+
+        drop(conn);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn parent_session_id_is_persisted_and_visible_in_view() {
+        let (conn, path) = create_test_connection();
+
+        let connectivity_id = insert_connectivity_activity(&conn, &build_connectivity_result())
+            .expect("insert connectivity");
+        let speed_id = insert_speed_activity(&conn, &build_speed_result()).expect("insert speed");
+
+        let parent_session_id = insert_session(&conn, None, Some(connectivity_id), Some(speed_id))
+            .expect("insert parent session");
+
+        let child_session_id = insert_session(&conn, Some(parent_session_id), None, None)
+            .expect("insert child session");
+
+        let stored_parent: Option<i64> = conn
+            .query_row(
+                "SELECT parent_session_id FROM sessions WHERE session_id = ?1",
+                params![child_session_id],
+                |row| row.get(0),
+            )
+            .expect("query sessions");
+
+        assert_eq!(stored_parent, Some(parent_session_id));
+
+        let view_parent: Option<i64> = conn
+            .query_row(
+                "SELECT parent_session_id FROM session_activity_view WHERE session_id = ?1",
+                params![child_session_id],
+                |row| row.get(0),
+            )
+            .expect("query session_activity_view");
+
+        assert_eq!(view_parent, Some(parent_session_id));
+
+        drop(conn);
+        let _ = fs::remove_file(path);
+    }
+}

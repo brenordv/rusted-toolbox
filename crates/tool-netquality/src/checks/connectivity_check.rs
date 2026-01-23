@@ -60,3 +60,108 @@ pub async fn run_connectivity_check(
         success,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{
+        ConnectivityConfig, NotificationConfig, SpeedConfig, StorageConfig, ThresholdCategory,
+        Thresholds,
+    };
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Duration;
+
+    fn build_config(urls: Vec<String>, timeout: Duration) -> NetQualityConfig {
+        NetQualityConfig {
+            connectivity: ConnectivityConfig {
+                delay: Duration::from_secs(1),
+                timeout,
+                outage_backoff: Duration::from_secs(1),
+                outage_backoff_max: Duration::from_secs(5),
+                urls,
+            },
+            speed: SpeedConfig {
+                expected_download_mbps: 100.0,
+                expected_upload_mbps: None,
+                delay: Duration::from_secs(60),
+                download_thresholds: Thresholds::default_thresholds(),
+                upload_thresholds: Thresholds::default_thresholds(),
+                speedtest_cli_path: None,
+            },
+            notifications: NotificationConfig {
+                telegram: None,
+                otel_endpoint: None,
+                min_download_threshold: ThresholdCategory::Medium,
+                min_upload_threshold: ThresholdCategory::Slow,
+            },
+            storage: StorageConfig {
+                db_path: std::env::temp_dir().join("netquality-connectivity-test.db"),
+                cleanup_enabled: false,
+                cleanup_interval: Duration::from_secs(86_400),
+            },
+        }
+    }
+
+    fn start_http_server(status: u16) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let addr = listener.local_addr().expect("server addr");
+        let handle = thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0u8; 1024];
+                let _ = stream.read(&mut buffer);
+                let response = format!(
+                    "HTTP/1.1 {} OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    status
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        (format!("http://{}", addr), handle)
+    }
+
+    fn unused_port_url() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind unused port");
+        let port = listener.local_addr().expect("port").port();
+        drop(listener);
+        format!("http://127.0.0.1:{port}")
+    }
+
+    #[tokio::test]
+    async fn connectivity_check_success_updates_state() {
+        let (server_url, handle) = start_http_server(204);
+        let fallback_url = "http://127.0.0.1:1".to_string();
+        let config = build_config(vec![server_url.clone(), fallback_url], Duration::from_secs(1));
+        let mut state = LoopState::new(&config);
+
+        let result = run_connectivity_check(&config, &mut state)
+            .await
+            .expect("connectivity check should succeed");
+
+        let _ = handle.join();
+        assert!(result.success);
+        assert_eq!(result.url, server_url);
+        assert_eq!(result.result, "204");
+        assert_eq!(state.current_url_index(), 1);
+    }
+
+    #[tokio::test]
+    async fn connectivity_check_failure_advances_url_index() {
+        let config = build_config(
+            vec![unused_port_url(), unused_port_url()],
+            Duration::from_millis(150),
+        );
+        let mut state = LoopState::new(&config);
+
+        let result = run_connectivity_check(&config, &mut state)
+            .await
+            .expect("connectivity check should complete");
+
+        assert!(!result.success);
+        assert_eq!(result.url, config.connectivity.urls[1]);
+        assert_eq!(state.current_url_index(), 1);
+    }
+}
