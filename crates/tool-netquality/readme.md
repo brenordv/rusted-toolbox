@@ -45,7 +45,7 @@ If `db_path` is not provided, the database defaults to `netquality.db` next to t
     "db_path": "netquality.db"
   },
   "connectivity": {
-    "delay_secs": 10,
+    "delay_secs": 60,
     "timeout_secs": 1,
     "outage_backoff_secs": 10,
     "outage_backoff_max_secs": 3600,
