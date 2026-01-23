@@ -1,4 +1,4 @@
-use crate::models::{NetQualityCliArgs, Thresholds};
+use crate::models::{NetQualityCliArgs, ThresholdCategory, Thresholds};
 use anyhow::{anyhow, Result};
 use clap::{Arg, ArgAction, Command};
 use shared::command_line::cli_builder::CommandExt;
@@ -54,6 +54,18 @@ pub fn get_cli_arguments() -> Result<NetQualityCliArgs> {
                 .help("Upload thresholds as comma-separated percentages (e.g. 30,50,65,85)"),
         )
         .arg(
+            Arg::new("min-download-threshold")
+                .long("min-download-threshold")
+                .value_name("THRESHOLD")
+                .help("Minimum download threshold to trigger notifications (very_slow|slow|medium|medium_fast|expected)"),
+        )
+        .arg(
+            Arg::new("min-upload-threshold")
+                .long("min-upload-threshold")
+                .value_name("THRESHOLD")
+                .help("Minimum upload threshold to trigger notifications (very_slow|slow|medium|medium_fast|expected)"),
+        )
+        .arg(
             Arg::new("connectivity-delay")
                 .long("connectivity-delay")
                 .value_name("SECS")
@@ -96,6 +108,13 @@ pub fn get_cli_arguments() -> Result<NetQualityCliArgs> {
                 .value_parser(clap::value_parser!(PathBuf)),
         )
         .arg(
+            Arg::new("speedtest-cli-path")
+                .long("speedtest-cli-path")
+                .value_name("FILE")
+                .help("Path to Ookla speedtest CLI binary")
+                .value_parser(clap::value_parser!(PathBuf)),
+        )
+        .arg(
             Arg::new("telegram-token")
                 .long("telegram-token")
                 .value_name("TOKEN")
@@ -130,6 +149,16 @@ pub fn get_cli_arguments() -> Result<NetQualityCliArgs> {
         .map(|value| parse_thresholds(value))
         .transpose()?;
 
+    let min_download_notification_threshold = matches
+        .get_one::<String>("min-download-threshold")
+        .map(|value| parse_threshold_category(value))
+        .transpose()?;
+
+    let min_upload_notification_threshold = matches
+        .get_one::<String>("min-upload-threshold")
+        .map(|value| parse_threshold_category(value))
+        .transpose()?;
+
     let telegram_token = matches.get_one::<String>("telegram-token").cloned();
     let telegram_chat_id = matches.get_one::<String>("telegram-chat-id").cloned();
 
@@ -147,12 +176,15 @@ pub fn get_cli_arguments() -> Result<NetQualityCliArgs> {
         expected_upload_mbps: matches.get_one::<f64>("expected-upload").copied(),
         download_thresholds,
         upload_thresholds,
+        min_download_notification_threshold,
+        min_upload_notification_threshold,
         connectivity_delay_secs: matches.get_one::<u64>("connectivity-delay").copied(),
         speed_delay_secs: matches.get_one::<u64>("speed-delay").copied(),
         connectivity_timeout_secs: matches.get_one::<u64>("connectivity-timeout").copied(),
         outage_backoff_secs: matches.get_one::<u64>("outage-backoff").copied(),
         outage_backoff_max_secs: matches.get_one::<u64>("outage-backoff-max").copied(),
         db_path: matches.get_one::<PathBuf>("db-path").cloned(),
+        speedtest_cli_path: matches.get_one::<PathBuf>("speedtest-cli-path").cloned(),
         telegram_token,
         telegram_chat_id,
         otel_endpoint: matches.get_one::<String>("otel-endpoint").cloned(),
@@ -200,4 +232,18 @@ fn parse_thresholds(value: &str) -> Result<Thresholds> {
         .map_err(|error| anyhow!("Invalid threshold values: {error}"))?;
 
     Ok(thresholds)
+}
+
+fn parse_threshold_category(value: &str) -> Result<ThresholdCategory> {
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "very_slow" => Ok(ThresholdCategory::VerySlow),
+        "slow" => Ok(ThresholdCategory::Slow),
+        "medium" => Ok(ThresholdCategory::Medium),
+        "medium_fast" => Ok(ThresholdCategory::MediumFast),
+        "expected" => Ok(ThresholdCategory::Expected),
+        _ => Err(anyhow!(
+            "Invalid threshold category: {value}. Use very_slow, slow, medium, medium_fast, or expected."
+        )),
+    }
 }

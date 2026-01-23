@@ -17,6 +17,7 @@
     "expected_download_mbps": 100.0,
     "expected_upload_mbps": 20.0,
     "delay_secs": 14400,
+    "speedtest_cli_path": "C:\\Program Files\\Speedtest\\speedtest.exe",
     "download_thresholds": {
       "very_slow": 30.0,
       "slow": 50.0,
@@ -35,6 +36,8 @@
       "bot_token": "YOUR_BOT_TOKEN",
       "chat_id": "YOUR_CHAT_ID"
     },
-    "otel_endpoint": "http://localhost:4318"
+    "otel_endpoint": "http://localhost:4318",
+    "min_download_threshold": "medium_fast",
+    "min_upload_threshold": "slow"
   }
 }

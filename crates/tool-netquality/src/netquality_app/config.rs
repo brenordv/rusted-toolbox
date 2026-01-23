@@ -1,48 +1,49 @@
 use crate::models::{
     dedupe_urls, ConfigFile, ConnectivityConfig, ConnectivityConfigFile, NetQualityCliArgs,
     NetQualityConfig, NotificationConfig, NotificationConfigFile, SpeedConfig, SpeedConfigFile,
-    StorageConfig, StorageConfigFile, TelegramConfig, TelegramConfigFile, Thresholds, UrlMode,
-    DEFAULT_URLS,
+    StorageConfig, StorageConfigFile, TelegramConfig, TelegramConfigFile, ThresholdCategory,
+    Thresholds, UrlMode, DEFAULT_URLS,
 };
 use anyhow::{anyhow, Context, Result};
 use shared::system::load_json_file_to_object::load_json_file_to_object;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const DEFAULT_CONNECTIVITY_DELAY_SECS: u64 = 10;
+const DEFAULT_CONNECTIVITY_DELAY_SECS: u64 = 60;
 const DEFAULT_SPEED_DELAY_SECS: u64 = 14_400;
 const DEFAULT_CONNECTIVITY_TIMEOUT_SECS: u64 = 1;
 const DEFAULT_OUTAGE_BACKOFF_SECS: u64 = 10;
 const DEFAULT_OUTAGE_BACKOFF_MAX_SECS: u64 = 3_600;
+const DEFAULT_MIN_DOWNLOAD_NOTIFY_THRESHOLD: ThresholdCategory = ThresholdCategory::Medium;
+const DEFAULT_MIN_UPLOAD_NOTIFY_THRESHOLD: ThresholdCategory = ThresholdCategory::Slow;
 
 pub(super) async fn load_config(args: &NetQualityCliArgs) -> Result<(NetQualityConfig, String)> {
-    let config_path = resolve_config_path(args)?;
-    let mut config_label = "defaults".to_string();
-    let config_file = if let Some(path) = config_path {
-        config_label = path.display().to_string();
-        Some(load_json_file_to_object::<ConfigFile>(&path).await?)
+    let config_paths = resolve_config_paths(args)?;
+    let config_label = if config_paths.is_empty() {
+        "defaults".to_string()
     } else {
-        None
+        config_paths
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(" + ")
     };
 
-    let config = build_config(config_file, args)?;
+    let mut merged_config: Option<ConfigFile> = None;
+    for path in &config_paths {
+        let loaded = load_json_file_to_object::<ConfigFile>(path).await?;
+        merged_config = Some(match merged_config {
+            Some(existing) => merge_config_files(existing, loaded),
+            None => loaded,
+        });
+    }
+
+    let config = build_config(merged_config, args)?;
     Ok((config, config_label))
 }
 
-fn resolve_config_path(args: &NetQualityCliArgs) -> Result<Option<PathBuf>> {
-    if let Some(path) = &args.config_path {
-        if path.exists() {
-            return Ok(Some(path.clone()));
-        }
-        return Err(anyhow!("Config file not found: {}", path.display()));
-    }
-
-    let cwd_path = std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("config.json");
-    if cwd_path.exists() {
-        return Ok(Some(cwd_path));
-    }
+fn resolve_config_paths(args: &NetQualityCliArgs) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
 
     let exe_path = std::env::current_exe()
         .ok()
@@ -50,14 +51,126 @@ fn resolve_config_path(args: &NetQualityCliArgs) -> Result<Option<PathBuf>> {
         .map(|dir| dir.join("config.json"));
     if let Some(path) = exe_path {
         if path.exists() {
-            return Ok(Some(path));
+            paths.push(path);
         }
     }
 
-    Ok(None)
+    let cwd_path = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("config.json");
+    if cwd_path.exists() {
+        paths.push(cwd_path);
+    }
+
+    if let Some(path) = &args.config_path {
+        if path.exists() {
+            paths.push(path.clone());
+        } else {
+            return Err(anyhow!("Config file not found: {}", path.display()));
+        }
+    }
+
+    Ok(paths)
 }
 
-fn build_config(config_file: Option<ConfigFile>, args: &NetQualityCliArgs) -> Result<NetQualityConfig> {
+fn merge_config_files(base: ConfigFile, overlay: ConfigFile) -> ConfigFile {
+    ConfigFile {
+        connectivity: merge_connectivity_config(base.connectivity, overlay.connectivity),
+        speed: merge_speed_config(base.speed, overlay.speed),
+        notifications: merge_notification_config(base.notifications, overlay.notifications),
+        storage: merge_storage_config(base.storage, overlay.storage),
+    }
+}
+
+fn merge_connectivity_config(
+    base: Option<ConnectivityConfigFile>,
+    overlay: Option<ConnectivityConfigFile>,
+) -> Option<ConnectivityConfigFile> {
+    match (base, overlay) {
+        (None, None) => None,
+        (Some(value), None) | (None, Some(value)) => Some(value),
+        (Some(base), Some(overlay)) => Some(ConnectivityConfigFile {
+            delay_secs: overlay.delay_secs.or(base.delay_secs),
+            timeout_secs: overlay.timeout_secs.or(base.timeout_secs),
+            outage_backoff_secs: overlay.outage_backoff_secs.or(base.outage_backoff_secs),
+            outage_backoff_max_secs: overlay
+                .outage_backoff_max_secs
+                .or(base.outage_backoff_max_secs),
+            urls: overlay.urls.or(base.urls),
+            url_mode: overlay.url_mode.or(base.url_mode),
+        }),
+    }
+}
+
+fn merge_speed_config(
+    base: Option<SpeedConfigFile>,
+    overlay: Option<SpeedConfigFile>,
+) -> Option<SpeedConfigFile> {
+    match (base, overlay) {
+        (None, None) => None,
+        (Some(value), None) | (None, Some(value)) => Some(value),
+        (Some(base), Some(overlay)) => Some(SpeedConfigFile {
+            expected_download_mbps: overlay
+                .expected_download_mbps
+                .or(base.expected_download_mbps),
+            expected_upload_mbps: overlay.expected_upload_mbps.or(base.expected_upload_mbps),
+            delay_secs: overlay.delay_secs.or(base.delay_secs),
+            download_thresholds: overlay.download_thresholds.or(base.download_thresholds),
+            upload_thresholds: overlay.upload_thresholds.or(base.upload_thresholds),
+            speedtest_cli_path: overlay.speedtest_cli_path.or(base.speedtest_cli_path),
+        }),
+    }
+}
+
+fn merge_notification_config(
+    base: Option<NotificationConfigFile>,
+    overlay: Option<NotificationConfigFile>,
+) -> Option<NotificationConfigFile> {
+    match (base, overlay) {
+        (None, None) => None,
+        (Some(value), None) | (None, Some(value)) => Some(value),
+        (Some(base), Some(overlay)) => Some(NotificationConfigFile {
+            telegram: merge_telegram_config(base.telegram, overlay.telegram),
+            otel_endpoint: overlay.otel_endpoint.or(base.otel_endpoint),
+            min_download_threshold: overlay
+                .min_download_threshold
+                .or(base.min_download_threshold),
+            min_upload_threshold: overlay.min_upload_threshold.or(base.min_upload_threshold),
+        }),
+    }
+}
+
+fn merge_telegram_config(
+    base: Option<TelegramConfigFile>,
+    overlay: Option<TelegramConfigFile>,
+) -> Option<TelegramConfigFile> {
+    match (base, overlay) {
+        (None, None) => None,
+        (Some(value), None) | (None, Some(value)) => Some(value),
+        (Some(base), Some(overlay)) => Some(TelegramConfigFile {
+            bot_token: overlay.bot_token.or(base.bot_token),
+            chat_id: overlay.chat_id.or(base.chat_id),
+        }),
+    }
+}
+
+fn merge_storage_config(
+    base: Option<StorageConfigFile>,
+    overlay: Option<StorageConfigFile>,
+) -> Option<StorageConfigFile> {
+    match (base, overlay) {
+        (None, None) => None,
+        (Some(value), None) | (None, Some(value)) => Some(value),
+        (Some(base), Some(overlay)) => Some(StorageConfigFile {
+            db_path: overlay.db_path.or(base.db_path),
+        }),
+    }
+}
+
+fn build_config(
+    config_file: Option<ConfigFile>,
+    args: &NetQualityCliArgs,
+) -> Result<NetQualityConfig> {
     let mut connectivity = build_connectivity_config(
         config_file
             .as_ref()
@@ -236,12 +349,28 @@ fn build_speed_config(
         .validate()
         .map_err(|error| anyhow!("Invalid upload thresholds: {error}"))?;
 
+    let speedtest_cli_path = args.speedtest_cli_path.clone().or_else(|| {
+        config_file
+            .as_ref()
+            .and_then(|cfg| cfg.speedtest_cli_path.clone())
+    });
+
+    if let Some(path) = &speedtest_cli_path {
+        if !path.exists() {
+            return Err(anyhow!(
+                "Speedtest CLI binary not found: {}",
+                path.display()
+            ));
+        }
+    }
+
     Ok(SpeedConfig {
         expected_download_mbps: expected_download,
         expected_upload_mbps: expected_upload,
         delay: Duration::from_secs(delay_secs),
         download_thresholds,
         upload_thresholds,
+        speedtest_cli_path,
     })
 }
 
@@ -260,9 +389,29 @@ fn build_notification_config(
             .and_then(|cfg| cfg.otel_endpoint.clone())
     });
 
+    let min_download_threshold = args
+        .min_download_notification_threshold
+        .or_else(|| {
+            config_file
+                .as_ref()
+                .and_then(|cfg| cfg.min_download_threshold)
+        })
+        .unwrap_or(DEFAULT_MIN_DOWNLOAD_NOTIFY_THRESHOLD);
+
+    let min_upload_threshold = args
+        .min_upload_notification_threshold
+        .or_else(|| {
+            config_file
+                .as_ref()
+                .and_then(|cfg| cfg.min_upload_threshold)
+        })
+        .unwrap_or(DEFAULT_MIN_UPLOAD_NOTIFY_THRESHOLD);
+
     Ok(NotificationConfig {
         telegram,
         otel_endpoint,
+        min_download_threshold,
+        min_upload_threshold,
     })
 }
 

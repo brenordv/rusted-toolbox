@@ -6,12 +6,12 @@ mod state;
 use crate::cli_utils::print_runtime_info;
 use crate::models::NetQualityCliArgs;
 use crate::notifiers::Notifier;
+use crate::persistence::db;
 use anyhow::{Context, Result};
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tracing::{info, trace};
-use crate::persistence::db;
 
 pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
     let (config, config_label) = config::load_config(args).await?;
@@ -30,7 +30,8 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
         .context("Failed to initialize notification channels")?;
 
     let db_path = &config.storage.db_path;
-    let connection = db::create_database(db_path).context("Failed to initialize SQLite database")?;
+    let connection =
+        db::create_database(db_path).context("Failed to initialize SQLite database")?;
 
     let shutdown = setup_graceful_shutdown(false);
     let mut state = state::LoopState::new(&config);

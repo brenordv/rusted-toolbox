@@ -24,7 +24,7 @@ impl LoopState {
         let now = Instant::now();
         Self {
             next_connectivity_at: now,
-            next_speed_at: now + config.speed.delay,
+            next_speed_at: now,
             current_connectivity_delay: config.connectivity.delay,
             next_url_index: 0,
             outage_active: false,
@@ -107,7 +107,15 @@ pub(super) async fn handle_speed_state(
         (None, None) => false,
     };
 
-    if download_changed || upload_changed {
+    let download_notify = result
+        .download_threshold
+        .is_at_or_below(config.notifications.min_download_threshold);
+    let upload_notify = result
+        .upload_threshold
+        .map(|threshold| threshold.is_at_or_below(config.notifications.min_upload_threshold))
+        .unwrap_or(false);
+
+    if (download_changed || upload_changed) && (download_notify || upload_notify) {
         notifier.send_speed_change(config, result).await;
     }
 

@@ -12,12 +12,15 @@ pub struct NetQualityCliArgs {
     pub expected_upload_mbps: Option<f64>,
     pub download_thresholds: Option<Thresholds>,
     pub upload_thresholds: Option<Thresholds>,
+    pub min_download_notification_threshold: Option<ThresholdCategory>,
+    pub min_upload_notification_threshold: Option<ThresholdCategory>,
     pub connectivity_delay_secs: Option<u64>,
     pub speed_delay_secs: Option<u64>,
     pub connectivity_timeout_secs: Option<u64>,
     pub outage_backoff_secs: Option<u64>,
     pub outage_backoff_max_secs: Option<u64>,
     pub db_path: Option<PathBuf>,
+    pub speedtest_cli_path: Option<PathBuf>,
     pub telegram_token: Option<String>,
     pub telegram_chat_id: Option<String>,
     pub otel_endpoint: Option<String>,
@@ -48,12 +51,15 @@ pub struct SpeedConfig {
     pub delay: Duration,
     pub download_thresholds: Thresholds,
     pub upload_thresholds: Thresholds,
+    pub speedtest_cli_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
 pub struct NotificationConfig {
     pub telegram: Option<TelegramConfig>,
     pub otel_endpoint: Option<String>,
+    pub min_download_threshold: ThresholdCategory,
+    pub min_upload_threshold: ThresholdCategory,
 }
 
 #[derive(Debug, Clone)]
@@ -131,12 +137,15 @@ pub struct SpeedConfigFile {
     pub delay_secs: Option<u64>,
     pub download_thresholds: Option<Thresholds>,
     pub upload_thresholds: Option<Thresholds>,
+    pub speedtest_cli_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationConfigFile {
     pub telegram: Option<TelegramConfigFile>,
     pub otel_endpoint: Option<String>,
+    pub min_download_threshold: Option<ThresholdCategory>,
+    pub min_upload_threshold: Option<ThresholdCategory>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,7 +190,8 @@ pub fn dedupe_urls(urls: Vec<String>) -> Vec<String> {
     result
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum ThresholdCategory {
     VerySlow,
     Slow,
@@ -191,6 +201,20 @@ pub enum ThresholdCategory {
 }
 
 impl ThresholdCategory {
+    pub fn severity_rank(self) -> u8 {
+        match self {
+            ThresholdCategory::VerySlow => 0,
+            ThresholdCategory::Slow => 1,
+            ThresholdCategory::Medium => 2,
+            ThresholdCategory::MediumFast => 3,
+            ThresholdCategory::Expected => 4,
+        }
+    }
+
+    pub fn is_at_or_below(self, minimum: ThresholdCategory) -> bool {
+        self.severity_rank() <= minimum.severity_rank()
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             ThresholdCategory::VerySlow => "Very Slow",

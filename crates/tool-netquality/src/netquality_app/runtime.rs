@@ -54,5 +54,21 @@ pub(super) fn build_runtime_info(config: &NetQualityConfig) -> Vec<(&str, String
                 .map(|endpoint| endpoint.to_string())
                 .unwrap_or_else(|| "disabled".to_string()),
         ),
+        (
+            "Min notify download",
+            config
+                .notifications
+                .min_download_threshold
+                .label()
+                .to_string(),
+        ),
+        (
+            "Min notify upload",
+            config
+                .notifications
+                .min_upload_threshold
+                .label()
+                .to_string(),
+        ),
     ]
 }
