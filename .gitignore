@@ -1,5 +1,7 @@
 **/crates/tool-whurl/requests/media-api
 **/crates/tool-whurl/requests/sweet-spot
+**/config.json
+**/ookla-speedtest
 !.env.example
 !.yarn/patches
 !.yarn/plugins

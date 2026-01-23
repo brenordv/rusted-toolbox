@@ -30,7 +30,7 @@ members = [
     "crates/tool-pingx",
     "crates/tool-whurl",
     "crates/tool-b64"
-]
+, "crates/tool-netquality"]
 
 [profile.release]
 lto = true

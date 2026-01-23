@@ -2,6 +2,8 @@
 appsettings*.json
 *.appsettings*.json
 .data/
+**/config.json
+**/ookla-speedtest
 
 # Universal ignores
 *.log
