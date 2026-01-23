@@ -1,6 +1,8 @@
 {
   "storage": {
-    "db_path": "netquality.db"
+    "db_path": "netquality.db",
+    "cleanup_enabled": true,
+    "cleanup_interval_days": 365
   },
   "connectivity": {
     "delay_secs": 10,

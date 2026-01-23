@@ -5,7 +5,7 @@ use crate::notifiers::Notifier;
 use chrono::{DateTime, Utc};
 use std::time::{Duration, Instant};
 
-pub(super) struct LoopState {
+pub(crate) struct LoopState {
     pub(super) next_connectivity_at: Instant,
     pub(super) next_speed_at: Instant,
     pub(super) current_connectivity_delay: Duration,
@@ -35,6 +35,14 @@ impl LoopState {
             last_download_threshold: None,
             last_upload_threshold: None,
         }
+    }
+
+    pub(crate) fn current_url_index(&self) -> usize {
+        self.next_url_index
+    }
+
+    pub(crate) fn update_next_url_index(&mut self, next_index: usize) {
+        self.next_url_index = next_index;
     }
 }
 

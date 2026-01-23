@@ -6,6 +6,7 @@ A cross-platform CLI that monitors connectivity and speed, stores activity in SQ
 - Runs periodic connectivity checks against a rotating URL list
 - Runs speed tests only when connectivity is up
 - Stores connectivity/speed activity in SQLite with session linking
+- Cleans up activity older than 1 year (configurable interval)
 - Notifies on outage recovery and speed threshold changes
 
 ## Command-Line Options
@@ -42,7 +43,9 @@ If `db_path` is not provided, the database defaults to `netquality.db` next to t
 ```json
 {
   "storage": {
-    "db_path": "netquality.db"
+    "db_path": "netquality.db",
+    "cleanup_enabled": true,
+    "cleanup_interval_days": 365
   },
   "connectivity": {
     "delay_secs": 60,

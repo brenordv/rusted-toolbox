@@ -1,3 +1,4 @@
+mod checks;
 mod cli_utils;
 mod models;
 mod netquality_app;

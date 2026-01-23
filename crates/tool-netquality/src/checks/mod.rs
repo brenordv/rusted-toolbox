@@ -1,0 +1,2 @@
+pub mod connectivity_check;
+pub mod speed_test_check;

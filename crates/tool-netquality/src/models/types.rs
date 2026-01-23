@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -71,6 +72,8 @@ pub struct TelegramConfig {
 #[derive(Debug, Clone)]
 pub struct StorageConfig {
     pub db_path: PathBuf,
+    pub cleanup_enabled: bool,
+    pub cleanup_interval: Duration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -91,21 +94,21 @@ impl Thresholds {
         }
     }
 
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<()> {
         let in_range = |value: f64| value >= 0.0 && value <= 100.0;
         if !in_range(self.very_slow)
             || !in_range(self.slow)
             || !in_range(self.medium)
             || !in_range(self.medium_fast)
         {
-            return Err("threshold values must be between 0 and 100".to_string());
+            return Err(anyhow!("threshold values must be between 0 and 100"));
         }
 
         if !(self.very_slow <= self.slow
             && self.slow <= self.medium
             && self.medium <= self.medium_fast)
         {
-            return Err("threshold values must be in ascending order".to_string());
+            return Err(anyhow!("threshold values must be in ascending order"));
         }
 
         Ok(())
@@ -157,6 +160,8 @@ pub struct TelegramConfigFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfigFile {
     pub db_path: Option<PathBuf>,
+    pub cleanup_enabled: Option<bool>,
+    pub cleanup_interval_days: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]

@@ -1,8 +1,9 @@
-mod checks;
 mod config;
 mod runtime;
-mod state;
+pub mod state;
 
+use crate::checks::connectivity_check::run_connectivity_check;
+use crate::checks::speed_test_check::run_speed_check;
 use crate::cli_utils::print_runtime_info;
 use crate::models::NetQualityCliArgs;
 use crate::notifiers::Notifier;
@@ -10,8 +11,8 @@ use crate::persistence::db;
 use anyhow::{Context, Result};
 use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
-use tracing::{info, trace};
+use std::time::{Duration, Instant};
+use tracing::{info, trace, warn};
 
 pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
     let (config, config_label) = config::load_config(args).await?;
@@ -30,8 +31,25 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
         .context("Failed to initialize notification channels")?;
 
     let db_path = &config.storage.db_path;
-    let connection =
+    let mut connection =
         db::create_database(db_path).context("Failed to initialize SQLite database")?;
+
+    let mut next_cleanup_at = if config.storage.cleanup_enabled {
+        match db::cleanup_old_activity(&mut connection) {
+            Ok(stats) => {
+                info!(
+                    "Database cleanup complete: {} sessions, {} connectivity, {} speed rows removed.",
+                    stats.sessions_deleted, stats.connectivity_deleted, stats.speed_deleted
+                );
+            }
+            Err(error) => {
+                warn!("Database cleanup failed: {error:#}");
+            }
+        }
+        Some(Instant::now() + config.storage.cleanup_interval)
+    } else {
+        None
+    };
 
     let shutdown = setup_graceful_shutdown(false);
     let mut state = state::LoopState::new(&config);
@@ -42,7 +60,7 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
         let now = std::time::Instant::now();
 
         if now >= state.next_connectivity_at {
-            let connectivity_result = checks::run_connectivity_check(&config, &mut state)
+            let connectivity_result = run_connectivity_check(&config, &mut state)
                 .await
                 .context("Connectivity check failed")?;
 
@@ -58,7 +76,7 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
 
         if should_run_speed {
             if state.last_connectivity_success {
-                let speed_result = checks::run_speed_check(&config)
+                let speed_result = run_speed_check(&config)
                     .await
                     .context("Speed check failed")?;
 
@@ -74,8 +92,25 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
         }
 
         if connectivity_id.is_some() || speed_id.is_some() {
-            db::insert_session(&connection, connectivity_id, speed_id)
+            db::insert_session(&connection, None, connectivity_id, speed_id)
                 .context("Failed to store session")?;
+        }
+
+        if let Some(next_cleanup_due) = next_cleanup_at {
+            if now >= next_cleanup_due {
+                match db::cleanup_old_activity(&mut connection) {
+                    Ok(stats) => {
+                        info!(
+                            "Database cleanup complete: {} sessions, {} connectivity, {} speed rows removed.",
+                            stats.sessions_deleted, stats.connectivity_deleted, stats.speed_deleted
+                        );
+                    }
+                    Err(error) => {
+                        warn!("Database cleanup failed: {error:#}");
+                    }
+                }
+                next_cleanup_at = Some(Instant::now() + config.storage.cleanup_interval);
+            }
         }
 
         tokio::time::sleep(Duration::from_secs(1)).await;

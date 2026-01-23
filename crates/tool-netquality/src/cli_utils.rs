@@ -1,5 +1,5 @@
 use crate::models::{NetQualityCliArgs, ThresholdCategory, Thresholds};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Arg, ArgAction, Command};
 use shared::command_line::cli_builder::CommandExt;
 use shared::constants::general::DASH_LINE;
@@ -211,7 +211,7 @@ fn parse_thresholds(value: &str) -> Result<Thresholds> {
         ));
     }
 
-    let values: Result<Vec<f64>, _> = parts
+    let values: Result<Vec<f64>> = parts
         .iter()
         .map(|part| {
             part.parse::<f64>()
@@ -227,9 +227,7 @@ fn parse_thresholds(value: &str) -> Result<Thresholds> {
         medium_fast: values[3],
     };
 
-    thresholds
-        .validate()
-        .map_err(|error| anyhow!("Invalid threshold values: {error}"))?;
+    thresholds.validate().context("Invalid threshold values")?;
 
     Ok(thresholds)
 }

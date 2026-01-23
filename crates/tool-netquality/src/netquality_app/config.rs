@@ -16,6 +16,8 @@ const DEFAULT_OUTAGE_BACKOFF_SECS: u64 = 10;
 const DEFAULT_OUTAGE_BACKOFF_MAX_SECS: u64 = 3_600;
 const DEFAULT_MIN_DOWNLOAD_NOTIFY_THRESHOLD: ThresholdCategory = ThresholdCategory::Medium;
 const DEFAULT_MIN_UPLOAD_NOTIFY_THRESHOLD: ThresholdCategory = ThresholdCategory::Slow;
+const DEFAULT_STORAGE_CLEANUP_ENABLED: bool = true;
+const DEFAULT_STORAGE_CLEANUP_INTERVAL_DAYS: u64 = 365;
 
 pub(super) async fn load_config(args: &NetQualityCliArgs) -> Result<(NetQualityConfig, String)> {
     let config_paths = resolve_config_paths(args)?;
@@ -163,6 +165,8 @@ fn merge_storage_config(
         (Some(value), None) | (None, Some(value)) => Some(value),
         (Some(base), Some(overlay)) => Some(StorageConfigFile {
             db_path: overlay.db_path.or(base.db_path),
+            cleanup_enabled: overlay.cleanup_enabled.or(base.cleanup_enabled),
+            cleanup_interval_days: overlay.cleanup_interval_days.or(base.cleanup_interval_days),
         }),
     }
 }
@@ -333,7 +337,7 @@ fn build_speed_config(
 
     download_thresholds
         .validate()
-        .map_err(|error| anyhow!("Invalid download thresholds: {error}"))?;
+        .context("Invalid download thresholds")?;
 
     let upload_thresholds = args
         .upload_thresholds
@@ -347,7 +351,7 @@ fn build_speed_config(
 
     upload_thresholds
         .validate()
-        .map_err(|error| anyhow!("Invalid upload thresholds: {error}"))?;
+        .context("Invalid upload thresholds")?;
 
     let speedtest_cli_path = args.speedtest_cli_path.clone().or_else(|| {
         config_file
@@ -444,16 +448,38 @@ fn build_storage_config(
     config_file: Option<StorageConfigFile>,
     args: &NetQualityCliArgs,
 ) -> Result<StorageConfig> {
+    let config_file = config_file.as_ref();
     let db_path = match args
         .db_path
         .clone()
-        .or_else(|| config_file.and_then(|cfg| cfg.db_path))
+        .or_else(|| config_file.and_then(|cfg| cfg.db_path.clone()))
     {
         Some(path) => path,
         None => default_db_path()?,
     };
 
-    Ok(StorageConfig { db_path })
+    let cleanup_enabled = config_file
+        .and_then(|cfg| cfg.cleanup_enabled)
+        .unwrap_or(DEFAULT_STORAGE_CLEANUP_ENABLED);
+    let cleanup_interval_days = config_file
+        .and_then(|cfg| cfg.cleanup_interval_days)
+        .unwrap_or(DEFAULT_STORAGE_CLEANUP_INTERVAL_DAYS);
+
+    if cleanup_interval_days == 0 {
+        return Err(anyhow!(
+            "Storage cleanup interval days must be greater than zero."
+        ));
+    }
+
+    let cleanup_interval_secs = cleanup_interval_days
+        .checked_mul(86_400)
+        .ok_or_else(|| anyhow!("Storage cleanup interval days is too large."))?;
+
+    Ok(StorageConfig {
+        db_path,
+        cleanup_enabled,
+        cleanup_interval: Duration::from_secs(cleanup_interval_secs),
+    })
 }
 
 fn default_db_path() -> Result<PathBuf> {
