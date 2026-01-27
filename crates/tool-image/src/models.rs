@@ -14,16 +14,61 @@ pub enum FilterType {
 
 pub struct EditArgs {
     pub input_files: Vec<PathBuf>,
-    pub resize: Option<u32>,
+    pub resize: Option<ResizeSpec>,
     pub grayscale: bool,
     pub convert: Option<ImageFormat>,
 }
 
 pub struct EditJob {
     pub input_file: PathBuf,
-    pub resize: Option<u32>,
+    pub resize: Option<ResizeSpec>,
     pub grayscale: bool,
     pub convert: Option<ImageFormat>,
+}
+
+#[derive(Clone, Debug)]
+pub enum ResizeSpec {
+    Percent(f64),
+    Dimensions { width: f64, height: f64 },
+}
+
+impl ResizeSpec {
+    pub fn suffix(&self) -> String {
+        match self {
+            ResizeSpec::Percent(percent) => format!("resized{}pct", format_decimal(*percent)),
+            ResizeSpec::Dimensions { width, height } => {
+                format!("resized{}x{}", format_decimal(*width), format_decimal(*height))
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for ResizeSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResizeSpec::Percent(percent) => write!(f, "{}%", format_decimal(*percent)),
+            ResizeSpec::Dimensions { width, height } => {
+                write!(f, "{}x{}", format_decimal(*width), format_decimal(*height))
+            }
+        }
+    }
+}
+
+fn format_decimal(value: f64) -> String {
+    let mut formatted = format!("{:.4}", value);
+    if formatted.contains('.') {
+        while formatted.ends_with('0') {
+            formatted.pop();
+        }
+        if formatted.ends_with('.') {
+            formatted.pop();
+        }
+    }
+    if formatted.is_empty() {
+        "0".to_string()
+    } else {
+        formatted
+    }
 }
 
 pub struct DecodedImage {

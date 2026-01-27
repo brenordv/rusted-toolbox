@@ -2,7 +2,7 @@ use crate::image_encoders::{
     encode_avif, encode_bmp, encode_gif, encode_jpeg, encode_png, encode_webp,
 };
 use crate::image_format_traits::ImageFormatTraits;
-use crate::models::{DecodedImage, EditJob, ImageMeta};
+use crate::models::{DecodedImage, EditJob, ImageMeta, ResizeSpec};
 use anyhow::Result;
 use image::imageops::FilterType;
 use image::metadata::Orientation;
@@ -29,9 +29,9 @@ pub fn process_edit_job(job: EditJob, progress_bar: &ProgressBar) -> Result<()> 
     let mut img_info = decode_image(&job.input_file)?;
 
     debug!("Image decoded...");
-    if let Some(resize) = job.resize {
-        info!("Resizing image to {}% of its original size", resize);
-        progress_bar.set_message(format!("Resizing image to {}%...", resize));
+    if let Some(resize) = &job.resize {
+        info!("Resizing image to {}", resize);
+        progress_bar.set_message(format!("Resizing image to {}...", resize));
         progress_bar.inc(inc_step);
         img_info.dynamic_image = apply_resize(img_info.dynamic_image, resize)?;
         debug!("Image resized...");
@@ -133,8 +133,8 @@ fn determine_output_plan(job: &EditJob, metadata: &ImageMeta) -> Result<(ImageFo
     // Generate suffix from operations
     let mut suffix_parts = Vec::new();
 
-    if let Some(resize) = job.resize {
-        suffix_parts.push(format!("resized{}", resize));
+    if let Some(resize) = &job.resize {
+        suffix_parts.push(resize.suffix());
     }
 
     if job.grayscale {
@@ -215,21 +215,59 @@ fn decode_image(image_path: &PathBuf) -> Result<DecodedImage> {
     })
 }
 
-fn apply_resize(image: DynamicImage, percent: u32) -> Result<DynamicImage> {
-    let new_width = (image.width() as f64 * percent as f64 / 100.0).round() as u32;
-    let new_height = (image.height() as f64 * percent as f64 / 100.0).round() as u32;
+fn apply_resize(image: DynamicImage, resize: &ResizeSpec) -> Result<DynamicImage> {
+    match resize {
+        ResizeSpec::Percent(percent) => {
+            let new_width = (image.width() as f64 * (*percent / 100.0)).round() as u32;
+            let new_height = (image.height() as f64 * (*percent / 100.0)).round() as u32;
 
-    if new_width == 0 || new_height == 0 {
-        anyhow::bail!("Invalid resize parameters");
+            if new_width == 0 || new_height == 0 {
+                anyhow::bail!("Invalid resize parameters");
+            }
+
+            debug!(
+                "Resizing from {}x{} to {}x{}",
+                image.width(),
+                image.height(),
+                new_width,
+                new_height
+            );
+
+            Ok(image.resize(new_width, new_height, FilterType::Lanczos3))
+        }
+        ResizeSpec::Dimensions { width, height } => {
+            warn_if_ratio_differs(image.width(), image.height(), *width, *height);
+
+            let new_width = width.round() as u32;
+            let new_height = height.round() as u32;
+
+            if new_width == 0 || new_height == 0 {
+                anyhow::bail!("Invalid resize parameters");
+            }
+
+            debug!(
+                "Resizing from {}x{} to {}x{}",
+                image.width(),
+                image.height(),
+                new_width,
+                new_height
+            );
+
+            Ok(image.resize_exact(new_width, new_height, FilterType::Lanczos3))
+        }
     }
+}
 
-    debug!(
-        "Resizing from {}x{} to {}x{}",
-        image.width(),
-        image.height(),
-        new_width,
-        new_height
-    );
+fn warn_if_ratio_differs(original_width: u32, original_height: u32, width: f64, height: f64) {
+    let width_ratio = width / original_width as f64;
+    let height_ratio = height / original_height as f64;
+    let ratio_delta = (width_ratio - height_ratio).abs();
+    let epsilon = 0.0001_f64;
 
-    Ok(image.resize(new_width, new_height, FilterType::Lanczos3))
+    if ratio_delta > epsilon {
+        warn!(
+            "Resize ratio mismatch: original={}x{}, target={}x{}, width_ratio={:.6}, height_ratio={:.6}",
+            original_width, original_height, width, height, width_ratio, height_ratio
+        );
+    }
 }

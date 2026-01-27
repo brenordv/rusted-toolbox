@@ -1,3 +1,7 @@
+# 1.1.0 (2026-01-26)
+- Updated dependencies.
+- Improved resizing functionality to also accept percentages with decimal values, and explicit width + height values.
+
 # 1.0.2 (2025-09-25)
 - Updated dependencies.
 - Removed support for PCX files.
