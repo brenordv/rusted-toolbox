@@ -1,6 +1,6 @@
 [package]
 name = "imgx"
-version = "1.0.2"
+version = "1.1.0"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Quick way for editing images from the terminal"
@@ -9,11 +9,11 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 [dependencies]
 shared = { path = "../shared" }
 anyhow = "1.0.100"
-clap = { version = "4.5.48", features = ["derive", "color"] }
-tracing = "0.1.41"
-indicatif = "0.18.0"
+clap = { version = "4.5.54", features = ["derive", "color"] }
+tracing = "0.1.44"
+indicatif = "0.18.3"
 rayon = "1.11.0"
 num_cpus = "1.17.0"
-image = { version = "0.25.8", features = ["png", "jpeg", "gif", "webp", "tiff", "avif"] }
-gif = "0.13.3"
+image = { version = "0.25.9", features = ["png", "jpeg", "gif", "webp", "tiff", "avif"] }
+gif = "0.14.1"
 imagequant = { version = "4.4.1" }

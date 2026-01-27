@@ -1,4 +1,4 @@
-use crate::models::EditArgs;
+use crate::models::{EditArgs, ResizeSpec};
 use crate::string_traits::StringExt;
 use anyhow::Result;
 use clap::{Arg, Command};
@@ -14,8 +14,8 @@ pub fn print_runtime_info(args: &EditArgs) {
         println!("  - {:?}", file);
     }
 
-    if let Some(resize) = args.resize {
-        println!("- Resize: {}%", resize);
+    if let Some(resize) = &args.resize {
+        println!("- Resize: {}", resize);
     }
 
     if args.grayscale {
@@ -56,9 +56,9 @@ pub fn get_cli_arguments() -> EditArgs {
         .arg(Arg::new("resize")
             .long("resize")
             .short('r')
-            .value_name("resize")
-            .value_parser(clap::value_parser!(u32))
-            .help("Resize the image to a given percentage. (Example: 50=half size or 50%. 150=150% size)"))
+            .value_name("RESIZE")
+            .value_parser(clap::builder::ValueParser::new(parse_resize))
+            .help("Resize by percentage or by size. (Examples: 50, 12.5%, 640,480, 640.5,480.25)"))
         .arg(Arg::new("grayscale")
             .long("grayscale")
             .short('g')
@@ -84,8 +84,48 @@ pub fn get_cli_arguments() -> EditArgs {
             .unwrap_or_default()
             .map(|s| s.into())
             .collect(),
-        resize: matches.get_one::<u32>("resize").copied(),
+        resize: matches.get_one::<ResizeSpec>("resize").cloned(),
         grayscale: matches.get_flag("grayscale"),
         convert,
     }
+}
+
+fn parse_resize(value: &str) -> Result<ResizeSpec, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("Resize value cannot be empty".to_string());
+    }
+
+    if let Some((width_str, height_str)) = trimmed.split_once(',') {
+        let width = parse_positive_decimal(width_str, "width")?;
+        let height = parse_positive_decimal(height_str, "height")?;
+        return Ok(ResizeSpec::Dimensions { width, height });
+    }
+
+    let percent_str = trimmed.strip_suffix('%').unwrap_or(trimmed);
+    let percent = parse_positive_decimal(percent_str, "percent")?;
+    Ok(ResizeSpec::Percent(percent))
+}
+
+fn parse_positive_decimal(value: &str, label: &str) -> Result<f64, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(format!("Resize {} cannot be empty", label));
+    }
+
+    let parsed: f64 = trimmed.parse().map_err(|_| {
+        format!(
+            "Invalid resize {}: '{}'. Expected a decimal number.",
+            label, trimmed
+        )
+    })?;
+
+    if parsed <= 0.0 {
+        return Err(format!(
+            "Invalid resize {}: '{}'. Value must be greater than 0.",
+            label, trimmed
+        ));
+    }
+
+    Ok(parsed)
 }

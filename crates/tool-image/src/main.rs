@@ -14,7 +14,7 @@ use shared::logging::app_logger::LogLevel;
 use shared::logging::logging_helpers::initialize_log;
 
 fn main() -> Result<()> {
-    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Error);
+    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Warn);
     let args = get_cli_arguments();
     validate_args(&args)?;
     print_runtime_info(&args);
