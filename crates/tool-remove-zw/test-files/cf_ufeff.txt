@@ -1,0 +1,1 @@
+BOM test: A﻿B (U+FEFF)

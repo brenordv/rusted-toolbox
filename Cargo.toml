@@ -29,8 +29,10 @@ members = [
     "crates/tool-lookup",
     "crates/tool-pingx",
     "crates/tool-whurl",
-    "crates/tool-b64"
-, "crates/tool-netquality"]
+    "crates/tool-b64",
+    "crates/tool-netquality",
+    "crates/tool-remove-zw"
+]
 
 [profile.release]
 lto = true
