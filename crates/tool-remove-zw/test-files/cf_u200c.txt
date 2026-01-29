@@ -1,0 +1,1 @@
+ZWNJ test: A‌B (U+200C)

@@ -1,0 +1,15 @@
+[package]
+name = "remove-zw"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "Removes zero-width Unicode format characters from text"
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+anyhow = "1.0.100"
+clap = "4.5.51"
+once_cell = "1.21.3"
+regex = "1.11.2"
+shared = { path = "../shared" }
+tracing = "0.1.41"

@@ -1,0 +1,1 @@
+WORD JOINER test: A⁠B (U+2060)

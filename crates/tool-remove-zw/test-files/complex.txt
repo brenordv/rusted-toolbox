@@ -1,0 +1,6 @@
+This file contains multiple zero-width format characters.
+Line one: Hello​World (ZWSP between Hello and World)
+Line two: Non‌Joiner and Join‍er in the same line.
+Line three: Word⁠Joiner is here, and a BOM﻿ is here too.
+Line four: Mix​ed‌‍⁠﻿Chars with repeats: A​B​C and X﻿Y﻿Z.
+Line five: End.
