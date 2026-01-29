@@ -83,6 +83,16 @@ fn process_and_write(args: &RemoveZwArgs, input: &InputSource, content: &str) ->
         );
     }
 
+    if removed == 0 && should_skip_write(args, input) {
+        if args.verbose {
+            eprintln!(
+                "remove-zw: {} -> no changes, skipping output file",
+                source_label
+            );
+        }
+        return Ok(());
+    }
+
     write_output(args, input, cleaned.as_ref())
         .with_context(|| format!("Failed to write output for {}", source_label))?;
 
@@ -192,6 +202,18 @@ fn strip_format_chars(input: &str) -> (Cow<'_, str>, usize) {
 
     let cleaned = FORMAT_RE.replace_all(input, "");
     (cleaned, removed)
+}
+
+fn should_skip_write(args: &RemoveZwArgs, input: &InputSource) -> bool {
+    if matches!(input, InputSource::Stdin) {
+        return false;
+    }
+
+    if let Some(OutputTarget::Stdout) = args.output {
+        return false;
+    }
+
+    true
 }
 
 fn expand_inputs(args: &RemoveZwArgs) -> Result<Vec<InputSource>> {
