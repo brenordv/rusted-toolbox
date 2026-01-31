@@ -119,7 +119,7 @@ setup_repository() {
       print_warning "Stashing local changes"
       git stash push -m "Auto-stash before update $(date)"
     fi
-    git pull origin main || git pull origin master
+    git pull origin master
     print_success "Repository updated"
   else
     print_status "Cloning repo: $REPO_URL"
@@ -165,6 +165,7 @@ install_tools() {
     "mqtt"
     "pingx"
     "qrcode"
+    "remove-zw"
     "split"
     "ts"
     "whisper"
