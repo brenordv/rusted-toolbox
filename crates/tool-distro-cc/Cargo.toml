@@ -1,0 +1,16 @@
+[package]
+name = "distro-cc"
+version = "1.0.0"
+edition = "2021"
+authors = ["Breno RdV"]
+description = "Translate distro package manager commands between Linux distributions"
+repository = "https://github.com/brenordv/rusted-toolbox"
+
+[dependencies]
+shared = { path = "../shared" }
+ai-shared = { path = "../ai-shared" }
+ai-macros = { path = "../ai-macros" }
+tokio = "1.49.0"
+anyhow = "1.0.100"
+clap = "4.5.56"
+shell-words = "1.1.1"
