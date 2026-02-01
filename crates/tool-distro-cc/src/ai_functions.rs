@@ -4,7 +4,11 @@ use ai_macros::ai_function;
 const OUTPUT: &str = "";
 
 #[ai_function]
-pub fn convert_distro_command(_command: &str, _from_distro: &str, _to_distro: &str) -> &'static str {
+pub fn convert_distro_command(
+    _command: &str,
+    _from_distro: &str,
+    _to_distro: &str,
+) -> &'static str {
     /// ROLE
     /// - Translate one distro package manager command from `from_distro` to `to_distro`.
     /// - Output EXACTLY ONE converted command string with no commentary.

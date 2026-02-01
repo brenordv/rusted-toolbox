@@ -310,13 +310,7 @@ mod tests {
             elapsed_ms: 1200,
         };
 
-        let result = build_speed_result(
-            measurement,
-            100.0,
-            Some(25.0),
-            &thresholds,
-            &thresholds,
-        );
+        let result = build_speed_result(measurement, 100.0, Some(25.0), &thresholds, &thresholds);
 
         assert_eq!(result.download_threshold, ThresholdCategory::MediumFast);
         assert_eq!(result.upload_threshold, Some(ThresholdCategory::MediumFast));

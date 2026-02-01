@@ -37,7 +37,11 @@ impl ResizeSpec {
         match self {
             ResizeSpec::Percent(percent) => format!("resized{}pct", format_decimal(*percent)),
             ResizeSpec::Dimensions { width, height } => {
-                format!("resized{}x{}", format_decimal(*width), format_decimal(*height))
+                format!(
+                    "resized{}x{}",
+                    format_decimal(*width),
+                    format_decimal(*height)
+                )
             }
         }
     }

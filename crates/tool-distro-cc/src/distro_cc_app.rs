@@ -35,7 +35,8 @@ pub async fn start_distro_cc_app(config: DistroCcRuntimeConfig) -> Result<()> {
         eprintln!("Attempting conversion using internal map...");
     }
 
-    let mapped_result = try_convert_with_map(from_family, to_family, &config.command, config.verbose)?;
+    let mapped_result =
+        try_convert_with_map(from_family, to_family, &config.command, config.verbose)?;
 
     let final_result = if let Some(mapped) = mapped_result {
         mapped
@@ -75,11 +76,7 @@ fn try_convert_with_map(
     Ok(convert_parts_with_map(from, to, &parts))
 }
 
-async fn convert_with_ai(
-    from: DistroFamily,
-    to: DistroFamily,
-    command: &str,
-) -> Result<String> {
+async fn convert_with_ai(from: DistroFamily, to: DistroFamily, command: &str) -> Result<String> {
     eprintln!("Warning: using AI fallback; the converted command may be imperfect.");
     let input = format!(
         "command: {}\nfrom_distro: {}\nto_distro: {}",

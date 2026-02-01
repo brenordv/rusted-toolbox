@@ -50,8 +50,7 @@ fn read_os_release() -> Result<String> {
         return Ok(content);
     }
 
-    fs::read_to_string("/usr/lib/os-release")
-        .context("Failed to read /usr/lib/os-release")
+    fs::read_to_string("/usr/lib/os-release").context("Failed to read /usr/lib/os-release")
 }
 
 fn parse_os_release_content(content: &str) -> Option<DistroFamily> {

@@ -46,30 +46,40 @@ pub fn get_cli_arguments() -> EditArgs {
         .add_basic_metadata(
             env!("CARGO_PKG_VERSION"),
             env!("CARGO_PKG_DESCRIPTION"),
-            "Cli tool to perform some quick image edits."
+            "Cli tool to perform some quick image edits.",
         )
-        .arg(Arg::new("input-files")
-            .help("Input files to process")
-            .num_args(0..)
-            .required(false)
-            .action(clap::ArgAction::Append))
-        .arg(Arg::new("resize")
-            .long("resize")
-            .short('r')
-            .value_name("RESIZE")
-            .value_parser(clap::builder::ValueParser::new(parse_resize))
-            .help("Resize by percentage or by size. (Examples: 50, 12.5%, 640,480, 640.5,480.25)"))
-        .arg(Arg::new("grayscale")
-            .long("grayscale")
-            .short('g')
-            .action(clap::ArgAction::SetTrue)
-            .help("Converts the image to grayscale. (Default: false)"))
-        .arg(Arg::new("convert")
-            .long("convert")
-            .short('c')
-            .value_name("FORMAT")
-            .value_parser(clap::value_parser!(String))
-            .help("Convert the image to the specified format"))
+        .arg(
+            Arg::new("input-files")
+                .help("Input files to process")
+                .num_args(0..)
+                .required(false)
+                .action(clap::ArgAction::Append),
+        )
+        .arg(
+            Arg::new("resize")
+                .long("resize")
+                .short('r')
+                .value_name("RESIZE")
+                .value_parser(clap::builder::ValueParser::new(parse_resize))
+                .help(
+                    "Resize by percentage or by size. (Examples: 50, 12.5%, 640,480, 640.5,480.25)",
+                ),
+        )
+        .arg(
+            Arg::new("grayscale")
+                .long("grayscale")
+                .short('g')
+                .action(clap::ArgAction::SetTrue)
+                .help("Converts the image to grayscale. (Default: false)"),
+        )
+        .arg(
+            Arg::new("convert")
+                .long("convert")
+                .short('c')
+                .value_name("FORMAT")
+                .value_parser(clap::value_parser!(String))
+                .help("Convert the image to the specified format"),
+        )
         .get_matches();
 
     let convert = if let Some(convert) = matches.get_one::<String>("convert") {

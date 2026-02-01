@@ -134,7 +134,10 @@ mod tests {
     async fn connectivity_check_success_updates_state() {
         let (server_url, handle) = start_http_server(204);
         let fallback_url = "http://127.0.0.1:1".to_string();
-        let config = build_config(vec![server_url.clone(), fallback_url], Duration::from_secs(1));
+        let config = build_config(
+            vec![server_url.clone(), fallback_url],
+            Duration::from_secs(1),
+        );
         let mut state = LoopState::new(&config);
 
         let result = run_connectivity_check(&config, &mut state)

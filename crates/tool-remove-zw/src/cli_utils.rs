@@ -27,7 +27,11 @@ pub fn print_runtime_info(args: &RemoveZwArgs) {
             OutputTarget::Stdout => println!("  - Stdout"),
             OutputTarget::File(path) => println!("  - {}", path.display()),
         }
-    } else if args.inputs.iter().all(|input| matches!(input, InputSource::Stdin)) {
+    } else if args
+        .inputs
+        .iter()
+        .all(|input| matches!(input, InputSource::Stdin))
+    {
         println!("  - Stdout");
     } else {
         println!("  - Per-file cleaned output");
@@ -170,7 +174,11 @@ pub fn validate_args(args: &RemoveZwArgs) -> Result<()> {
     }
 
     if let Some(OutputTarget::File(_)) = args.output {
-        if args.inputs.len() > 1 || args.inputs.iter().any(|i| matches!(i, InputSource::Directory(_)))
+        if args.inputs.len() > 1
+            || args
+                .inputs
+                .iter()
+                .any(|i| matches!(i, InputSource::Directory(_)))
         {
             return Err(anyhow!(
                 "--output FILE requires a single file input (use '-' for stdout)"

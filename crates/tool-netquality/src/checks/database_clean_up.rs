@@ -120,11 +120,9 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
             .expect("count sessions");
         let connectivity_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM activity_connectivity",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM activity_connectivity", [], |row| {
+                row.get(0)
+            })
             .expect("count connectivity");
         let speed_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM activity_speed", [], |row| row.get(0))

@@ -99,8 +99,10 @@ fn parse_arch_command(parts: &[String]) -> Option<ParsedCommand> {
         _ => return None,
     };
 
-    if matches!(action, CanonicalAction::Update | CanonicalAction::Upgrade | CanonicalAction::UpdateUpgrade)
-        && !args.is_empty()
+    if matches!(
+        action,
+        CanonicalAction::Update | CanonicalAction::Upgrade | CanonicalAction::UpdateUpgrade
+    ) && !args.is_empty()
     {
         return None;
     }
@@ -165,7 +167,11 @@ mod tests {
 
     #[test]
     fn convert_apt_install_to_pacman() {
-        let parts = vec!["apt".to_string(), "install".to_string(), "neovim".to_string()];
+        let parts = vec![
+            "apt".to_string(),
+            "install".to_string(),
+            "neovim".to_string(),
+        ];
         let converted = convert_parts_with_map(DistroFamily::Debian, DistroFamily::Arch, &parts);
         assert_eq!(converted, Some("pacman -S neovim".to_string()));
     }
@@ -181,9 +187,6 @@ mod tests {
     fn convert_pacman_full_upgrade_to_apt() {
         let parts = vec!["pacman".to_string(), "-Syu".to_string()];
         let converted = convert_parts_with_map(DistroFamily::Arch, DistroFamily::Debian, &parts);
-        assert_eq!(
-            converted,
-            Some("apt update && apt upgrade".to_string())
-        );
+        assert_eq!(converted, Some("apt update && apt upgrade".to_string()));
     }
 }

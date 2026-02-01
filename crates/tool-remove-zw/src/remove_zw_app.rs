@@ -2,11 +2,11 @@ use crate::models::{InputSource, OutputTarget, RemoveZwArgs};
 use anyhow::{anyhow, Context, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
+use shared::constants::general::SIZE_8KB;
 use std::borrow::Cow;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use shared::constants::general::SIZE_8KB;
 
 static FORMAT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\p{Cf}").unwrap());
 
@@ -46,11 +46,7 @@ pub fn run(args: &RemoveZwArgs) -> Result<()> {
                         continue;
                     }
                     Err(err) => {
-                        return Err(anyhow!(
-                            "Failed to read file '{}': {}",
-                            path.display(),
-                            err
-                        ));
+                        return Err(anyhow!("Failed to read file '{}': {}", path.display(), err));
                     }
                 };
 
@@ -144,8 +140,7 @@ fn write_stdout(content: &str) -> Result<()> {
 }
 
 fn write_file(path: &Path, content: &str) -> Result<()> {
-    fs::write(path, content)
-        .with_context(|| format!("Failed to write file '{}'", path.display()))
+    fs::write(path, content).with_context(|| format!("Failed to write file '{}'", path.display()))
 }
 
 fn write_in_place(path: &Path, content: &str) -> Result<()> {
