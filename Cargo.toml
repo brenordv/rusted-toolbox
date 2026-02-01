@@ -30,6 +30,7 @@ members = [
     "crates/tool-pingx",
     "crates/tool-whurl",
     "crates/tool-b64",
+    "crates/tool-distro-cc",
     "crates/tool-netquality",
     "crates/tool-remove-zw"
 ]

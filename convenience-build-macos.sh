@@ -152,6 +152,7 @@ install_tools() {
     "aiignore"
     "b64"
     "csvn"
+    "distro-cc"
     "eh-export"
     "eh-read"
     "get-lines"

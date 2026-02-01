@@ -28,6 +28,7 @@ We currently have the following tools:
 24. A drop-in replacement for base64 called [b64](crates/tool-b64/readme.md) that comes with a few extra features.
 25. A network quality monitor called [netquality](crates/tool-netquality/readme.md) that checks connectivity and speed, and reports when things are not as expected.
 26. A tool called [remove-zw](crates/tool-remove-zw/readme.md) that removes zero-width Unicode format characters from text.
+27. A distro command converter called [distro-cc](crates/tool-distro-cc/readme.md) that translates package manager commands between distros.
 
 ## Ok, but why?
 Well, three main reasons:
@@ -122,16 +123,3 @@ TL;DR:
 7. Any modifications of this code base MUST be distributed with the same license, GPLv3.
 8. This software is provided without a warranty.
 9. The software author or license cannot be held liable for any damage inflicted by the software.
-
-## Todo
-- **#1**: (EH tools) Change this to avoid needing the full connection string just to export messages.
-- **#2**: Some files are way too big. Partly due to the documentation + testing. Some methods should be moved to different files.
-- **#3**: Do a better job at showing, in a unified way, the default values for CLI arguments.
-- **#4**: Add to all the command lines tools the possibility of changing the log level.
-
-## Building on Linux
-TODO: Improve this later
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential pkg-config libssl-dev libcurl4-openssl-dev libxml2-dev libclang-dev
-```
