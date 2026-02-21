@@ -18,6 +18,7 @@ websites, testing frontend applications, or sharing files locally during develop
 - `path`: Directory to serve as web root (defaults to current directory)
 - `-p, --port`: Port number to listen on (default: 4200)
 - `-o, --host`: Host address to bind the server to (default: 127.0.0.1)
+- `-a, --serve-hidden`: Serve hidden files and directories (names starting with `.`). Off by default
 
 ## Examples
 ### Basic Usage - Serve Current Directory
@@ -117,9 +118,17 @@ The server automatically looks for and serves these index files in order:
 1. `index.html`
 2. `index.htm`
 
+### Serving Hidden Files
+By default, files and directories starting with `.` are hidden from directory listings and blocked from
+direct access. Use `--serve-hidden` to include them in listings and allow direct access.
+
+```bash
+http /path/to/website --serve-hidden
+```
+
 ### Security Features
 - **Path Traversal Protection**: Prevents access to files outside the root directory
-- **Hidden File Protection**: Automatically hides files and directories starting with `.`
+- **Hidden File Protection**: Files and directories starting with `.` are hidden and inaccessible by default. Both directory listings and direct URL access are blocked unless `--serve-hidden` is enabled
 - **Method Restriction**: Only GET requests are allowed
 
 ### Request Logging

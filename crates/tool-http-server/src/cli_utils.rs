@@ -10,6 +10,7 @@ pub fn print_runtime_info(args: &ServerArgs) {
     println!("{}", DASH_LINE);
     println!("- Root directory: {}", args.root_path.display());
     println!("- Port: {}", args.port);
+    println!("- Serve hidden files: {}", args.serve_hidden);
 }
 
 pub fn get_cli_arguments() -> ServerArgs {
@@ -43,6 +44,13 @@ pub fn get_cli_arguments() -> ServerArgs {
                 .required(false)
                 .default_value("127.0.0.1"),
         )
+        .arg(
+            Arg::new("serve-hidden")
+                .short('a')
+                .long("serve-hidden")
+                .help("Serve hidden files and directories (names starting with '.')")
+                .action(clap::ArgAction::SetTrue),
+        )
         .get_matches();
 
     let root_path = matches
@@ -58,10 +66,13 @@ pub fn get_cli_arguments() -> ServerArgs {
         .parse()
         .unwrap_or_else(|_| "127.0.0.1".parse().unwrap());
 
+    let serve_hidden = matches.get_flag("serve-hidden");
+
     let config = ServerArgs {
         root_path,
         port,
         host,
+        serve_hidden,
     };
 
     // Validate root path exists
