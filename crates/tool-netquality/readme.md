@@ -68,7 +68,6 @@ Here are the built-in defaults NetQuality uses when a setting is not provided:
   - `medium_fast`: `85`
 - `speed.speedtest_cli_path`: not set (uses the embedded Cloudflare test)
 - `notifications.telegram`: not set
-- `notifications.otel_endpoint`: not set
 - `notifications.min_download_threshold`: `medium`
 - `notifications.min_upload_threshold`: `slow`
 
@@ -114,7 +113,6 @@ Here are the built-in defaults NetQuality uses when a setting is not provided:
       "bot_token": "YOUR_BOT_TOKEN",
       "chat_id": "YOUR_CHAT_ID"
     },
-    "otel_endpoint": "http://localhost:4318",
     "min_download_threshold": "medium_fast",
     "min_upload_threshold": "slow"
   }
@@ -265,8 +263,13 @@ netquality --config ./config.json
 netquality --expected-download 200 --replace-urls --url https://example.com/health --url https://1.1.1.1
 ```
 
-# Creating alerts
-If you are using the open telemetry instrumentation, you can create alerts, like:
-1. Alert for `Internet is Down`: No spans for service netquality for N minutes (dead-man switch)
-2. Alert for `Internet speed degraded`: Span name `netquality.notification`, and `notification.message` contains "Speed change detected"
-3. Internet is back up: Span name `netquality.notification`, and `notification.message` contains "Outage ended"
+## Creating alerts
+If you are using the OpenTelemetry instrumentation (`--otel-endpoint`), you can create alerts based on the
+`netquality.notification` span and its `notification.message` attribute:
+
+1. **Internet speed degraded**: `notification.message` contains `"Speed change detected"`
+2. **Internet is back up**: `notification.message` contains `"Outage ended"`
+
+Note: there is no explicit "outage started" event. To detect an outage in real-time, set up a dead-man's switch
+alert based on the absence of *any* tracing data from the `netquality` service for longer than your connectivity
+check interval (default: 60 seconds). During an outage the tool enters backoff and stops emitting traces.

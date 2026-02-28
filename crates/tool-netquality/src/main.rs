@@ -36,7 +36,13 @@ async fn main() -> Result<()> {
         args.otel_endpoint.as_deref(),
     );
 
-    match run_app(&args).await {
+    let result = run_app(&args).await;
+
+    // Drop the OTel guard before exiting so providers flush pending spans/logs.
+    // exit_success()/exit_error() call std::process::exit(), which skips destructors.
+    drop(_otel_guard);
+
+    match result {
         Ok(_) => exit_success(),
         Err(error) => {
             eprintln!("{error}");

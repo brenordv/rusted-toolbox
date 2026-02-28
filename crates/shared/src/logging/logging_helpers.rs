@@ -3,11 +3,14 @@ use crate::logging::app_logger::{AppLogger, LogLevel};
 /// Opaque guard that keeps OTel providers alive while held.
 ///
 /// When the `otel` feature is enabled, this wraps [`raccoon_otel::OtelGuard`].
-/// When the feature is disabled, this type is uninhabited — `initialize_log_with_otel`
-/// always returns `None` in that case.
+/// When the feature is disabled, `initialize_log_with_otel` always returns `None`.
+///
+/// This type cannot be constructed outside of this module.
 pub struct OtelGuard {
     #[cfg(feature = "otel")]
     _inner: raccoon_otel::OtelGuard,
+    /// Private field to prevent external construction via struct literal.
+    _private: (),
 }
 
 /// Initializes the logging system for the application with the specified settings.
@@ -71,7 +74,12 @@ pub fn initialize_log_with_otel(
                         .build(),
                 ),
             ) {
-                Ok(guard) => return Some(OtelGuard { _inner: guard }),
+                Ok(guard) => {
+                    return Some(OtelGuard {
+                        _inner: guard,
+                        _private: (),
+                    })
+                }
                 Err(e) => {
                     eprintln!("Warning: failed to initialize OpenTelemetry: {e}");
                 }
