@@ -264,3 +264,9 @@ netquality --config ./config.json
 ```bash
 netquality --expected-download 200 --replace-urls --url https://example.com/health --url https://1.1.1.1
 ```
+
+# Creating alerts
+If you are using the open telemetry instrumentation, you can create alerts, like:
+1. Alert for `Internet is Down`: No spans for service netquality for N minutes (dead-man switch)
+2. Alert for `Internet speed degraded`: Span name `netquality.notification`, and `notification.message` contains "Speed change detected"
+3. Internet is back up: Span name `netquality.notification`, and `notification.message` contains "Outage ended"

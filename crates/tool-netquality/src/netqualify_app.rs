@@ -24,10 +24,6 @@ pub async fn run_app(args: &NetQualityCliArgs) -> Result<()> {
         info!("Telegram notifications disabled.");
     }
 
-    if config.notifications.otel_endpoint.is_none() {
-        info!("OpenTelemetry notifications disabled.");
-    }
-
     let mut notifier = Notifier::new(&config.notifications)
         .context("Failed to initialize notification channels")?;
 

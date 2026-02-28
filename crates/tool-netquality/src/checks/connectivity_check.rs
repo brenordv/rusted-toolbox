@@ -92,7 +92,6 @@ mod tests {
             },
             notifications: NotificationConfig {
                 telegram: None,
-                otel_endpoint: None,
                 min_download_threshold: ThresholdCategory::Medium,
                 min_upload_threshold: ThresholdCategory::Slow,
             },

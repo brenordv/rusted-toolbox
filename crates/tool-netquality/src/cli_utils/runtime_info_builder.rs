@@ -54,15 +54,6 @@ pub fn build_runtime_info(config: &NetQualityConfig) -> Vec<(&str, String)> {
                 .unwrap_or_else(|| "disabled".to_string()),
         ),
         (
-            "OpenTelemetry",
-            config
-                .notifications
-                .otel_endpoint
-                .as_ref()
-                .map(|endpoint| endpoint.to_string())
-                .unwrap_or_else(|| "disabled".to_string()),
-        ),
-        (
             "Min notify download",
             config
                 .notifications
