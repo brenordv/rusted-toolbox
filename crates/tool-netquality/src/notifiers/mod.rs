@@ -1,17 +1,14 @@
-pub(crate) mod open_telemetry_notifier;
 pub(crate) mod telegram_notifier;
 
 use crate::models::{NetQualityConfig, NotificationConfig, OutageInfo, SpeedResult};
 use anyhow::Result;
 use chrono::Duration as ChronoDuration;
-use tracing::{trace, warn};
+use tracing::{info_span, trace, warn};
 
-use self::open_telemetry_notifier::OpenTelemetryNotifier;
 use self::telegram_notifier::TelegramNotifier;
 
 pub(crate) struct Notifier {
     telegram: Option<TelegramNotifier>,
-    otel: Option<OpenTelemetryNotifier>,
 }
 
 impl Notifier {
@@ -21,12 +18,7 @@ impl Notifier {
             None => None,
         };
 
-        let otel = match &config.otel_endpoint {
-            Some(endpoint) => Some(OpenTelemetryNotifier::new(endpoint)?),
-            None => None,
-        };
-
-        Ok(Self { telegram, otel })
+        Ok(Self { telegram })
     }
 
     pub(crate) async fn send_outage_end(
@@ -83,22 +75,19 @@ impl Notifier {
             }
         }
 
-        if let Some(otel) = &self.otel {
-            if let Err(error) = otel.send(message) {
-                warn!("Failed to send OpenTelemetry notification: {error}");
-            }
-        }
+        // Emit a tracing span that raccoon_otel's subscriber exports to the OTel collector.
+        // This replaces the old OpenTelemetryNotifier — same data, no separate provider.
+        let span = info_span!("netquality.notification", "notification.message" = message,);
+        let _guard = span.enter();
 
         trace!("Notification sent: {}", message);
-        if config.notifications.telegram.is_none() && config.notifications.otel_endpoint.is_none() {
-            warn!("No notification channels configured; message dropped.");
+        if config.notifications.telegram.is_none() {
+            warn!("No notification channels configured; message only sent via tracing.");
         }
     }
 
     pub(crate) fn shutdown(&self) {
-        if let Some(otel) = &self.otel {
-            otel.shutdown();
-        }
+        // OTel shutdown is handled by the OtelGuard in main.rs.
     }
 }
 

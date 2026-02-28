@@ -58,7 +58,6 @@ pub struct SpeedConfig {
 #[derive(Debug, Clone)]
 pub struct NotificationConfig {
     pub telegram: Option<TelegramConfig>,
-    pub otel_endpoint: Option<String>,
     pub min_download_threshold: ThresholdCategory,
     pub min_upload_threshold: ThresholdCategory,
 }
@@ -146,7 +145,6 @@ pub struct SpeedConfigFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationConfigFile {
     pub telegram: Option<TelegramConfigFile>,
-    pub otel_endpoint: Option<String>,
     pub min_download_threshold: Option<ThresholdCategory>,
     pub min_upload_threshold: Option<ThresholdCategory>,
 }

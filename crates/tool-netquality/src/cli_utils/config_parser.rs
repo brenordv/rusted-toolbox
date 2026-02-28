@@ -133,7 +133,6 @@ fn merge_notification_config(
         (Some(value), None) | (None, Some(value)) => Some(value),
         (Some(base), Some(overlay)) => Some(NotificationConfigFile {
             telegram: merge_telegram_config(base.telegram, overlay.telegram),
-            otel_endpoint: overlay.otel_endpoint.or(base.otel_endpoint),
             min_download_threshold: overlay
                 .min_download_threshold
                 .or(base.min_download_threshold),
@@ -387,12 +386,6 @@ fn build_notification_config(
         args,
     )?;
 
-    let otel_endpoint = args.otel_endpoint.clone().or_else(|| {
-        config_file
-            .as_ref()
-            .and_then(|cfg| cfg.otel_endpoint.clone())
-    });
-
     let min_download_threshold = args
         .min_download_notification_threshold
         .or_else(|| {
@@ -413,7 +406,6 @@ fn build_notification_config(
 
     Ok(NotificationConfig {
         telegram,
-        otel_endpoint,
         min_download_threshold,
         min_upload_threshold,
     })

@@ -68,7 +68,6 @@ Here are the built-in defaults NetQuality uses when a setting is not provided:
   - `medium_fast`: `85`
 - `speed.speedtest_cli_path`: not set (uses the embedded Cloudflare test)
 - `notifications.telegram`: not set
-- `notifications.otel_endpoint`: not set
 - `notifications.min_download_threshold`: `medium`
 - `notifications.min_upload_threshold`: `slow`
 
@@ -114,7 +113,6 @@ Here are the built-in defaults NetQuality uses when a setting is not provided:
       "bot_token": "YOUR_BOT_TOKEN",
       "chat_id": "YOUR_CHAT_ID"
     },
-    "otel_endpoint": "http://localhost:4318",
     "min_download_threshold": "medium_fast",
     "min_upload_threshold": "slow"
   }
@@ -264,3 +262,16 @@ netquality --config ./config.json
 ```bash
 netquality --expected-download 200 --replace-urls --url https://example.com/health --url https://1.1.1.1
 ```
+
+## Creating alerts
+If you are using the OpenTelemetry instrumentation (enabled via `--otel-endpoint` or the
+`OTEL_EXPORTER_OTLP_ENDPOINT` environment variable), you can create alerts based on the
+`netquality.notification` span and its `notification.message` attribute:
+
+1. **Internet speed degraded**: `notification.message` contains `"Speed change detected"`
+2. **Internet is back up**: `notification.message` contains `"Outage ended"`
+
+Note: there is no explicit "outage started" event. The `netquality.notification` span is only emitted when a
+user-facing notification is sent (speed change or outage recovery), so long healthy periods will also have no
+notification spans. A dead-man's switch based solely on the absence of these spans is not reliable for detecting
+outages.
