@@ -264,12 +264,14 @@ netquality --expected-download 200 --replace-urls --url https://example.com/heal
 ```
 
 ## Creating alerts
-If you are using the OpenTelemetry instrumentation (`--otel-endpoint`), you can create alerts based on the
+If you are using the OpenTelemetry instrumentation (enabled via `--otel-endpoint` or the
+`OTEL_EXPORTER_OTLP_ENDPOINT` environment variable), you can create alerts based on the
 `netquality.notification` span and its `notification.message` attribute:
 
 1. **Internet speed degraded**: `notification.message` contains `"Speed change detected"`
 2. **Internet is back up**: `notification.message` contains `"Outage ended"`
 
-Note: there is no explicit "outage started" event. To detect an outage in real-time, set up a dead-man's switch
-alert based on the absence of *any* tracing data from the `netquality` service for longer than your connectivity
-check interval (default: 60 seconds). During an outage the tool enters backoff and stops emitting traces.
+Note: there is no explicit "outage started" event. The `netquality.notification` span is only emitted when a
+user-facing notification is sent (speed change or outage recovery), so long healthy periods will also have no
+notification spans. A dead-man's switch based solely on the absence of these spans is not reliable for detecting
+outages.

@@ -64,6 +64,13 @@ pub fn initialize_log_with_otel(
     {
         if let Some(ep) = endpoint {
             use std::time::Duration;
+
+            // Set RUST_LOG so raccoon_otel's EnvFilter picks up the requested level.
+            // Only set it if the user hasn't already configured RUST_LOG explicitly.
+            if std::env::var("RUST_LOG").is_err() {
+                std::env::set_var("RUST_LOG", log_level.to_tracing_level());
+            }
+
             match raccoon_otel::setup_otel(
                 app_name,
                 Some(
