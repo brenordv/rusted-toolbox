@@ -1,3 +1,6 @@
+# 1.2.0 (2026-07-04)
+- Updated dependencies.
+
 # 1.1.0 (2026-01-26)
 - Updated dependencies.
 - Improved resizing functionality to also accept percentages with decimal values, and explicit width + height values.
@@ -10,4 +13,4 @@
 - Removed emojis. They don't render properly on every terminal.
 
 # 1.0.0 (2025-08-14)
-Initial release
+- Initial release

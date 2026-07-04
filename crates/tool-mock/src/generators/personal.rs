@@ -5,7 +5,7 @@ use fake::faker::address::en::*;
 use fake::faker::name::en::*;
 use fake::faker::phone_number::en::*;
 use fake::Fake;
-use rand::Rng;
+use rand::RngExt;
 
 /// Generate a random first name
 pub fn generate_first_name(_options: &MockOptions) -> Result<String> {

@@ -1,3 +1,6 @@
+# 1.1.0 (2026-07-04)
+- Updated dependencies.
+
 # 1.0.3 (2025-09-25)
 - Updated dependencies.
 
@@ -9,4 +12,4 @@
 - Fixed copying string properties to the clipboard. Now we don't copy the quotes.
 
 # 1.0.0 (2025-08-14)
-Initial release
+- Initial release

@@ -1,3 +1,6 @@
+# 1.2.0 (2026-07-04)
+- Updated dependencies.
+
 # 1.1.0 (2025-11-13)
 - Added a random car brand data option.
 
@@ -5,4 +8,4 @@
 - Updated dependencies.
 
 # 1.0.0 (2025-08-16)
-Initial release
+- Initial release

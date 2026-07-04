@@ -1,3 +1,6 @@
+# 2.1.0 (2026-07-04)
+- Updated dependencies.
+
 # 2.0.0 (2025-10-31)
 - Introduced subcommands: `text` and `files`.
   - `text` retains previous behavior and adds a concise positional form: `lookup text "your text"`.

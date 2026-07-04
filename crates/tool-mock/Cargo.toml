@@ -1,6 +1,6 @@
 [package]
 name = "mock"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Mock data generator CLI tool."
@@ -8,9 +8,9 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 
 [dependencies]
 shared = { path = "../shared" }
-clap = "4.5.51"
-anyhow = "1.0.100"
-tracing = "0.1.41"
-rand = "0.9.2"
-chrono = { version = "0.4.42", features = ["serde"] }
-fake = { version = "4.4.0", features = ["derive", "chrono"] }
+clap = "4.6.1"
+anyhow = "1.0.103"
+tracing = "0.1.44"
+rand = "0.10.2"
+chrono = { version = "0.4.45", features = ["serde"] }
+fake = { version = "5.1.0", features = ["derive", "chrono"] }

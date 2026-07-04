@@ -1,19 +1,19 @@
 [package]
 name = "shared-eventhub"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Where all eventhub specific shared code lives."
 
 [dependencies]
 shared = { path = "../shared" }
-clap = { version = "4.5.48", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 tracing-log = "0.2.0"
-anyhow = "1.0.100"
-url = "2.5.7"
-serde = { version = "1.0.227", features = ["derive"] }
+anyhow = "1.0.103"
+url = "2.5.8"
+serde = { version = "1.0.228", features = ["derive"] }
 azeventhubs = "0.20.0"
-chrono = { version = "0.4.42", features = ["serde"] }
+chrono = { version = "0.4.45", features = ["serde"] }
 
 [dev-dependencies]
 rstest="0.26.1"

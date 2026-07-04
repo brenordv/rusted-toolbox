@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.0 - 2026-07-04
+- Updated dependencies.
+
 ## 1.0.0 - 2025-11-12
 - Initial release of the `b64` tool.
 - Supports Base64 encode/decode from stdin, files, or inline text.

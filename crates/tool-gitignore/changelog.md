@@ -1,3 +1,6 @@
+# 1.2.0 (2026-07-04)
+- Updated dependencies.
+
 # 1.1.0 (2025-11-19)
 - Added `.slnx` to the watched list of files for C#.
 - Updated dependencies.
@@ -16,4 +19,4 @@
 - Also added to that logic the `.venv`, and `__pycache__` folders.
 
 # 1.0.0 (2025-08-14)
-Initial release
+- Initial release

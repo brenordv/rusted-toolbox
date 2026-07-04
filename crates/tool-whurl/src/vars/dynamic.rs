@@ -2,7 +2,7 @@ use std::process::Command;
 
 use camino::Utf8Path;
 use chrono::{Duration, Local, Utc};
-use rand::Rng;
+use rand::RngExt;
 use serde_json::Value;
 use tracing::info;
 

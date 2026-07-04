@@ -1,6 +1,6 @@
 [package]
 name = "b64"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["Breno RdV"]
 description = "Encodes/Decodes text and files to base 64 format"
@@ -9,8 +9,8 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 [dependencies]
 shared = { path = "../shared" }
 base64 = "0.22.1"
-clap = "4.5.51"
-tracing = "0.1.41"
+clap = "4.6.1"
+tracing = "0.1.44"
 
 [dev-dependencies]
-tempfile = "3.23.0"
+tempfile = "3.27.0"

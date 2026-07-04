@@ -1,3 +1,6 @@
+# 1.4.0 (2026-07-04)
+- Updated dependencies.
+
 # 1.3.0 (2025-11-22)
 - Allow `# @vars` directives to load matching `.hurlvars` files before `.dvars`, and fail fast when neither exists (plus regression tests).
 - Some house cleaning.

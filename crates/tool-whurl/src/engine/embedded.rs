@@ -1,6 +1,7 @@
 use std::io;
 
 use camino::Utf8Path;
+use hurl::http::{CredentialForwarding, FollowLocation};
 use hurl::runner::{self, RunnerOptionsBuilder, Value, VariableSet};
 use hurl::util::logger::{LoggerOptionsBuilder, Verbosity};
 use hurl::util::path::ContextDir;
@@ -30,7 +31,9 @@ pub fn run_hurl(
     let variable_set = build_variable_set(variables);
 
     let mut runner_options = RunnerOptionsBuilder::new();
-    runner_options.follow_location(true);
+    runner_options.follow_location(FollowLocation::Follow(
+        CredentialForwarding::OnlyInitialHost,
+    ));
 
     if let Some(root) = file_root {
         let current_dir =
