@@ -6,45 +6,51 @@ use shared::constants::general::DASH_LINE;
 use std::fs;
 use std::path::PathBuf;
 
+/// Print runtime info to stderr, keeping stdout for cleaned content and the
+/// dry-run report so both stay pipeable.
 pub fn print_runtime_info(args: &RemoveZwArgs) {
-    println!("Remove-ZW v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
+    eprintln!("Remove-ZW v{}", env!("CARGO_PKG_VERSION"));
+    eprintln!("{}", DASH_LINE);
 
-    println!("- Inputs:");
+    eprintln!("- Inputs:");
     for input in &args.inputs {
         match input {
-            InputSource::Stdin => println!("  - stdin"),
-            InputSource::File(path) => println!("  - {}", path.display()),
-            InputSource::Directory(path) => println!("  - {} (dir)", path.display()),
+            InputSource::Stdin => {
+                eprintln!("  - stdin (filter mode: pipe input or pass a file/dir; Ctrl+Z then Enter to end)")
+            }
+            InputSource::File(path) => eprintln!("  - {}", path.display()),
+            InputSource::Directory(path) => eprintln!("  - {} (dir)", path.display()),
         }
     }
 
-    println!("- Output:");
-    if args.in_place {
-        println!("  - In place");
+    eprintln!("- Output:");
+    if args.dry_run {
+        eprintln!("  - Dry run (nothing written)");
+    } else if args.in_place {
+        eprintln!("  - In place");
     } else if let Some(output) = &args.output {
         match output {
-            OutputTarget::Stdout => println!("  - Stdout"),
-            OutputTarget::File(path) => println!("  - {}", path.display()),
+            OutputTarget::Stdout => eprintln!("  - Stdout"),
+            OutputTarget::File(path) => eprintln!("  - {}", path.display()),
         }
     } else if args
         .inputs
         .iter()
         .all(|input| matches!(input, InputSource::Stdin))
     {
-        println!("  - Stdout");
+        eprintln!("  - Stdout");
     } else {
-        println!("  - Per-file cleaned output");
+        eprintln!("  - Per-file cleaned output");
     }
 
-    println!("- Verbose: {}", args.verbose);
-    println!("- Recursive: {}", args.recursive);
+    eprintln!("- Verbose: {}", args.verbose);
+    eprintln!("- Recursive: {}", args.recursive);
     if args.extensions.is_empty() {
-        println!("- Extensions: (all)");
+        eprintln!("- Extensions: (all)");
     } else {
-        println!("- Extensions: {:?}", args.extensions);
+        eprintln!("- Extensions: {:?}", args.extensions);
     }
-    println!();
+    eprintln!();
 }
 
 pub fn get_cli_arguments() -> RemoveZwArgs {
@@ -52,7 +58,7 @@ pub fn get_cli_arguments() -> RemoveZwArgs {
         .add_basic_metadata(
             env!("CARGO_PKG_VERSION"),
             "Remove zero-width Unicode format characters from text.",
-            "Removes all Unicode format (Cf) characters from input text. With no FILE, or when FILE is -, read standard input.",
+            "Removes all Unicode format (Cf) characters from input text. With no FILE, or when FILE is -, it reads standard input and works as a filter (for example: cat file | remove-zw). To clean files on disk, pass a file or directory path.",
         )
         .preset_arg_verbose(None)
         .arg(
@@ -84,6 +90,13 @@ pub fn get_cli_arguments() -> RemoveZwArgs {
                 .help("When a directory is provided, process files recursively"),
         )
         .arg(
+            Arg::new("dry-run")
+                .long("dry-run")
+                .short('d')
+                .action(ArgAction::SetTrue)
+                .help("Report which files would be modified and how, without writing anything"),
+        )
+        .arg(
             Arg::new("extensions")
                 .long("extensions")
                 .short('e')
@@ -93,7 +106,7 @@ pub fn get_cli_arguments() -> RemoveZwArgs {
         )
         .arg(
             Arg::new("files")
-                .help("Files to process (reads from stdin if none or '-')")
+                .help("Files or directories to process; with none (or '-') reads stdin as a filter")
                 .action(ArgAction::Append)
                 .num_args(0..),
         )
@@ -129,6 +142,7 @@ pub fn get_cli_arguments() -> RemoveZwArgs {
         extensions,
         verbose: matches.get_flag("verbose"),
         no_header: matches.get_flag("no-header"),
+        dry_run: matches.get_flag("dry-run"),
     }
 }
 
@@ -143,15 +157,8 @@ pub fn validate_args(args: &RemoveZwArgs) -> Result<()> {
         return Err(anyhow!("stdin can only be specified once"));
     }
 
-    let has_file_inputs = args
-        .inputs
-        .iter()
-        .any(|input| matches!(input, InputSource::File(_)));
-
-    if args.in_place && !has_file_inputs {
-        return Err(anyhow!("--in-place requires at least one file input"));
-    }
-
+    // --in-place needs no file-input guard: a directory expands to files, and
+    // a stdin input is a documented no-op that still emits to stdout.
     if args.in_place && args.output.is_some() {
         return Err(anyhow!("--in-place cannot be combined with --output"));
     }
@@ -223,4 +230,101 @@ fn parse_extensions(value: &str) -> Vec<String> {
         .filter(|ext| !ext.is_empty())
         .map(|ext| ext.trim_start_matches('.').to_lowercase())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn args_with(inputs: Vec<InputSource>) -> RemoveZwArgs {
+        RemoveZwArgs {
+            inputs,
+            output: None,
+            in_place: false,
+            recursive: false,
+            extensions: Vec::new(),
+            verbose: false,
+            no_header: true,
+            dry_run: false,
+        }
+    }
+
+    #[test]
+    fn in_place_directory_is_allowed() {
+        // B2: --in-place over a directory must validate.
+        let dir = tempdir().unwrap();
+        let mut args = args_with(vec![InputSource::Directory(dir.path().to_path_buf())]);
+        args.in_place = true;
+        assert!(validate_args(&args).is_ok());
+    }
+
+    #[test]
+    fn in_place_stdin_only_is_allowed() {
+        // B3: --in-place with only stdin is a no-op, not an error.
+        let mut args = args_with(vec![InputSource::Stdin]);
+        args.in_place = true;
+        assert!(validate_args(&args).is_ok());
+    }
+
+    #[test]
+    fn in_place_with_output_is_rejected() {
+        let dir = tempdir().unwrap();
+        let mut args = args_with(vec![InputSource::Directory(dir.path().to_path_buf())]);
+        args.in_place = true;
+        args.output = Some(OutputTarget::Stdout);
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn output_file_requires_single_file_input() {
+        let dir = tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        fs::write(&a, b"a").unwrap();
+        fs::write(&b, b"b").unwrap();
+
+        let mut args = args_with(vec![InputSource::File(a), InputSource::File(b)]);
+        args.output = Some(OutputTarget::File(dir.path().join("out.txt")));
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn stdin_specified_twice_is_rejected() {
+        let args = args_with(vec![InputSource::Stdin, InputSource::Stdin]);
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn missing_input_file_is_rejected() {
+        let dir = tempdir().unwrap();
+        let args = args_with(vec![InputSource::File(dir.path().join("nope.txt"))]);
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn parse_extensions_normalizes_entries() {
+        assert_eq!(
+            parse_extensions(" .TXT, md ,,rs "),
+            vec!["txt".to_string(), "md".to_string(), "rs".to_string()]
+        );
+        assert!(parse_extensions("  ,, ").is_empty());
+    }
+
+    #[test]
+    fn print_runtime_info_covers_dry_run_and_default_modes() {
+        // Smoke test: the header prints to stderr for both a dry-run and a
+        // default per-file invocation without panicking.
+        let mut dry = args_with(vec![InputSource::Directory(PathBuf::from("docs"))]);
+        dry.dry_run = true;
+        dry.recursive = true;
+        dry.extensions = vec!["txt".to_string()];
+        print_runtime_info(&dry);
+
+        let default = args_with(vec![InputSource::File(PathBuf::from("a.txt"))]);
+        print_runtime_info(&default);
+
+        let to_stdout = args_with(vec![InputSource::Stdin]);
+        print_runtime_info(&to_stdout);
+    }
 }
