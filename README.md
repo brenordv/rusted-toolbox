@@ -27,7 +27,7 @@ We currently have the following tools:
 23. A wrapper tool called [Whurl](crates/tool-whurl/readme.md), that allows referencing one hurl file in another.
 24. A drop-in replacement for base64 called [b64](crates/tool-b64/readme.md) that comes with a few extra features.
 25. A network quality monitor called [netquality](crates/tool-netquality/readme.md) that checks connectivity and speed, and reports when things are not as expected.
-26. A tool called [remove-zw](crates/tool-remove-zw/readme.md) that removes zero-width Unicode format characters from text.
+26. A tool called [remove-zw](crates/tool-remove-zw/readme.md) that removes zero-width Unicode format characters and a leading byte-order mark (BOM) from text, with a `--dry-run` preview.
 27. A distro command converter called [distro-cc](crates/tool-distro-cc/readme.md) that translates package manager commands between distros.
 
 ## Ok, but why?
