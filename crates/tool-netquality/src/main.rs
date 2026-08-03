@@ -6,7 +6,7 @@ mod notifiers;
 mod persistence;
 mod runtime_state;
 
-use crate::cli_utils::cli_utils::get_cli_arguments;
+use crate::cli_utils::tools::get_cli_arguments;
 use crate::netqualify_app::run_app;
 use anyhow::Result;
 use shared::logging::app_logger::LogLevel;

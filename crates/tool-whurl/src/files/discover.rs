@@ -122,9 +122,7 @@ pub fn list_requests(requests_root: &Utf8Path, api: &str) -> Result<Vec<String>,
 }
 
 pub fn resolve_vars_file_path(api_root: &Utf8Path, vars_file: &Utf8PathBuf) -> Utf8PathBuf {
-    if vars_file.is_absolute() {
-        vars_file.clone()
-    } else if vars_file.as_path().is_file() {
+    if vars_file.is_absolute() || vars_file.as_path().is_file() {
         vars_file.clone()
     } else {
         let candidate = api_root.join(vars_file);

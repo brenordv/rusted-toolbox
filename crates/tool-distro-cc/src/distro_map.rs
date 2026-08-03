@@ -37,7 +37,7 @@ fn parse_command(from: DistroFamily, parts: &[String]) -> Option<ParsedCommand> 
 }
 
 fn parse_debian_command(parts: &[String]) -> Option<ParsedCommand> {
-    let base = parts.get(0)?.to_lowercase();
+    let base = parts.first()?.to_lowercase();
     if base != "apt" && base != "apt-get" {
         return None;
     }
@@ -77,7 +77,7 @@ fn parse_debian_command(parts: &[String]) -> Option<ParsedCommand> {
 }
 
 fn parse_arch_command(parts: &[String]) -> Option<ParsedCommand> {
-    let base = parts.get(0)?.to_lowercase();
+    let base = parts.first()?.to_lowercase();
     if base != "pacman" {
         return None;
     }

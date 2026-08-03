@@ -142,7 +142,7 @@ pub fn validate_args(args: &MqttArgs) -> Result<()> {
     Ok(())
 }
 
-fn validate_host_and_port(host: &String, port: u16) -> Result<()> {
+fn validate_host_and_port(host: &str, port: u16) -> Result<()> {
     if host.is_empty() {
         anyhow::bail!("Host is required.");
     }
@@ -154,7 +154,7 @@ fn validate_host_and_port(host: &String, port: u16) -> Result<()> {
     Ok(())
 }
 
-fn validate_topic(topic: &String) -> Result<()> {
+fn validate_topic(topic: &str) -> Result<()> {
     if topic.is_empty() {
         anyhow::bail!("Topic is required.");
     }

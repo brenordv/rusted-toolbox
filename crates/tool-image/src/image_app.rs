@@ -6,7 +6,7 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use shared::system::folder_walkthrough::list_all_files_recursively;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -102,7 +102,7 @@ fn expand_input_paths(paths: &Vec<PathBuf>) -> Result<HashSet<PathBuf>> {
     Ok(expanded_paths)
 }
 
-fn is_supported_image_file(path: &PathBuf) -> bool {
+fn is_supported_image_file(path: &Path) -> bool {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         let ext = ext.to_lowercase();
         matches!(
@@ -120,8 +120,8 @@ fn build_jobs(expanded_paths: HashSet<PathBuf>, args: &EditArgs) -> Result<Vec<E
         jobs.push(EditJob {
             input_file: path,
             resize: args.resize.clone(),
-            grayscale: args.grayscale.clone(),
-            convert: args.convert.clone(),
+            grayscale: args.grayscale,
+            convert: args.convert,
         })
     }
 

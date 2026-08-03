@@ -13,7 +13,7 @@ Key features:
 - **Automatic Detection**: Scans your project to identify programming languages and frameworks
 - **Smart Merging**: Combines existing `.gitignore` content with new rules without duplication
 - **Multiple Sources**: Fetches gitignore patterns from GitHub's official gitignore repository and other authoritative sources
-- **Comprehensive Coverage**: Supports 25+ programming languages and development environments
+- **Broad Coverage**: Supports 25+ programming languages and development environments
 - **Conflict Resolution**: Sanitizes and deduplicates gitignore entries
 
 ## Supported Languages & Frameworks
@@ -107,7 +107,7 @@ Gitignore patterns are fetched from authoritative sources:
 - **Custom sources**: Curated templates for specific use cases
 
 ## Use Cases
-- **New Projects**: Quickly set up comprehensive gitignore rules
+- **New Projects**: Quickly set up gitignore rules
 - **Multi-language Projects**: Automatically handle complex project structures
 - **Legacy Projects**: Add missing gitignore rules to existing codebases
 - **Team Standardization**: Ensure consistent gitignore patterns across team projects

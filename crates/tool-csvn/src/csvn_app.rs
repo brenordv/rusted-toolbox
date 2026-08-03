@@ -120,7 +120,7 @@ pub fn process_file(args: &mut CsvNConfig, shutdown_signal: Arc<AtomicBool>) -> 
             .context("Failed to write normalized line to output file")?;
 
         line_count += 1;
-        if line_count % feedback_interval == 0 {
+        if line_count.is_multiple_of(feedback_interval) {
             update_process_feedback(start_time, &line_count)?;
         }
     }

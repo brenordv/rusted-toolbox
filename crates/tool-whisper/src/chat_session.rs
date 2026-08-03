@@ -17,6 +17,7 @@ pub struct ChatSession {
 }
 
 impl ChatSession {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         role: String,
         connection: Connection,

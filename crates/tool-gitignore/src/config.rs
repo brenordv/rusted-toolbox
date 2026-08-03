@@ -94,24 +94,21 @@ impl Config {
             "https://raw.githubusercontent.com/github/gitignore/main/R.gitignore".to_string(),
         );
 
-        ".cs|.sln|.csproj|.slnx"
-            .to_string()
-            .split("|")
-            .for_each(|key| {
-                mappings.insert(
-                    key.to_string(),
-                    "https://raw.githubusercontent.com/dotnet/core/main/.gitignore".to_string(),
-                );
-            });
+        ".cs|.sln|.csproj|.slnx".split("|").for_each(|key| {
+            mappings.insert(
+                key.to_string(),
+                "https://raw.githubusercontent.com/dotnet/core/main/.gitignore".to_string(),
+            );
+        });
 
-        ".sqlite|.sqlite3|.db|.db3|.s3db|.sdb|.sl3|.db-shm|.db-wal|.db-journal".to_string().split("|").for_each(|key| {
+        ".sqlite|.sqlite3|.db|.db3|.s3db|.sdb|.sl3|.db-shm|.db-wal|.db-journal".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/brenordv/gitignore-files/refs/heads/master/sqlite.gitignore".to_string(),
             );
         });
 
-        ".gd|.godot".to_string().split("|").for_each(|key| {
+        ".gd|.godot".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/github/gitignore/main/Godot.gitignore"
@@ -119,7 +116,7 @@ impl Config {
             );
         });
 
-        ".cpp|.hpp|.h".to_string().split("|").for_each(|key| {
+        ".cpp|.hpp|.h".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/github/gitignore/main/C%2B%2B.gitignore"
@@ -127,7 +124,7 @@ impl Config {
             );
         });
 
-        ".kt|.kts".to_string().split("|").for_each(|key| {
+        ".kt|.kts".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/github/gitignore/main/Kotlin.gitignore"
@@ -135,14 +132,14 @@ impl Config {
             );
         });
 
-        ".tsx|.jsx".to_string().split("|").for_each(|key| {
+        ".tsx|.jsx".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/facebook/react/main/.gitignore".to_string(),
             );
         });
 
-        ".m|.mm".to_string().split("|").for_each(|key| {
+        ".m|.mm".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/github/gitignore/main/Objective-C.gitignore"
@@ -150,11 +147,11 @@ impl Config {
             );
         });
 
-        ".mat|.m".to_string().split("|").for_each(|key| {
+        ".mat|.m".split("|").for_each(|key| {
             mappings.insert(key.to_string(), "https://raw.githubusercontent.com/brenordv/gitignore-files/refs/heads/master/Matlab.gitignore".to_string());
         });
 
-        ".pl|.pm".to_string().split("|").for_each(|key| {
+        ".pl|.pm".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/github/gitignore/main/Perl.gitignore"
@@ -162,7 +159,7 @@ impl Config {
             );
         });
 
-        ".erl|.ex|.exs".to_string().split("|").for_each(|key| {
+        ".erl|.ex|.exs".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/github/gitignore/main/Elixir.gitignore"
@@ -170,7 +167,7 @@ impl Config {
             );
         });
 
-        ".rs|.rs.bk".to_string().split("|").for_each(|key| {
+        ".rs|.rs.bk".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/github/gitignore/main/Rust.gitignore"
@@ -178,27 +175,31 @@ impl Config {
             );
         });
 
-        ".uproject|.umap|.uasset|.ubulk|.uexp|.uplugin|.usf|.ush".to_string().split("|").for_each(|key| {
+        ".uproject|.umap|.uasset|.ubulk|.uexp|.uplugin|.usf|.ush".split("|").for_each(|key| {
             mappings.insert(key.to_string(), "https://raw.githubusercontent.com/github/gitignore/main/UnrealEngine.gitignore".to_string());
         });
 
-        "hugo_stats.json|.hugo_build.lock|hugo.exe|hugo.darwin|hugo.linux".to_string().split("|").for_each(|key| {
+        "hugo_stats.json|.hugo_build.lock|hugo.exe|hugo.darwin|hugo.linux".split("|").for_each(|key| {
             mappings.insert(key.to_string(), "https://raw.githubusercontent.com/github/gitignore/main/community/Golang/Hugo.gitignore".to_string());
         });
 
-        ".cursor|.cursor-tmp|cursor-output|.cursorrules".to_string().split("|").for_each(|key| {
+        ".cursor|.cursor-tmp|cursor-output|.cursorrules".split("|").for_each(|key| {
             mappings.insert(key.to_string(), "https://raw.githubusercontent.com/oslook/cursor-ai-downloads/refs/heads/main/.gitignore".to_string());
         });
 
-        ".idea|.fleet".to_string().split("|").for_each(|key| {
+        ".idea|.fleet".split("|").for_each(|key| {
             mappings.insert(key.to_string(), "https://raw.githubusercontent.com/github/gitignore/main/Global/JetBrains.gitignore".to_string());
         });
 
-        "thumbs.db|desktop.ini".to_string().split("|").for_each(|key| {
-            mappings.insert(key.to_string(), "https://raw.githubusercontent.com/github/gitignore/main/Global/Windows.gitignore".to_string());
+        "thumbs.db|desktop.ini".split("|").for_each(|key| {
+            mappings.insert(
+                key.to_string(),
+                "https://raw.githubusercontent.com/github/gitignore/main/Global/Windows.gitignore"
+                    .to_string(),
+            );
         });
 
-        ".swp|.swo".to_string().split("|").for_each(|key| {
+        ".swp|.swo".split("|").for_each(|key| {
             mappings.insert(
                 key.to_string(),
                 "https://raw.githubusercontent.com/github/gitignore/main/Global/Vim.gitignore"

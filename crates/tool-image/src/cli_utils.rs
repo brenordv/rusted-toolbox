@@ -82,11 +82,9 @@ pub fn get_cli_arguments() -> EditArgs {
         )
         .get_matches();
 
-    let convert = if let Some(convert) = matches.get_one::<String>("convert") {
-        Some(convert.to_image_format())
-    } else {
-        None
-    };
+    let convert = matches
+        .get_one::<String>("convert")
+        .map(|convert| convert.to_image_format());
 
     EditArgs {
         input_files: matches

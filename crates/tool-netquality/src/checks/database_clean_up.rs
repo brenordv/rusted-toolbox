@@ -2,8 +2,8 @@ use crate::persistence::db;
 use rusqlite::Connection;
 use tracing::{info, warn};
 
-pub fn run_database_cleanup(mut connection: &mut Connection) {
-    match db::cleanup_old_activity(&mut connection) {
+pub fn run_database_cleanup(connection: &mut Connection) {
+    match db::cleanup_old_activity(connection) {
         Ok(stats) => {
             info!(
                 "Database cleanup complete: {} sessions, {} connectivity, {} speed rows removed.",

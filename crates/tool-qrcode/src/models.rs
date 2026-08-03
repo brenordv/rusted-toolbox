@@ -55,7 +55,7 @@ impl QrCodeConfig {
         self.payload.wifi_ssid.is_some()
             && self.payload.wifi_password.is_some()
             && self.payload.wifi_auth.is_some()
-            && !self.payload.text_payload.is_some()
+            && self.payload.text_payload.is_none()
     }
 
     pub fn get_payload(&self) -> HowMode {

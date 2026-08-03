@@ -52,6 +52,6 @@ mod tests {
         let dt: DateTime<Local> = Local::now();
 
         let filename_safe_dt = dt.get_datetime_as_filename_safe_string();
-        assert!(filename_safe_dt.len() > 0);
+        assert!(!filename_safe_dt.is_empty());
     }
 }

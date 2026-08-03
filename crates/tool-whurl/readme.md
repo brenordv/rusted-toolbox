@@ -64,14 +64,14 @@ Whurl automatically layers `_vars/_global.{hurlvars|dvars}` and `<env>.{hurlvars
 It now errors when a directive references a name with no matching files so missing variables are surfaced early.
 
 Supported generators include:
-- `$now`, `$utcnow` — ISO8601 timestamps (local or UTC).
-- `$date`, `$date[+N]`, `$utcdate`, `$utcdate[-N]` — dates in `YYYY-mm-dd`.
-- `$time`, `$time[+N]`, `$utctime`, `$utctime[-N]` — times in `HH:mm:ss` (offsets in seconds).
-- `$uuid` — random UUIDv4 values.
-- `$int`, `$int[min, max]` — random integers (inclusive, negatives allowed, `min < max`).
-- `$float`, `$float[min, max]` — random floats (inclusive, negatives allowed, `min < max`).
-- `$random["option1", "option2", ...]` — pick a random quoted option (commas allowed inside the quotes).
-- `$shell(<command>)` — run a shell command (only when `WHURL_ALLOW_DYN_SHELL_VARS=true`; legacy `WHURL_ALLOW_DYN_BASH_VARS=true` is still respected; destructive commands are blocked and the detected shell is platform-aware).
+- `$now`, `$utcnow`: ISO8601 timestamps (local or UTC).
+- `$date`, `$date[+N]`, `$utcdate`, `$utcdate[-N]`: dates in `YYYY-mm-dd`.
+- `$time`, `$time[+N]`, `$utctime`, `$utctime[-N]`: times in `HH:mm:ss` (offsets in seconds).
+- `$uuid`: random UUIDv4 values.
+- `$int`, `$int[min, max]`: random integers (inclusive, negatives allowed, `min < max`).
+- `$float`, `$float[min, max]`: random floats (inclusive, negatives allowed, `min < max`).
+- `$random["option1", "option2", ...]`: pick a random quoted option (commas allowed inside the quotes).
+- `$shell(<command>)`: run a shell command (only when `WHURL_ALLOW_DYN_SHELL_VARS=true`; legacy `WHURL_ALLOW_DYN_BASH_VARS=true` is still respected; destructive commands are blocked and the detected shell is platform-aware).
 
 On Windows, Whurl uses `cmd /C` for `$shell(...)` commands. On Linux and macOS it honors the `SHELL` environment variable, falling back to `sh` when it is unset.
 
@@ -190,24 +190,24 @@ requests/
 
 ## Subcommands
 ### list
-- `whurl list` — prints every API discovered under the requests root.
-- `whurl list <api>` — lists the requests (file stems) available for that API. Reports when empty.
+- `whurl list`: prints every API discovered under the requests root.
+- `whurl list <api>`: lists the requests (file stems) available for that API. Reports when empty.
 
 ### run
 Runs the selected request after all includes are expanded.
 ```
 whurl run <API> <FILE> [OPTIONS]
 ```
-- `--env NAME` — load `_vars/NAME.hurlvars` (or `<API>/NAME.hurlvars`).
-- `--vars-file PATH` — merge variables from an arbitrary file.
-- `--var KEY=VALUE` — inline variable overrides (repeatable, highest precedence).
-- `--file-root PATH` — adjust the base directory for response/file assertions (relative values are resolved against the API directory; this does **not** change where Whurl discovers request files).
-- `--json PATH` — emit the Hurl JSON report alongside console output.
-- `--print-only-full-response` — suppress header/logs and stream the JSON report to stdout.
-- `--print-only-response-body` — suppress header/logs and print only the last response body.
-- `--silent` — suppress runtime header/log info (includes marked `[quiet]` / `[silent]` also hush logs).
-- `--test` — print a concise summary with failure snippets after execution.
-- `-v` / `-vv` — increase embedded Hurl verbosity (request/response debug logs).
+- `--env NAME`: load `_vars/NAME.hurlvars` (or `<API>/NAME.hurlvars`).
+- `--vars-file PATH`: merge variables from an arbitrary file.
+- `--var KEY=VALUE`: inline variable overrides (repeatable, highest precedence).
+- `--file-root PATH`: adjust the base directory for response/file assertions (relative values are resolved against the API directory; this does **not** change where Whurl discovers request files).
+- `--json PATH`: emit the Hurl JSON report alongside console output.
+- `--print-only-full-response`: suppress header/logs and stream the JSON report to stdout.
+- `--print-only-response-body`: suppress header/logs and print only the last response body.
+- `--silent`: suppress runtime header/log info (includes marked `[quiet]` / `[silent]` also hush logs).
+- `--test`: print a concise summary with failure snippets after execution.
+- `-v` / `-vv`: increase embedded Hurl verbosity (request/response debug logs).
 
 #### About `--file-root`
 Whurl resolves relative paths in the `.hurl` file against the API directory.

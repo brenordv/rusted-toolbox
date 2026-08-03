@@ -138,7 +138,7 @@ async fn get_gitignore_data(
     Ok(())
 }
 
-fn list_files(base: PathBuf, target_gitignore: &PathBuf) -> Vec<PathBuf> {
+fn list_files(base: PathBuf, target_gitignore: &Path) -> Vec<PathBuf> {
     WalkDir::new(base)
         .into_iter()
         .filter_map(|entry| entry.ok()) // skip errors gracefully

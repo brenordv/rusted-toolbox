@@ -2,7 +2,7 @@ use crate::checks::connectivity_check::run_connectivity_check;
 use crate::checks::database_clean_up::run_database_cleanup;
 use crate::checks::speed_test_check::run_speed_check;
 
-use crate::cli_utils::cli_utils::print_runtime_info;
+use crate::cli_utils::tools::print_runtime_info;
 use crate::cli_utils::config_parser;
 use crate::cli_utils::runtime_info_builder::build_runtime_info;
 use crate::models::NetQualityCliArgs;

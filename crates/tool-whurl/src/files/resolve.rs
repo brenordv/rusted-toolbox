@@ -255,7 +255,7 @@ fn validate_component(component: &str) -> Result<(), ResolveError> {
         });
     }
 
-    if component.contains(|ch: char| matches!(ch, '\\' | '\0')) {
+    if component.contains(['\\', '\0']) {
         return Err(ResolveError::InvalidComponent {
             component: component.to_string(),
         });

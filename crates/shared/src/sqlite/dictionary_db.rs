@@ -220,7 +220,7 @@ mod tests {
 
         // Update a missing key
         let result = dict.update(
-            "nonexistent".into(),
+            "nonexistent",
             &ValueType {
                 text: "nada".into(),
                 number: 0,

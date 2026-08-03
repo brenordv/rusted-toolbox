@@ -36,8 +36,8 @@ pub fn get_cli_arguments() -> Result<GitIgnoreArgs> {
 
     let target_folder = matches
         .get_one::<String>("target-dir")
-        .map(|s| PathBuf::from(s))
-        .unwrap_or_else(|| get_current_working_dir());
+        .map(PathBuf::from)
+        .unwrap_or_else(get_current_working_dir);
 
     Ok(GitIgnoreArgs { target_folder })
 }

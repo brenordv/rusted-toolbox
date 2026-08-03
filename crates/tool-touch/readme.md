@@ -3,8 +3,8 @@
 
 This is a port of the Unix `touch` command to Rust.
 The Touch utility updates file access and modification timestamps, creating files if they don't exist. 
-It mimics the behavior of the Unix `touch` command, allowing users to set timestamps to the current time or specify
-custom timestamps through various options.
+It mimics the Unix `touch` command. You can set timestamps to the current time or pass custom timestamps through
+various options.
 
 **Key Features:**
 - Creates empty files if they don't exist (unless `-c` flag is used)

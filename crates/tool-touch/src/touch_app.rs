@@ -98,7 +98,7 @@ pub fn touch_file(file: &str, args: &TouchArgs) -> Result<()> {
 ///
 /// Respects the Unix touch precedence: individual flags (-a, -m) determine behavior,
 /// with the TouchTimeWord enum representing the resolved decision from CLI parsing.
-/// The cli_utils.rs already processes the precedence correctly.
+/// The tools already processes the precedence correctly.
 ///
 /// # Parameters
 /// - `args`: Touch arguments containing time specification and flags
@@ -107,7 +107,7 @@ pub fn touch_file(file: &str, args: &TouchArgs) -> Result<()> {
 /// Tuple of (update_access, update_modify) booleans
 fn determine_timestamps_to_update(args: &TouchArgs) -> (bool, bool) {
     // The TouchTimeWord enum already represents the correctly resolved decision
-    // from cli_utils.rs which properly handles -a, -m, and --time precedence
+    // from tools which properly handles -a, -m, and --time precedence
     match args.time {
         TouchTimeWord::AccessOnly => (true, false),
         TouchTimeWord::ModifyOnly => (false, true),

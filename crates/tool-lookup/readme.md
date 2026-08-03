@@ -30,7 +30,7 @@ If no subcommand is provided, the app prints usage and exits.
 
 ### Subcommands
 
-#### 1) `text` — search for text inside files
+#### 1) `text`: search for text inside files
 Preferred positional syntax keeps it concise:
 ```bash
 lookup text "your text" [OPTIONS]
@@ -70,7 +70,7 @@ lookup text --text "version" --path Cargo.toml --line-only
 lookup text "fixme" --path src --no-header
 ```
 
-#### 2) `files` — find files by filename
+#### 2) `files`: find files by filename
 Use wildcard (default) or regex. Case-insensitive by default.
 ```bash
 lookup files <PATTERN>... [OPTIONS]

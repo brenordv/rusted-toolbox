@@ -180,7 +180,7 @@ mod tests {
             let path_from_new = Path::new(path_str);
 
             // Verify our function behaves consistently with Path::new for relative paths
-            assert_eq!(path_from_new.is_absolute(), false);
+            assert!(!path_from_new.is_absolute());
             assert!(result.is_absolute()); // Our function should always return absolute paths for relative inputs
         }
     }

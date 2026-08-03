@@ -106,7 +106,7 @@ mod tests {
 
         // When env::current_dir() succeeds, it always returns an absolute path
         // Our function should preserve this behavior
-        if result != PathBuf::from("../../../../..") {
+        if result != Path::new("../../../../..") {
             assert!(
                 result.is_absolute(),
                 "Should return absolute path when possible: {:?}",
@@ -122,7 +122,7 @@ mod tests {
         let result = get_current_working_dir();
 
         // The function should never panic and always return a valid PathBuf
-        assert!(result == PathBuf::from("../../../../..") || result.is_absolute());
+        assert!(result == Path::new("../../../../..") || result.is_absolute());
     }
 
     #[test]
@@ -191,7 +191,7 @@ mod tests {
     fn test_get_current_working_dir_path_components() {
         let result = get_current_working_dir();
 
-        if result != PathBuf::from("../../../../..") {
+        if result != Path::new("../../../../..") {
             // Should be able to iterate over components without panicking
             let components: Vec<_> = result.components().collect();
             assert!(
@@ -217,6 +217,5 @@ mod tests {
         let _display = format!("{}", result.display());
 
         // These operations should never panic
-        assert!(true); // If we get here without panicking, test passes
     }
 }

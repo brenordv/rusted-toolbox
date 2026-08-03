@@ -73,7 +73,7 @@ pub fn process_edit_job(job: EditJob, progress_bar: &ProgressBar) -> Result<()> 
 }
 
 pub fn create_job_progress_bar(job: &EditJob, progress_bar: &MultiProgress) -> Result<ProgressBar> {
-    let step_count = get_progress_step(&job);
+    let step_count = get_progress_step(job);
     let pb = progress_bar.add(ProgressBar::new(step_count));
     pb.set_style(
         ProgressStyle::default_bar()
@@ -101,7 +101,7 @@ fn encode_image(
                 "Unsupported output format: {:?}, quality may degrade.",
                 output_format
             );
-            image.save_with_format(&output_path, output_format)?;
+            image.save_with_format(output_path, output_format)?;
             Ok(())
         }
     }

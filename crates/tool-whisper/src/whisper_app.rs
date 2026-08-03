@@ -107,13 +107,13 @@ pub fn start_chat_session(cli_args: WhisperArgs) -> Result<ChatSession> {
     ))
 }
 
-pub fn create_handlers(
-    mut chat_session: ChatSession,
-) -> Result<(
+type ChatHandlers = (
     JoinHandle<Result<()>>,
     JoinHandle<Result<()>>,
     JoinHandle<Result<()>>,
-)> {
+);
+
+pub fn create_handlers(mut chat_session: ChatSession) -> Result<ChatHandlers> {
     // Taking ownership of the required values before moving them into the threads.
     let outgoing_msg_receiver = chat_session.take_outgoing_receiver();
     let outgoing_conn = chat_session.split_connection()?;

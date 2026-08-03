@@ -190,7 +190,7 @@ fn parse_execution_args(matches: &ArgMatches) -> ExecutionArgs {
         vars_file: matches.get_one::<Utf8PathBuf>("vars-file").cloned(),
         inline_vars,
         file_root: matches.get_one::<Utf8PathBuf>("file-root").cloned(),
-        verbosity: matches.get_count("verbose") as u8,
+        verbosity: matches.get_count("verbose"),
     }
 }
 

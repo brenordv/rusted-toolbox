@@ -3,8 +3,8 @@
 Whisper is a bare-bones, secure, and private peer-to-peer chat application that enables encrypted real-time 
 communication between two parties over TCP.
 
-It creates a secure channel using RSA 4096-bit encryption with automatic key exchange, ensuring that all messages are
-encrypted end-to-end without relying on external servers or third-party services.
+It creates a secure channel using RSA 4096-bit encryption with automatic key exchange. Every message is encrypted
+end-to-end, with no external servers or third-party services involved.
 
 **Key Features:**
 - End-to-end RSA 4096-bit encryption with automatic key exchange

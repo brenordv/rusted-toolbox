@@ -3,8 +3,8 @@
 ## What it does
 
 The CSV Normalizer (`csvn`) processes CSV files by filling empty or missing fields with predefined default values. 
-It creates a new normalized version of your CSV file with a `_normalized` suffix, ensuring data consistency and 
-preventing errors in downstream processing systems that cannot handle missing values.
+It creates a new normalized version of your CSV file with a `_normalized` suffix. The normalized copy keeps your
+data consistent and prevents errors in downstream processing systems that cannot handle missing values.
 
 **Key Features:**
 - Fills empty/missing CSV fields with default values

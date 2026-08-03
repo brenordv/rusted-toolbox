@@ -79,14 +79,8 @@ pub struct ChatUi {
 impl PartialEq for ChatState {
     fn eq(&self, other: &Self) -> bool {
         match self {
-            ChatState::Ok => match other {
-                ChatState::Ok => true,
-                _ => false,
-            },
-            ChatState::Exit => match other {
-                ChatState::Exit => true,
-                _ => false,
-            },
+            ChatState::Ok => matches!(other, ChatState::Ok),
+            ChatState::Exit => matches!(other, ChatState::Exit),
         }
     }
 }
@@ -111,7 +105,7 @@ impl ChatUi {
     pub fn run(self) -> Result<()> {
         info!("Starting chat UI...");
         let terminal = ratatui::init();
-        let _ = self.chat_loop(terminal)?;
+        self.chat_loop(terminal)?;
         ratatui::restore();
         Ok(())
     }

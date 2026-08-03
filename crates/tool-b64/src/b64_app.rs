@@ -16,7 +16,7 @@ pub fn run(config: &B64Config) -> Result<(), AppError> {
 }
 
 fn encoded_capacity(len: usize) -> usize {
-    ((len + 2) / 3) * 4
+    len.div_ceil(3) * 4
 }
 
 fn encode(config: &B64Config) -> Result<(), AppError> {
@@ -146,7 +146,7 @@ fn decode(config: &B64Config) -> Result<(), AppError> {
     }
 
     if !pending.is_empty() {
-        if pending.len() % 4 != 0 {
+        if !pending.len().is_multiple_of(4) {
             return Err(AppError::invalid_base64(
                 "decode error: invalid Base64 length",
             ));

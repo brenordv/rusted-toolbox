@@ -57,16 +57,12 @@ impl TouchArgs {
     /// - `Some((access_time, modify_time))`: Time source found
     /// - `None`: No time source specified, use current time
     pub fn get_current_filetime(&self) -> Option<(FileTime, FileTime)> {
-        if self.date.is_some() {
-            let date_filetime = self.date.unwrap();
+        if let Some(date_filetime) = self.date {
             Some((date_filetime, date_filetime))
-        } else if self.time_spec.is_some() {
-            let time_spec_filetime = self.time_spec.unwrap();
+        } else if let Some(time_spec_filetime) = self.time_spec {
             Some((time_spec_filetime, time_spec_filetime))
-        } else if self.reference.is_some() {
-            Some(self.reference.unwrap())
         } else {
-            None
+            self.reference
         }
     }
 }

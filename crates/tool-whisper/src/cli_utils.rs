@@ -20,7 +20,7 @@ pub fn get_cli_arguments() -> Result<WhisperArgs> {
                 .value_name("PORT")
                 .value_parser(clap::value_parser!(u16))
                 .required(false)
-                .help(&format!(
+                .help(format!(
                     "Host mode: Listen for connections on the specified port (default: {})",
                     DEFAULT_PORT
                 )),

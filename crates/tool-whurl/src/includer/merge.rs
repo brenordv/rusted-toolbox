@@ -123,9 +123,7 @@ impl Includer {
         state.register_vars(file_path, &vars);
 
         for directive in includes {
-            let resolved = self
-                .resolve_include(file_path, &directive)
-                .map_err(|source_error| source_error)?;
+            let resolved = self.resolve_include(file_path, &directive)?;
 
             let directive_behavior =
                 IncludeBehavior::from_options(&directive.options).combine(&inherited_behavior);
@@ -234,7 +232,7 @@ impl MergeState {
             return;
         }
 
-        let entry = self.vars.entry(path.to_path_buf()).or_insert_with(Vec::new);
+        let entry = self.vars.entry(path.to_path_buf()).or_default();
         entry.extend(directives.iter().cloned());
     }
 

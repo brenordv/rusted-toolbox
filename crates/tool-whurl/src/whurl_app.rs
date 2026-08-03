@@ -384,7 +384,7 @@ fn build_variables(
 
     // Included API calls (cross-API includes) hierarchy.
     for api in &included_api_list {
-        if let Some((path, vars)) = load_env_file(resolver, &api, "_global", false)? {
+        if let Some((path, vars)) = load_env_file(resolver, api, "_global", false)? {
             let origin = format!(
                 "global vars file `{}`",
                 display_relative_path(resolver, path.as_path())
@@ -396,7 +396,7 @@ fn build_variables(
             &mut merger,
             resolver,
             &mut loaded_dynamic,
-            &api,
+            api,
             "_global",
             false,
             allow_shell,
@@ -408,7 +408,7 @@ fn build_variables(
                 &mut merger,
                 resolver,
                 &mut loaded_dynamic,
-                &api,
+                api,
                 env_name,
                 allow_shell,
                 log_dynamic,
@@ -500,6 +500,7 @@ fn build_variables(
     Ok(merger.finish())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn merge_dynamic_vars(
     merger: &mut VariableAccumulator,
     resolver: &FileResolver,
@@ -575,6 +576,7 @@ fn merge_env_layers(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn merge_directive_vars(
     merger: &mut VariableAccumulator,
     resolver: &FileResolver,

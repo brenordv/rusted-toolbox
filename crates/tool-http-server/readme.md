@@ -167,7 +167,7 @@ This tool provides functionality similar to other development servers:
 
 1. **Zero Configuration**: Works out of the box without any setup or dependencies
 2. **File Serving**: Enhanced directory browsing with modern styling
-3. **Detailed Logging**: Comprehensive request information for debugging
+3. **Detailed Logging**: Request information for debugging
 4. **High Performance**: Built with Rust's async capabilities for excellent performance
 5. **Security First**: Built-in protection against common web server vulnerabilities
 

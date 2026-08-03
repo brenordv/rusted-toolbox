@@ -415,7 +415,7 @@ mod tests {
         let result = logger.log_to_console(false);
 
         // Verify method chaining works
-        assert!(std::ptr::eq(result, &mut logger));
+        assert!(std::ptr::eq(result, &logger));
         assert!(!logger.logs_to_console());
     }
 
@@ -437,7 +437,7 @@ mod tests {
         let result = logger.log_to_file(true, false);
 
         // Verify method chaining works
-        assert!(std::ptr::eq(result, &mut logger));
+        assert!(std::ptr::eq(result, &logger));
         assert!(logger.logs_to_file());
         assert!(!logger.rotates_file_by_day());
     }
@@ -469,7 +469,7 @@ mod tests {
         let result = logger.log_folder("custom_logs");
 
         // Verify method chaining works
-        assert!(std::ptr::eq(result, &mut logger));
+        assert!(std::ptr::eq(result, &logger));
         assert_eq!(logger.get_log_folder(), "custom_logs");
     }
 
@@ -491,7 +491,7 @@ mod tests {
         let result = logger.app_name("MyApplication");
 
         // Verify method chaining works
-        assert!(std::ptr::eq(result, &mut logger));
+        assert!(std::ptr::eq(result, &logger));
         assert_eq!(logger.get_app_name(), "MyApplication");
     }
 
@@ -513,7 +513,7 @@ mod tests {
         let result = logger.log_level(LogLevel::Debug);
 
         // Verify method chaining works
-        assert!(std::ptr::eq(result, &mut logger));
+        assert!(std::ptr::eq(result, &logger));
     }
 
     #[test]
@@ -542,7 +542,6 @@ mod tests {
         logger.init();
 
         // If we get here, the test passed (no panic occurred)
-        assert!(true);
     }
 
     #[test]

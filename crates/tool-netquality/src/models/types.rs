@@ -94,7 +94,7 @@ impl Thresholds {
     }
 
     pub fn validate(&self) -> Result<()> {
-        let in_range = |value: f64| value >= 0.0 && value <= 100.0;
+        let in_range = |value: f64| (0.0..=100.0).contains(&value);
         if !in_range(self.very_slow)
             || !in_range(self.slow)
             || !in_range(self.medium)

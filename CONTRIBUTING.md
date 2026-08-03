@@ -11,7 +11,7 @@ Each tool follows a few principles I try to stick to:
    - **Individual tool crates**: Each CLI tool has its own dedicated crate (e.g., `crates/tool-cat`, `crates/tool-jwt`, `crates/tool-split`, etc.)
      - Each tool crate contains:
        - `main.rs` (thin entrypoint that orchestrates the tool logic);
-       - `cli_utils.rs` (argument parsing/validation only);
+       - `tools` (argument parsing/validation only);
        - `models.rs` (structs and data models);
        - `<tool_name>_app.rs` (the actual tool logic);
        - `readme.md` (manual for the tool);
@@ -20,7 +20,7 @@ Each tool follows a few principles I try to stick to:
    - `crates/ai-tools`: AI-powered agents and helpers (e.g., the chatbot) [I'll probably refactor this later]
      - Binary definitions in `Cargo.toml` using `[[bin]]` sections;
      - Each agent lives under `crates/ai-tools/src/agents/<agent_name>` with:
-       - `cli_utils.rs` (runtime info, argument/env validation, but no agent logic);
+       - `tools` (runtime info, argument/env validation, but no agent logic);
        - `models.rs` (agent-specific types);
        - `<agent_name>_app.rs` (the agent logic);
        - Optional `readme.md` for agent-specific docs;

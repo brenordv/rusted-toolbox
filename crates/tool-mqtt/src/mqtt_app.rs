@@ -17,14 +17,13 @@ pub async fn read_messages(args: &MqttArgs) -> Result<()> {
     loop {
         match event_loop.poll().await {
             Ok(event) => match event {
-                Event::Incoming(inc_message) => match inc_message {
-                    Incoming::Publish(message) => {
+                Event::Incoming(inc_message) => {
+                    if let Incoming::Publish(message) = inc_message {
                         debug!("Publish received: {:?}", message);
                         let decoded_payload = String::from_utf8(message.payload.to_vec())?;
                         info!("Message received: {:?}", decoded_payload);
                     }
-                    _ => {}
-                },
+                }
                 Event::Outgoing(_) => {}
             },
             Err(e) => {
@@ -86,19 +85,17 @@ pub async fn post_message(args: &MqttArgs) -> Result<()> {
     loop {
         match event_loop.poll().await {
             Ok(event) => match event {
-                Event::Incoming(inc_message) => match inc_message {
-                    Incoming::PubAck(_) => {
+                Event::Incoming(inc_message) => {
+                    if let Incoming::PubAck(_) = inc_message {
                         info!("Message publication acknowledged!");
                         break;
                     }
-                    _ => {}
-                },
-                Event::Outgoing(outgoing) => match outgoing {
-                    Outgoing::Publish(_) => {
+                }
+                Event::Outgoing(outgoing) => {
+                    if let Outgoing::Publish(_) = outgoing {
                         info!("Message published. Waiting for ack...");
                     }
-                    _ => {}
-                },
+                }
             },
             Err(e) => {
                 error!("Error = {:?}", e);

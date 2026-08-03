@@ -483,14 +483,10 @@ fn spawn_shell(command: &str) -> std::io::Result<std::process::Output> {
 fn is_destructive_command(command: &str) -> bool {
     let lowered = command.to_ascii_lowercase();
     let mut sanitized = lowered
-        .replace('\n', " ")
-        .replace('\r', " ")
-        .replace('\t', " ")
+        .replace(['\n', '\r', '\t'], " ")
         .replace("&&", " ")
         .replace("||", " ")
-        .replace(';', " ")
-        .replace('|', " ")
-        .replace('&', " ");
+        .replace([';', '|', '&'], " ");
 
     sanitized = sanitized.split_whitespace().collect::<Vec<_>>().join(" ");
 
@@ -498,7 +494,13 @@ fn is_destructive_command(command: &str) -> bool {
         .split_whitespace()
         .map(|token| token.trim_matches(|ch| matches!(ch, '"' | '\'')))
         .filter(|token| !token.is_empty())
-        .map(|token| token.split(['/', '\\']).last().unwrap_or(token).to_string())
+        .map(|token| {
+            token
+                .split(['/', '\\'])
+                .next_back()
+                .unwrap_or(token)
+                .to_string()
+        })
         .collect();
 
     for pattern in DESTRUCTIVE_COMMANDS {
@@ -543,8 +545,8 @@ DATE=$date
         let vars = parse_dynamic_variables_from_str(path().as_path(), data, false, false)
             .expect("parse dynamic vars");
 
-        assert!(vars.get("TOKEN").is_some());
-        assert!(vars.get("DATE").is_some());
+        assert!(vars.contains_key("TOKEN"));
+        assert!(vars.contains_key("DATE"));
     }
 
     #[test]

@@ -98,8 +98,8 @@ pub fn print_test_summary<W: Write>(
     Ok(())
 }
 
-fn load_snippet<'a>(
-    cache: &'a mut HashMap<Utf8PathBuf, Vec<String>>,
+fn load_snippet(
+    cache: &mut HashMap<Utf8PathBuf, Vec<String>>,
     path: &Utf8Path,
 ) -> Result<Vec<String>, OutputError> {
     if let Some(lines) = cache.get(path) {
