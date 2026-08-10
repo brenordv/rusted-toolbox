@@ -2,7 +2,7 @@ use crate::models::MockOptions;
 use anyhow::Result;
 use fake::faker::internet::en::*;
 use fake::Fake;
-use rand::Rng;
+use rand::RngExt;
 
 /// Generate a random username
 pub fn generate_username(_options: &MockOptions) -> Result<String> {

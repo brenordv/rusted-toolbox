@@ -1,7 +1,7 @@
 use crate::models::MockOptions;
 use anyhow::Result;
 use chrono::{Duration, Local, NaiveTime, Utc};
-use rand::Rng;
+use rand::RngExt;
 
 /// Generate a random date
 pub fn generate_date(options: &MockOptions) -> Result<String> {

@@ -1,7 +1,7 @@
 use crate::models::{Claims, ExpirationStatus, TokenInfo};
 use anyhow::{anyhow, Result};
 use colored::Colorize;
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::dangerous::insecure_decode;
 use serde_json::{Map, Value};
 use shared::utils::copy_string_to_clipboard::copy_to_clipboard;
 use std::borrow::Cow;
@@ -15,34 +15,7 @@ use std::process;
 /// # Errors
 /// Returns error if JWT structure is invalid or decoding fails
 pub fn decode_jwt_token(token: &str) -> Result<TokenInfo> {
-    // Create validation that doesn't verify the signature
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.insecure_disable_signature_validation();
-    validation.validate_exp = false;
-    validation.validate_nbf = false;
-    validation.validate_aud = false;
-    validation.required_spec_claims.clear();
-
-    // Set all possible algorithms since we're not verifying signatures anyway
-    validation.algorithms = vec![
-        Algorithm::HS256,
-        Algorithm::HS384,
-        Algorithm::HS512,
-        Algorithm::RS256,
-        Algorithm::RS384,
-        Algorithm::RS512,
-        Algorithm::PS256,
-        Algorithm::PS384,
-        Algorithm::PS512,
-        Algorithm::ES256,
-        Algorithm::ES384,
-        Algorithm::EdDSA,
-    ];
-
-    // Use a fake key since we're not verifying signatures
-    let key = DecodingKey::from_secret("no-key-just-public-data".as_ref());
-
-    match decode::<Claims>(token, &key, &validation) {
+    match insecure_decode::<Claims>(token) {
         Ok(token_data) => {
             let expiration_status = token_data.claims.get_expiration_status();
 

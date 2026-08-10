@@ -22,76 +22,77 @@ ai-macros = { path = "crates/libs/ai-macros" }
 # External crates
 anyhow = "1.0.104"
 arboard = "3.6.1"
-async-trait = "0.1.89"
+async-trait = "0.1.92"
 azeventhubs = "0.20.0"
-base64 = "0.22.1"
-bytes = "1.10.1"
-camino = "1.2.1"
-cfspeedtest = "2.2.0"
-chrono = { version = "0.4.44", features = ["serde"] }
-clap = { version = "4.6.5", features = ["derive"] }
-colored = "3.0.0"
+base64 = "0.23.1"
+bytes = "1.12.1"
+camino = "1.2.5"
+cfspeedtest = "2.2.2"
+chrono = { version = "0.4.45", features = ["serde"] }
+clap = { version = "4.6.6", features = ["derive"] }
+colored = "3.1.1"
 crossterm = "0.29.0"
-csv = "1.3.1"
-ctrlc = "3.5.0"
+csv = "1.4.0"
+ctrlc = "3.5.2"
 dialoguer = "0.12.0"
 dns-lookup = "3.0.1"
 dotenv = "0.15.0"
-fake = { version = "4.4.0", features = ["derive", "chrono"] }
-filetime = "0.2.26"
-futures = "0.3.31"
-futures-util = "0.3.31"
-gif = "0.14.1"
-globset = "0.4.18"
-hurl = { git = "https://github.com/Orange-OpenSource/hurl", tag = "7.0.0" }
-hurl_core = { git = "https://github.com/Orange-OpenSource/hurl", tag = "7.0.0" }
-image = "0.25.9"
+fake = { version = "5.1.0", features = ["derive", "chrono"] }
+filetime = "0.2.29"
+futures = "0.3.33"
+futures-util = "0.3.33"
+gif = "0.14.2"
+globset = "0.4.20"
+hurl = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
+hurl_core = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
+image = "0.25.10"
 imagequant = "4.4.1"
-indicatif = "0.18.3"
-jsonwebtoken = "9.3.1"
-log = "0.4.28"
-memmap2 = "0.9.8"
+indicatif = "0.18.6"
+jsonwebtoken = "11.0.0"
+log = "0.4.33"
+memmap2 = "0.9.11"
 mime_guess = "2.0.5"
 notify = "8.2.0"
 num_cpus = "1.17.0"
 once_cell = "1.21.4"
 percent-encoding = "2.3.2"
-proc-macro2 = "1.0.101"
+proc-macro2 = "1.0.107"
 qrcodegen = "1.8.0"
-quote = "1.0.40"
+quote = "1.0.47"
 raccoon-otel = "1.0.0"
-rand = "0.9.2"
-rand06-compat = "0.1.0"
-ratatui = "0.29.0"
-rayon = "1.11.0"
+rand = "0.10.2"
+rand06-compat = "0.2.0"
+ratatui = "0.30.2"
+rayon = "1.12.0"
 regex = "1.13.1"
-# Pinned to match cfspeedtest's reqwest version.
-reqwest = { version = "0.12.28", features = ["json"] }
-rsa = { version = "0.9.8", features = ["sha2"] }
-rumqttc = { version = "0.25.0", default-features = false, features = ["use-native-tls"] }
-rusqlite = { version = "0.38.0", features = ["bundled"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+# Workspace default reqwest (ai-shared, aiignore, gitignore). netquality pins its
+# own 0.12 to match cfspeedtest; see crates/tools/tool-netquality/Cargo.toml.
+reqwest = { version = "0.13.4", features = ["json"] }
+rsa = { version = "0.9.10", features = ["sha2"] }
+rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 sha256 = "1.6.0"
 shell-words = "1.1.1"
 sled = "0.34.7"
-string-interner = "0.19.0"
-surge-ping = "0.8.2"
-syn = { version = "2.0.106", features = ["full"] }
-thiserror = "2.0.17"
-tokio = { version = "1.49.0", features = ["full"] }
-tokio-stream = "0.1.17"
+string-interner = "0.20.0"
+surge-ping = "0.9.0"
+syn = { version = "3.0.3", features = ["full"] }
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["full"] }
+tokio-stream = "0.1.19"
 tracing = "0.1.44"
 tracing-log = "0.2.0"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
-url = "2.5.7"
-uuid = { version = "1.18.1", features = ["v4"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+url = "2.5.8"
+uuid = { version = "1.24.0", features = ["v4"] }
 walkdir = "2.5.0"
-warp = { version = "0.4.2", features = ["server"] }
+warp = { version = "0.4.3", features = ["server"] }
 
 # Dev dependencies
 rstest = "0.26.1"
-tempfile = "3.25.0"
+tempfile = "3.27.0"
 
 [profile.release]
 lto = true

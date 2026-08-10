@@ -11,7 +11,9 @@ license.workspace = true
 shared = { workspace = true, features = ["otel"] }
 clap = { workspace = true }
 anyhow = { workspace = true }
-reqwest = { workspace = true, features = ["blocking"] }
+# cfspeedtest 2.2.2 (latest) builds on reqwest 0.12 and its speed_test() takes a
+# reqwest 0.12 Client, so this crate stays on 0.12 instead of the workspace's 0.13.
+reqwest = { version = "0.12.28", features = ["blocking", "json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

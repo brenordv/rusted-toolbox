@@ -3,7 +3,7 @@ use anyhow::Result;
 use fake::faker::company::en::*;
 use fake::faker::job::en::*;
 use fake::Fake;
-use rand::Rng;
+use rand::RngExt;
 
 /// Generate a random company name
 pub fn generate_company(_options: &MockOptions) -> Result<String> {
