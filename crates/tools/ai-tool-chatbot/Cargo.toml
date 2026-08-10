@@ -1,0 +1,15 @@
+[package]
+name = "ai-chatbot"
+version = "1.0.2"
+description = "A simple AI powered CLI Chatbot"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { workspace = true }
+ai-shared = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }

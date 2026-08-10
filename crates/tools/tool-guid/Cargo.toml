@@ -1,0 +1,15 @@
+[package]
+name = "guid"
+version = "1.0.2"
+description = "Command-line tool for generating UUIDv4s with multiple modes, interval support, and clipboard integration for development workflows."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+ctrlc = { workspace = true }
+tracing = { workspace = true }

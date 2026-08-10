@@ -1,5 +1,5 @@
-**/crates/tool-whurl/requests/media-api
-**/crates/tool-whurl/requests/sweet-spot
+**/crates/tools/tool-whurl/requests/media-api
+**/crates/tools/tool-whurl/requests/sweet-spot
 **/config.json
 **/ookla-speedtest
 !.env.example

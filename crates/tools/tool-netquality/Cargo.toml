@@ -1,0 +1,21 @@
+[package]
+name = "netquality"
+version = "1.1.0"
+description = "Cross platform CLI tool that monitors internet connectivity and speed."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { workspace = true, features = ["otel"] }
+clap = { workspace = true }
+anyhow = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+rusqlite = { workspace = true }
+cfspeedtest = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }

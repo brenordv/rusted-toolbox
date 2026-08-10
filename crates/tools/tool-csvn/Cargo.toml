@@ -1,0 +1,20 @@
+[package]
+name = "csvn"
+version = "1.0.2"
+description = "CLI tool that fills missing CSV fields with defaults and outputs a `_normalized` file for consistent, error-free downstream processing."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { workspace = true }
+string-interner = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+csv = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,21 @@
+[package]
+name = "shared-eventhub"
+version = "1.0.0"
+description = "Where all eventhub specific shared code lives."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { workspace = true }
+clap = { workspace = true }
+tracing-log = { workspace = true }
+anyhow = { workspace = true }
+url = { workspace = true }
+serde = { workspace = true }
+azeventhubs = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

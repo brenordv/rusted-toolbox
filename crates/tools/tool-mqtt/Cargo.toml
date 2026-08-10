@@ -1,0 +1,16 @@
+[package]
+name = "mqtt"
+version = "1.0.2"
+description = "Tool for quickly post to or read from a MQTT topic."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+rumqttc = { workspace = true }
+tracing = { workspace = true }

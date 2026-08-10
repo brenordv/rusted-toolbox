@@ -7,54 +7,65 @@ Each tool follows a few principles I try to stick to:
 - **Performance matters**: Use async I/O and parallel processing where it makes sense
 
 ## Project structure
-1. **Workspace crates**
-   - **Individual tool crates**: Each CLI tool has its own dedicated crate (e.g., `crates/tool-cat`, `crates/tool-jwt`, `crates/tool-split`, etc.)
-     - Each tool crate contains:
-       - `main.rs` (thin entrypoint that orchestrates the tool logic);
-       - `tools` (argument parsing/validation only);
-       - `models.rs` (structs and data models);
-       - `<tool_name>_app.rs` (the actual tool logic);
-       - `readme.md` (manual for the tool);
-       - `Cargo.toml` (tool-specific dependencies and metadata);
-       - Additional files as needed to keep things tidy, scoped to the tool;
-   - `crates/ai-tools`: AI-powered agents and helpers (e.g., the chatbot) [I'll probably refactor this later]
-     - Binary definitions in `Cargo.toml` using `[[bin]]` sections;
-     - Each agent lives under `crates/ai-tools/src/agents/<agent_name>` with:
-       - `tools` (runtime info, argument/env validation, but no agent logic);
-       - `models.rs` (agent-specific types);
-       - `<agent_name>_app.rs` (the agent logic);
-       - Optional `readme.md` for agent-specific docs;
-     - Supporting modules: `ai_functions`, `message_builders`, `models`, `requesters`, `tasks`, `utils`;
-   - `crates/shared`: Cross-cutting utilities and modules shared by multiple binaries
-     - Organized by functionality: `command_line`, `constants`, `eventhub`, `logging`, `sqlite`, `system`, `utils`;
-     - If more than one tool/agent needs it, it belongs here rather than duplicating logic;
-   - `crates/macros`: Procedural macros used across the workspace.
-2. **Root `readme.md` file**: Add a reference to any new tools/agents to this file, or update/review any behaviors here;
-3. **Build scripts (`build.sh`, and `build.bat`)**: The build command for every tool and agent binary should be covered for all platforms (Windows, Linux, and MacOs). Each individual tool crate is built separately;
-4. **Installing on Non-Windows systems**: For non-Windows systems, where tools like `cat` and `touch` already exist, we build them but may skip copying to `dist`;
-5. **Testing**: Try to add tests to every tool/agent and shared utility when it makes sense;
-6. **Adding new tools**: To add a new CLI tool, create a new crate under `crates/tool-<name>` and add it to the workspace members in the root `Cargo.toml`;
+The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
+
+1. **Tool crates: `crates/tools/*`**
+   - Each CLI tool has its own crate (e.g., `crates/tools/tool-cat`, `crates/tools/tool-jwt`, `crates/tools/tool-split`). AI-powered tools follow the same shape with an `ai-tool-` prefix (e.g., `crates/tools/ai-tool-chatbot`, `crates/tools/ai-tool-how`).
+   - Each tool crate contains:
+     - `main.rs` (thin entrypoint that orchestrates the tool logic);
+     - `cli_utils.rs` (argument parsing/validation and `print_runtime_info`);
+     - `models.rs` (structs and data models);
+     - `<tool_name>_app.rs` (the actual tool logic);
+     - `readme.md` (manual for the tool);
+     - `changelog.md` (per-tool changelog);
+     - `Cargo.toml` (tool-specific metadata; dependencies are inherited from the workspace, see below);
+     - Additional files as needed to keep things tidy, scoped to the tool.
+2. **Library crates: `crates/libs/*`**
+   - `crates/libs/shared`: cross-cutting utilities shared by multiple binaries, organized by functionality (`command_line`, `constants`, `logging`, `sqlite`, `system`, `utils`). If more than one tool needs it, it belongs here rather than duplicating logic.
+   - `crates/libs/shared-eventhub`: EventHub-specific shared code.
+   - `crates/libs/ai-shared`: shared code for the AI-powered tools.
+   - `crates/libs/ai-macros`: procedural macros used across the workspace.
+3. **Root `README.md`**: add a reference to any new tool here, and keep the links pointing at `crates/tools/<crate>/readme.md`.
+4. **Build scripts (`build.sh`, `build.bat`)**: they build the whole workspace in one pass and copy every produced binary into `dist/`. There is no per-tool list to maintain: a new tool crate is picked up automatically. On non-Windows systems, `cat` and `touch` are built but not copied, since coreutils already provides them.
+
+## Dependencies (centralized)
+Dependency versions live in one place: the root `Cargo.toml`.
+
+- **Versions**: declared once under `[workspace.dependencies]`. A crate uses one by referencing it as `dep = { workspace = true }` in its own `[dependencies]`. To add a new external crate, add it to the root table first, then reference it from the tool.
+- **Per-crate features** are additive: `clap = { workspace = true, features = ["color"] }` adds `color` on top of the workspace default.
+- **Optional deps**: the workspace table cannot mark a dep `optional`, but the member can: `raccoon-otel = { workspace = true, optional = true }`.
+- **Shared package metadata** (`edition`, `authors`, `repository`, `license`) lives under `[workspace.package]`; each crate opts in with `edition.workspace = true` and the like. Keep `name`, `version`, and `description` per-crate.
+- **Bumping a version** is a one-line edit in the root table. Keep versions current with a periodic `cargo update` / `cargo upgrade`.
+
+## Adding a new tool
+1. Create `crates/tools/tool-<name>` with the file layout above. The `crates/tools/*` glob in the root `Cargo.toml` picks it up; no `members` edit is needed.
+2. Inherit metadata (`edition.workspace = true`, etc.) and dependencies (`shared = { workspace = true }`, ...) from the workspace.
+3. Add the tool to `README.md`.
+
+## Continuous integration
+- `.github/workflows/ci.yml` runs on every push to `master` and every PR: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo build` + `cargo test` on Windows, Linux, and macOS.
+- `.github/workflows/release.yml` runs on `v*` tags: it builds release binaries on each OS and attaches archives to a GitHub Release.
+- `rust-toolchain.toml` pins the toolchain (stable) and ensures `rustfmt` and `clippy` are available.
 
 ## Tool/Agent structure
-1. Tools and agents can print/log information, trace, and warnings, but not errors;
+1. Tools can print/log information, trace, and warnings, but not errors;
 2. If any errors that need to stop the execution happen, return the error to the entrypoint and use `context` (from Anyhow) to add info on what went wrong;
-3. If the execution is successful, use `exit_success()` function;
-4. If the execution fails, use `exit_error()` function to exit the app (from the entrypoint file only). Right now, I'm not using different exit codes;
-5. Unless mimicking another tool, every tool/agent should have an implementation of a `print_runtime_info` method;
+3. If the execution is successful, use `exit_success()`;
+4. If the execution fails, use `exit_error()` to exit the app (from the entrypoint file only). Right now, I'm not using different exit codes;
+5. Unless mimicking another tool, every tool should have an implementation of a `print_runtime_info` method.
 
 ## Coding principles
 - Favor small, well-factored modules and explicit types over cleverness.
-- Respect existing patterns; follow the repo’s conventions over personal preference.
-- Functions ≲ ~50 LOC when feasible; extract pure helpers for parsing, graph building, and process execution.
-- Never use nested ternaries (Rust’s `if/else if/else` or match statements keep control flow clear).
+- Respect existing patterns; follow the repo's conventions over personal preference.
+- Functions around 50 LOC when feasible; extract pure helpers for parsing, graph building, and process execution.
+- Never use nested ternaries (Rust's `if/else if/else` or match statements keep control flow clear).
 - Avoid `unwrap`/`expect` in library code; return typed errors. Use `?` (from `anyhow`) for propagation and convert to a single error type at the boundary.
-- Use the repo’s `edition` from `Cargo.toml`; don’t change it without approval.
-- When defining the CLI options, follow the examples of the other tools (tool-*).
-- Use the repo’s `rustfmt` and `clippy` settings; don’t change them.
-- Fix all warnings;
+- Use the repo's `edition` from `Cargo.toml`; don't change it without approval.
+- When defining the CLI options, follow the examples of the other tools.
+- Use the default `rustfmt` and `clippy` (there is no custom config); fix all warnings.
 - Forbid `unsafe_code` unless an explicit, justified exception is approved.
 - Before creating a new tool/utility, check if it is already covered by the `shared` crate.
-- When planning tests, and usages, consider edge cases, but within reason.  
+- When planning tests and usages, consider edge cases, but within reason.
 
 ## Other
 1. YAGNI: Let's try to keep the code simple, adding parallelism and more complex features as the need arises.

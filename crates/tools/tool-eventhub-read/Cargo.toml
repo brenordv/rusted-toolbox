@@ -1,0 +1,23 @@
+[package]
+name = "eh-read"
+version = "1.0.3"
+description = "EventHub Message Reader Tool."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+shared = { workspace = true }
+shared-eventhub = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+azeventhubs = { workspace = true }
+chrono = { workspace = true }
+futures-util = { workspace = true }
+sled = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+ctrlc = { workspace = true }
+crossterm = { workspace = true }
