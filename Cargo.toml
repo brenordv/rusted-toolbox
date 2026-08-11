@@ -39,8 +39,8 @@ dns-lookup = "3.0.1"
 dotenv = "0.15.0"
 fake = { version = "5.1.0", features = ["derive", "chrono"] }
 filetime = "0.2.29"
-futures = "0.3.33"
-futures-util = "0.3.33"
+futures = "0.3.34"
+futures-util = "0.3.34"
 gif = "0.14.2"
 globset = "0.4.20"
 hurl = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
