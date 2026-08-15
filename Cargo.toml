@@ -18,6 +18,9 @@ shared = { path = "crates/libs/shared" }
 shared-eventhub = { path = "crates/libs/shared-eventhub" }
 ai-shared = { path = "crates/libs/ai-shared" }
 ai-macros = { path = "crates/libs/ai-macros" }
+common-cli = { path = "crates/libs/common-cli" }
+common-utils = { path = "crates/libs/common-utils" }
+common-utils-ext = { path = "crates/libs/common-utils-ext" }
 
 # External crates
 anyhow = "1.0.104"
@@ -59,7 +62,7 @@ percent-encoding = "2.3.2"
 proc-macro2 = "1.0.107"
 qrcodegen = "1.8.0"
 quote = "1.0.47"
-raccoon-otel = "1.0.0"
+raccoon-otel = "1.1.0"
 rand = "0.10.2"
 rand06-compat = "0.2.0"
 ratatui = "0.30.2"
@@ -86,7 +89,7 @@ tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = "2.5.8"
-uuid = { version = "1.24.0", features = ["v4"] }
+uuid = { version = "1.24.1", features = ["v4"] }
 walkdir = "2.5.0"
 warp = { version = "0.4.3", features = ["server"] }
 

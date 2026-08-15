@@ -5,11 +5,11 @@ use azeventhubs::ReceivedEventData;
 use chrono::{DateTime, Local, Utc};
 use futures_util::StreamExt;
 use shared::system::resolve_path_with_base::resolve_path_with_base;
-use shared::utils::message_matches_filter::message_matches_filter;
 use shared_eventhub::eventhub_models::{
     EventHubCheckpoint, EventHubConfig, InboundMessage, MessageStatus,
 };
 use shared_eventhub::utils::get_eventhub_database_path::get_eventhub_database_path;
+use shared_eventhub::utils::message_matches_filter::message_matches_filter;
 use sled::Db;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

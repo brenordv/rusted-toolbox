@@ -6,7 +6,7 @@ use rand::RngExt;
 use serde_json::Value;
 use tracing::info;
 
-use shared::utils::new_guid::new_guid;
+use common_utils_ext::new_guid::new_guid;
 
 use super::{VariableError, VariableMap};
 

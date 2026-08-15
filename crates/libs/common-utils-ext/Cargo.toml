@@ -1,0 +1,18 @@
+[package]
+name = "common-utils-ext"
+version = "1.0.0"
+description = "Shared common utils that require dependencies, and not every tool (or the majority of the tools) will need."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+arboard = { workspace = true }
+uuid = { workspace = true }
+once_cell = { workspace = true }
+regex = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

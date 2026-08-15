@@ -1,7 +1,7 @@
 use crate::models::MqttArgs;
 use anyhow::Result;
+use common_utils_ext::new_guid::new_guid;
 use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, Outgoing, QoS};
-use shared::utils::new_guid::new_guid;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info};

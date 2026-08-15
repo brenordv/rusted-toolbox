@@ -29,6 +29,8 @@ version = "1.0.2"
 dependencies = [
  "ai-shared",
  "anyhow",
+ "crossterm",
+ "dialoguer",
  "shared",
  "tokio",
  "tracing",
@@ -792,6 +794,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
+name = "cli-signal-monitor"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "common-cli",
+ "ctrlc",
+]
+
+[[package]]
 name = "clipboard-win"
 version = "5.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -838,6 +849,67 @@ checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
  "bytes",
  "memchr",
+]
+
+[[package]]
+name = "common-cli"
+version = "1.0.0"
+dependencies = [
+ "clap",
+ "common-utils",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "common-cli-env"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "dotenv",
+]
+
+[[package]]
+name = "common-file-utils"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "common-utils",
+ "notify",
+ "serde",
+ "tokio",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
+name = "common-serialization-utils"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "common-utils"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "rstest",
+]
+
+[[package]]
+name = "common-utils-ext"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "once_cell",
+ "regex",
+ "rstest",
+ "uuid",
 ]
 
 [[package]]
@@ -1137,7 +1209,9 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "common-utils-ext",
  "csv",
+ "memmap2",
  "shared",
  "string-interner",
  "tempfile",
@@ -2147,6 +2221,7 @@ version = "1.0.2"
 dependencies = [
  "anyhow",
  "clap",
+ "common-utils-ext",
  "ctrlc",
  "shared",
  "tracing",
@@ -3166,6 +3241,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
+name = "logging-otel"
+version = "0.1.0"
+dependencies = [
+ "common-cli",
+ "raccoon-otel",
+]
+
+[[package]]
 name = "lookup"
 version = "2.0.0"
 dependencies = [
@@ -3341,6 +3424,7 @@ version = "1.0.2"
 dependencies = [
  "anyhow",
  "clap",
+ "common-utils-ext",
  "rumqttc",
  "shared",
  "tokio",
@@ -3716,9 +3800,9 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b84bcd6ae87133e903af7ef497404dda70c60d0ea14895fc8a5e6722754fc2a0"
+checksum = "b0142c63252a9e054e68a4c61a5778f7b14f576274d593f8ce883d191a099682"
 dependencies = [
  "futures-core",
  "futures-sink",
@@ -3729,9 +3813,9 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry-appender-tracing"
-version = "0.31.1"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef6a1ac5ca3accf562b8c306fa8483c85f4390f768185ab775f242f7fe8fdcc2"
+checksum = "2c0080f0dc1d7c786f467cd85a4e395fcab11ee852004f39a29a18ab7c25d837"
 dependencies = [
  "opentelemetry",
  "tracing",
@@ -3741,22 +3825,22 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry-http"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7a6d09a73194e6b66df7c8f1b680f156d916a1a942abf2de06823dd02b7855d"
+checksum = "5683015d09e2df236ef005b17f6f196f0d5f6313c4fa43a7b6a53b52776e4331"
 dependencies = [
  "async-trait",
  "bytes",
  "http 1.3.1",
  "opentelemetry",
- "reqwest 0.12.28",
+ "reqwest 0.13.4",
 ]
 
 [[package]]
 name = "opentelemetry-otlp"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a2366db2dca4d2ad033cad11e6ee42844fd727007af5ad04a1730f4cb8163bf"
+checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
  "http 1.3.1",
  "opentelemetry",
@@ -3764,34 +3848,33 @@ dependencies = [
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "prost",
- "reqwest 0.12.28",
+ "reqwest 0.13.4",
  "thiserror 2.0.20",
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7175df06de5eaee9909d4805a3d07e28bb752c34cab57fa9cff549da596b30f"
+checksum = "56d658ba1faf63f7b9c492cfbe6e0ec365440a16132d3270c1065f7b33f1b638"
 dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "prost",
- "tonic",
- "tonic-prost",
 ]
 
 [[package]]
 name = "opentelemetry_sdk"
-version = "0.31.0"
+version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e14ae4f5991976fd48df6d843de219ca6d31b01daaab2dad5af2badeded372bd"
+checksum = "9b59f80e1ac4d5ff7a2db8fb6c80badb7f0f3f858211fba08dd9aaec750894f9"
 dependencies = [
  "futures-channel",
  "futures-executor",
  "futures-util",
  "opentelemetry",
  "percent-encoding",
+ "portable-atomic",
  "rand 0.9.2",
  "thiserror 2.0.20",
  "tokio",
@@ -4394,9 +4477,9 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "raccoon-otel"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fc298b0063436e894d80080b7b111405837f20445f9bc25238e20ee992bb4a2"
+checksum = "38ab0f6ddd75716bf00231bdd3c3cba5697ee3b1a78b946bf59d2f1820e3495c"
 dependencies = [
  "anyhow",
  "opentelemetry",
@@ -4832,7 +4915,9 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "h2",
  "http 1.3.1",
  "http-body",
@@ -5367,17 +5452,11 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
- "crossterm",
- "csv",
  "ctrlc",
- "dialoguer",
  "dotenv",
  "futures",
- "memmap2",
  "notify",
- "once_cell",
  "raccoon-otel",
- "regex",
  "rstest",
  "rusqlite",
  "serde",
@@ -5386,7 +5465,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "uuid",
  "walkdir",
 ]
 
@@ -6101,38 +6179,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tonic"
-version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb7613188ce9f7df5bfe185db26c5814347d110db17920415cf2fbcad85e7203"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "bytes",
- "http 1.3.1",
- "http-body",
- "http-body-util",
- "percent-encoding",
- "pin-project",
- "sync_wrapper",
- "tokio-stream",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tonic-prost"
-version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66bd50ad6ce1252d87ef024b3d64fe4c3cf54a86fb9ef4c631fdd0ded7aeaa67"
-dependencies = [
- "bytes",
- "prost",
- "tonic",
-]
-
-[[package]]
 name = "touch"
 version = "1.0.1"
 dependencies = [
@@ -6236,15 +6282,12 @@ dependencies = [
 
 [[package]]
 name = "tracing-opentelemetry"
-version = "0.32.0"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e6e5658463dd88089aba75c7791e1d3120633b1bfde22478b28f625a9bb1b8e"
+checksum = "adbc64cba7137545b8044cb1fe9814f7aacf3c6b5f9b45be8bb5db538befdb26"
 dependencies = [
  "js-sys",
  "opentelemetry",
- "opentelemetry_sdk",
- "rustversion",
- "thiserror 2.0.20",
  "tracing",
  "tracing-core",
  "tracing-subscriber",
@@ -6421,9 +6464,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.24.0"
+version = "1.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf3923a6f5c4c6382e0b653c4117f48d631ea17f38ed86e2a828e6f7412f5239"
+checksum = "2cefc03fd367c0c6d4305de1b312cf00248c4114f4a0418ce6a6af769e3b0bd9"
 dependencies = [
  "atomic",
  "getrandom 0.4.3",
@@ -6744,6 +6787,7 @@ dependencies = [
  "camino",
  "chrono",
  "clap",
+ "common-utils-ext",
  "hurl",
  "hurl_core",
  "once_cell",

@@ -1,0 +1,13 @@
+[package]
+name = "common-cli"
+version = "1.0.0"
+description = "Common CLI arg parser and basic logging shared accross all tools."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+common-utils = { workspace = true }
+clap = { workspace = true }
+tracing-subscriber = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "common-file-utils"
+version = "1.0.0"
+description = "Common file system utils. Designed for more complex/specialized operations "
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+common-utils = { workspace = true }
+walkdir = { workspace = true }
+serde = { workspace = true }
+notify = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

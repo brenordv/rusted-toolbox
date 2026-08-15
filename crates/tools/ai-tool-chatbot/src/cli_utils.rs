@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 
 use crate::models::ChatBotAgent;
+use crate::role_printer::{Role, RolePrinter};
+use crate::select_file_from_path::select_file_from_path;
 use shared::constants::general::DASH_LINE;
-use shared::system::select_file_from_path::select_file_from_path;
-use shared::utils::role_printer::{Role, RolePrinter};
 use std::env;
 use std::io::stdin;
 use std::path::PathBuf;

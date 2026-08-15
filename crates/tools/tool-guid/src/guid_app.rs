@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
+use common_utils_ext::new_guid::new_guid;
 use shared::utils::copy_string_to_clipboard::copy_to_clipboard;
-use shared::utils::new_guid::new_guid;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;

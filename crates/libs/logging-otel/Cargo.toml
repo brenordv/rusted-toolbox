@@ -1,0 +1,15 @@
+[package]
+name = "logging-otel"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+otel = ["raccoon-otel"]
+
+[dependencies]
+common-cli = { workspace = true }
+raccoon-otel = { workspace = true, optional = true }

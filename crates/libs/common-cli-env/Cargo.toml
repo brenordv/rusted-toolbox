@@ -1,0 +1,12 @@
+[package]
+name = "common-cli-env"
+version = "1.0.0"
+description = "Utils related to loading and managing environment variables into the cli."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+dotenv = { workspace = true }

@@ -13,3 +13,4 @@ clap = { workspace = true }
 anyhow = { workspace = true }
 ctrlc = { workspace = true }
 tracing = { workspace = true }
+common-utils-ext = { workspace = true }

@@ -1,4 +1,4 @@
-use shared::utils::role_printer::RolePrinter;
+use crate::role_printer::RolePrinter;
 
 pub struct ChatBotAgent {
     pub user_name: String,

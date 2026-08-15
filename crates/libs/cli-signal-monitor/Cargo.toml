@@ -1,0 +1,13 @@
+[package]
+name = "cli-signal-monitor"
+version = "1.0.0"
+description = "Utils to monitor app signals, and react to it."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+common-cli = { workspace = true }
+anyhow = { workspace = true }
+ctrlc = { workspace = true }

@@ -1,6 +1,8 @@
 mod chatbot_app;
 mod cli_utils;
 mod models;
+pub mod select_file_from_path;
+pub mod role_printer;
 
 use crate::chatbot_app::start_chatbot;
 use crate::cli_utils::{get_runtime_config, print_runtime_info};

@@ -13,3 +13,5 @@ ai-shared = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+dialoguer = { workspace = true }
+crossterm = { workspace = true }

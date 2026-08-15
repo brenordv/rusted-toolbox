@@ -8,6 +8,7 @@ use tracing::error;
 mod cli_utils;
 mod csvn_app;
 mod models;
+mod mmap_csv_reader;
 
 fn main() {
     const CSVN_APP_NAME: &str = env!("CARGO_PKG_NAME");
