@@ -1,11 +1,11 @@
 use crate::models::{B64Config, B64Mode, InputSource, OutputTarget};
 use base64::engine::general_purpose::STANDARD;
 use base64::{DecodeSliceError, Engine};
-use shared::constants::general::SIZE_64KB;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Cursor, Read, Write};
 use std::num::NonZeroUsize;
 use std::path::Path;
+use common_utils::constants::SIZE_64KB;
 
 /// Runs the Base64 tool with the provided configuration.
 pub fn run(config: &B64Config) -> Result<(), AppError> {

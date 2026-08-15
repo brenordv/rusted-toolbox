@@ -1,6 +1,6 @@
 [package]
 name = "b64"
-version = "1.0.0"
+version = "2.0.0"
 description = "Encodes/Decodes text and files to base 64 format"
 edition.workspace = true
 authors.workspace = true
@@ -8,7 +8,8 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
+common-cli = { workspace = true }
+common-utils = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
