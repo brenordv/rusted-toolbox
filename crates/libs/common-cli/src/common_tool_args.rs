@@ -1,11 +1,10 @@
+use crate::app_logger::AppLogger;
 use crate::tool_log_level::ToolLogLevel;
 use clap::Args;
-use crate::app_logger::AppLogger;
 
 #[derive(Args, Debug)]
 #[command(about, long_about, version)]
 pub struct CommonToolArgs {
-
     /// Shows the header with tool name, version, and runtime options
     #[arg(long = "app-header")]
     app_header: bool,
@@ -14,11 +13,13 @@ pub struct CommonToolArgs {
     #[arg(long = "verbose")]
     verbose: bool,
 
-    /// Sets the default logging level
-    #[arg(short='L', long = "log-level", default_value = "error")]
+    /// Sets the log level. Output goes to stderr by default with no channel flag
+    /// needed; `disabled` silences everything and overrides `RUST_LOG`, while
+    /// every other level yields to `RUST_LOG` when it is set.
+    #[arg(short = 'L', long = "log-level", default_value = "warn")]
     pub default_logging_level: ToolLogLevel,
 
-    /// If the tool should log to the console
+    /// Log to stdout instead of the default stderr
     #[arg(long = "log-to-console")]
     pub log_to_stdout: bool,
 
@@ -28,7 +29,7 @@ pub struct CommonToolArgs {
 
     /// Rotate the log file by day
     #[arg(long = "rotate-log-file-by-day")]
-    pub rotate_log_file_by_day: bool
+    pub rotate_log_file_by_day: bool,
 }
 
 impl CommonToolArgs {
@@ -37,9 +38,9 @@ impl CommonToolArgs {
             self.default_logging_level.clone(),
             self.log_to_stdout,
             self.log_to_file,
-            self.rotate_log_file_by_day
+            self.rotate_log_file_by_day,
         );
-        
+
         app_logger.init(force_disable);
     }
 }

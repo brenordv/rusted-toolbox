@@ -22,7 +22,26 @@ impl ToolLogLevel {
             ToolLogLevel::Info => "info".to_string(),
             ToolLogLevel::Warn => "warn".to_string(),
             ToolLogLevel::Error => "error".to_string(),
-            ToolLogLevel::Disabled => "".to_string()
+            ToolLogLevel::Disabled => "".to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabled_maps_to_empty_string() {
+        assert_eq!(ToolLogLevel::Disabled.to_tracing_level(), "");
+    }
+
+    #[test]
+    fn levels_map_to_tracing_names() {
+        assert_eq!(ToolLogLevel::Trace.to_tracing_level(), "trace");
+        assert_eq!(ToolLogLevel::Debug.to_tracing_level(), "debug");
+        assert_eq!(ToolLogLevel::Info.to_tracing_level(), "info");
+        assert_eq!(ToolLogLevel::Warn.to_tracing_level(), "warn");
+        assert_eq!(ToolLogLevel::Error.to_tracing_level(), "error");
     }
 }

@@ -27,7 +27,7 @@ pub struct CliArgs {
     pub e: bool,
 
     /// Display $ at the end of each line
-    #[arg(short = 'e', long = "show-ends", default_value_t = false)]
+    #[arg(short = 'E', long = "show-ends", default_value_t = false)]
     pub show_ends: bool,
 
     /// Show number all output lines

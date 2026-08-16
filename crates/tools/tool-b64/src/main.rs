@@ -14,7 +14,6 @@ fn main() {
         Ok(()) => exit_success(),
         Err(app_error) => {
             if !app_error.message.is_empty() {
-                eprintln!("{}", app_error.message);
                 error!("{}", app_error.message);
             }
             exit_with_code(app_error.exit_code);

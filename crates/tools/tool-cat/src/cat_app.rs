@@ -180,7 +180,6 @@ mod tests {
             squeeze_blank: false,
             show_tabs: false,
             show_nonprinting: false,
-            show_all: false,
             e_flag: false,
             t_flag: false,
             files: vec![],

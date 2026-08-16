@@ -5,7 +5,6 @@ use crate::cli_utils::CliArgs;
 /// Contains flags for cat options and list of files to process.
 #[derive(Debug)]
 pub struct CatConfig {
-    pub(crate) show_all: bool,
     pub(crate) number_nonblank: bool,
     pub(crate) e_flag: bool,
     pub(crate) show_ends: bool,
@@ -20,7 +19,6 @@ pub struct CatConfig {
 impl CatConfig {
     pub fn from_args(args: &CliArgs) -> Self {
         let mut config = CatConfig {
-            show_all: args.show_all,
             number_nonblank: args.number_nonblank,
             e_flag: args.e,
             show_ends: args.show_ends,
