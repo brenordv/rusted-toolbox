@@ -1,5 +1,10 @@
 # Workspace Changelog
 
+## v2
+- Splitting the code in `shared` crate into smaller, specialized crates, and also removing the crate `shared`, since it is no longer needed.
+- Removed the following tools: `ai-tool-chatbot`, `ai-tool-how`, `tool-aiignore`, and `tool-distro-cc`. 
+- Removed the `ai-macros`, and `ai-shared` lib crates.
+
 ## v1
 
 First release after the major refactor. This version reorganizes the whole
