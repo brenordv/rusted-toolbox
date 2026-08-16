@@ -11,7 +11,7 @@ pub struct CsvNConfig {
     pub headers: Option<Vec<String>>,
     pub clean_string: bool,
     pub default_value_map: HashMap<String, String>,
-    pub feedback_interval: u64,
+    pub feedback_interval: usize,
     pub string_interner: StringInterner<DefaultBackend>,
     pub interned_defaults: HashMap<String, DefaultSymbol>,
 }
@@ -22,7 +22,7 @@ impl CsvNConfig {
         headers: Option<Vec<String>>,
         clean_string: bool,
         default_value_map: HashMap<String, String>,
-        feedback_interval: u64,
+        feedback_interval: usize,
     ) -> Self {
         let mut interner = StringInterner::<DefaultBackend>::new();
         let mut interned_defaults = HashMap::new();

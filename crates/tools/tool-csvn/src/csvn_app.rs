@@ -4,8 +4,6 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use common_utils_ext::sanitize_str_regex::clean_str_regex;
 use csv::{StringRecord, Writer, WriterBuilder};
-use shared::utils::datetime_utc_utils::DateTimeUtcUtils;
-use shared::utils::format_duration_to_string::format_duration_to_string;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -13,6 +11,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use string_interner::DefaultSymbol;
+use common_utils::datetime_utc_utils::DateTimeUtcUtils;
+use common_utils::string_utils::format_duration_to_string;
 
 /// Determines headers for CSV processing.
 ///
@@ -100,7 +100,7 @@ pub fn process_file(args: &mut CsvNConfig, shutdown_signal: Arc<AtomicBool>) -> 
 
     let start_time = Utc::now();
 
-    let mut line_count: u64 = 0;
+    let mut line_count: usize = 0;
 
     let feedback_interval = args.feedback_interval;
 
@@ -245,7 +245,7 @@ fn normalize_record(
 ///
 /// # Errors
 /// Returns error if stdout cannot be flushed
-fn update_process_feedback(start_time: DateTime<Utc>, line_count: &u64) -> Result<()> {
+fn update_process_feedback(start_time: DateTime<Utc>, line_count: &usize) -> Result<()> {
     let elapsed = start_time.get_elapsed_time();
     let lines_per_second = *line_count as f64 / elapsed.as_seconds_f64();
 

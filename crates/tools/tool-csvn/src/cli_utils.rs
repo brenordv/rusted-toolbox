@@ -1,35 +1,62 @@
 use crate::models::CsvNConfig;
-use anyhow::{anyhow, Context, Result};
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
-use shared::system::get_current_working_dir::get_current_working_dir;
+use anyhow::{anyhow, Result};
+use clap::{Parser};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use common_cli::common_tool_args::CommonToolArgs;
+use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2};
+use common_utils::file_system::get_current_dir;
+
+/// Normalizes a CSV file
+///
+/// Creates a normalized version of a CSV file, with missing fields filled by default values.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version)]
+pub struct CliArgs {
+
+    /// Path to the input file.
+    #[arg(short='f', long="file", required=true)]
+    pub file: PathBuf,
+
+    /// Headers of the CSV file, separated by a comma. Optional: If not informed, will try to infer from the first row of the file.
+    #[arg(short='e', long="headers")]
+    pub headers: Option<String>,
+
+    /// Feedback interval, in rows. Will update progress on the console every X rows.
+    #[arg(short='i', long="feedback-interval", default_value_t=100)]
+    pub feedback_interval: usize,
+
+    /// If set, will clean the rows from non-printable/utf-8 characters. Warning: This slows down the process by a lot!
+    #[arg(short='c', long="clean-string", default_value_t=false)]
+    pub clean_string: bool,
+
+    /// Key=Value pairs to be used as default values for missing fields. To add multiple parameters, use this flag multiple times. If you want a single value for all missing fields, use * as the key, and inform the value.
+    #[arg(short='v', long="value-map", required=true)]
+    pub value_map: Vec<String>,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
+}
 
 /// Displays runtime configuration information.
 ///
 /// Shows input file, headers, cleaning options, and default mappings.
 pub fn print_runtime_info(args: &CsvNConfig) {
-    println!("CSV Normalizer v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
-
-    println!("- Input file: {}", args.input_file.display());
+    println!("{} Input file: {}", CONFIG_UL_ITEM_LEVEL_2, args.input_file.display());
 
     if args.headers.is_some() {
-        println!("- Headers: {:?}", args.headers);
+        println!("{} Headers: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.headers);
     } else {
-        println!("- Headers: Will be inferred from file.");
+        println!("{} Headers: Will be inferred from file.", CONFIG_UL_ITEM_LEVEL_2);
     }
 
-    println!("- Clean string: {}", args.clean_string);
-
-    println!("- Default value map: {:?}", args.default_value_map);
-
-    println!("- Feedback Interval: {}", args.feedback_interval);
+    println!("{} Clean string: {}", CONFIG_UL_ITEM_LEVEL_2, args.clean_string);
+    println!("{} Default value map: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.default_value_map);
+    println!("{} Feedback Interval: {}", CONFIG_UL_ITEM_LEVEL_2, args.feedback_interval);
 
     println!(
-        "- Note: For performance reasons, malformed CSV lines will be skipped and not logged."
+        "{} Note: For performance reasons, malformed CSV lines will be skipped and not logged.",
+        CONFIG_UL_ITEM_LEVEL_2
     );
 
     if args.clean_string {
@@ -46,97 +73,82 @@ pub fn print_runtime_info(args: &CsvNConfig) {
 ///
 /// # Errors
 /// Returns error if required arguments are missing or parsing fails
-pub fn get_cli_arguments() -> Result<CsvNConfig> {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            "CSV Normalizer",
-            "Creates a normalized version of a CSV file, with missing fields filled by default values.")
-        .arg(Arg::new("file")
-            .long("file")
-            .short('f')
-            .required(true)
-            .help("Path to the input file."))
-        .arg(Arg::new("headers")
-            .long("headers")
-            .short('e')
-            .help("Headers of the CSV file, separated by a comma. Optional: If not informed, will try to infer from the first row of the file."))
-        .arg(Arg::new("feedback-interval")
-            .long("feedback-interval")
-            .short('i')
-            .default_value("100")
-            .help("Feedback interval, in rows. Will update progress on the console every X rows."))
-        .arg(Arg::new("clean-string")
-            .long("clean-string")
-            .short('c')
-            .action(clap::ArgAction::SetTrue)
-            .help("If set, will clean the rows from non-printable/utf-8 characters. Warning: This slows down the process by a lot!"))
-        .arg(Arg::new("value-map")
-            .long("value-map")
-            .short('v')
-            .action(clap::ArgAction::Append)
-            .required(true)
-            .help("Key=Value pairs to be used as default values for missing fields. To add multiple parameters, use this flag multiple times. If you want a single value for all missing fields, use * as the key, and inform the value.")
-        )
-        .get_matches();
+pub fn initialize() -> Result<CsvNConfig> {
+    let args = CliArgs::parse();
 
-    let current_working_dir = get_current_working_dir();
+    let current_working_dir = get_current_dir();
 
-    let input_file = if let Some(input_file_arg) = matches.get_one::<String>("file") {
-        let input_file_path = PathBuf::from(input_file_arg);
-        if !input_file_path.is_absolute() {
-            current_working_dir.join(input_file_path)
-        } else {
-            input_file_path
-        }
+    let input_file = if !&args.file.is_absolute() {
+        current_working_dir.join(&args.file)
     } else {
-        return Err(anyhow!(
-            "Input file is required. Please provide a valid path."
-        ));
+        (&args.file).clone()
     };
 
-    let headers: Option<Vec<String>> = matches.get_one::<String>("headers").map(|headers_arg| {
-        headers_arg
-            .split(',')
-            .map(|x| x.trim().to_string())
-            .collect()
-    });
+    if !input_file.exists() {
+        return Err(anyhow!(
+            "Input file does not exist. Please provide a valid path."
+        ));
+    }
 
-    let clean_string = *matches.get_one::<bool>("clean-string").unwrap_or(&false);
+    let headers: Option<Vec<String>> = match args.headers {
+        Some(headers_arg) => Some(
+            headers_arg
+                .split(',')
+                .map(|x| x.trim().to_string())
+                .collect(),
+        ),
+        None => None,
+    };
 
-    let default_value_map: HashMap<String, String> = matches
-        .get_many::<String>("value-map")
-        .context("Default value map is required. Please provide a valid key=value pair.")?
+    let clean_string = args.clean_string;
+
+    if args.value_map.len() == 0 {
+        return Err(anyhow!(
+            "Default value map is required. Please provide a valid key=value pair."
+        ));
+    }
+
+    let default_value_map: HashMap<String, String> = args
+        .value_map
+        .iter()
         .map(|raw_value_pair| {
             let mut parts = raw_value_pair.splitn(2, '=');
-            let key = parts.next().unwrap_or("").trim().to_lowercase().to_string();
+
+            let key = parts
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_lowercase();
+
             let value = parts
                 .next()
                 .unwrap_or("")
-                .trim_start_matches("\"")
-                .trim_start_matches("'")
-                .trim_end_matches("\"")
-                .trim_end_matches("'")
                 .trim()
+                .trim_matches(['"', '\''])
                 .to_string();
+
             (key, value)
         })
         .collect();
 
-    let feedback_interval =
-        if let Some(feedback_interval_arg) = matches.get_one::<String>("feedback-interval") {
-            feedback_interval_arg.parse::<u64>().unwrap_or(100)
-        } else {
-            100
-        };
+    let feedback_interval = args.feedback_interval;
 
-    Ok(CsvNConfig::new(
+    let config = CsvNConfig::new(
         input_file,
         headers,
         clean_string,
         default_value_map,
         feedback_interval,
-    ))
+    );
+
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        Some(|| { print_runtime_info(&config); }));
+
+    Ok(config)
 }
 
 #[cfg(test)]
