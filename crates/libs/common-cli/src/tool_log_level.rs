@@ -1,3 +1,4 @@
+use std::fmt;
 use clap::ValueEnum;
 
 #[derive(ValueEnum, Debug, PartialEq, Clone)]
@@ -6,6 +7,7 @@ pub enum ToolLogLevel {
     Debug,
     Info,
     Warn,
+    Warning,
     Error,
     Disabled,
 }
@@ -21,8 +23,23 @@ impl ToolLogLevel {
             ToolLogLevel::Debug => "debug".to_string(),
             ToolLogLevel::Info => "info".to_string(),
             ToolLogLevel::Warn => "warn".to_string(),
+            ToolLogLevel::Warning => "warn".to_string(),
             ToolLogLevel::Error => "error".to_string(),
             ToolLogLevel::Disabled => "".to_string(),
+        }
+    }
+}
+
+impl fmt::Display for ToolLogLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ToolLogLevel::Trace => write!(f, "Trace"),
+            ToolLogLevel::Debug => write!(f, "Debug"),
+            ToolLogLevel::Info => write!(f, "Info"),
+            ToolLogLevel::Warn => write!(f, "Warning"),
+            ToolLogLevel::Warning => write!(f, "Warning"),
+            ToolLogLevel::Error => write!(f, "Error"),
+            ToolLogLevel::Disabled => write!(f, "Disabled"),
         }
     }
 }

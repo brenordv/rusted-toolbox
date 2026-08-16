@@ -32,6 +32,7 @@ struct LayerPlan {
 }
 
 pub struct AppLogger {
+    app_name: String,
     enabled: bool,
     to_console: bool,
     to_file: bool,
@@ -42,18 +43,20 @@ pub struct AppLogger {
 
 impl AppLogger {
     pub fn new(
+        app_name: &str,
         log_level: ToolLogLevel,
         to_console: bool,
         to_file: bool,
         rotate_log_file_by_day: bool,
     ) -> Self {
         Self {
+            app_name: app_name.to_string(),
             enabled: log_level != ToolLogLevel::Disabled,
             to_console,
             to_file,
             rotate_log_file_by_day,
             log_level: log_level.to_tracing_level(),
-            log_file_folder: get_app_sub_folder("logs".to_string()),
+            log_file_folder: get_app_sub_folder(app_name, "logs".to_string()),
         }
     }
 
@@ -180,11 +183,10 @@ impl AppLogger {
     }
 
     fn resolve_log_filename(&self) -> PathBuf {
-        let app_name = common_utils::app_name!();
         let filename = if self.rotate_log_file_by_day {
-            get_filename_with_current_date(app_name.to_string(), "log".to_string(), false, true)
+            get_filename_with_current_date(self.app_name.to_string(), "log".to_string(), false, true)
         } else {
-            format!("{}.log", app_name)
+            format!("{}.log", self.app_name)
         };
 
         let _ = std::fs::create_dir_all(&self.log_file_folder);
@@ -198,7 +200,7 @@ mod tests {
     use super::*;
 
     fn logger(level: ToolLogLevel, to_console: bool, to_file: bool) -> AppLogger {
-        AppLogger::new(level, to_console, to_file, false)
+        AppLogger::new(env!("CARGO_PKG_NAME"), level, to_console, to_file, false)
     }
 
     #[test]

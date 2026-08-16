@@ -12,8 +12,7 @@ pub fn get_current_dir() -> PathBuf {
     env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-pub fn get_app_folder() -> PathBuf {
-    let app_name = crate::app_name!();
+pub fn get_app_folder(app_name: &str) -> PathBuf {
     let app_folder = format!(".{app_name}");
     match get_user_home_folder() {
         Some(user_home) => user_home.join(app_folder),
@@ -21,8 +20,8 @@ pub fn get_app_folder() -> PathBuf {
     }
 }
 
-pub fn get_app_sub_folder(sub_folder: String) -> PathBuf {
-    get_app_folder().join(sub_folder)
+pub fn get_app_sub_folder(app_name: &str, sub_folder: String) -> PathBuf {
+    get_app_folder(app_name).join(sub_folder)
 }
 
 pub fn get_filename_with_current_date(
