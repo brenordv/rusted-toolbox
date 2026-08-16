@@ -1,7 +1,6 @@
 use crate::models::CatConfig;
-use clap::{Parser};
+use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
-
 
 /// Concatenate files and print on the standard output.
 ///
@@ -62,6 +61,17 @@ pub fn initialize() -> CatConfig {
     let args = CliArgs::parse();
 
     args.common.initialize_logging(false);
-    
+
     CatConfig::from_args(&args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
+    }
 }

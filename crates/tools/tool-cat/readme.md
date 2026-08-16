@@ -47,7 +47,7 @@ cat -b file.txt
 **Output**: 
 ```
      1	Hello
-      	
+
      2	World
 ```
 
@@ -56,7 +56,7 @@ cat -b file.txt
 # Show tabs as ^I and line endings as $
 cat -A file.txt
 ```
-**Input**: `file.txt` contains "Hello\tWorld\nTest"  
+**Input**: `file.txt` contains "Hello\tWorld\nTest\n"  
 **Output**: 
 ```
 Hello^IWorld$
@@ -81,5 +81,8 @@ echo "Hello World" | cat -n
      1	Hello World
 ```
 
-## Known Issues
-- Not sure if this is an actual issue, but this app uses 128Kb buffer instead of the original 8kb for the GNU `cat`.
+## Notes and caveats
+- A missing or unreadable file is reported on stderr, and processing continues with the remaining files; the exit code is non-zero when any input failed.
+- When the reading end of a pipe closes early (`cat big.txt | head`), the tool stops quietly and exits 0. GNU `cat` exits 141 from SIGPIPE instead; re-raising the signal is not portable to Windows.
+- `--log-to-console` sends log output to stdout, the same channel as the file data, so log lines interleave with the output unpredictably.
+- `-L disabled` silences all diagnostics, so a failed file prints nothing and the exit code is the only sign of failure.

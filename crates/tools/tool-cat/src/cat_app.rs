@@ -1,178 +1,471 @@
-use anyhow::{Context, Result};
-use std::fs::File;
-use std::io;
-use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
-use common_utils::constants::SIZE_128KB;
 use crate::models::CatConfig;
 
-/// Processes file content with optional formatting.
+use anyhow::{Context, Result};
+use common_utils::constants::SIZE_128KB;
+use tracing::{debug, error};
+
+use std::fs::File;
+use std::io::{self, ErrorKind, Read, Write};
+
+/// Marks an output write that failed because the reading side of the pipe closed.
 ///
-/// Uses line processing for formatting options, otherwise performs raw copy.
-///
-/// # Errors
-/// Returns error if file operations fail
-pub fn cat_file(path: Option<&str>, options: &CatConfig) -> Result<()> {
-    if options.needs_line_processing() {
-        cook_buf(path, options)
-    } else {
-        raw_cat(path)
+/// The run loop treats this as a normal end of consumption rather than a failure,
+/// matching how `cat big | head` should behave.
+#[derive(Debug)]
+struct BrokenPipe;
+
+impl std::fmt::Display for BrokenPipe {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "output pipe closed by the consumer")
     }
 }
 
-/// Processes file content line-by-line with formatting.
+impl std::error::Error for BrokenPipe {}
+
+/// Width of the decimal line-number buffer; a `u64` never exceeds twenty digits.
+const LINE_NUMBER_DIGITS: usize = 20;
+
+/// Minimum width of the printed line-number field, matching GNU cat's `%6d`.
+const LINE_NUMBER_MIN_WIDTH: usize = 6;
+
+/// State carried across every input of a single invocation.
 ///
-/// Applies line numbering, blank line handling, and character visualization.
-///
-/// # Errors
-/// Returns error if file operations fail
-fn cook_buf(path: Option<&str>, options: &CatConfig) -> Result<()> {
-    let reader: Box<dyn BufRead> = match path {
-        None | Some("-") => Box::new(BufReader::new(io::stdin())),
-        Some(filename) => {
-            let file = File::open(filename)?;
-            Box::new(BufReader::new(file))
+/// The line counter and blank-run flag persist across files so `-n` numbers
+/// continuously and `-s` squeezes across a file boundary. The within-line flags
+/// persist too, so an unterminated last line of one file joins the first bytes
+/// of the next.
+struct CatState {
+    line_digits: [u8; LINE_NUMBER_DIGITS],
+    line_num_start: usize,
+    line_has_content: bool,
+    number_emitted: bool,
+    prev_line_blank: bool,
+    pending_cr: bool,
+}
+
+impl CatState {
+    fn new() -> Self {
+        CatState {
+            line_digits: [b'0'; LINE_NUMBER_DIGITS],
+            line_num_start: LINE_NUMBER_DIGITS - 1,
+            line_has_content: false,
+            number_emitted: false,
+            prev_line_blank: false,
+            pending_cr: false,
         }
+    }
+
+    fn reset_line(&mut self) {
+        self.line_has_content = false;
+        self.number_emitted = false;
+    }
+
+    /// Advances the line number by incrementing its ASCII digits in place.
+    ///
+    /// Avoids a per-line integer-to-decimal conversion: only the trailing digits
+    /// that carry are touched, and the field widens by one when the leading digit
+    /// rolls over.
+    fn next_line_number(&mut self) {
+        let mut i = LINE_NUMBER_DIGITS - 1;
+        loop {
+            if self.line_digits[i] < b'9' {
+                self.line_digits[i] += 1;
+                return;
+            }
+            self.line_digits[i] = b'0';
+            if i == self.line_num_start {
+                self.line_num_start -= 1;
+                self.line_digits[self.line_num_start] = b'1';
+                return;
+            }
+            i -= 1;
+        }
+    }
+
+    /// Appends the current line number, right-justified to the minimum width, and a tab.
+    fn write_line_number(&self, cooked: &mut Vec<u8>) {
+        const PAD: &[u8] = b"      ";
+        let width = LINE_NUMBER_DIGITS - self.line_num_start;
+        if width < LINE_NUMBER_MIN_WIDTH {
+            cooked.extend_from_slice(&PAD[..LINE_NUMBER_MIN_WIDTH - width]);
+        }
+        cooked.extend_from_slice(&self.line_digits[self.line_num_start..]);
+        cooked.push(b'\t');
+    }
+}
+
+/// Concatenates every input to `out`, returning whether the whole run succeeded.
+///
+/// A missing or unreadable file is reported and the run continues with the next
+/// input, ending in a failure result. A closed output pipe ends the run at once
+/// with success. `true` means exit 0, `false` means exit 1.
+pub fn run<W: Write>(options: &CatConfig, out: &mut W) -> bool {
+    let mut state = CatState::new();
+    let mut all_ok = true;
+
+    let inputs: Vec<Option<&str>> = if options.files.is_empty() {
+        vec![None]
+    } else {
+        options.files.iter().map(|f| Some(f.as_str())).collect()
     };
 
-    let mut line_number = 0u64;
-
-    let mut prev_was_empty = false;
-
-    for line_result in reader.lines() {
-        let line = line_result?;
-        let is_empty = line.is_empty();
-
-        // Handle squeeze blank lines
-        if options.squeeze_blank && is_empty {
-            if prev_was_empty {
-                continue;
-            }
-            prev_was_empty = true;
-        } else {
-            prev_was_empty = false;
-        }
-
-        // Handle line numbering
-        if options.number {
-            if options.number_nonblank && is_empty {
-                // Don't number blank lines when -b is used
-                print!("{:6}\t", "");
-            } else {
-                line_number += 1;
-                print!("{:6}\t", line_number);
+    for input in inputs {
+        match cat_file(input, options, &mut state, out) {
+            Ok(()) => {}
+            Err(e) if e.is::<BrokenPipe>() => return broken_pipe_exit(),
+            Err(e) => {
+                error!("cat: {:#}", e);
+                all_ok = false;
             }
         }
-
-        // Process each character in the line
-        for ch in line.chars() {
-            if ch == '\t' && options.show_tabs {
-                print!("^I");
-            } else if options.show_nonprinting && ch.is_control() && ch != '\t' && ch != '\n' {
-                if (ch as u32) == 127 {
-                    // DEL character
-                    print!("^?");
-                } else if (ch as u32) < 32 {
-                    // Control characters
-                    print!("^{}", ((ch as u8) | 0x40) as char);
-                } else {
-                    print!("{}", ch);
-                }
-            } else if options.show_nonprinting && !ch.is_ascii() {
-                // Non-ASCII characters
-                for byte in ch.to_string().as_bytes() {
-                    if *byte > 127 {
-                        print!("M-");
-                        let ascii_byte = byte & 0x7F;
-                        if ascii_byte < 32 {
-                            print!("^{}", (ascii_byte | 0x40) as char);
-                        } else if ascii_byte == 127 {
-                            print!("^?");
-                        } else {
-                            print!("{}", ascii_byte as char);
-                        }
-                    } else {
-                        print!("{}", *byte as char);
-                    }
-                }
-            } else {
-                print!("{}", ch);
-            }
-        }
-
-        // Handle show ends
-        if options.show_ends {
-            print!("$");
-        }
-
-        // End of line
-        println!();
     }
 
+    let mut trailing = Vec::new();
+    finish_trailing_cr(options, &mut state, &mut trailing);
+
+    if let Err(e) = write_out(out, &trailing).and_then(|()| flush_out(out)) {
+        if e.is::<BrokenPipe>() {
+            return broken_pipe_exit();
+        }
+        error!("cat: {:#}", e);
+        all_ok = false;
+    }
+
+    all_ok
+}
+
+fn broken_pipe_exit() -> bool {
+    debug!("stopping early: output pipe closed by the consumer");
+    true
+}
+
+/// Opens one input and streams it through the cooked or raw path.
+fn cat_file<W: Write>(
+    path: Option<&str>,
+    options: &CatConfig,
+    state: &mut CatState,
+    out: &mut W,
+) -> Result<()> {
+    match path {
+        None | Some("-") => {
+            let stdin = io::stdin();
+            let mut reader = stdin.lock();
+            process_reader(&mut reader, options, state, out, true, "standard input")
+        }
+        Some(name) => {
+            let mut file = File::open(name).with_context(|| format!("failed to open '{name}'"))?;
+            process_reader(&mut file, options, state, out, false, name)
+        }
+    }
+}
+
+/// Dispatches to the formatting scanner or the plain copy based on the options.
+fn process_reader<R: Read, W: Write>(
+    reader: &mut R,
+    options: &CatConfig,
+    state: &mut CatState,
+    out: &mut W,
+    is_blocking: bool,
+    source: &str,
+) -> Result<()> {
+    if options.needs_line_processing() {
+        cook_stream(reader, options, state, out, SIZE_128KB, is_blocking, source)
+    } else {
+        raw_copy(reader, out, SIZE_128KB, is_blocking, source)
+    }
+}
+
+/// Copies bytes straight through in fixed chunks, with no formatting.
+fn raw_copy<R: Read, W: Write>(
+    reader: &mut R,
+    out: &mut W,
+    chunk_size: usize,
+    is_blocking: bool,
+    source: &str,
+) -> Result<()> {
+    let mut buf = vec![0u8; chunk_size];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                write_out(out, &buf[..n])?;
+                if is_blocking {
+                    flush_out(out)?;
+                }
+            }
+            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e).with_context(|| format!("error reading {source}")),
+        }
+    }
     Ok(())
 }
 
-/// Performs raw file copy without processing.
+/// Scans the input in fixed chunks, applying the active formatting options.
 ///
-/// Copies file content directly to stdout in 128KB chunks.
-/// Note: The original GNU implementation uses 8KB buffer. We're using 128kb to make things
-/// run faster.
-///
-/// # Errors
-/// Returns error if file operations fail
-fn raw_cat(path: Option<&str>) -> Result<()> {
-    match path {
-        None | Some("-") => {
-            // Read from stdin
-            let mut buffer = [0; SIZE_128KB];
-
-            let mut stdin = io::stdin();
-
-            loop {
-                match stdin.read(&mut buffer) {
-                    Ok(0) => break, // EOF
-                    Ok(n) => {
-                        io::stdout()
-                            .write_all(&buffer[..n])
-                            .context("Failed to write to stdout")?;
-
-                        io::stdout().flush().context("Failed to flush stdout")?;
-                    }
-                    Err(e) if e.kind() == ErrorKind::Interrupted => continue,
-                    Err(e) => return Err(anyhow::Error::from(e)),
+/// Each chunk is rendered into a reusable in-memory buffer and written out in a
+/// single call, so output cost scales with the input size rather than the line
+/// count. The buffer is flushed after every chunk, and on a blocking source the
+/// writer is flushed too so `-n` stays responsive on a pipe or terminal.
+fn cook_stream<R: Read, W: Write>(
+    reader: &mut R,
+    options: &CatConfig,
+    state: &mut CatState,
+    out: &mut W,
+    chunk_size: usize,
+    is_blocking: bool,
+    source: &str,
+) -> Result<()> {
+    let mut buf = vec![0u8; chunk_size];
+    let mut cooked: Vec<u8> = Vec::with_capacity(chunk_size);
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                process_chunk(&buf[..n], options, state, &mut cooked);
+                write_out(out, &cooked)?;
+                cooked.clear();
+                if is_blocking {
+                    flush_out(out)?;
                 }
             }
-        }
-        Some(filename) => {
-            let mut file = File::open(filename).context("Failed to open file")?;
-
-            let mut buffer = [0; SIZE_128KB];
-
-            loop {
-                match file.read(&mut buffer) {
-                    Ok(0) => break, // EOF
-                    Ok(n) => {
-                        io::stdout()
-                            .write_all(&buffer[..n])
-                            .context("Failed to write to stdout")?;
-                    }
-                    Err(e) if e.kind() == ErrorKind::Interrupted => continue,
-                    Err(e) => return Err(anyhow::Error::from(e)),
-                }
-            }
+            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e).with_context(|| format!("error reading {source}")),
         }
     }
     Ok(())
+}
+
+/// Renders one chunk of input into `cooked`, applying the active formatting options.
+///
+/// When no byte needs rewriting (`-n`, `-b`, `-s`, or plain numbering combos), the
+/// only significant byte is the newline, so a faster line-oriented path handles it.
+fn process_chunk(chunk: &[u8], options: &CatConfig, state: &mut CatState, cooked: &mut Vec<u8>) {
+    if options.show_nonprinting || options.show_tabs || options.show_ends {
+        process_chunk_rendered(chunk, options, state, cooked);
+    } else {
+        process_chunk_plain(chunk, options, state, cooked);
+    }
+}
+
+/// Fast path for modes that leave every byte intact and only act on line ends.
+///
+/// The only significant byte is the newline, so each line's content is scanned to
+/// its terminator and copied in one call instead of one test per byte.
+fn process_chunk_plain(
+    chunk: &[u8],
+    options: &CatConfig,
+    state: &mut CatState,
+    cooked: &mut Vec<u8>,
+) {
+    let len = chunk.len();
+    let mut i = 0;
+    while i < len {
+        let start = i;
+        while i < len && chunk[i] != b'\n' {
+            i += 1;
+        }
+        if i > start {
+            state.line_has_content = true;
+            ensure_number_for_content(options, state, cooked);
+            cooked.extend_from_slice(&chunk[start..i]);
+        }
+        if i < len {
+            handle_newline(options, state, cooked);
+            i += 1;
+        }
+    }
+}
+
+/// Per-byte path for modes that rewrite bytes (`-v`, `-T`, `-E` and their combos).
+fn process_chunk_rendered(
+    chunk: &[u8],
+    options: &CatConfig,
+    state: &mut CatState,
+    cooked: &mut Vec<u8>,
+) {
+    if state.pending_cr && chunk.first() != Some(&b'\n') {
+        state.pending_cr = false;
+        render_content_byte(b'\r', options, cooked);
+    }
+
+    let len = chunk.len();
+    let mut i = 0;
+    while i < len {
+        let byte = chunk[i];
+
+        if byte == b'\n' {
+            handle_newline(options, state, cooked);
+            i += 1;
+            continue;
+        }
+
+        if byte == b'\r' && options.show_ends {
+            state.line_has_content = true;
+            ensure_number_for_content(options, state, cooked);
+            match chunk.get(i + 1) {
+                Some(b'\n') => cooked.extend_from_slice(b"^M"),
+                Some(_) => render_content_byte(b'\r', options, cooked),
+                None => state.pending_cr = true,
+            }
+            i += 1;
+            continue;
+        }
+
+        state.line_has_content = true;
+        ensure_number_for_content(options, state, cooked);
+
+        if is_passthrough(byte, options) {
+            let start = i;
+            i += 1;
+            while i < len && is_passthrough(chunk[i], options) {
+                i += 1;
+            }
+            cooked.extend_from_slice(&chunk[start..i]);
+        } else {
+            render_content_byte(byte, options, cooked);
+            i += 1;
+        }
+    }
+}
+
+/// Reports whether a byte renders as itself under the active options.
+///
+/// A run of such bytes can be copied in one write instead of one call per byte.
+/// The cases mirror `render_content_byte` exactly: a newline is always a line
+/// terminator, a tab passes through only without `-T`, a `\r` before a shown line
+/// end is owned by the line-end logic, and with `-v` only the printable range
+/// 0x20..=0x7e survives unchanged.
+fn is_passthrough(byte: u8, options: &CatConfig) -> bool {
+    match byte {
+        b'\n' => false,
+        b'\t' => !options.show_tabs,
+        b'\r' if options.show_ends => false,
+        _ if !options.show_nonprinting => true,
+        0x20..=0x7e => true,
+        _ => false,
+    }
+}
+
+/// Emits everything owed at a line terminator: numbering, squeeze, `$`, newline.
+fn handle_newline(options: &CatConfig, state: &mut CatState, cooked: &mut Vec<u8>) {
+    let is_blank = !state.line_has_content;
+
+    if options.squeeze_blank && is_blank && state.prev_line_blank {
+        state.reset_line();
+        return;
+    }
+
+    if is_blank {
+        state.prev_line_blank = true;
+        if options.number && !options.number_nonblank {
+            state.next_line_number();
+            state.write_line_number(cooked);
+        }
+    } else {
+        state.prev_line_blank = false;
+    }
+
+    if options.show_ends {
+        if state.pending_cr {
+            cooked.extend_from_slice(b"^M");
+            state.pending_cr = false;
+        }
+        cooked.push(b'$');
+    }
+
+    cooked.push(b'\n');
+    state.reset_line();
+}
+
+/// Writes the line-number prefix once, on the first content byte of a line.
+fn ensure_number_for_content(options: &CatConfig, state: &mut CatState, cooked: &mut Vec<u8>) {
+    if options.number && !state.number_emitted {
+        state.next_line_number();
+        state.write_line_number(cooked);
+        state.number_emitted = true;
+    }
+}
+
+/// Renders a single non-terminator byte under `-T` and `-v`.
+///
+/// `-T` turns a tab into `^I`; `-v` shows control bytes as `^X`, DEL as `^?`,
+/// and high bytes with `M-` notation split at 128 + 32. Without `-v` the byte
+/// passes through unchanged.
+fn render_content_byte(byte: u8, options: &CatConfig, cooked: &mut Vec<u8>) {
+    if byte == b'\t' {
+        if options.show_tabs {
+            cooked.extend_from_slice(b"^I");
+        } else {
+            cooked.push(b'\t');
+        }
+        return;
+    }
+
+    if !options.show_nonprinting {
+        cooked.push(byte);
+        return;
+    }
+
+    if byte < 32 {
+        cooked.extend_from_slice(&[b'^', byte + 64]);
+        return;
+    }
+
+    if byte < 127 {
+        cooked.push(byte);
+        return;
+    }
+
+    if byte == 127 {
+        cooked.extend_from_slice(b"^?");
+        return;
+    }
+
+    cooked.extend_from_slice(b"M-");
+    if byte >= 160 {
+        if byte < 255 {
+            cooked.push(byte - 128);
+        } else {
+            cooked.extend_from_slice(b"^?");
+        }
+    } else {
+        cooked.extend_from_slice(&[b'^', byte - 128 + 64]);
+    }
+}
+
+/// Renders a carriage return deferred at the very end of all input.
+fn finish_trailing_cr(options: &CatConfig, state: &mut CatState, cooked: &mut Vec<u8>) {
+    if state.pending_cr {
+        state.pending_cr = false;
+        render_content_byte(b'\r', options, cooked);
+    }
+}
+
+/// Writes all bytes, turning a closed pipe into the `BrokenPipe` marker.
+fn write_out<W: Write>(out: &mut W, bytes: &[u8]) -> Result<()> {
+    match out.write_all(bytes) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => Err(anyhow::Error::new(BrokenPipe)),
+        Err(e) => Err(e).context("failed to write output"),
+    }
+}
+
+/// Flushes the writer, turning a closed pipe into the `BrokenPipe` marker.
+fn flush_out<W: Write>(out: &mut W) -> Result<()> {
+    match out.flush() {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => Err(anyhow::Error::new(BrokenPipe)),
+        Err(e) => Err(e).context("failed to flush output"),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rstest::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-    use crate::models::CatConfig;
+    use tempfile::tempdir;
 
-    fn default_options() -> CatConfig {
+    fn opts() -> CatConfig {
         CatConfig {
             number_nonblank: false,
             show_ends: false,
@@ -180,401 +473,328 @@ mod tests {
             squeeze_blank: false,
             show_tabs: false,
             show_nonprinting: false,
-            e_flag: false,
-            t_flag: false,
             files: vec![],
         }
     }
 
-    fn create_temp_file(content: &str) -> NamedTempFile {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        temp_file.write_all(content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
-        temp_file
+    fn run_cook(
+        input: &[u8],
+        options: &CatConfig,
+        chunk: usize,
+        state: &mut CatState,
+        out: &mut Vec<u8>,
+    ) {
+        let mut reader = input;
+        cook_stream(&mut reader, options, state, out, chunk, false, "test").unwrap();
     }
 
-    #[rstest]
-    #[case("hello\nworld\n", &default_options())]
-    #[case("single line", &default_options())]
-    #[case("", &default_options())]
-    fn test_cook_buf_basic_file_reading(#[case] content: &str, #[case] options: &CatConfig) {
-        let temp_file = create_temp_file(content);
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), options);
-        assert!(result.is_ok());
+    fn cook(input: &[u8], options: &CatConfig, chunk: usize) -> Vec<u8> {
+        let mut state = CatState::new();
+        let mut out = Vec::new();
+        run_cook(input, options, chunk, &mut state, &mut out);
+        finish_trailing_cr(options, &mut state, &mut out);
+        out
     }
 
-    #[test]
-    fn test_cook_buf_nonexistent_file() {
-        let options = default_options();
-        let result = cook_buf(Some("nonexistent_file.txt"), &options);
-        assert!(result.is_err());
+    struct FailingWriter {
+        accepted: usize,
+        fail_after: usize,
     }
 
-    #[rstest]
-    #[case("line1\nline2\nline3\n")]
-    #[case("single line without newline")]
-    #[case("")]
-    fn test_cook_buf_with_line_numbers(#[case] content: &str) {
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.number = true;
+    impl Write for FailingWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if self.accepted >= self.fail_after {
+                return Err(io::Error::new(ErrorKind::BrokenPipe, "pipe closed"));
+            }
+            let n = (self.fail_after - self.accepted).min(buf.len());
+            self.accepted += n;
+            Ok(n)
+        }
 
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_cook_buf_number_nonblank_only() {
-        let content = "line1\n\nline3\n\nline5\n";
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.number = true;
-        options.number_nonblank = true;
-
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
-    }
-
-    #[rstest]
-    #[case("line1\n\n\n\nline2\n")]
-    #[case("")]
-    #[case("\n\n\n")]
-    #[case("content\n\n\n\n\nmore content\n")]
-    fn test_cook_buf_squeeze_blank_lines(#[case] content: &str) {
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.squeeze_blank = true;
-
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
-    }
-
-    #[rstest]
-    #[case("hello\tworld\n")]
-    #[case("\t\t\ttabs\n")]
-    #[case("no tabs here\n")]
-    #[case("mixed\tcontent\there\n")]
-    fn test_cook_buf_show_tabs(#[case] content: &str) {
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.show_tabs = true;
-
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
-    }
-
-    #[rstest]
-    #[case("line1\n")]
-    #[case("line1\nline2\n")]
-    #[case("")]
-    #[case("no newline")]
-    fn test_cook_buf_show_ends(#[case] content: &str) {
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.show_ends = true;
-
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
-    }
-
-    #[rstest]
-    #[case("hello\x01world\n")] // Control character
-    #[case("test\x7f\n")] // DEL character
-    #[case("normal text\n")] // No control characters
-    #[case("\x1f\x02\x03\n")] // Multiple control characters
-    fn test_cook_buf_show_nonprinting_control_chars(#[case] content: &str) {
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.show_nonprinting = true;
-
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
     }
 
     #[test]
-    fn test_cook_buf_show_nonprinting_non_ascii() {
-        let content = "café\nñoño\n🦀\n";
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.show_nonprinting = true;
+    fn raw_copy_passes_bytes_through_including_non_utf8_and_no_final_newline() {
+        let input: &[u8] = &[b'a', 0xFF, b'\n', 0x00, b'b'];
+        let mut out = Vec::new();
+        let mut reader = input;
 
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        raw_copy(&mut reader, &mut out, 4, false, "test").unwrap();
+
+        assert_eq!(out, input);
     }
 
     #[test]
-    fn test_cook_buf_show_nonprinting_preserves_tabs_and_newlines() {
-        let content = "hello\tworld\x01test\n";
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.show_nonprinting = true;
+    fn number_all_lines_uses_six_wide_field_and_tab() {
+        let mut o = opts();
+        o.number = true;
 
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        let out = cook(b"line1\nline2\n", &o, 64);
+
+        assert_eq!(out, b"     1\tline1\n     2\tline2\n");
     }
 
     #[test]
-    fn test_cook_buf_combined_options() {
-        let content = "line1\n\n\nline4\twith\ttabs\n\nline6\x01control\n";
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.number = true;
-        options.number_nonblank = true;
-        options.squeeze_blank = true;
-        options.show_tabs = true;
-        options.show_ends = true;
-        options.show_nonprinting = true;
+    fn number_continues_across_two_files_sharing_state() {
+        let mut o = opts();
+        o.number = true;
+        let mut state = CatState::new();
+        let mut out = Vec::new();
 
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        run_cook(b"a\n", &o, 64, &mut state, &mut out);
+        run_cook(b"b\n", &o, 64, &mut state, &mut out);
+        finish_trailing_cr(&o, &mut state, &mut out);
+
+        assert_eq!(out, b"     1\ta\n     2\tb\n");
     }
 
     #[test]
-    fn test_cook_buf_stdin_dash_path() {
-        // Similar to the None case, testing with a "-" path
-        let result = std::panic::catch_unwind(|| {
-            // Verify function signature and type checking
-        });
-        assert!(result.is_ok());
+    fn number_nonblank_skips_blank_lines_entirely() {
+        let mut o = opts();
+        o.number = true;
+        o.number_nonblank = true;
+
+        let out = cook(b"a\n\nb\n", &o, 64);
+
+        assert_eq!(out, b"     1\ta\n\n     2\tb\n");
+    }
+
+    #[test]
+    fn number_nonblank_leaves_leading_blank_line_empty() {
+        let mut o = opts();
+        o.number = true;
+        o.number_nonblank = true;
+
+        let out = cook(b"\nx\n", &o, 64);
+
+        assert_eq!(out, b"\n     1\tx\n");
+    }
+
+    #[test]
+    fn number_nonblank_counts_crlf_line_as_nonempty() {
+        let mut o = opts();
+        o.number = true;
+        o.number_nonblank = true;
+
+        let out = cook(b"\r\n", &o, 64);
+
+        assert_eq!(out, b"     1\t\r\n");
+    }
+
+    fn seed_line_number(state: &mut CatState, ascii: &[u8]) {
+        state.line_num_start = LINE_NUMBER_DIGITS - ascii.len();
+        state.line_digits[state.line_num_start..].copy_from_slice(ascii);
+    }
+
+    #[test]
+    fn line_number_field_pads_short_numbers_to_width_six() {
+        let mut state = CatState::new();
+        seed_line_number(&mut state, b"42");
+        let mut out = Vec::new();
+
+        state.write_line_number(&mut out);
+
+        assert_eq!(out, b"    42\t");
+    }
+
+    #[test]
+    fn line_number_carries_and_widens_past_six_digits() {
+        let mut state = CatState::new();
+        seed_line_number(&mut state, b"999999");
+        let mut out = Vec::new();
+
+        state.next_line_number();
+        state.write_line_number(&mut out);
+
+        assert_eq!(out, b"1000000\t");
+    }
+
+    #[test]
+    fn line_number_carries_a_single_digit_rollover() {
+        let mut state = CatState::new();
+        seed_line_number(&mut state, b"19");
+        let mut out = Vec::new();
+
+        state.next_line_number();
+        state.write_line_number(&mut out);
+
+        assert_eq!(out, b"    20\t");
+    }
+
+    #[test]
+    fn squeeze_blank_collapses_runs_to_one() {
+        let mut o = opts();
+        o.squeeze_blank = true;
+
+        let out = cook(b"a\n\n\n\nb\n", &o, 64);
+
+        assert_eq!(out, b"a\n\nb\n");
+    }
+
+    #[test]
+    fn squeeze_blank_collapses_run_spanning_chunk_boundary() {
+        let mut o = opts();
+        o.squeeze_blank = true;
+
+        let out = cook(b"a\n\n\n\nb\n", &o, 3);
+
+        assert_eq!(out, b"a\n\nb\n");
+    }
+
+    #[test]
+    fn squeeze_blank_collapses_run_spanning_file_boundary() {
+        let mut o = opts();
+        o.squeeze_blank = true;
+        let mut state = CatState::new();
+        let mut out = Vec::new();
+
+        run_cook(b"a\n\n", &o, 64, &mut state, &mut out);
+        run_cook(b"\n\nb\n", &o, 64, &mut state, &mut out);
+        finish_trailing_cr(&o, &mut state, &mut out);
+
+        assert_eq!(out, b"a\n\nb\n");
+    }
+
+    #[test]
+    fn show_ends_marks_line_ends_and_crlf() {
+        let mut o = opts();
+        o.show_ends = true;
+
+        let out = cook(b"a\nb\r\n", &o, 64);
+
+        assert_eq!(out, b"a$\nb^M$\n");
+    }
+
+    #[test]
+    fn show_ends_omits_dollar_on_unterminated_final_line() {
+        let mut o = opts();
+        o.show_ends = true;
+
+        let out = cook(b"a\nb", &o, 64);
+
+        assert_eq!(out, b"a$\nb");
+    }
+
+    #[test]
+    fn show_tabs_renders_tab_as_caret_i() {
+        let mut o = opts();
+        o.show_tabs = true;
+
+        let out = cook(b"a\tb\n", &o, 64);
+
+        assert_eq!(out, b"a^Ib\n");
     }
 
     #[rstest]
-    #[case(0u8)] // NUL
-    #[case(31u8)] // US (Unit Separator)
-    #[case(127u8)] // DEL
-    fn test_cook_buf_specific_control_characters(#[case] control_byte: u8) {
-        let content = format!("before{}after\n", control_byte as char);
-        let temp_file = create_temp_file(&content);
-        let mut options = default_options();
-        options.show_nonprinting = true;
+    #[case(b"\x01".as_slice(), b"^A".as_slice())]
+    #[case(b"\x1b".as_slice(), b"^[".as_slice())]
+    #[case(b"a\tb".as_slice(), b"a\tb".as_slice())]
+    #[case(b"a\nb\n".as_slice(), b"a\nb\n".as_slice())]
+    #[case(b"\x7f".as_slice(), b"^?".as_slice())]
+    #[case(b"\x80".as_slice(), b"M-^@".as_slice())]
+    #[case(b"\xa0".as_slice(), b"M- ".as_slice())]
+    #[case("é".as_bytes(), b"M-CM-)".as_slice())]
+    #[case(b"\xff".as_slice(), b"M-^?".as_slice())]
+    fn show_nonprinting_renders_bytes(#[case] input: &[u8], #[case] expected: &[u8]) {
+        let mut o = opts();
+        o.show_nonprinting = true;
 
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        let out = cook(input, &o, 64);
+
+        assert_eq!(out, expected);
     }
 
     #[test]
-    fn test_cook_buf_empty_file() {
-        let temp_file = create_temp_file("");
-        let options = default_options();
+    fn show_all_renders_crlf_as_single_caret_m_then_dollar() {
+        let mut o = opts();
+        o.show_nonprinting = true;
+        o.show_ends = true;
+        o.show_tabs = true;
 
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        let out = cook(b"a\r\n", &o, 64);
+
+        assert_eq!(out, b"a^M$\n");
     }
 
     #[test]
-    fn test_cook_buf_only_blank_lines() {
-        let content = "\n\n\n\n";
-        let temp_file = create_temp_file(content);
+    fn line_straddling_chunk_boundary_numbers_once() {
+        let mut o = opts();
+        o.number = true;
 
-        // Test with squeeze_blank
-        let mut options = default_options();
-        options.squeeze_blank = true;
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        let out = cook(b"abcdef\n", &o, 3);
 
-        // Test with numbering
-        options.squeeze_blank = false;
-        options.number = true;
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        assert_eq!(out, b"     1\tabcdef\n");
     }
 
     #[test]
-    fn test_cook_buf_line_number_overflow_safety() {
-        // Create a file with content but test that line_number is u64
-        // This tests that we're using u64, which can handle very large numbers
-        let content = "line\n";
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.number = true;
+    fn crlf_split_across_chunk_boundary_under_show_ends() {
+        let mut o = opts();
+        o.show_ends = true;
 
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        let out = cook(b"ab\r\ncd\n", &o, 3);
 
-        // The function uses u64 for line_number, so it should handle large numbers safely
-        // This is more of design verification than a runtime test
+        assert_eq!(out, b"ab^M$\ncd$\n");
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn crlf_only_line_split_at_boundary_numbers_before_render(#[case] number_nonblank: bool) {
+        let mut o = opts();
+        o.number = true;
+        o.number_nonblank = number_nonblank;
+        o.show_ends = true;
+
+        let out = cook(b"\r\n", &o, 1);
+
+        assert_eq!(out, b"     1\t^M$\n");
     }
 
     #[test]
-    fn test_cook_buf_mixed_line_endings() {
-        // Test with different types of content that might have edge cases
-        let content = "line1\nline2\n\nline4\n";
-        let temp_file = create_temp_file(content);
+    fn crlf_only_line_split_at_boundary_plain_number() {
+        let mut o = opts();
+        o.number = true;
 
-        let mut options = default_options();
-        options.number_nonblank = true;
-        options.number = true;
+        let out = cook(b"\r\n", &o, 1);
 
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
+        assert_eq!(out, b"     1\t\r\n");
     }
 
     #[test]
-    fn test_cook_buf_show_tabs_with_show_nonprinting() {
-        let content = "hello\tworld\x01test\n";
-        let temp_file = create_temp_file(content);
-        let mut options = default_options();
-        options.show_tabs = true;
-        options.show_nonprinting = true;
+    fn broken_pipe_during_output_ends_run_with_success() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("data.txt");
+        std::fs::write(&path, b"hello world, this is more than eight bytes\n").unwrap();
+        let mut o = opts();
+        o.files = vec![path.to_str().unwrap().to_string()];
+        let mut out = FailingWriter {
+            accepted: 0,
+            fail_after: 8,
+        };
 
-        let result = cook_buf(Some(temp_file.path().to_str().unwrap()), &options);
-        assert!(result.is_ok());
-    }
+        let ok = run(&o, &mut out);
 
-    #[rstest]
-    fn test_raw_cat_with_existing_file() -> io::Result<()> {
-        // Create a temporary file with test content
-        let mut temp_file = NamedTempFile::new()?;
-        let test_content = "Hello, World!\nThis is a test file.\n";
-        temp_file.write_all(test_content.as_bytes())?;
-
-        let file_path = temp_file.path().to_str().unwrap();
-
-        // Since we can't easily capture stdout in unit tests, we'll test that the function
-        // completes without error for a valid file
-        let result = raw_cat(Some(file_path));
-        assert!(result.is_ok());
-
-        Ok(())
-    }
-
-    #[rstest]
-    fn test_raw_cat_with_nonexistent_file() {
-        let result = raw_cat(Some("nonexistent_file.txt"));
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn test_raw_cat_with_empty_file() -> io::Result<()> {
-        // Create an empty temporary file
-        let temp_file = NamedTempFile::new()?;
-        let file_path = temp_file.path().to_str().unwrap();
-
-        let result = raw_cat(Some(file_path));
-        assert!(result.is_ok());
-
-        Ok(())
-    }
-
-    #[rstest]
-    fn test_raw_cat_with_large_file() -> io::Result<()> {
-        // Create a file larger than the buffer size (8192 bytes)
-        let mut temp_file = NamedTempFile::new()?;
-        let large_content = "A".repeat(10000); // 10KB of 'A' characters
-        temp_file.write_all(large_content.as_bytes())?;
-
-        let file_path = temp_file.path().to_str().unwrap();
-
-        let result = raw_cat(Some(file_path));
-        assert!(result.is_ok());
-
-        Ok(())
+        assert!(ok);
     }
 
     #[test]
-    #[cfg(unix)]
-    fn test_raw_cat_with_binary_file() -> io::Result<()> {
-        // Create a temporary file with binary content
-        let mut temp_file = NamedTempFile::new()?;
-        let binary_content = vec![0u8, 1u8, 255u8, 127u8, 128u8];
-        temp_file.write_all(&binary_content)?;
+    fn missing_file_is_reported_but_processing_continues() {
+        let dir = tempdir().unwrap();
+        let real = dir.path().join("real.txt");
+        std::fs::write(&real, b"real content\n").unwrap();
+        let mut o = opts();
+        o.files = vec![
+            "definitely_missing_file_xyz.txt".to_string(),
+            real.to_str().unwrap().to_string(),
+        ];
+        let mut out = Vec::new();
 
-        let file_path = temp_file.path().to_str().unwrap();
+        let ok = run(&o, &mut out);
 
-        let result = raw_cat(Some(file_path));
-        assert!(result.is_ok());
-
-        Ok(())
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_raw_cat_with_permission_denied() -> io::Result<()> {
-        use std::os::unix::fs::PermissionsExt;
-
-        // Create a temporary file first
-        let mut temp_file = NamedTempFile::new()?;
-        temp_file.write_all(b"test content")?;
-        let file_path = temp_file.path().to_str().unwrap();
-
-        // Change permissions to deny read access
-        let mut perms = fs::metadata(file_path)?.permissions();
-        perms.set_mode(0o000); // No permissions
-        fs::set_permissions(file_path, perms)?;
-
-        let result = raw_cat(Some(file_path));
-        assert!(result.is_err());
-
-        // Restore permissions for cleanup
-        let mut perms = fs::metadata(file_path)?.permissions();
-        perms.set_mode(0o644);
-        fs::set_permissions(file_path, perms)?;
-
-        Ok(())
-    }
-
-    #[rstest]
-    fn test_raw_cat_with_directory_path() -> io::Result<()> {
-        // Create a temporary directory
-        let temp_dir = tempfile::tempdir()?;
-        let dir_path = temp_dir.path().to_str().unwrap();
-
-        let result = raw_cat(Some(dir_path));
-        assert!(result.is_err());
-
-        Ok(())
-    }
-
-    #[rstest]
-    fn test_raw_cat_with_special_characters_in_filename() {
-        // Test with a filename that doesn't exist but has special characters
-        let special_filename = "file with spaces & special chars!@#$.txt";
-
-        let result = raw_cat(Some(special_filename));
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn test_raw_cat_with_file_exactly_buffer_size() -> io::Result<()> {
-        // Create a file that is exactly the buffer size (8192 bytes)
-        let mut temp_file = NamedTempFile::new()?;
-        let content = "B".repeat(8192);
-        temp_file.write_all(content.as_bytes())?;
-
-        let file_path = temp_file.path().to_str().unwrap();
-
-        let result = raw_cat(Some(file_path));
-        assert!(result.is_ok());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_raw_cat_with_file_one_byte_over_buffer() {
-        // Create a file that is one byte larger than the buffer size
-        let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
-        let content = "C".repeat(8193);
-        temp_file
-            .write_all(content.as_bytes())
-            .expect("Failed to write to temp file");
-
-        let file_path = temp_file.path().to_str().unwrap();
-
-        let result = raw_cat(Some(file_path));
-        assert!(result.is_ok());
-    }
-
-    #[rstest]
-    fn test_raw_cat_with_single_byte_file() -> io::Result<()> {
-        // Create a file with just one byte
-        let mut temp_file = NamedTempFile::new()?;
-        temp_file.write_all(b"X")?;
-
-        let file_path = temp_file.path().to_str().unwrap();
-
-        let result = raw_cat(Some(file_path));
-        assert!(result.is_ok());
-
-        Ok(())
+        assert!(!ok);
+        assert_eq!(out, b"real content\n");
     }
 }

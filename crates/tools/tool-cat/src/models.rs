@@ -6,11 +6,9 @@ use crate::cli_utils::CliArgs;
 #[derive(Debug)]
 pub struct CatConfig {
     pub(crate) number_nonblank: bool,
-    pub(crate) e_flag: bool,
     pub(crate) show_ends: bool,
     pub(crate) number: bool,
     pub(crate) squeeze_blank: bool,
-    pub(crate) t_flag: bool,
     pub(crate) show_tabs: bool,
     pub(crate) show_nonprinting: bool,
     pub(crate) files: Vec<String>,
@@ -20,11 +18,9 @@ impl CatConfig {
     pub fn from_args(args: &CliArgs) -> Self {
         let mut config = CatConfig {
             number_nonblank: args.number_nonblank,
-            e_flag: args.e,
             show_ends: args.show_ends,
             number: args.number,
             squeeze_blank: args.squeeze_blank,
-            t_flag: args.t,
             show_tabs: args.show_tabs,
             show_nonprinting: args.show_nonprinting,
             files: args.files.clone(),
