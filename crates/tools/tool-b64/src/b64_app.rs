@@ -1,11 +1,12 @@
 use crate::models::{B64Config, B64Mode, InputSource, OutputTarget};
 use base64::engine::general_purpose::STANDARD;
+use base64::write::EncoderWriter;
 use base64::{DecodeSliceError, Engine};
+use common_utils::constants::SIZE_64KB;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter, Cursor, Read, Write};
+use std::io::{self, BufWriter, Cursor, Read, Write};
 use std::num::NonZeroUsize;
 use std::path::Path;
-use common_utils::constants::SIZE_64KB;
 
 /// Runs the Base64 tool with the provided configuration.
 pub fn run(config: &B64Config) -> Result<(), AppError> {
@@ -15,64 +16,24 @@ pub fn run(config: &B64Config) -> Result<(), AppError> {
     }
 }
 
-fn encoded_capacity(len: usize) -> usize {
-    len.div_ceil(3) * 4
-}
-
 fn encode(config: &B64Config) -> Result<(), AppError> {
-    let reader = open_reader(&config.input)?;
+    let mut reader = open_reader(&config.input)?;
     let writer = open_writer(&config.output)?;
 
-    let mut reader = BufReader::new(reader);
-    let mut writer = BufWriter::new(writer);
+    let mut writer = BufWriter::with_capacity(SIZE_64KB, writer);
     let mut wrap_writer = WrapWriter::new(&mut writer, config.wrap_columns);
+    let mut encoder = EncoderWriter::new(&mut wrap_writer, &STANDARD);
 
-    let mut input_buffer = vec![0u8; SIZE_64KB];
-    let mut pending = Vec::with_capacity(2);
-    let mut encoded_buffer = Vec::with_capacity(encoded_capacity(SIZE_64KB));
+    for_each_chunk(&mut reader, &config.input, |chunk| {
+        encoder
+            .write_all(chunk)
+            .map_err(|err| map_write_error(&config.output, err))
+    })?;
 
-    loop {
-        let read = reader
-            .read(&mut input_buffer)
-            .map_err(|err| AppError::read_error(&config.input, err))?;
-
-        if read == 0 {
-            break;
-        }
-
-        pending.extend_from_slice(&input_buffer[..read]);
-
-        let aligned = pending.len() / 3 * 3;
-        if aligned > 0 {
-            encoded_buffer.resize(encoded_capacity(aligned), 0);
-            let encoded_len = STANDARD
-                .encode_slice(&pending[..aligned], &mut encoded_buffer)
-                .map_err(|_| AppError::encode_error())?;
-
-            write_all(
-                &mut wrap_writer,
-                &encoded_buffer[..encoded_len],
-                &config.output,
-            )?;
-
-            let remainder = pending[aligned..].to_vec();
-            pending.clear();
-            pending.extend_from_slice(&remainder);
-        }
-    }
-
-    if !pending.is_empty() {
-        encoded_buffer.resize(encoded_capacity(pending.len()), 0);
-        let encoded_len = STANDARD
-            .encode_slice(&pending, &mut encoded_buffer)
-            .map_err(|_| AppError::encode_error())?;
-
-        write_all(
-            &mut wrap_writer,
-            &encoded_buffer[..encoded_len],
-            &config.output,
-        )?;
-    }
+    encoder
+        .finish()
+        .map_err(|err| map_write_error(&config.output, err))?;
+    drop(encoder);
 
     wrap_writer
         .finish()
@@ -86,85 +47,60 @@ fn encode(config: &B64Config) -> Result<(), AppError> {
 }
 
 fn decode(config: &B64Config) -> Result<(), AppError> {
-    let reader = open_reader(&config.input)?;
+    let mut reader = open_reader(&config.input)?;
     let writer = open_writer(&config.output)?;
 
-    let mut reader = BufReader::new(reader);
-    let mut writer = BufWriter::new(writer);
+    let mut writer = BufWriter::with_capacity(SIZE_64KB, writer);
 
-    let mut input_buffer = vec![0u8; SIZE_64KB];
     let mut pending: Vec<u8> = Vec::with_capacity(SIZE_64KB);
     let mut decoded_buffer: Vec<u8> = Vec::with_capacity(SIZE_64KB);
+    let mut padding_seen = false;
 
-    loop {
-        let read = reader
-            .read(&mut input_buffer)
-            .map_err(|err| AppError::read_error(&config.input, err))?;
+    let keep: fn(u8) -> bool = if config.ignore_garbage {
+        is_base64_byte_or_padding
+    } else {
+        is_not_line_break
+    };
 
-        if read == 0 {
-            break;
-        }
+    for_each_chunk(&mut reader, &config.input, |chunk| {
+        pending.extend(chunk.iter().copied().filter(|byte| keep(*byte)));
 
-        if config.ignore_garbage {
-            pending.extend(
-                input_buffer[..read]
-                    .iter()
-                    .copied()
-                    .filter(|byte| is_base64_byte_or_padding(*byte)),
-            );
-        } else {
-            pending.extend(
-                input_buffer[..read]
-                    .iter()
-                    .copied()
-                    .filter(|byte| *byte != b'\r' && *byte != b'\n'),
-            );
+        if padding_seen && !pending.is_empty() {
+            return Err(AppError::trailing_data_after_padding(&config.input));
         }
 
         let aligned = pending.len() / 4 * 4;
         if aligned == 0 {
-            continue;
+            return Ok(());
         }
 
-        let output_len = (aligned / 4) * 3;
-        if decoded_buffer.len() < output_len {
-            decoded_buffer.resize(output_len, 0);
+        decode_block(
+            &pending[..aligned],
+            &mut decoded_buffer,
+            &mut writer,
+            &config.input,
+            &config.output,
+        )?;
+
+        if pending[aligned - 1] == b'=' {
+            padding_seen = true;
         }
 
-        match STANDARD.decode_slice(&pending[..aligned], &mut decoded_buffer[..output_len]) {
-            Ok(decoded_size) => {
-                write_all(&mut writer, &decoded_buffer[..decoded_size], &config.output)?;
-            }
-            Err(err) => {
-                return Err(AppError::decode_error(err));
-            }
-        }
+        pending.drain(..aligned);
+        Ok(())
+    })?;
 
-        let remainder = pending[aligned..].to_vec();
-        pending.clear();
-        pending.extend_from_slice(&remainder);
+    if padding_seen && !pending.is_empty() {
+        return Err(AppError::trailing_data_after_padding(&config.input));
     }
 
+    // The chunk loop decodes every complete quad, so any bytes left here form an
+    // incomplete trailing quad (1-3 bytes), never a decodable block.
     if !pending.is_empty() {
-        if !pending.len().is_multiple_of(4) {
-            return Err(AppError::invalid_base64(
-                "decode error: invalid Base64 length",
-            ));
-        }
-
-        let output_len = (pending.len() / 4) * 3;
-        if decoded_buffer.len() < output_len {
-            decoded_buffer.resize(output_len, 0);
-        }
-
-        match STANDARD.decode_slice(&pending, &mut decoded_buffer[..output_len]) {
-            Ok(decoded_size) => {
-                write_all(&mut writer, &decoded_buffer[..decoded_size], &config.output)?;
-            }
-            Err(err) => {
-                return Err(AppError::decode_error(err));
-            }
-        }
+        return Err(AppError::invalid_base64(
+            &config.input,
+            "invalid Base64 length",
+        ));
     }
 
     writer
@@ -174,34 +110,80 @@ fn decode(config: &B64Config) -> Result<(), AppError> {
     Ok(())
 }
 
-fn open_reader(source: &InputSource) -> Result<Box<dyn Read>, AppError> {
-    match source.clone() {
-        InputSource::Stdin => Ok(Box::new(io::stdin())),
-        InputSource::File(path) => File::open(&path)
-            .map(|file| Box::new(file) as Box<dyn Read>)
-            .map_err(|err| AppError::cannot_open(&path, err)),
-        InputSource::Text(text) => Ok(Box::new(Cursor::new(text.into_bytes()))),
+/// Reads `reader` in 64 KB chunks, invoking `f` on each non-empty chunk until EOF.
+fn for_each_chunk(
+    reader: &mut impl Read,
+    source: &InputSource,
+    mut f: impl FnMut(&[u8]) -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    let mut buffer = vec![0u8; SIZE_64KB];
+
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|err| AppError::read_error(source, err))?;
+
+        if read == 0 {
+            break;
+        }
+
+        f(&buffer[..read])?;
+    }
+
+    Ok(())
+}
+
+/// Decodes one quad-aligned Base64 block and writes the resulting bytes.
+fn decode_block(
+    block: &[u8],
+    decoded_buffer: &mut Vec<u8>,
+    writer: &mut impl Write,
+    source: &InputSource,
+    output: &OutputTarget,
+) -> Result<(), AppError> {
+    let output_len = block.len() / 4 * 3;
+    if decoded_buffer.len() < output_len {
+        decoded_buffer.resize(output_len, 0);
+    }
+
+    let decoded_size = STANDARD
+        .decode_slice(block, &mut decoded_buffer[..output_len])
+        .map_err(|err| AppError::decode_error(source, err))?;
+
+    writer
+        .write_all(&decoded_buffer[..decoded_size])
+        .map_err(|err| map_write_error(output, err))?;
+
+    Ok(())
+}
+
+fn open_reader(source: &InputSource) -> Result<Box<dyn Read + '_>, AppError> {
+    match source {
+        InputSource::Stdin => Ok(Box::new(io::stdin().lock())),
+        InputSource::File(path) => {
+            let file = File::open(path).map_err(|err| AppError::cannot_open(path, err))?;
+            Ok(Box::new(file))
+        }
+        InputSource::Text(text) => Ok(Box::new(Cursor::new(text.as_bytes()))),
     }
 }
 
 fn open_writer(target: &OutputTarget) -> Result<Box<dyn Write>, AppError> {
     match target {
-        OutputTarget::Stdout => Ok(Box::new(io::stdout())),
-        OutputTarget::File(path) => File::create(path)
-            .map(|file| Box::new(file) as Box<dyn Write>)
-            .map_err(|err| AppError::cannot_create(path, err)),
+        OutputTarget::Stdout => Ok(Box::new(io::stdout().lock())),
+        OutputTarget::File(path) => {
+            let file = File::create(path).map_err(|err| AppError::cannot_create(path, err))?;
+            Ok(Box::new(file))
+        }
     }
-}
-
-fn write_all<W: Write>(writer: &mut W, data: &[u8], target: &OutputTarget) -> Result<(), AppError> {
-    writer
-        .write_all(data)
-        .map_err(|err| map_write_error(target, err))?;
-    Ok(())
 }
 
 fn is_base64_byte_or_padding(byte: u8) -> bool {
     matches!(byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'+' | b'/' | b'=')
+}
+
+fn is_not_line_break(byte: u8) -> bool {
+    byte != b'\r' && byte != b'\n'
 }
 
 fn map_write_error(target: &OutputTarget, err: io::Error) -> AppError {
@@ -283,16 +265,28 @@ impl AppError {
         }
     }
 
-    fn encode_error() -> Self {
-        Self::new("encode error: internal encoder failure", 1)
+    fn decode_error(source: &InputSource, err: DecodeSliceError) -> Self {
+        Self::new(
+            format!("decode error: {} (input: {})", err, input_label(source)),
+            2,
+        )
     }
 
-    fn decode_error(err: DecodeSliceError) -> Self {
-        Self::new(format!("decode error: {}", err), 2)
+    fn invalid_base64(source: &InputSource, reason: &str) -> Self {
+        Self::new(
+            format!("decode error: {} (input: {})", reason, input_label(source)),
+            2,
+        )
     }
 
-    fn invalid_base64(message: &str) -> Self {
-        Self::new(message.to_string(), 2)
+    fn trailing_data_after_padding(source: &InputSource) -> Self {
+        Self::new(
+            format!(
+                "decode error: trailing data after padding; input may be concatenated Base64 streams (input: {})",
+                input_label(source)
+            ),
+            2,
+        )
     }
 
     fn cannot_open(path: &Path, err: io::Error) -> Self {
@@ -342,50 +336,27 @@ impl AppError {
     }
 }
 
+fn input_label(source: &InputSource) -> String {
+    match source {
+        InputSource::Stdin => "stdin".to_string(),
+        InputSource::File(path) => format!("'{}'", path.to_string_lossy()),
+        InputSource::Text(_) => "inline text input".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
-    use std::num::NonZeroUsize;
     use std::path::Path;
     use tempfile::tempdir;
 
-    fn encode_config(input: &Path, output: &Path, wrap: Option<usize>) -> B64Config {
+    fn config(mode: B64Mode, input: InputSource, output: &Path) -> B64Config {
         B64Config {
-            mode: B64Mode::Encode,
-            wrap_columns: wrap.and_then(NonZeroUsize::new),
-            ignore_garbage: false,
-            input: InputSource::File(input.to_path_buf()),
-            output: OutputTarget::File(output.to_path_buf()),
-        }
-    }
-
-    fn decode_config(input: &Path, output: &Path, ignore_garbage: bool) -> B64Config {
-        B64Config {
-            mode: B64Mode::Decode,
+            mode,
             wrap_columns: NonZeroUsize::new(76),
-            ignore_garbage,
-            input: InputSource::File(input.to_path_buf()),
-            output: OutputTarget::File(output.to_path_buf()),
-        }
-    }
-
-    fn encode_text_config(text: &str, output: &Path, wrap: Option<usize>) -> B64Config {
-        B64Config {
-            mode: B64Mode::Encode,
-            wrap_columns: wrap.and_then(NonZeroUsize::new),
             ignore_garbage: false,
-            input: InputSource::Text(text.to_string()),
-            output: OutputTarget::File(output.to_path_buf()),
-        }
-    }
-
-    fn decode_text_config(text: &str, output: &Path, ignore_garbage: bool) -> B64Config {
-        B64Config {
-            mode: B64Mode::Decode,
-            wrap_columns: NonZeroUsize::new(76),
-            ignore_garbage,
-            input: InputSource::Text(text.to_string()),
+            input,
             output: OutputTarget::File(output.to_path_buf()),
         }
     }
@@ -395,12 +366,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let input_path = dir.path().join("input.bin");
         let output_path = dir.path().join("output.b64");
-
         fs::write(&input_path, b"hello world").unwrap();
 
-        let config = encode_config(&input_path, &output_path, Some(76));
-
-        run(&config).unwrap();
+        let cfg = config(B64Mode::Encode, InputSource::File(input_path), &output_path);
+        run(&cfg).unwrap();
 
         let encoded = fs::read_to_string(&output_path).unwrap();
         assert_eq!(encoded, "aGVsbG8gd29ybGQ=\n");
@@ -411,12 +380,13 @@ mod tests {
         let dir = tempdir().unwrap();
         let input_path = dir.path().join("input.bin");
         let output_path = dir.path().join("output.b64");
-
         fs::write(&input_path, b"hello world").unwrap();
 
-        let config = encode_config(&input_path, &output_path, Some(0));
-
-        run(&config).unwrap();
+        let cfg = B64Config {
+            wrap_columns: NonZeroUsize::new(0),
+            ..config(B64Mode::Encode, InputSource::File(input_path), &output_path)
+        };
+        run(&cfg).unwrap();
 
         let encoded = fs::read_to_string(&output_path).unwrap();
         assert_eq!(encoded, "aGVsbG8gd29ybGQ=");
@@ -427,9 +397,15 @@ mod tests {
         let dir = tempdir().unwrap();
         let output_path = dir.path().join("output.b64");
 
-        let config = encode_text_config("hello world", &output_path, Some(0));
-
-        run(&config).unwrap();
+        let cfg = B64Config {
+            wrap_columns: NonZeroUsize::new(0),
+            ..config(
+                B64Mode::Encode,
+                InputSource::Text("hello world".to_string()),
+                &output_path,
+            )
+        };
+        run(&cfg).unwrap();
 
         let encoded = fs::read_to_string(&output_path).unwrap();
         assert_eq!(encoded, "aGVsbG8gd29ybGQ=");
@@ -440,12 +416,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let input_path = dir.path().join("input.b64");
         let output_path = dir.path().join("output.bin");
-
         fs::write(&input_path, b"aGVsbG8gd29ybGQ=\n").unwrap();
 
-        let config = decode_config(&input_path, &output_path, false);
-
-        run(&config).unwrap();
+        let cfg = config(B64Mode::Decode, InputSource::File(input_path), &output_path);
+        run(&cfg).unwrap();
 
         let decoded = fs::read(&output_path).unwrap();
         assert_eq!(decoded, b"hello world");
@@ -456,9 +430,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let output_path = dir.path().join("output.bin");
 
-        let config = decode_text_config("aGVsbG8gd29ybGQ=", &output_path, false);
-
-        run(&config).unwrap();
+        let cfg = config(
+            B64Mode::Decode,
+            InputSource::Text("aGVsbG8gd29ybGQ=".to_string()),
+            &output_path,
+        );
+        run(&cfg).unwrap();
 
         let decoded = fs::read(&output_path).unwrap();
         assert_eq!(decoded, b"hello world");
@@ -469,9 +446,15 @@ mod tests {
         let dir = tempdir().unwrap();
         let output_path = dir.path().join("output.bin");
 
-        let config = decode_text_config(" aGVs\nbG8gd29ybGQ=\t", &output_path, true);
-
-        run(&config).unwrap();
+        let cfg = B64Config {
+            ignore_garbage: true,
+            ..config(
+                B64Mode::Decode,
+                InputSource::Text(" aGVs\nbG8gd29ybGQ=\t".to_string()),
+                &output_path,
+            )
+        };
+        run(&cfg).unwrap();
 
         let decoded = fs::read(&output_path).unwrap();
         assert_eq!(decoded, b"hello world");
@@ -482,12 +465,13 @@ mod tests {
         let dir = tempdir().unwrap();
         let input_path = dir.path().join("input.b64");
         let output_path = dir.path().join("output.bin");
-
         fs::write(&input_path, b"\t aGVsbG8gd29y bGQ=\n$%^\n").unwrap();
 
-        let config = decode_config(&input_path, &output_path, true);
-
-        run(&config).unwrap();
+        let cfg = B64Config {
+            ignore_garbage: true,
+            ..config(B64Mode::Decode, InputSource::File(input_path), &output_path)
+        };
+        run(&cfg).unwrap();
 
         let decoded = fs::read(&output_path).unwrap();
         assert_eq!(decoded, b"hello world");
@@ -498,16 +482,147 @@ mod tests {
         let dir = tempdir().unwrap();
         let input_path = dir.path().join("input.b64");
         let output_path = dir.path().join("output.bin");
-
         fs::write(&input_path, b"aGVsbG8gd29ybGQ=!").unwrap();
 
-        let config = decode_config(&input_path, &output_path, false);
+        let cfg = config(B64Mode::Decode, InputSource::File(input_path), &output_path);
 
-        let result = run(&config);
-        assert!(result.is_err());
-
-        let err = result.err().unwrap();
+        let err = run(&cfg).err().unwrap();
         assert_eq!(err.exit_code, 2);
         assert!(err.message.contains("decode error"));
+    }
+
+    #[test]
+    fn encode_large_input_wraps_and_round_trips() {
+        let dir = tempdir().unwrap();
+        let input_path = dir.path().join("input.bin");
+        let encoded_path = dir.path().join("encoded.b64");
+        let decoded_path = dir.path().join("roundtrip.bin");
+
+        let original: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+        fs::write(&input_path, &original).unwrap();
+
+        let encode_cfg = config(
+            B64Mode::Encode,
+            InputSource::File(input_path),
+            &encoded_path,
+        );
+        run(&encode_cfg).unwrap();
+
+        let encoded = fs::read_to_string(&encoded_path).unwrap();
+        assert!(encoded.ends_with('\n'));
+        let lines: Vec<&str> = encoded.trim_end_matches('\n').split('\n').collect();
+        let (last, rest) = lines.split_last().unwrap();
+        assert!(rest.iter().all(|line| line.len() == 76));
+        assert!(!last.is_empty() && last.len() <= 76);
+
+        let decode_cfg = config(
+            B64Mode::Decode,
+            InputSource::File(encoded_path),
+            &decoded_path,
+        );
+        run(&decode_cfg).unwrap();
+
+        let decoded = fs::read(&decoded_path).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn encode_wraps_without_trailing_blank_line_on_exact_boundary() {
+        let dir = tempdir().unwrap();
+        let input_path = dir.path().join("input.bin");
+        let output_path = dir.path().join("output.b64");
+        fs::write(&input_path, vec![0u8; 570]).unwrap();
+
+        let cfg = config(B64Mode::Encode, InputSource::File(input_path), &output_path);
+        run(&cfg).unwrap();
+
+        let encoded = fs::read_to_string(&output_path).unwrap();
+        assert!(encoded.ends_with('\n'));
+        assert!(!encoded.ends_with("\n\n"));
+        let lines: Vec<&str> = encoded.trim_end_matches('\n').split('\n').collect();
+        assert_eq!(lines.len(), 10);
+        assert!(lines.iter().all(|line| line.len() == 76));
+    }
+
+    #[test]
+    fn decode_rejects_data_after_padding_regardless_of_chunk_boundary() {
+        let dir = tempdir().unwrap();
+
+        let mut boundary_stream = "AAAA".repeat(16383);
+        boundary_stream.push_str("AA==");
+        boundary_stream.push_str("AAAAAAAA");
+        let boundary_input = dir.path().join("boundary.b64");
+        let boundary_output = dir.path().join("boundary.bin");
+        fs::write(&boundary_input, boundary_stream.as_bytes()).unwrap();
+
+        let boundary_cfg = config(
+            B64Mode::Decode,
+            InputSource::File(boundary_input),
+            &boundary_output,
+        );
+        let boundary_err = run(&boundary_cfg).err().unwrap();
+        assert_eq!(boundary_err.exit_code, 2);
+        assert!(boundary_err.message.starts_with("decode error:"));
+        assert!(!fs::read(&boundary_output).unwrap().is_empty());
+
+        let small_input = dir.path().join("small.b64");
+        let small_output = dir.path().join("small.bin");
+        fs::write(&small_input, b"AAAAAA==AAAA").unwrap();
+
+        let small_cfg = config(
+            B64Mode::Decode,
+            InputSource::File(small_input),
+            &small_output,
+        );
+        let small_err = run(&small_cfg).err().unwrap();
+        assert_eq!(small_err.exit_code, 2);
+        assert!(small_err.message.starts_with("decode error:"));
+        assert!(fs::read(&small_output).unwrap().is_empty());
+    }
+
+    #[test]
+    fn decode_rejects_concatenated_padded_streams_in_single_chunk() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("output.bin");
+
+        let cfg = config(
+            B64Mode::Decode,
+            InputSource::Text("SGVsbG8=SGVsbG8=".to_string()),
+            &output_path,
+        );
+
+        let err = run(&cfg).err().unwrap();
+        assert_eq!(err.exit_code, 2);
+        assert!(err.message.starts_with("decode error:"));
+        assert!(fs::read(&output_path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn decode_incomplete_final_quad_reports_invalid_length() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("output.bin");
+
+        let cfg = config(
+            B64Mode::Decode,
+            InputSource::Text("SGVsbG".to_string()),
+            &output_path,
+        );
+
+        let err = run(&cfg).err().unwrap();
+        assert_eq!(err.exit_code, 2);
+        assert!(err.message.contains("invalid Base64 length"));
+    }
+
+    #[test]
+    fn decode_missing_input_file_reports_cannot_open() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("does_not_exist.b64");
+        let output_path = dir.path().join("output.bin");
+
+        let cfg = config(B64Mode::Decode, InputSource::File(missing), &output_path);
+
+        let err = run(&cfg).err().unwrap();
+        assert_eq!(err.exit_code, 1);
+        assert!(err.message.contains("cannot open"));
     }
 }

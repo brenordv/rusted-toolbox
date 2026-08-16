@@ -66,6 +66,6 @@ pub fn initialize() -> B64Config {
     let args = CliArgs::parse();
 
     args.common.initialize_logging(false);
-    
+
     B64Config::from_args(&args)
 }
