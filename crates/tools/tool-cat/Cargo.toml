@@ -8,10 +8,12 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+# Internal
 common-cli = { workspace = true }
 common-utils = { workspace = true }
-clap = { workspace = true }
+# External
 anyhow = { workspace = true }
+clap = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
