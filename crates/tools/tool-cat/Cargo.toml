@@ -1,6 +1,6 @@
 [package]
 name = "cat"
-version = "1.0.1"
+version = "2.0.0"
 description = "Port of the Unix cat command."
 edition.workspace = true
 authors.workspace = true
@@ -8,7 +8,8 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
+common-cli = { workspace = true }
+common-utils = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }

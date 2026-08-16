@@ -1,9 +1,9 @@
-use crate::models::CatOptions;
 use anyhow::{Context, Result};
-use shared::constants::general::SIZE_128KB;
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
+use common_utils::constants::SIZE_128KB;
+use crate::models::CatConfig;
 
 /// Processes file content with optional formatting.
 ///
@@ -11,7 +11,7 @@ use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 ///
 /// # Errors
 /// Returns error if file operations fail
-pub fn cat_file(path: Option<&str>, options: &CatOptions) -> Result<()> {
+pub fn cat_file(path: Option<&str>, options: &CatConfig) -> Result<()> {
     if options.needs_line_processing() {
         cook_buf(path, options)
     } else {
@@ -25,7 +25,7 @@ pub fn cat_file(path: Option<&str>, options: &CatOptions) -> Result<()> {
 ///
 /// # Errors
 /// Returns error if file operations fail
-fn cook_buf(path: Option<&str>, options: &CatOptions) -> Result<()> {
+fn cook_buf(path: Option<&str>, options: &CatConfig) -> Result<()> {
     let reader: Box<dyn BufRead> = match path {
         None | Some("-") => Box::new(BufReader::new(io::stdin())),
         Some(filename) => {
@@ -170,15 +170,20 @@ mod tests {
     use rstest::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
+    use crate::models::CatConfig;
 
-    fn default_options() -> CatOptions {
-        CatOptions {
+    fn default_options() -> CatConfig {
+        CatConfig {
             number_nonblank: false,
             show_ends: false,
             number: false,
             squeeze_blank: false,
             show_tabs: false,
             show_nonprinting: false,
+            show_all: false,
+            e_flag: false,
+            t_flag: false,
+            files: vec![],
         }
     }
 
@@ -193,7 +198,7 @@ mod tests {
     #[case("hello\nworld\n", &default_options())]
     #[case("single line", &default_options())]
     #[case("", &default_options())]
-    fn test_cook_buf_basic_file_reading(#[case] content: &str, #[case] options: &CatOptions) {
+    fn test_cook_buf_basic_file_reading(#[case] content: &str, #[case] options: &CatConfig) {
         let temp_file = create_temp_file(content);
         let result = cook_buf(Some(temp_file.path().to_str().unwrap()), options);
         assert!(result.is_ok());
