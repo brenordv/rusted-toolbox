@@ -24,56 +24,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ai-chatbot"
-version = "1.0.2"
-dependencies = [
- "ai-shared",
- "anyhow",
- "crossterm",
- "dialoguer",
- "shared",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "ai-macros"
-version = "1.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.3",
-]
-
-[[package]]
-name = "ai-shared"
-version = "1.0.1"
-dependencies = [
- "ai-macros",
- "anyhow",
- "async-trait",
- "chrono",
- "reqwest 0.13.4",
- "serde",
- "serde_json",
- "shared",
- "tempfile",
-]
-
-[[package]]
-name = "aiignore"
-version = "1.0.2"
-dependencies = [
- "anyhow",
- "clap",
- "reqwest 0.13.4",
- "shared",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "aligned"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -435,11 +385,12 @@ dependencies = [
 
 [[package]]
 name = "b64"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "base64 0.23.1",
  "clap",
- "shared",
+ "common-cli",
+ "common-utils",
  "tempfile",
  "tracing",
 ]
@@ -645,12 +596,13 @@ dependencies = [
 
 [[package]]
 name = "cat"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "common-cli",
+ "common-utils",
  "rstest",
- "shared",
  "tempfile",
  "tracing",
 ]
@@ -853,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "common-cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "clap",
  "common-utils",
@@ -1204,16 +1156,16 @@ dependencies = [
 
 [[package]]
 name = "csvn"
-version = "1.0.2"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
  "common-utils-ext",
  "csv",
- "memmap2",
- "shared",
- "string-interner",
  "tempfile",
  "tracing",
 ]
@@ -1395,18 +1347,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
 
 [[package]]
-name = "dialoguer"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25f104b501bf2364e78d0d3974cbc774f738f5865306ed128e1e0d7499c0ad96"
-dependencies = [
- "console",
- "shell-words",
- "tempfile",
- "zeroize",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1450,19 +1390,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "distro-cc"
-version = "1.0.0"
-dependencies = [
- "ai-macros",
- "ai-shared",
- "anyhow",
- "clap",
- "shared",
- "shell-words",
- "tokio",
 ]
 
 [[package]]
@@ -2336,18 +2263,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
 dependencies = [
  "digest 0.10.7",
-]
-
-[[package]]
-name = "how"
-version = "1.0.2"
-dependencies = [
- "ai-macros",
- "ai-shared",
- "anyhow",
- "clap",
- "shared",
- "tokio",
 ]
 
 [[package]]
@@ -3326,15 +3241,6 @@ name = "memchr"
 version = "2.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
-
-[[package]]
-name = "memmap2"
-version = "0.9.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "memmem"
@@ -5484,12 +5390,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "shell-words"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
-
-[[package]]
 name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5692,16 +5592,6 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
-name = "string-interner"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad3df9b59e2eded8d825c7c4363ad339a20fb6bc0b9a4778560f518f59910b15"
-dependencies = [
- "hashbrown 0.16.1",
- "serde",
-]
 
 [[package]]
 name = "strsim"

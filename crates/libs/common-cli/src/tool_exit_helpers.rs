@@ -16,7 +16,7 @@ pub fn exit_success() {
 ///
 /// This function will immediately terminate the program and return a
 /// status code of `1` to the operating system. A status code of `1`
-/// conventionally indicates that the program completed successfully.
+/// conventionally indicates that the program terminated with an error.
 ///
 /// # Important
 /// - This function does not run any `Drop` implementations of active variables or resources.

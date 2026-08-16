@@ -1,11 +1,11 @@
 use crate::models::CsvNConfig;
 use anyhow::{anyhow, Result};
-use clap::{Parser};
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
+use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
+use common_utils::file_system::get_current_dir;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use common_cli::common_tool_args::CommonToolArgs;
-use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2};
-use common_utils::file_system::get_current_dir;
 
 /// Normalizes a CSV file
 ///
@@ -13,25 +13,24 @@ use common_utils::file_system::get_current_dir;
 #[derive(Parser, Debug)]
 #[command(about, long_about, version)]
 pub struct CliArgs {
-
     /// Path to the input file.
-    #[arg(short='f', long="file", required=true)]
+    #[arg(short = 'f', long = "file", required = true)]
     pub file: PathBuf,
 
     /// Headers of the CSV file, separated by a comma. Optional: If not informed, will try to infer from the first row of the file.
-    #[arg(short='e', long="headers")]
+    #[arg(short = 'e', long = "headers")]
     pub headers: Option<String>,
 
     /// Feedback interval, in rows. Will update progress on the console every X rows.
-    #[arg(short='i', long="feedback-interval", default_value_t=100)]
+    #[arg(short='i', long="feedback-interval", default_value_t=100, value_parser=clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     pub feedback_interval: usize,
 
     /// If set, will clean the rows from non-printable/utf-8 characters. Warning: This slows down the process by a lot!
-    #[arg(short='c', long="clean-string", default_value_t=false)]
+    #[arg(short = 'c', long = "clean-string", default_value_t = false)]
     pub clean_string: bool,
 
     /// Key=Value pairs to be used as default values for missing fields. To add multiple parameters, use this flag multiple times. If you want a single value for all missing fields, use * as the key, and inform the value.
-    #[arg(short='v', long="value-map", required=true)]
+    #[arg(short = 'v', long = "value-map", required = true)]
     pub value_map: Vec<String>,
 
     #[command(flatten)]
@@ -42,20 +41,36 @@ pub struct CliArgs {
 ///
 /// Shows input file, headers, cleaning options, and default mappings.
 pub fn print_runtime_info(args: &CsvNConfig) {
-    println!("{} Input file: {}", CONFIG_UL_ITEM_LEVEL_2, args.input_file.display());
+    println!(
+        "{} Input file: {}",
+        CONFIG_UL_ITEM_LEVEL_2,
+        args.input_file.display()
+    );
 
     if args.headers.is_some() {
         println!("{} Headers: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.headers);
     } else {
-        println!("{} Headers: Will be inferred from file.", CONFIG_UL_ITEM_LEVEL_2);
+        println!(
+            "{} Headers: Will be inferred from file.",
+            CONFIG_UL_ITEM_LEVEL_2
+        );
     }
 
-    println!("{} Clean string: {}", CONFIG_UL_ITEM_LEVEL_2, args.clean_string);
-    println!("{} Default value map: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.default_value_map);
-    println!("{} Feedback Interval: {}", CONFIG_UL_ITEM_LEVEL_2, args.feedback_interval);
+    println!(
+        "{} Clean string: {}",
+        CONFIG_UL_ITEM_LEVEL_2, args.clean_string
+    );
+    println!(
+        "{} Default value map: {:?}",
+        CONFIG_UL_ITEM_LEVEL_2, args.default_value_map
+    );
+    println!(
+        "{} Feedback Interval: {}",
+        CONFIG_UL_ITEM_LEVEL_2, args.feedback_interval
+    );
 
     println!(
-        "{} Note: For performance reasons, malformed CSV lines will be skipped and not logged.",
+        "{} Note: rows with a mismatched column count are repaired to fit the header; unparseable rows are skipped. Both counts are reported at the end.",
         CONFIG_UL_ITEM_LEVEL_2
     );
 
@@ -78,10 +93,10 @@ pub fn initialize() -> Result<CsvNConfig> {
 
     let current_working_dir = get_current_dir();
 
-    let input_file = if !&args.file.is_absolute() {
-        current_working_dir.join(&args.file)
+    let input_file = if args.file.is_absolute() {
+        args.file.clone()
     } else {
-        (&args.file).clone()
+        current_working_dir.join(&args.file)
     };
 
     if !input_file.exists() {
@@ -90,23 +105,14 @@ pub fn initialize() -> Result<CsvNConfig> {
         ));
     }
 
-    let headers: Option<Vec<String>> = match args.headers {
-        Some(headers_arg) => Some(
-            headers_arg
-                .split(',')
-                .map(|x| x.trim().to_string())
-                .collect(),
-        ),
-        None => None,
-    };
+    let headers: Option<Vec<String>> = args.headers.map(|headers_arg| {
+        headers_arg
+            .split(',')
+            .map(|field| field.trim().to_string())
+            .collect()
+    });
 
     let clean_string = args.clean_string;
-
-    if args.value_map.len() == 0 {
-        return Err(anyhow!(
-            "Default value map is required. Please provide a valid key=value pair."
-        ));
-    }
 
     let default_value_map: HashMap<String, String> = args
         .value_map
@@ -114,11 +120,7 @@ pub fn initialize() -> Result<CsvNConfig> {
         .map(|raw_value_pair| {
             let mut parts = raw_value_pair.splitn(2, '=');
 
-            let key = parts
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_lowercase();
+            let key = parts.next().unwrap_or("").trim().to_lowercase();
 
             let value = parts
                 .next()
@@ -146,7 +148,10 @@ pub fn initialize() -> Result<CsvNConfig> {
         env!("CARGO_PKG_VERSION"),
         false,
         false,
-        Some(|| { print_runtime_info(&config); }));
+        Some(|| {
+            print_runtime_info(&config);
+        }),
+    );
 
     Ok(config)
 }

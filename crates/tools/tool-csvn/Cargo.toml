@@ -19,8 +19,6 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 csv = { workspace = true }
-memmap2 = { workspace = true }
-string-interner = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

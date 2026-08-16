@@ -1,242 +1,248 @@
-use crate::mmap_csv_reader::MmapCsvReader;
 use crate::models::CsvNConfig;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use common_utils::constants::SIZE_128KB;
+use common_utils::datetime_utc_utils::DateTimeUtcUtils;
+use common_utils::string_utils::format_duration_to_string;
 use common_utils_ext::sanitize_str_regex::clean_str_regex;
-use csv::{StringRecord, Writer, WriterBuilder};
+use csv::{Reader, ReaderBuilder, StringRecord, Writer, WriterBuilder};
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use string_interner::DefaultSymbol;
-use common_utils::datetime_utc_utils::DateTimeUtcUtils;
-use common_utils::string_utils::format_duration_to_string;
+use std::time::{Duration, Instant};
 
-/// Determines headers for CSV processing.
+/// Progress feedback is printed at most this often, regardless of the row interval.
+const FEEDBACK_MIN_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Determines the headers for CSV processing.
 ///
-/// Uses CLI headers if provided, otherwise extracts from the file's first row.
+/// Uses CLI headers if provided, otherwise reads them from the file's first row.
 ///
 /// # Errors
-/// Returns error if headers cannot be read from file
-pub fn ensure_headers(
-    arg_headers: &Option<Vec<String>>,
-    reader: &mut MmapCsvReader,
-) -> Result<Vec<String>> {
-    if let Some(headers) = arg_headers {
-        Ok(headers.clone())
-    } else {
-        let headers = reader
-            .headers()
-            .context("Failed to read headers from the CSV ")?
-            .clone()
-            .iter()
-            .map(|s| s.trim().to_string())
-            .collect();
-
-        Ok(headers)
+/// Returns an error if headers cannot be read from the file.
+fn resolve_headers(config: &CsvNConfig, reader: &mut Reader<File>) -> Result<Vec<String>> {
+    match &config.headers {
+        Some(headers) => Ok(headers.clone()),
+        None => {
+            let headers = reader
+                .headers()
+                .context("Failed to read headers from the CSV")?
+                .iter()
+                .map(|field| field.trim().to_string())
+                .collect();
+            Ok(headers)
+        }
     }
 }
 
-/// Creates a buffered CSV writer for normalized output.
+/// Precomputes the default value for every column, indexed by header position.
 ///
-/// Output file has "_normalized" suffix and 128KB buffer.
+/// A column-specific default takes precedence over the wildcard (`*`) default;
+/// columns without either are left as `None`.
+fn build_column_defaults(
+    value_map: &HashMap<String, String>,
+    headers: &[String],
+) -> Vec<Option<String>> {
+    let wildcard = value_map.get("*");
+
+    headers
+        .iter()
+        .map(|header| value_map.get(&header.to_lowercase()).or(wildcard).cloned())
+        .collect()
+}
+
+/// Creates a buffered CSV writer for the normalized output file.
+///
+/// The output name is the input name with a `_normalized` suffix inserted before
+/// the extension (or appended when there is none), keeping the parent directory intact.
 ///
 /// # Errors
-/// Returns error if an output file cannot be created
+/// Returns an error if the input path has no file name or the output cannot be created.
 pub fn get_output_normalized_file(input_file: &Path) -> Result<Writer<File>> {
-    let input_str = match input_file.to_str() {
-        Some(s) => s,
-        None => {
-            return Err(anyhow!(
-                "Input file path is not valid UTF-8. Non-UTF-8 paths are unsupported."
-            ));
-        }
-    };
+    let mut output_name: OsString = input_file
+        .file_stem()
+        .context("Input file path has no file name")?
+        .to_os_string();
+    output_name.push("_normalized");
+    if let Some(extension) = input_file.extension() {
+        output_name.push(".");
+        output_name.push(extension);
+    }
 
-    let normalized_path = if let Some(dot_index) = input_str.rfind('.') {
+    let normalized_path = input_file.with_file_name(output_name);
+
+    let file = File::create(&normalized_path).with_context(|| {
         format!(
-            "{}_normalized{}",
-            &input_str[..dot_index],
-            &input_str[dot_index..]
+            "Unable to open file for writing: {}",
+            normalized_path.display()
         )
-    } else {
-        format!("{}_normalized", input_str)
-    };
+    })?;
 
-    let file = File::create(&normalized_path).context(format!(
-        "Unable to open file for writing: {}",
-        normalized_path
-    ))?;
-
-    let wtr = WriterBuilder::new()
-        .buffer_capacity(131_072) // 128 KiB internal buffer
+    let writer = WriterBuilder::new()
+        .buffer_capacity(SIZE_128KB)
         .from_writer(file);
 
-    Ok(wtr)
+    Ok(writer)
 }
 
 /// Processes CSV file normalization with graceful shutdown support.
 ///
-/// Creates a normalized output file, fills empty fields with defaults, provides progress updates.
-/// Silently skips malformed CSV lines for performance.
+/// Fills empty fields with defaults, repairs rows whose column count differs from the
+/// header (padding short rows, truncating long ones), and reports repaired and skipped counts.
+///
+/// Returns `true` when the run was interrupted by a shutdown signal.
 ///
 /// # Errors
-/// Returns error if file operations fail
-pub fn process_file(args: &mut CsvNConfig, shutdown_signal: Arc<AtomicBool>) -> Result<()> {
-    let mut reader = MmapCsvReader::new(&args.input_file)?;
+/// Returns an error if file operations fail.
+pub fn process_file(config: &CsvNConfig, shutdown_signal: Arc<AtomicBool>) -> Result<bool> {
+    let mut reader = ReaderBuilder::new()
+        .flexible(true)
+        .has_headers(config.headers.is_none())
+        .buffer_capacity(SIZE_128KB)
+        .from_path(&config.input_file)
+        .with_context(|| format!("Unable to open input file: {}", config.input_file.display()))?;
 
-    let headers = ensure_headers(&args.headers, &mut reader)?;
+    let headers = resolve_headers(config, &mut reader)?;
+    let column_defaults = build_column_defaults(&config.default_value_map, &headers);
 
-    let value_map = update_default_value_map(args, &headers)?;
-
-    let mut output_file = get_output_normalized_file(&args.input_file)?;
-
-    // Write headers first
+    let mut output_file = get_output_normalized_file(&config.input_file)?;
     output_file
         .write_record(&headers)
         .context("Failed to write headers to output file")?;
 
     let start_time = Utc::now();
-
     let mut line_count: usize = 0;
+    let mut repaired_rows: usize = 0;
+    let mut skipped_rows: usize = 0;
+    let mut warned_columns = vec![false; headers.len()];
 
-    let feedback_interval = args.feedback_interval;
+    let mut record = StringRecord::new();
+    let mut output_record = StringRecord::new();
+    let mut last_feedback = Instant::now();
+    let mut interrupted = false;
 
-    for record in reader.records().filter_map(Result::ok) {
-        // Check for a shutdown signal
+    loop {
         if shutdown_signal.load(Ordering::Relaxed) {
+            interrupted = true;
             println!("\n- Saving progress and exiting gracefully...");
             println!("- Processed [{}] lines before shutdown", line_count);
             break;
         }
 
-        let normalized_record =
-            normalize_record(args, &value_map, &headers, record, &args.clean_string)?;
+        match reader.read_record(&mut record) {
+            Ok(true) => {}
+            Ok(false) => break,
+            Err(e) => {
+                skipped_rows += 1;
+                eprintln!("Skipping unparseable row: {}", e);
+                continue;
+            }
+        }
+
+        if record.len() != headers.len() {
+            repaired_rows += 1;
+        }
+
+        normalize_into(
+            &column_defaults,
+            &headers,
+            &record,
+            config.clean_string,
+            &mut output_record,
+            &mut warned_columns,
+        );
 
         output_file
-            .write_record(&normalized_record)
+            .write_record(&output_record)
             .context("Failed to write normalized line to output file")?;
 
         line_count += 1;
-        if line_count.is_multiple_of(feedback_interval) {
-            update_process_feedback(start_time, &line_count)?;
+        if line_count.is_multiple_of(config.feedback_interval)
+            && last_feedback.elapsed() >= FEEDBACK_MIN_INTERVAL
+        {
+            update_process_feedback(start_time, line_count)?;
+            last_feedback = Instant::now();
         }
     }
 
-    update_process_feedback(start_time, &line_count)?;
+    update_process_feedback(start_time, line_count)?;
     println!();
 
-    // Ensure all data is written to the disk
-    match output_file.flush() {
-        Ok(_) => {
-            if shutdown_signal.load(Ordering::Relaxed) {
-                println!(
-                    "[OK] Progress saved successfully. {} lines processed.",
-                    line_count
-                );
-            } else {
-                println!(
-                    "[OK] File processing completed successfully. {} lines processed.",
-                    line_count
-                );
-            }
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("[FAIL] Failed to flush output file: {}", e);
-            Err(anyhow!(e))
-        }
-    }
+    output_file.flush().context("Failed to flush output file")?;
+
+    report_summary(interrupted, line_count, repaired_rows, skipped_rows);
+
+    Ok(interrupted)
 }
 
-/// Updates a default value map based on file headers.
-///
-/// Expands wildcard (*) keys to all headers or uses specific column mappings.
-///
-/// # Errors
-/// Returns error if a wildcard key exists without value
-fn update_default_value_map(
-    config: &mut CsvNConfig,
-    file_headers: &Vec<String>,
-) -> Result<HashMap<String, DefaultSymbol>> {
-    let mut interned_map = HashMap::new();
-
-    if config.default_value_map.is_empty()
-        || (config.default_value_map.len() == 1 && config.default_value_map.contains_key("*"))
-    {
-        // Handle wildcard case
-        let default_value = config
-            .default_value_map
-            .get("*")
-            .context("When using a wildcard key, a value should be provided!")?;
-
-        // Intern the wildcard value once
-        let interned_symbol = config.string_interner.get_or_intern(default_value);
-
-        // Apply to all headers
-        for header in file_headers {
-            interned_map.insert(header.to_lowercase(), interned_symbol);
-        }
+/// Writes the completion summary, including any repaired or skipped row counts.
+fn report_summary(interrupted: bool, line_count: usize, repaired_rows: usize, skipped_rows: usize) {
+    if interrupted {
+        println!(
+            "[OK] Progress saved successfully. {} lines processed.",
+            line_count
+        );
     } else {
-        // Use pre-interned values from config
-        for (key, symbol) in &config.interned_defaults {
-            interned_map.insert(key.clone(), *symbol);
-        }
+        println!(
+            "[OK] File processing completed successfully. {} lines processed.",
+            line_count
+        );
     }
 
-    Ok(interned_map)
+    if repaired_rows > 0 {
+        println!(
+            "- Repaired {} row(s) whose column count did not match the header.",
+            repaired_rows
+        );
+    }
+
+    if skipped_rows > 0 {
+        println!("- Skipped {} unparseable row(s).", skipped_rows);
+    }
 }
 
-/// Normalizes CSV record by filling empty fields with default values.
+/// Normalizes a record into `output`, filling empty fields with column defaults.
 ///
-/// Trims whitespace and replaces empty fields with defaults.
-/// Warns if no default value is found for the header.
-fn normalize_record(
-    config: &CsvNConfig,
-    default_map: &HashMap<String, DefaultSymbol>,
-    headers: &Vec<String>,
-    record: StringRecord,
-    clean_string: &bool,
-) -> Result<StringRecord> {
-    let mut normalized_record = StringRecord::new();
+/// Reads each column by position, so duplicate header names resolve to their own value.
+/// Missing trailing fields (short rows) are treated as empty and filled; extra fields
+/// (long rows) are dropped. Warns once per column that has an empty field but no default.
+fn normalize_into(
+    column_defaults: &[Option<String>],
+    headers: &[String],
+    record: &StringRecord,
+    clean_string: bool,
+    output: &mut StringRecord,
+    warned_columns: &mut [bool],
+) {
+    output.clear();
 
-    for header in headers {
-        let header_value = headers
-            .iter()
-            .position(|h| h == header)
-            .context("Failed to find header in headers list")?;
+    for (index, header) in headers.iter().enumerate() {
+        let value = record.get(index).unwrap_or("").trim();
 
-        let value = record
-            .get(header_value)
-            .context(format!("Failed to get value [{}] for header", header_value))?
-            .trim();
-
-        // Use default if the value is empty
-        let final_value = if value.is_empty() {
-            match default_map.get(header.to_lowercase().as_str()) {
-                Some(symbol) => {
-                    // Resolve the interned string back to &str
-                    config.string_interner.resolve(*symbol).unwrap_or("")
-                }
+        if value.is_empty() {
+            match &column_defaults[index] {
+                Some(default) => output.push_field(default),
                 None => {
-                    eprintln!(
-                        "Could not find default value mapped for key [{}]. Keeping value empty.",
-                        header
-                    );
-                    ""
+                    if !warned_columns[index] {
+                        warned_columns[index] = true;
+                        eprintln!(
+                            "No default value mapped for column [{}]. Leaving empty fields empty.",
+                            header
+                        );
+                    }
+                    output.push_field("");
                 }
             }
-        } else if *clean_string {
-            &clean_str_regex(value)
+        } else if clean_string {
+            output.push_field(&clean_str_regex(value));
         } else {
-            value
-        };
-
-        normalized_record.push_field(final_value);
+            output.push_field(value);
+        }
     }
-    Ok(normalized_record)
 }
 
 /// Displays processing progress feedback.
@@ -244,10 +250,10 @@ fn normalize_record(
 /// Shows lines processed, elapsed time, and processing speed.
 ///
 /// # Errors
-/// Returns error if stdout cannot be flushed
-fn update_process_feedback(start_time: DateTime<Utc>, line_count: &usize) -> Result<()> {
+/// Returns an error if stdout cannot be flushed.
+fn update_process_feedback(start_time: DateTime<Utc>, line_count: usize) -> Result<()> {
     let elapsed = start_time.get_elapsed_time();
-    let lines_per_second = *line_count as f64 / elapsed.as_seconds_f64();
+    let lines_per_second = line_count as f64 / elapsed.as_seconds_f64();
 
     // Feedback line has some padding to the right to make it look nicer.
     print!(
@@ -266,39 +272,132 @@ fn update_process_feedback(start_time: DateTime<Utc>, line_count: &usize) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::CsvNConfig;
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
     use tempfile::tempdir;
 
-    fn config_with(default_map: HashMap<String, String>) -> CsvNConfig {
-        CsvNConfig::new(PathBuf::from("in.csv"), None, false, default_map, 100)
+    fn run(config: &CsvNConfig) -> bool {
+        let signal = Arc::new(AtomicBool::new(false));
+        process_file(config, signal).unwrap()
+    }
+
+    fn config_for(
+        input: PathBuf,
+        headers: Option<Vec<String>>,
+        clean_string: bool,
+        map: HashMap<String, String>,
+    ) -> CsvNConfig {
+        CsvNConfig::new(input, headers, clean_string, map, 100)
     }
 
     #[test]
-    fn ensure_headers_infers_from_file_when_none() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("data.csv");
-        fs::write(&path, "a, b ,c\n1,2,3\n").unwrap();
-        let mut reader = MmapCsvReader::new(&path).unwrap();
+    fn build_column_defaults_wildcard_and_specific_combine() {
+        let map = HashMap::from([
+            ("*".to_string(), "N/A".to_string()),
+            ("city".to_string(), "London".to_string()),
+        ]);
+        let headers = vec!["Name".to_string(), "City".to_string(), "Age".to_string()];
 
-        let headers = ensure_headers(&None, &mut reader).unwrap();
+        let defaults = build_column_defaults(&map, &headers);
 
-        assert_eq!(headers, vec!["a", "b", "c"]);
+        assert_eq!(defaults[0].as_deref(), Some("N/A"));
+        assert_eq!(defaults[1].as_deref(), Some("London"));
+        assert_eq!(defaults[2].as_deref(), Some("N/A"));
     }
 
     #[test]
-    fn ensure_headers_uses_provided_headers() {
+    fn build_column_defaults_leaves_unmapped_columns_none() {
+        let map = HashMap::from([("name".to_string(), "unknown".to_string())]);
+        let headers = vec!["Name".to_string(), "City".to_string()];
+
+        let defaults = build_column_defaults(&map, &headers);
+
+        assert_eq!(defaults[0].as_deref(), Some("unknown"));
+        assert_eq!(defaults[1], None);
+    }
+
+    #[test]
+    fn normalize_into_fills_empty_and_trims_and_cleans() {
+        let defaults = vec![Some("Unknown".to_string()), None];
+        let headers = vec!["Name".to_string(), "Notes".to_string()];
+        let record = StringRecord::from(vec!["", "  Good\u{0}customer  "]);
+        let mut output = StringRecord::new();
+        let mut warned = vec![false; headers.len()];
+
+        normalize_into(&defaults, &headers, &record, true, &mut output, &mut warned);
+
+        assert_eq!(output.get(0), Some("Unknown"));
+        assert_eq!(output.get(1), Some("Goodcustomer"));
+    }
+
+    #[test]
+    fn normalize_into_reads_duplicate_headers_by_position() {
+        let defaults = vec![None, None];
+        let headers = vec!["id".to_string(), "id".to_string()];
+        let record = StringRecord::from(vec!["first", "second"]);
+        let mut output = StringRecord::new();
+        let mut warned = vec![false; headers.len()];
+
+        normalize_into(
+            &defaults,
+            &headers,
+            &record,
+            false,
+            &mut output,
+            &mut warned,
+        );
+
+        assert_eq!(output.get(0), Some("first"));
+        assert_eq!(output.get(1), Some("second"));
+    }
+
+    #[test]
+    fn process_file_repairs_short_and_long_rows() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("data.csv");
-        fs::write(&path, "a,b\n1,2\n").unwrap();
-        let mut reader = MmapCsvReader::new(&path).unwrap();
+        let input = dir.path().join("data.csv");
+        fs::write(
+            &input,
+            "name,city,age\nJohn\nAlice,Paris,30,extra\n,Rome,40\n",
+        )
+        .unwrap();
+        let config = config_for(
+            input,
+            None,
+            false,
+            HashMap::from([("*".to_string(), "N/A".to_string())]),
+        );
 
-        let headers =
-            ensure_headers(&Some(vec!["x".to_string(), "y".to_string()]), &mut reader).unwrap();
+        let interrupted = run(&config);
 
-        assert_eq!(headers, vec!["x", "y"]);
+        let output = fs::read_to_string(dir.path().join("data_normalized.csv")).unwrap();
+        assert!(!interrupted);
+        assert_eq!(
+            output,
+            "name,city,age\nJohn,N/A,N/A\nAlice,Paris,30\nN/A,Rome,40\n"
+        );
+    }
+
+    #[test]
+    fn process_file_with_cli_headers_keeps_first_data_row() {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("headerless.csv");
+        fs::write(&input, "John,Paris,25\nAlice,Rome,30\n").unwrap();
+        let config = config_for(
+            input,
+            Some(vec![
+                "name".to_string(),
+                "city".to_string(),
+                "age".to_string(),
+            ]),
+            false,
+            HashMap::from([("*".to_string(), "N/A".to_string())]),
+        );
+
+        run(&config);
+
+        let output = fs::read_to_string(dir.path().join("headerless_normalized.csv")).unwrap();
+        assert_eq!(output, "name,city,age\nJohn,Paris,25\nAlice,Rome,30\n");
     }
 
     #[test]
@@ -312,61 +411,14 @@ mod tests {
     }
 
     #[test]
-    fn update_default_value_map_expands_wildcard_to_all_headers() {
-        let mut config = config_with(HashMap::from([("*".to_string(), "N/A".to_string())]));
-        let headers = vec!["Name".to_string(), "City".to_string()];
+    fn get_output_normalized_file_handles_extensionless_file_in_dotted_dir() {
+        let dir = tempdir().unwrap();
+        let dotted = dir.path().join("archive.v2");
+        fs::create_dir(&dotted).unwrap();
+        let input = dotted.join("data");
 
-        let map = update_default_value_map(&mut config, &headers).unwrap();
+        let _writer = get_output_normalized_file(&input).unwrap();
 
-        let name_sym = *map.get("name").unwrap();
-        let city_sym = *map.get("city").unwrap();
-        assert_eq!(config.string_interner.resolve(name_sym).unwrap(), "N/A");
-        assert_eq!(config.string_interner.resolve(city_sym).unwrap(), "N/A");
-    }
-
-    #[test]
-    fn update_default_value_map_uses_specific_mappings() {
-        let mut config = config_with(HashMap::from([("name".to_string(), "unknown".to_string())]));
-        let headers = vec!["Name".to_string()];
-
-        let map = update_default_value_map(&mut config, &headers).unwrap();
-
-        let sym = *map.get("name").unwrap();
-        assert_eq!(config.string_interner.resolve(sym).unwrap(), "unknown");
-    }
-
-    #[test]
-    fn update_default_value_map_errors_when_empty() {
-        let mut config = config_with(HashMap::new());
-        let headers = vec!["a".to_string()];
-
-        assert!(update_default_value_map(&mut config, &headers).is_err());
-    }
-
-    #[test]
-    fn normalize_record_fills_empty_fields_with_defaults() {
-        let mut config = config_with(HashMap::new());
-        let sym = config.string_interner.get_or_intern("Unknown");
-        let mut default_map = HashMap::new();
-        default_map.insert("name".to_string(), sym);
-        let headers = vec!["Name".to_string(), "City".to_string()];
-        let record = StringRecord::from(vec!["", "  Paris  "]);
-
-        let normalized = normalize_record(&config, &default_map, &headers, record, &false).unwrap();
-
-        assert_eq!(normalized.get(0), Some("Unknown"));
-        assert_eq!(normalized.get(1), Some("Paris"));
-    }
-
-    #[test]
-    fn normalize_record_keeps_empty_when_no_default_mapped() {
-        let config = config_with(HashMap::new());
-        let default_map: HashMap<String, DefaultSymbol> = HashMap::new();
-        let headers = vec!["Age".to_string()];
-        let record = StringRecord::from(vec![""]);
-
-        let normalized = normalize_record(&config, &default_map, &headers, record, &false).unwrap();
-
-        assert_eq!(normalized.get(0), Some(""));
+        assert!(dotted.join("data_normalized").exists());
     }
 }

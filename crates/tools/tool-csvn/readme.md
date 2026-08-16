@@ -11,9 +11,9 @@ data consistent and prevents errors in downstream processing systems that cannot
 - Auto-detects headers or accepts custom headers
 - Real-time progress feedback with processing speed
 - Graceful shutdown with data preservation
+- Repairs rows whose column count does not match the header (pads short rows, truncates long rows) and reports the count
 - Optional string cleaning (removes non-printable characters)
 - High-performance buffered I/O (128KB buffer)
-- Memory-optimized string interning for repeated values
 
 ## Command-Line Options
 - `-f, --file`: Input CSV file path (required)
@@ -123,12 +123,12 @@ Clean,Specialclient
 - **API Developer**: Normalizing CSV uploads before processing user data
 
 ## Known Issues
-1. **Silent Malformed CSV Handling**: The tool silently skips malformed CSV lines without logging which specific lines
-were problematic. This is a design choice to focus on performance of execution, and to keep the code simpler.
+1. **Ragged Row Repair Is Silent Per Row**: Rows whose column count differs from the header are repaired (short rows
+padded, long rows truncated) and counted, but the specific line numbers are not logged. Only genuinely unparseable rows
+are reported individually.
 
 2. **Missing Data Type Validation**: The tool doesn't validate that default values match expected data types for 
 columns. In this case, we are trusting the user. What could go wrong?
 
-3. **Limited Error Context**: When default values cannot be found for specific columns, the tool prints warnings to 
-stderr but continues processing, potentially resulting in incomplete normalization without clear indication of how many
-records were affected.
+3. **Limited Error Context**: When a column has empty fields but no default value, the tool warns once for that column
+and continues processing, leaving those fields empty.
