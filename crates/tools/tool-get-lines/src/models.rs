@@ -1,10 +1,11 @@
-pub struct GetLinesArgs {
+use std::path::PathBuf;
+
+pub struct GetLinesConfig {
     pub search: Vec<String>,
-    pub file: String,
-    pub output: Option<String>,
+    pub file: PathBuf,
+    pub output: Option<PathBuf>,
     pub workers: usize,
     pub hide_line_numbers: bool,
-    pub hide_runtime_info: bool,
 }
 
 #[derive(Clone)]

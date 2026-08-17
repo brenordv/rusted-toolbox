@@ -1,11 +1,11 @@
-use crate::models::{GetLinesArgs, LineData};
+use crate::models::{GetLinesConfig, LineData};
 use anyhow::{Context, Result};
+use common_utils::string_utils::sanitize_string_for_filename;
 use futures_util::StreamExt;
-use shared::utils::sanitize_string_for_filename::sanitize_string_for_filename;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -36,10 +36,10 @@ use tokio_stream::wrappers::ReceiverStream;
 /// - Spawns an async task to continuously write received lines
 /// - Handles proper flushing on task completion or shutdown
 pub fn prepare_to_export_search_terms_to_output_files(
-    args: &GetLinesArgs,
+    args: &GetLinesConfig,
     output_channels: &mut HashMap<String, Sender<String>>,
     output_handles: &mut Vec<JoinHandle<()>>,
-    output_dir: &String,
+    output_dir: &PathBuf,
     term: &str,
     shutdown_signal: Arc<AtomicBool>,
 ) -> Result<()> {
@@ -97,7 +97,7 @@ pub fn prepare_to_export_search_terms_to_output_files(
 /// - Spawns an async task per term to consume and print received lines
 /// - Tasks check shutdown signal periodically for graceful termination
 pub fn prepare_to_export_search_terms_to_console(
-    args: &GetLinesArgs,
+    args: &GetLinesConfig,
     output_channels: &mut HashMap<String, Sender<String>>,
     output_handles: &mut Vec<JoinHandle<()>>,
     search_terms: &Vec<String>,
@@ -142,13 +142,12 @@ pub fn prepare_to_export_search_terms_to_console(
 /// # Panics
 /// Panics if the specified input file cannot be opened
 pub fn spawn_file_reading_workers(
-    args: &GetLinesArgs,
+    args: &GetLinesConfig,
     line_tx: &Sender<LineData>,
     shutdown_signal: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
     let reader_handle = {
         let file_path = args.file.clone();
-        let hide_runtime_info = args.hide_runtime_info;
         let line_tx = line_tx.clone();
         tokio::spawn(async move {
             let file = File::open(&file_path).expect("Failed to open input file");
@@ -157,9 +156,6 @@ pub fn spawn_file_reading_workers(
 
             for line_res in reader.lines() {
                 if shutdown_signal.load(Ordering::Relaxed) {
-                    if !hide_runtime_info {
-                        println!("File reading stopped due to shutdown signal");
-                    }
                     break;
                 }
 
@@ -206,7 +202,7 @@ pub fn spawn_file_reading_workers(
 /// - Formats output with or without line numbers based on configuration
 /// - Stops processing on shutdown signal
 pub fn process_lines_read(
-    args: GetLinesArgs,
+    args: GetLinesConfig,
     output_channels: &mut HashMap<String, Sender<String>>,
     search_terms: Vec<String>,
     line_rx: Receiver<LineData>,

@@ -1445,15 +1445,17 @@ checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
 
 [[package]]
 name = "eh-export"
-version = "1.0.3"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
  "crossterm",
  "csv",
  "serde_json",
- "shared",
  "shared-eventhub",
  "sled",
  "tokio",
@@ -1462,17 +1464,19 @@ dependencies = [
 
 [[package]]
 name = "eh-read"
-version = "1.0.3"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "azeventhubs",
  "chrono",
  "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
  "crossterm",
  "ctrlc",
  "futures-util",
  "serde_json",
- "shared",
  "shared-eventhub",
  "sled",
  "tokio",
@@ -2027,12 +2031,15 @@ dependencies = [
 
 [[package]]
 name = "get-lines"
-version = "1.0.2"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
+ "common-utils-ext",
  "futures-util",
- "shared",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -5386,6 +5393,7 @@ dependencies = [
  "serde",
  "shared",
  "tracing-log",
+ "tracing-subscriber",
  "url",
 ]
 

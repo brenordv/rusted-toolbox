@@ -1,13 +1,11 @@
-use crate::cli_utils::{get_cli_arguments, print_runtime_info, validate_cli_arguments};
+use crate::cli_utils::initialize;
 use crate::get_lines_app::{
     prepare_to_export_search_terms_to_console, prepare_to_export_search_terms_to_output_files,
     process_lines_read, spawn_file_reading_workers,
 };
 use crate::models::LineData;
-use shared::logging::app_logger::LogLevel;
-use shared::logging::logging_helpers::initialize_log;
-use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
-use shared::system::tool_exit_helpers::{exit_error, exit_success};
+use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
+use common_cli::tool_exit_helpers::{exit_error, exit_success};
 use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::sync::Arc;
@@ -43,19 +41,8 @@ mod models;
 ///
 #[tokio::main]
 async fn main() {
-    // 0) Initialize logging, but only for errors. We don't want to mess up the user's terminal.
-    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Error);
-
     // 1) Parse & validate CLI arguments
-    let args = get_cli_arguments();
-
-    validate_cli_arguments(&args);
-
-    let hide_runtime_info = args.hide_runtime_info;
-
-    if !hide_runtime_info {
-        print_runtime_info(&args);
-    }
+    let args = initialize();
 
     // 2) Set up the graceful shutdown
     let shutdown_signal = setup_graceful_shutdown(false);
@@ -68,7 +55,7 @@ async fn main() {
     if let Some(output_dir) = &args.output {
         let _ = create_dir_all(output_dir).inspect_err(|e| {
             error!(
-                "Failed to create output directory [{}]: [{}]",
+                "Failed to create output directory [{:?}]: [{}]",
                 output_dir, e
             );
             exit_error();
@@ -139,14 +126,6 @@ async fn main() {
             error!("Failed to write output: [{}]", e);
             exit_error();
         });
-    }
-
-    if !hide_runtime_info {
-        if shutdown_signal.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("👋 stopping by user request..");
-        } else {
-            println!("[OK] get-lines completed successfully.");
-        }
     }
 
     exit_success();

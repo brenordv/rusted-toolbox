@@ -1,30 +1,65 @@
-use crate::models::GetLinesArgs;
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
-use shared::system::tool_exit_helpers::exit_error;
-use std::path::Path;
+use crate::models::GetLinesConfig;
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
+use common_cli::tool_exit_helpers::exit_error;
+use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
+use std::path::PathBuf;
+
+/// Extracts lines from a text file.
+///
+/// Searches for specific text within a file and outputs the lines containing the text. Supports parallel processing for faster search.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version)]
+pub struct CliArgs {
+    /// Comma-separated list of texts to search for (case-insensitive)
+    #[arg(short = 's', long = "search", required = true)]
+    search: String,
+
+    /// Path to the input file
+    #[arg(short = 'f', long = "file", required = true)]
+    file: PathBuf,
+
+    /// Output folder name. If not specified, results will be written to the console.
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+
+    /// Number of workers for parallel processing
+    #[arg(short = 'w', long = "workers", default_value_t = 1)]
+    workers: usize,
+
+    /// If set, line numbers will not be displayed in the output.
+    #[arg(short = 'i', long = "hide-line-numbers")]
+    hide_line_numbers: bool,
+
+    /// If set, runtime information will not be printed at the beginning of the program.
+    #[arg(short = 'd', long = "hide-runtime-info")]
+    hide_runtime_info: bool,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
+}
 
 /// Displays runtime configuration information.
 ///
 /// Shows version, input file, output destination, worker count, and search terms.
-pub fn print_runtime_info(args: &GetLinesArgs) {
-    println!("Get-Lines v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
-    println!("- Input File: {}", args.file);
+pub fn print_runtime_info(args: &GetLinesConfig) {
+    println!("{} Input File: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.file);
 
     if let Some(output_folder) = args.output.as_deref() {
-        println!("- Output Folder: {}", output_folder);
+        println!(
+            "{} Output Folder: {:?}",
+            CONFIG_UL_ITEM_LEVEL_2, output_folder
+        );
     } else {
-        println!("- Output: Console");
+        println!("{} Output: Console", CONFIG_UL_ITEM_LEVEL_2);
     };
 
-    println!("- Worker Count: {}", args.workers);
-    println!("- Search: {:?}", args.search);
+    println!("{} Worker Count: {}", CONFIG_UL_ITEM_LEVEL_2, args.workers);
+    println!("{} Search: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.search);
 
     if args.workers > 1 {
         println!(
-            "Warning: Output will not be in the same order as the input due to parallel processing."
+            "WARNING: Output will not be in the same order as the input due to parallel processing."
         );
     }
 
@@ -52,51 +87,10 @@ pub fn print_runtime_info(args: &GetLinesArgs) {
 /// - Filters out empty search terms
 /// - Defaults workers to 1 if parsing fails
 /// - Panics if required arguments are missing
-pub fn get_cli_arguments() -> GetLinesArgs {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            "Extracts lines from a text file.",
-            "Searches for specific text within a file and outputs the lines containing the text. Supports parallel processing for faster search.")
-        .preset_arg_verbose(None)
-        .arg(Arg::new("search")
-            .long("search")
-            .short('s')
-            .help("Comma-separated list of texts to search for (case-insensitive)")
-            .required(true))
-        .arg(Arg::new("file")
-            .long("file")
-            .short('f')
-            .help("Path to the input file")
-            .required(true))
-        .arg(Arg::new("output")
-            .long("output")
-            .short('o')
-            .help("Output folder name. If not specified, results will be written to the console."))
-        .arg(Arg::new("workers")
-            .long("workers")
-            .short('w')
-            .help("Number of workers for parallel processing")
-            .default_value("1"))
-        .arg(Arg::new("hide-line-numbers")
-                 .long("hide-line-numbers")
-                 .short('i')
-                 .action(clap::ArgAction::SetTrue)
-                 .help("If set, line numbers will not be displayed in the output. (Default: false)"),
-        )
-        .arg(Arg::new("hide-runtime-info")
-                 .long("hide-runtime-info")
-                 .short('d')
-                 .action(clap::ArgAction::SetTrue)
-                 .help("If set, will not print the the runtime information at the beginning of the program. (Default: false)"),
-        )
-        .get_matches();
+pub fn initialize() -> GetLinesConfig {
+    let args = CliArgs::parse();
 
-    let raw_terms: Vec<&str> = matches
-        .get_one::<String>("search")
-        .unwrap()
-        .split(',')
-        .collect();
+    let raw_terms: Vec<&str> = args.search.split(',').collect();
 
     let search_terms: Vec<String> = raw_terms
         .iter()
@@ -104,48 +98,40 @@ pub fn get_cli_arguments() -> GetLinesArgs {
         .filter(|term| !term.is_empty())
         .collect();
 
-    GetLinesArgs {
-        search: search_terms,
-        file: matches.get_one::<String>("file").unwrap().clone(),
-        output: matches.get_one::<String>("output").cloned(),
-        workers: matches
-            .get_one::<String>("workers")
-            .unwrap()
-            .parse()
-            .unwrap_or(1),
-        hide_line_numbers: matches.get_flag("hide-line-numbers"),
-        hide_runtime_info: matches.get_flag("hide-runtime-info"),
-    }
-}
-
-/// Validates parsed command-line arguments and displays warnings.
-///
-/// Ensures search terms are provided and the worker count is valid.
-/// Warns about output ordering when using multiple workers.
-///
-/// # Arguments
-/// - `args` - Parsed command-line arguments to validate
-///
-/// # Behavior
-/// - Exits with code 1 if no valid search terms are provided, worker count <= zero, or if the input
-///   file doesn't exit.
-pub fn validate_cli_arguments(args: &GetLinesArgs) {
-    if args.search.is_empty() {
+    if search_terms.is_empty() {
         eprintln!("Error: No valid search terms provided.");
         exit_error();
     }
 
-    if args.workers == 0 {
+    if args.workers <= 0 {
         eprintln!("Error: --workers must be greater than 0.");
         exit_error();
     }
 
-    let input_file = Path::new(&args.file);
-
-    if !input_file.exists() {
-        eprintln!("Error: Input file does not exist: {}", args.file);
+    if !args.file.exists() {
+        eprintln!("Error: Input file does not exist: {:?}", args.file);
         exit_error();
     }
+
+    let config = GetLinesConfig {
+        search: search_terms,
+        file: args.file,
+        output: args.output,
+        workers: args.workers,
+        hide_line_numbers: args.hide_line_numbers,
+    };
+
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        Some(|| {
+            print_runtime_info(&config);
+        }),
+    );
+
+    config
 }
 
 #[cfg(test)]
@@ -153,14 +139,13 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    fn args_with(file: String) -> GetLinesArgs {
-        GetLinesArgs {
+    fn args_with(file: String) -> GetLinesConfig {
+        GetLinesConfig {
             search: vec!["needle".to_string()],
-            file,
+            file: PathBuf::from(file),
             output: None,
             workers: 1,
             hide_line_numbers: false,
-            hide_runtime_info: false,
         }
     }
 
@@ -170,19 +155,8 @@ mod tests {
         print_runtime_info(&console);
 
         let mut files = args_with("in.txt".to_string());
-        files.output = Some("out".to_string());
+        files.output = Some(PathBuf::from("out"));
         files.workers = 4;
         print_runtime_info(&files);
-    }
-
-    #[test]
-    fn validate_cli_arguments_accepts_valid_args() {
-        let dir = tempdir().unwrap();
-        let file = dir.path().join("input.txt");
-        std::fs::write(&file, "content").unwrap();
-
-        let args = args_with(file.to_string_lossy().to_string());
-
-        validate_cli_arguments(&args);
     }
 }
