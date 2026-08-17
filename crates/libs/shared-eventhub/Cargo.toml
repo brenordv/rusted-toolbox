@@ -8,14 +8,15 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
-clap = { workspace = true }
-tracing-log = { workspace = true }
 anyhow = { workspace = true }
-url = { workspace = true }
-serde = { workspace = true }
 azeventhubs = { workspace = true }
 chrono = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+shared = { workspace = true }
+tracing-log = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

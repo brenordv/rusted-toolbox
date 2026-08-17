@@ -1,6 +1,6 @@
 use clap::{ArgMatches, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
+use common_utils::constants::DASH_LINE;
+use shared_eventhub::command_line::cli_builder::CommandExt;
 use shared_eventhub::eventhub_models::EventHubConfig;
 use shared_eventhub::utils::cli_arguments::CommandCommonExt;
 

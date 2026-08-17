@@ -4,7 +4,6 @@ use azeventhubs::consumer::{EventPosition, ReadEventOptions};
 use azeventhubs::ReceivedEventData;
 use chrono::{DateTime, Local, Utc};
 use futures_util::StreamExt;
-use shared::system::resolve_path_with_base::resolve_path_with_base;
 use shared_eventhub::eventhub_models::{
     EventHubCheckpoint, EventHubConfig, InboundMessage, MessageStatus,
 };
@@ -16,6 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
+use common_utils::file_system::resolve_path_with_base;
 
 /// EventHub message consumer with progress tracking and graceful shutdown.
 ///

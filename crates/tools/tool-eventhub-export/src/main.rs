@@ -1,15 +1,15 @@
 use crate::cli_utils::{get_cli_arguments, print_runtime_info};
 use crate::eventhub_export_app::EventHubExporter;
 use crate::runtime_config_utils::{apply_cli_overrides, validate_config};
-use shared::constants::general::EXIT_CODE_INTERRUPTED_BY_USER;
-use shared::logging::app_logger::LogLevel;
-use shared::logging::logging_helpers::initialize_log;
-use shared::system::get_current_working_dir::get_current_working_dir;
-use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
-use shared::system::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
 use shared_eventhub::utils::config_utils::get_base_config_object;
 use std::sync::Arc;
 use tracing::{error, info};
+use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
+use common_cli::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
+use common_utils::constants::EXIT_CODE_INTERRUPTED_BY_USER;
+use common_utils::file_system::get_current_dir;
+use shared_eventhub::logging::app_logger::LogLevel;
+use shared_eventhub::logging::logging_helpers::initialize_log;
 
 mod cli_utils;
 mod eventhub_export_app;
@@ -61,7 +61,7 @@ async fn main() {
     let matches = get_cli_arguments();
 
     // Get the current working directory for relative paths
-    let current_dir = get_current_working_dir();
+    let current_dir = get_current_dir();
 
     // Load configuration
     let mut config = get_base_config_object(&matches, &current_dir)

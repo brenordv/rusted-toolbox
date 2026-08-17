@@ -2,12 +2,12 @@ use crate::cli_utils::{get_cli_arguments, print_runtime_info};
 use crate::eventhub_reader_app::EventHubReader;
 use crate::graceful_shutdown::{graceful_shutdown_routine, setup_graceful_shutdown};
 use crate::runtime_config_utils::{apply_cli_overrides, validate_config};
-use shared::logging::app_logger::LogLevel;
-use shared::logging::logging_helpers::initialize_log;
-use shared::system::get_current_working_dir::get_current_working_dir;
-use shared::system::tool_exit_helpers::{exit_error, exit_success};
 use shared_eventhub::utils::config_utils::get_base_config_object;
 use tracing::error;
+use common_cli::tool_exit_helpers::{exit_error, exit_success};
+use common_utils::file_system::get_current_dir;
+use shared_eventhub::logging::app_logger::LogLevel;
+use shared_eventhub::logging::logging_helpers::initialize_log;
 
 mod cli_utils;
 mod eventhub_reader_app;
@@ -33,7 +33,7 @@ async fn main() {
     let matches = get_cli_arguments();
 
     // Load config from the JSON file
-    let current_dir = get_current_working_dir();
+    let current_dir = get_current_dir();
     let mut config = get_base_config_object(&matches, &current_dir)
         .await
         .inspect_err(|e| {

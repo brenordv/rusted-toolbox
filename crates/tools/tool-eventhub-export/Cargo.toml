@@ -1,6 +1,6 @@
 [package]
 name = "eh-export"
-version = "1.0.3"
+version = "2.0.0"
 description = "EventHub Message Exporter Companion Tool."
 edition.workspace = true
 authors.workspace = true
@@ -8,14 +8,19 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
+# Internal
+cli-signal-monitor = { workspace = true }
+common-cli = { workspace = true }
+common-utils = { workspace = true }
 shared-eventhub = { workspace = true }
-csv = { workspace = true }
+
+# External
 anyhow = { workspace = true }
-tokio = { workspace = true }
-serde_json = { workspace = true }
-clap = { workspace = true }
-tracing = { workspace = true }
-crossterm = { workspace = true }
 chrono = { workspace = true }
+clap = { workspace = true }
+crossterm = { workspace = true }
+csv = { workspace = true }
+serde_json = { workspace = true }
 sled = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
