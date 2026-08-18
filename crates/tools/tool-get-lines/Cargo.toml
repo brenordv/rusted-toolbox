@@ -12,14 +12,11 @@ license.workspace = true
 cli-signal-monitor = { workspace = true }
 common-cli = { workspace = true }
 common-utils = { workspace = true }
-common-utils-ext = { workspace = true }
 
 # External
+aho-corasick = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
-futures-util = { workspace = true }
-tokio = { workspace = true }
-tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
