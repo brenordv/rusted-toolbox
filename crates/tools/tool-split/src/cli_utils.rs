@@ -1,174 +1,167 @@
 use crate::models::SplitArgs;
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
-use shared::system::get_current_working_dir::get_current_working_dir;
+use anyhow::{Context, Result};
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
+use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
+use common_utils::file_system::get_current_dir;
 use std::path::{Path, PathBuf};
 
-/// Displays runtime configuration for the file splitting operation.
+/// Split files by the number of lines.
 ///
-/// Shows version, input file, output directory, lines per file, prefix, and CSV mode status.
-pub fn print_runtime_info(args: &SplitArgs) {
-    println!("File Splitter v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
+/// Split large UTF-8 text or CSV files by line count, preserving an optional CSV header in each part.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version)]
+struct CliArgs {
+    /// Path to the input file
+    #[arg(short = 'f', long = "file", value_name = "FILE")]
+    pub file: String,
 
-    println!("- Input file: {}", args.input_file);
-    println!("- Output dir: {}", args.output_dir);
-    println!("- Lines per file: {}", args.lines_per_file);
-    println!("- File prefix: {}", args.prefix);
-    println!("- Csv Mode: {}", args.csv_mode);
+    /// Output directory. If not set, uses the same directory as the input file
+    #[arg(short = 'o', long = "output-dir", value_name = "DIR")]
+    pub output_dir: Option<String>,
 
-    println!();
+    /// Number of lines per file
+    #[arg(short = 'l', long = "lines-per-file", default_value_t = 100)]
+    pub lines_per_file: usize,
+
+    /// Prefix for the output files
+    #[arg(short = 'p', long = "file-prefix", default_value = "split")]
+    pub file_prefix: String,
+
+    /// Interval between feedback updates, in number of lines
+    #[arg(short = 'i', long = "feedback-interval", default_value_t = 100)]
+    pub feedback_interval: usize,
+
+    /// Use the first line of the input as a header and repeat it in each output file (not counted toward lines per file)
+    #[arg(short = 'c', long = "csv-mode")]
+    pub csv_mode: bool,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
 }
 
-/// Parses command-line arguments for file splitting configuration.
+/// Parses command-line arguments and returns the runtime configuration.
 ///
-/// Creates SplitArgs with file paths, line count, prefix, CSV mode, and feedback settings.
-/// Resolves relative paths to absolute paths using current working directory.
+/// Relative input and output paths are resolved against the current working directory,
+/// and the output directory is created if it does not exist.
 ///
-/// # Panics
-/// Panics if required file argument is missing or numeric arguments cannot be parsed
-pub fn get_cli_arguments() -> SplitArgs {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            "File splitter",
-            "Split files by number of lines.")
-        .arg(Arg::new("file")
-            .long("file")
-            .short('f')
-            .required(true)
-            .help("Path to the input file."))
-        .arg(Arg::new("output-dir")
-            .long("output-dir")
-            .short('o')
-            .help("Output directory. If not set, will use the same directory as the input file."))
-        .arg(Arg::new("lines-per-file")
-            .long("lines-per-file")
-            .short('l')
-            .default_value("100")
-            .help("Number of lines per file."))
-        .arg(Arg::new("file-prefix")
-            .long("file-prefix")
-            .short('p')
-            .default_value("split")
-            .help("Prefix for the output files."))
-        .arg(Arg::new("feedback-interval")
-            .long("feedback-interval")
-            .short('i')
-            .default_value("100")
-            .help("Interval between feedback update in number of lines."))
-        .arg(Arg::new("csv-mode")
-            .long("csv-mode")
-            .short('c')
-            .action(clap::ArgAction::SetTrue)
-            .help("If set, will use the first line of the input file as headers and propagate it to the output files. This will not count as the number of lines per file."))
-        .get_matches();
+/// # Errors
+/// Returns an error when the input file does not exist, `--lines-per-file` is zero,
+/// or the output directory cannot be created.
+pub fn initialize() -> Result<SplitArgs> {
+    let args = CliArgs::parse();
 
-    let current_working_dir = get_current_working_dir();
+    let config = build_args(&args);
 
-    let input_file = if let Some(input_file_arg) = matches.get_one::<String>("file") {
-        let input_file_path = PathBuf::from(input_file_arg);
-        if !input_file_path.is_absolute() {
-            current_working_dir.join(input_file_path)
-        } else {
-            input_file_path
-        }
+    validate_and_prepare(&config)?;
+
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        Some(|| {
+            print_header(&config);
+        }),
+    );
+
+    Ok(config)
+}
+
+/// Resolves the parsed CLI arguments into the runtime configuration.
+fn build_args(args: &CliArgs) -> SplitArgs {
+    let current_working_dir = get_current_dir();
+
+    let input_file_path = PathBuf::from(&args.file);
+    let input_file = if input_file_path.is_absolute() {
+        input_file_path
     } else {
-        panic!("This should not happen, but it did. Please report this bug to the developers.");
+        current_working_dir.join(input_file_path)
     };
 
-    // Process output directory
-    let output_dir = if let Some(output_dir_arg) = matches.get_one::<String>("output-dir") {
-        let output_dir_path = PathBuf::from(output_dir_arg);
-        if !output_dir_path.is_absolute() {
-            current_working_dir
-                .join(output_dir_path)
-                .to_string_lossy()
-                .to_string()
-        } else {
-            output_dir_path.to_string_lossy().to_string()
+    let output_dir = match &args.output_dir {
+        Some(dir) => {
+            let output_dir_path = PathBuf::from(dir);
+            if output_dir_path.is_absolute() {
+                output_dir_path.to_string_lossy().to_string()
+            } else {
+                current_working_dir
+                    .join(output_dir_path)
+                    .to_string_lossy()
+                    .to_string()
+            }
         }
-    } else {
-        // Use the same directory as the input file
-        input_file
+        None => input_file
             .parent()
             .unwrap_or(&current_working_dir)
             .to_string_lossy()
-            .to_string()
+            .to_string(),
     };
 
-    // Process lines per file
-    let lines_per_file = matches
-        .get_one::<String>("lines-per-file")
-        .unwrap()
-        .parse::<usize>()
-        .expect("Invalid number for lines-per-file");
-
-    // Process file prefix
-    let prefix = matches
-        .get_one::<String>("file-prefix")
-        .unwrap()
-        .to_string();
-
-    // Process CSV mode
-    let csv_mode = matches.get_flag("csv-mode");
-
-    // Extract filename without extension
     let input_filename_without_extension = input_file
         .file_stem()
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
 
-    let feedback_interval =
-        if let Some(feedback_interval_arg) = matches.get_one::<String>("feedback-interval") {
-            feedback_interval_arg.parse::<usize>().unwrap_or(100)
-        } else {
-            100
-        };
-
-    // Return SplitArgs instance
     SplitArgs {
         input_file: input_file.to_string_lossy().to_string(),
         output_dir,
         input_filename_without_extension,
-        lines_per_file,
-        prefix,
-        csv_mode,
-        feedback_interval,
+        lines_per_file: args.lines_per_file,
+        prefix: args.file_prefix.clone(),
+        csv_mode: args.csv_mode,
+        feedback_interval: args.feedback_interval,
     }
 }
 
-/// Validates command-line arguments and creates output directory if needed.
+/// Validates the resolved configuration and prepares the output directory.
 ///
-/// Checks input file exists, lines per file is greater than zero, and ensures output directory exists.
-/// Exits program with error code if validation fails.
-pub fn ensure_cli_arguments_are_valid(args: &SplitArgs) {
-    // Validate input file exists
+/// # Errors
+/// Returns an error when the input file does not exist, `lines_per_file` is zero,
+/// or the output directory cannot be created.
+fn validate_and_prepare(args: &SplitArgs) -> Result<()> {
     if !Path::new(&args.input_file).exists() {
-        eprintln!("Error: Input file '{}' does not exist", args.input_file);
-        std::process::exit(1);
+        anyhow::bail!("Input file '{}' does not exist", args.input_file);
     }
 
-    // Validate lines_per_file is greater than 0
     if args.lines_per_file == 0 {
-        eprintln!("Error: Lines per file must be greater than 0");
-        std::process::exit(1);
+        anyhow::bail!("Lines per file must be greater than 0");
     }
 
-    // Set up the output directory
-    let output_dir = PathBuf::from(args.output_dir.clone());
-
-    // Create the output directory if it doesn't exist
+    let output_dir = PathBuf::from(&args.output_dir);
     if !output_dir.exists() {
-        std::fs::create_dir_all(&output_dir).expect("Failed to create output directory");
+        std::fs::create_dir_all(&output_dir).with_context(|| {
+            format!(
+                "Failed to create output directory '{}'",
+                output_dir.display()
+            )
+        })?;
     }
+
+    Ok(())
+}
+
+/// Prints the tool's runtime configuration, shown under `--app-header`.
+fn print_header(args: &SplitArgs) {
+    println!("{} Input file: {}", CONFIG_UL_ITEM_LEVEL_2, args.input_file);
+    println!("{} Output dir: {}", CONFIG_UL_ITEM_LEVEL_2, args.output_dir);
+    println!(
+        "{} Lines per file: {}",
+        CONFIG_UL_ITEM_LEVEL_2, args.lines_per_file
+    );
+    println!("{} File prefix: {}", CONFIG_UL_ITEM_LEVEL_2, args.prefix);
+    println!("{} CSV mode: {}", CONFIG_UL_ITEM_LEVEL_2, args.csv_mode);
+    println!(
+        "{} Feedback interval: {}",
+        CONFIG_UL_ITEM_LEVEL_2, args.feedback_interval
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
     use std::fs;
     use tempfile::tempdir;
 
@@ -185,13 +178,18 @@ mod tests {
     }
 
     #[test]
-    fn print_runtime_info_smoke() {
-        let args = sample_args("in.txt".to_string(), "out".to_string());
-        print_runtime_info(&args);
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
     }
 
     #[test]
-    fn ensure_cli_arguments_are_valid_creates_missing_output_dir() {
+    fn print_header_smoke() {
+        let args = sample_args("in.txt".to_string(), "out".to_string());
+        print_header(&args);
+    }
+
+    #[test]
+    fn validate_and_prepare_creates_missing_output_dir() {
         let dir = tempdir().unwrap();
         let input = dir.path().join("input.txt");
         fs::write(&input, "a\n").unwrap();
@@ -201,8 +199,33 @@ mod tests {
             outdir.to_string_lossy().to_string(),
         );
 
-        ensure_cli_arguments_are_valid(&args);
+        validate_and_prepare(&args).unwrap();
 
         assert!(outdir.exists());
+    }
+
+    #[test]
+    fn validate_and_prepare_rejects_missing_input() {
+        let dir = tempdir().unwrap();
+        let args = sample_args(
+            dir.path().join("nope.txt").to_string_lossy().to_string(),
+            dir.path().to_string_lossy().to_string(),
+        );
+
+        assert!(validate_and_prepare(&args).is_err());
+    }
+
+    #[test]
+    fn validate_and_prepare_rejects_zero_lines() {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("input.txt");
+        fs::write(&input, "a\n").unwrap();
+        let mut args = sample_args(
+            input.to_string_lossy().to_string(),
+            dir.path().to_string_lossy().to_string(),
+        );
+        args.lines_per_file = 0;
+
+        assert!(validate_and_prepare(&args).is_err());
     }
 }

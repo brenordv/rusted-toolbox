@@ -1,6 +1,5 @@
 pub struct QrCodeConfig {
     pub payload: QrCodePayload,
-    pub no_header: bool,
     pub dont_print: bool,
     pub output_format: Option<String>,
     pub output_file: Option<String>,
@@ -37,14 +36,12 @@ impl QrCodePayload {
 impl QrCodeConfig {
     pub fn new(
         payload: QrCodePayload,
-        no_header: bool,
         dont_print: bool,
         output_format: Option<String>,
         output_file: Option<String>,
     ) -> Self {
         Self {
             payload,
-            no_header,
             dont_print,
             output_format,
             output_file,
@@ -76,7 +73,7 @@ mod tests {
     use super::*;
 
     fn config(payload: QrCodePayload) -> QrCodeConfig {
-        QrCodeConfig::new(payload, false, true, None, None)
+        QrCodeConfig::new(payload, true, None, None)
     }
 
     #[test]

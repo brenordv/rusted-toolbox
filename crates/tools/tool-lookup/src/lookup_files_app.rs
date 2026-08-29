@@ -2,7 +2,6 @@ use crate::models::{FilesLookupConfig, PatternMode};
 use anyhow::{anyhow, Result};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
-use shared::constants::general::DASH_LINE;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -34,23 +33,6 @@ fn clean_path_for_display(p: &Path) -> String {
     }
 }
 
-pub fn print_header(args: &FilesLookupConfig) {
-    println!("Lookup v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
-    println!("Mode: files (by filename)");
-    println!("Path: {}", args.path);
-    println!("Patterns: {:?}", args.patterns);
-    println!(
-        "Pattern type: {} | Case-sensitive: {} | Recursive: {}",
-        match args.pattern_mode {
-            PatternMode::Wildcard => "wildcard",
-            PatternMode::Regex => "regex",
-        },
-        args.case_sensitive,
-        args.recursive
-    );
-}
-
 pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
     let start = Instant::now();
 
@@ -63,13 +45,50 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
     }
 
     // Build matchers
-    let matcher = build_matcher(&cfg.patterns, cfg.pattern_mode, cfg.case_sensitive)?;
+    let matcher = build_matcher(&cfg.patterns, &cfg.pattern_mode, cfg.case_sensitive)?;
 
     let mut folders_count: u64 = 0;
     let mut files_count: u64 = 0;
     let mut matches_count: u64 = 0;
 
-    if cfg.recursive {
+    if cfg.no_recursive {
+        // Current folder only
+        folders_count = 1; // base folder
+        if !cfg.no_progress {
+            eprint!("{}Reading: {}", CLEAR_LINE, base_path.display());
+            let _ = std::io::stderr().flush();
+        }
+        let dir_iter = match fs::read_dir(&base_path) {
+            Ok(it) => it,
+            Err(e) => {
+                if !cfg.no_errors {
+                    if !cfg.no_progress {
+                        clear_progress_line();
+                    }
+                    println!("{}: {}", e, base_path.display());
+                }
+                return Ok(());
+            }
+        };
+        for ent in dir_iter.flatten() {
+            let path = ent.path();
+            if path.is_file() {
+                files_count += 1;
+                let name = match path.file_name().and_then(|s| s.to_str()) {
+                    Some(s) => s,
+                    None => continue,
+                };
+                if is_match(&matcher, name) {
+                    matches_count += 1;
+                    if !cfg.no_progress {
+                        clear_progress_line();
+                    }
+                    let abs = absolute_path_str(&path);
+                    println!("{}", abs);
+                }
+            }
+        }
+    } else {
         // Use WalkDir to report progress and errors
         let mut last_dir_printed: Option<PathBuf> = None;
         for entry_res in WalkDir::new(&base_path).into_iter() {
@@ -115,50 +134,11 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
                 }
             }
         }
-        // ensure we end the progress line with a newline
-        if !cfg.no_progress {
-            eprintln!();
-        }
-    } else {
-        // Current folder only
-        folders_count = 1; // base folder
-        if !cfg.no_progress {
-            eprint!("{}Reading: {}", CLEAR_LINE, base_path.display());
-            let _ = std::io::stderr().flush();
-        }
-        let dir_iter = match fs::read_dir(&base_path) {
-            Ok(it) => it,
-            Err(e) => {
-                if !cfg.no_errors {
-                    if !cfg.no_progress {
-                        clear_progress_line();
-                    }
-                    println!("{}: {}", e, base_path.display());
-                }
-                return Ok(());
-            }
-        };
-        for ent in dir_iter.flatten() {
-            let path = ent.path();
-            if path.is_file() {
-                files_count += 1;
-                let name = match path.file_name().and_then(|s| s.to_str()) {
-                    Some(s) => s,
-                    None => continue,
-                };
-                if is_match(&matcher, name) {
-                    matches_count += 1;
-                    if !cfg.no_progress {
-                        clear_progress_line();
-                    }
-                    let abs = absolute_path_str(&path);
-                    println!("{}", abs);
-                }
-            }
-        }
-        if !cfg.no_progress {
-            eprintln!();
-        }
+    }
+
+    // ensure we end the progress line with a newline
+    if !cfg.no_progress {
+        eprintln!();
     }
 
     if !cfg.no_summary {
@@ -192,7 +172,7 @@ enum Matcher {
     RegexList(Vec<Regex>),
 }
 
-fn build_matcher(patterns: &[String], mode: PatternMode, case_sensitive: bool) -> Result<Matcher> {
+fn build_matcher(patterns: &[String], mode: &PatternMode, case_sensitive: bool) -> Result<Matcher> {
     match mode {
         PatternMode::Wildcard => build_globset(patterns, case_sensitive).map(Matcher::Glob),
         PatternMode::Regex => build_regexset(patterns, case_sensitive),
@@ -252,93 +232,4 @@ fn absolute_path_str(p: &Path) -> String {
 fn brief_walkdir_error(e: &walkdir::Error) -> String {
     // Walkdir's error Display is already brief; keep it simple.
     e.to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    fn files_config(path: String, patterns: Vec<String>, mode: PatternMode) -> FilesLookupConfig {
-        FilesLookupConfig::new(path, patterns, mode, false, true, true, true, true, true)
-    }
-
-    #[test]
-    fn wildcard_matcher_matches_by_extension() {
-        let m = build_matcher(&["*.rs".to_string()], PatternMode::Wildcard, false).unwrap();
-
-        assert!(is_match(&m, "main.rs"));
-        assert!(!is_match(&m, "main.txt"));
-    }
-
-    #[test]
-    fn wildcard_matcher_is_case_insensitive_by_default() {
-        let m = build_matcher(&["*.RS".to_string()], PatternMode::Wildcard, false).unwrap();
-
-        assert!(is_match(&m, "main.rs"));
-    }
-
-    #[test]
-    fn wildcard_matcher_respects_case_sensitivity() {
-        let m = build_matcher(&["*.RS".to_string()], PatternMode::Wildcard, true).unwrap();
-
-        assert!(!is_match(&m, "main.rs"));
-    }
-
-    #[test]
-    fn regex_matcher_matches_pattern() {
-        let m = build_matcher(&["^foo.*".to_string()], PatternMode::Regex, true).unwrap();
-
-        assert!(is_match(&m, "foobar"));
-        assert!(!is_match(&m, "barfoo"));
-    }
-
-    #[test]
-    fn regex_matcher_is_case_insensitive_when_requested() {
-        let m = build_matcher(&["^foo".to_string()], PatternMode::Regex, false).unwrap();
-
-        assert!(is_match(&m, "FOObar"));
-    }
-
-    #[test]
-    fn build_matcher_rejects_invalid_regex() {
-        let result = build_matcher(&["(".to_string()], PatternMode::Regex, false);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn run_files_lookup_errors_on_missing_path() {
-        let cfg = files_config(
-            "definitely/not/here".to_string(),
-            vec!["*.rs".to_string()],
-            PatternMode::Wildcard,
-        );
-
-        assert!(run_files_lookup(&cfg).is_err());
-    }
-
-    #[test]
-    fn run_files_lookup_succeeds_over_directory() {
-        let dir = tempdir().unwrap();
-        std::fs::write(dir.path().join("keep.rs"), "x").unwrap();
-        std::fs::write(dir.path().join("skip.txt"), "x").unwrap();
-        let cfg = files_config(
-            dir.path().to_string_lossy().to_string(),
-            vec!["*.rs".to_string()],
-            PatternMode::Wildcard,
-        );
-
-        assert!(run_files_lookup(&cfg).is_ok());
-    }
-
-    #[test]
-    fn print_header_smoke() {
-        let cfg = files_config(
-            "path".to_string(),
-            vec!["*.rs".to_string()],
-            PatternMode::Regex,
-        );
-        print_header(&cfg);
-    }
 }

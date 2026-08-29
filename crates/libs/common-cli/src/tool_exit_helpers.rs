@@ -12,6 +12,7 @@ pub fn exit_success() {
     std::process::exit(0);
 }
 
+// TODO: Note for future self: Refactor this to receive the error message as a parameter, and exit the process in a way the the compiler knows that.
 /// Exits the current process with a status code indicating an error.
 ///
 /// This function will immediately terminate the program and return a

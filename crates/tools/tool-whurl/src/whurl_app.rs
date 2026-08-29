@@ -18,7 +18,7 @@ use crate::vars::{gather_process_env_variables, parse_variables_file, VariableMa
 use crate::whurl_utils::display_relative_path;
 use anyhow::anyhow;
 use camino::Utf8PathBuf;
-use shared::logging::app_logger::LogLevel;
+use common_cli::tool_log_level::ToolLogLevel;
 use tracing::info;
 
 pub fn execute(cli: Cli) -> ToolResult<()> {
@@ -29,14 +29,14 @@ pub fn execute(cli: Cli) -> ToolResult<()> {
     }
 }
 
-pub fn resolve_log_level(cli: &Cli) -> LogLevel {
+pub fn resolve_log_level(cli: &Cli) -> ToolLogLevel {
     match &cli.command {
         Command::Run(args)
             if args.print_only_full_response || args.print_only_response_body || args.silent =>
         {
-            LogLevel::Error
+            ToolLogLevel::Error
         }
-        _ => LogLevel::Info,
+        _ => ToolLogLevel::Info,
     }
 }
 

@@ -1,53 +1,79 @@
 use crate::models::TsArgs;
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
+use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
 
-/// Displays runtime information for the timestamp converter.
+/// Convert Unix timestamps to datetime and vice versa.
 ///
-/// Shows version, divider line, and input (or "(Current time)" if no input provided).
-pub fn print_runtime_info(args: &TsArgs) {
-    println!("Timestamp Converter v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
+/// This tool receives a Unix timestamp and converts it to a datetime (ISO 8601) or vice versa.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version)]
+struct CliArgs {
+    /// Input to process: a Unix timestamp or a datetime string. Only one input is used, and no quotes are needed
+    #[arg(num_args = 0.., value_name = "INPUT")]
+    pub input: Vec<String>,
 
+    #[command(flatten)]
+    pub common: CommonToolArgs,
+}
+
+/// Parses command-line arguments and returns the runtime configuration.
+///
+/// Multiple input tokens are joined with spaces; an empty input means "current time".
+pub fn initialize() -> TsArgs {
+    let args = CliArgs::parse();
+
+    let config = TsArgs {
+        input: args.input.join(" "),
+    };
+
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        Some(|| {
+            print_header(&config);
+        }),
+    );
+
+    config
+}
+
+/// Prints the tool's runtime configuration, shown under `--app-header`.
+fn print_header(args: &TsArgs) {
     let input = if args.input.is_empty() {
         "(Current time)"
     } else {
         &args.input
     };
 
-    println!("- Input: {}", input);
-
-    println!();
+    println!("{} Input: {}", CONFIG_UL_ITEM_LEVEL_2, input);
 }
 
-/// Parses command-line arguments for timestamp conversion.
-///
-/// Accepts optional input that can be Unix timestamp, datetime string, or empty for current time.
-/// Multiple input arguments are joined with spaces.
-///
-/// # Returns
-/// TsArgs struct containing the parsed input string
-pub fn get_cli_arguments() -> TsArgs {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            "A simple utility to convert Unix timestamps to date time and vice versa.",
-            "This tool receives a Unix timestamp and converts it to a date time (ISO8601) or vice versa.",
-        ).arg(
-        Arg::new("input")
-            .value_name("input")
-            .action(clap::ArgAction::Append)
-            .required(false)
-            .help("Input that will be processed. Only one input is valid, but no need to use quotes.")
-    ).get_matches();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
 
-    let input: String = matches
-        .get_many::<String>("input")
-        .unwrap_or_default()
-        .cloned()
-        .collect::<Vec<String>>()
-        .join(" ");
+    #[test]
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
+    }
 
-    TsArgs { input }
+    #[test]
+    fn input_tokens_are_joined_with_spaces() {
+        let args = CliArgs::try_parse_from(["ts", "2024-01-01", "12:00:00"]).unwrap();
+        assert_eq!(args.input.join(" "), "2024-01-01 12:00:00");
+    }
+
+    #[test]
+    fn print_header_smoke() {
+        print_header(&TsArgs {
+            input: String::new(),
+        });
+        print_header(&TsArgs {
+            input: "1700000000".to_string(),
+        });
+    }
 }

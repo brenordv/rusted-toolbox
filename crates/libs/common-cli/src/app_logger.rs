@@ -184,7 +184,12 @@ impl AppLogger {
 
     fn resolve_log_filename(&self) -> PathBuf {
         let filename = if self.rotate_log_file_by_day {
-            get_filename_with_current_date(self.app_name.to_string(), "log".to_string(), false, true)
+            get_filename_with_current_date(
+                self.app_name.to_string(),
+                "log".to_string(),
+                false,
+                true,
+            )
         } else {
             format!("{}.log", self.app_name)
         };

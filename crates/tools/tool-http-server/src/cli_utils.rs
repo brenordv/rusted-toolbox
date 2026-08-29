@@ -1,96 +1,104 @@
-use crate::models::ServerArgs;
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
+use crate::models::ServerConfig;
+use anyhow::{Context, Result};
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
+use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
 use std::net::IpAddr;
 use std::path::PathBuf;
 
-pub fn print_runtime_info(args: &ServerArgs) {
-    println!("Simple HTTP Server v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
-    println!("- Root directory: {}", args.root_path.display());
-    println!("- Port: {}", args.port);
-    println!("- Serve hidden files: {}", args.serve_hidden);
+/// Simple HTTP server for local files.
+///
+/// Lightweight async HTTP server for quickly serving static files with directory browsing, MIME
+/// detection, logging, and secure development-focused features.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about)]
+pub struct CliArgs {
+    /// Path to serve as web root (defaults to current directory).
+    #[arg(
+        short = 'a',
+        long = "path",
+        num_args = 1,
+        required = false,
+        default_value = "."
+    )]
+    pub path: PathBuf,
+
+    /// Port number to listen on.
+    #[arg(short = 'p', long = "port", default_value_t = 4200)]
+    pub port: u16,
+
+    /// Host that will be used to bind the server.
+    #[arg(
+        short = 'h',
+        long = "host",
+        default_value = "127.0.0.1",
+        required = false
+    )]
+    pub host: String,
+
+    /// Serve hidden files and directories (names starting with '.').
+    #[arg(short = 's', long = "serve-hidden", required = false)]
+    pub serve_hidden: bool,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
 }
 
-pub fn get_cli_arguments() -> ServerArgs {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_DESCRIPTION"),
-            "Simple HTTP server for local files.",
-        )
-        .preset_arg_verbose(None)
-        .arg(
-            Arg::new("path")
-                .help("Path to serve as web root (defaults to current directory)")
-                .index(1)
-                .required(false),
-        )
-        .arg(
-            Arg::new("port")
-                .short('p')
-                .long("port")
-                .value_name("PORT")
-                .help("Port number to listen on (default: 4200)")
-                .value_parser(clap::value_parser!(u16)),
-        )
-        .arg(
-            Arg::new("host")
-                .short('o')
-                .long("host")
-                .value_name("HOST")
-                .help("Host that will be used to bind the server (default: 127.0.0.1)")
-                .required(false)
-                .default_value("127.0.0.1"),
-        )
-        .arg(
-            Arg::new("serve-hidden")
-                .short('a')
-                .long("serve-hidden")
-                .help("Serve hidden files and directories (names starting with '.')")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .get_matches();
+fn print_runtime_info(args: &ServerConfig) {
+    println!(
+        "{} Root directory: {}",
+        CONFIG_UL_ITEM_LEVEL_2,
+        args.root_path.display()
+    );
+    println!("{} Port: {}", CONFIG_UL_ITEM_LEVEL_2, args.port);
+    println!(
+        "{} Serve hidden files: {}",
+        CONFIG_UL_ITEM_LEVEL_2, args.serve_hidden
+    );
+}
 
-    let root_path = matches
-        .get_one::<String>("path")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+pub fn initialize() -> Result<ServerConfig> {
+    let args = CliArgs::parse();
 
-    let port = matches.get_one::<u16>("port").copied().unwrap_or(4200);
-
-    let host: IpAddr = matches
-        .get_one::<String>("host")
-        .unwrap()
+    let host: IpAddr = args
+        .host
         .parse()
-        .unwrap_or_else(|_| "127.0.0.1".parse().unwrap());
+        .with_context(|| format!("Invalid host IP address: {:?}", args.host))?;
 
-    let serve_hidden = matches.get_flag("serve-hidden");
-
-    let config = ServerArgs {
-        root_path,
-        port,
+    let config = ServerConfig {
+        root_path: args.path,
+        port: args.port,
         host,
-        serve_hidden,
+        serve_hidden: args.serve_hidden,
     };
 
-    // Validate root path exists
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        Some(|| {
+            print_runtime_info(&config);
+        }),
+    );
+
     if !config.root_path.exists() {
-        eprintln!(
+        anyhow::bail!(
             "Error: Path '{}' does not exist",
             config.root_path.display()
-        );
-        std::process::exit(1);
+        )
     }
 
     if !config.root_path.is_dir() {
-        eprintln!(
+        anyhow::bail!(
             "Error: Path '{}' is not a directory",
             config.root_path.display()
-        );
-        std::process::exit(1);
+        )
     }
 
-    config
+    if config.port == 0 {
+        anyhow::bail!("Error: Invalid port number: {}", config.port)
+    }
+
+    Ok(config)
 }

@@ -6,7 +6,7 @@ use crate::models::shared_types::RuntimeType;
 use crate::models::whisper_args::WhisperArgs;
 use crate::ui::chat_ui::ChatUi;
 use anyhow::Result;
-use shared::system::tool_exit_helpers::exit_success;
+use common_cli::tool_exit_helpers::exit_success;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;

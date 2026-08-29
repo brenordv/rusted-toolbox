@@ -1,18 +1,15 @@
 use crate::image_edit_routines::{create_job_progress_bar, process_edit_job};
-use crate::models::{EditArgs, EditJob, ProcessingStatsInner};
+use crate::models::{EditJob, ImageConfig, ProcessingStatsInner};
 use anyhow::{anyhow, Result};
 use indicatif::MultiProgress;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
-use shared::system::folder_walkthrough::list_all_files_recursively;
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-pub fn run_image_edit_commands(args: &EditArgs) -> Result<()> {
-    let input_batch = expand_input_paths(&args.input_files)?;
-    let jobs = build_jobs(input_batch, args)?;
+pub fn run_image_edit_commands(args: &ImageConfig) -> Result<()> {
+    let jobs = build_jobs(&args.input_files, args)?;
     let progress_bar = MultiProgress::new();
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(num_cpus::get())
@@ -70,55 +67,11 @@ pub fn run_image_edit_commands(args: &EditArgs) -> Result<()> {
     Ok(())
 }
 
-fn expand_input_paths(paths: &Vec<PathBuf>) -> Result<HashSet<PathBuf>> {
-    let mut expanded_paths = HashSet::new();
-
-    for path in paths {
-        if !path.exists() {
-            debug!("Path does not exist: {}", path.display());
-            continue;
-        }
-
-        if path.is_file() && is_supported_image_file(path) {
-            expanded_paths.insert(path.to_path_buf());
-            continue;
-        }
-
-        for file in list_all_files_recursively(path) {
-            if !is_supported_image_file(&file) {
-                continue;
-            }
-            expanded_paths.insert(file);
-        }
-    }
-
-    if expanded_paths.is_empty() {
-        return Err(anyhow!(
-            "No supported image files found. Nothing to work with."
-        ));
-    }
-
-    info!("Found {} supported image files.", expanded_paths.len());
-    Ok(expanded_paths)
-}
-
-fn is_supported_image_file(path: &Path) -> bool {
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        let ext = ext.to_lowercase();
-        matches!(
-            ext.as_str(),
-            "jpg" | "jpeg" | "png" | "gif" | "webp" | "avif" | "tiff" | "tif" | "bmp"
-        )
-    } else {
-        false
-    }
-}
-
-fn build_jobs(expanded_paths: HashSet<PathBuf>, args: &EditArgs) -> Result<Vec<EditJob>> {
+fn build_jobs(input_files: &[PathBuf], args: &ImageConfig) -> Result<Vec<EditJob>> {
     let mut jobs = Vec::new();
-    for path in expanded_paths {
+    for path in input_files {
         jobs.push(EditJob {
-            input_file: path,
+            input_file: path.clone(),
             resize: args.resize.clone(),
             grayscale: args.grayscale,
             convert: args.convert,

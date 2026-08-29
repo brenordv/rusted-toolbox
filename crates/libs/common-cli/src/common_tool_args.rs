@@ -17,7 +17,7 @@ pub struct CommonToolArgs {
     /// Sets the log level. Output goes to stderr by default with no channel flag
     /// needed; `disabled` silences everything and overrides `RUST_LOG`, while
     /// every other level yields to `RUST_LOG` when it is set.
-    #[arg(short = 'L', long = "log-level", default_value = "warn")]
+    #[arg(short = 'L', long = "log-level", default_value_t = ToolLogLevel::Warn, ignore_case = true)]
     pub default_logging_level: ToolLogLevel,
 
     /// Log to stdout instead of the default stderr
@@ -49,14 +49,18 @@ impl CommonToolArgs {
     pub fn app_boot_up_headerless(&self, app_name: &str, force_disable_log: bool) {
         self.app_boot_up(app_name, "", false, force_disable_log, None::<fn()>);
     }
-    
+
+    // TODO: Note for future-self: Review this. I'm not happy with this. This method, while good because centralizes the
+    // boot process of all tools, it's also bad because of the boilerplate code it generates.
+    // Also the whole print with CONFIG_UL_ITEM_LEVEL_1/2/3 is bothering me. Should probably have a helper function that does this.
     pub fn app_boot_up(
         &self,
         app_name: &str,
         app_version: &str,
         uses_verbose_flag: bool,
         force_disable_log: bool,
-        tool_header_printer:  Option<impl FnOnce()>) {
+        tool_header_printer: Option<impl FnOnce()>,
+    ) {
         self.initialize_logging(app_name, force_disable_log);
 
         if !self.app_header {
@@ -72,17 +76,28 @@ impl CommonToolArgs {
         } else {
             println!("{} Verbose mode: <unused>", CONFIG_UL_ITEM_LEVEL_2);
         }
-        println!("{} Log level: {}", CONFIG_UL_ITEM_LEVEL_2, self.default_logging_level);
-        println!("{} Log to stdout: {}", CONFIG_UL_ITEM_LEVEL_2, self.log_to_stdout);
-        println!("{} Log to file: {}", CONFIG_UL_ITEM_LEVEL_2, self.log_to_file);
-        println!("{} Rotate log file by day: {}", CONFIG_UL_ITEM_LEVEL_2, self.rotate_log_file_by_day);
+        println!(
+            "{} Log level: {}",
+            CONFIG_UL_ITEM_LEVEL_2, self.default_logging_level
+        );
+        println!(
+            "{} Log to stdout: {}",
+            CONFIG_UL_ITEM_LEVEL_2, self.log_to_stdout
+        );
+        println!(
+            "{} Log to file: {}",
+            CONFIG_UL_ITEM_LEVEL_2, self.log_to_file
+        );
+        println!(
+            "{} Rotate log file by day: {}",
+            CONFIG_UL_ITEM_LEVEL_2, self.rotate_log_file_by_day
+        );
 
-        match tool_header_printer {
-            Some(printer) => {
-                println!("{} Tool Runtime Config", CONFIG_UL_ITEM_LEVEL_1);
-                printer();
-            },
-            None => {}
+        if let Some(printer) = tool_header_printer {
+            println!("{} Tool Runtime Config", CONFIG_UL_ITEM_LEVEL_1);
+            printer();
         }
+
+        println!();
     }
 }

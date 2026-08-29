@@ -1,12 +1,15 @@
-# 1.0.3 (2025-09-25)
+# 2.0.0
+- Refactored to fit the new tooling.
+
+# 1.0.3
 - Updated dependencies.
 
-# 1.0.2 (2025-09-23)
+# 1.0.2
 - Removed emojis. They don't render properly on every terminal.
 
-# 1.0.1 (2025-09-04)
+# 1.0.1
 - The name of the property to copy is now case-insensitive.
 - Fixed copying string properties to the clipboard. Now we don't copy the quotes.
 
-# 1.0.0 (2025-08-14)
+# 1.0.0
 Initial release

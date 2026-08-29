@@ -1,5 +1,5 @@
 use std::path::PathBuf;
 
-pub struct GitIgnoreArgs {
+pub struct GitIgnoreConfig {
     pub target_folder: PathBuf,
 }

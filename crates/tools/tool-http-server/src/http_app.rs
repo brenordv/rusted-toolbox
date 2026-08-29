@@ -1,4 +1,4 @@
-use crate::models::{DirEntry, FileEntry, ServerArgs};
+use crate::models::{DirEntry, FileEntry, ServerConfig};
 use percent_encoding::percent_decode_str;
 use std::fs;
 use std::net::SocketAddr;
@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use tracing::info;
 use warp::{Filter, Reply};
 
-pub async fn start_server(config: ServerArgs) {
+pub async fn start_server(config: ServerConfig) {
     let root_path = config.root_path.clone();
     let serve_hidden = config.serve_hidden;
 

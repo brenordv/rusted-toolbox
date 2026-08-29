@@ -1,6 +1,6 @@
 [package]
 name = "touch"
-version = "1.0.1"
+version = "2.0.0"
 description = "Port of the Unix touch command."
 edition.workspace = true
 authors.workspace = true
@@ -8,11 +8,15 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
-filetime = { workspace = true }
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+
+# External
 anyhow = { workspace = true }
-clap = { workspace = true }
 chrono = { workspace = true }
+clap = { workspace = true }
+filetime = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

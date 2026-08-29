@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use std::{env, fs};
 use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 /// Wrapper created because historically Windows had a bug that required some workaround,
 /// and I need to make any changes, having a wrapper from the get-go is easier.

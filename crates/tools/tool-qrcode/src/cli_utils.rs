@@ -1,118 +1,165 @@
 use crate::models::{HowMode, QrCodeConfig, QrCodePayload};
 use anyhow::Result;
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
-use shared::system::tool_exit_helpers::exit_error;
-use tracing::error;
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
+use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
 
-pub fn print_runtime_info(args: &QrCodeConfig) {
-    println!("QrCode Generator v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
+/// Generate QR codes for text or Wi-Fi payloads.
+///
+/// This tool can generate QR codes for text, URLs, Wi-Fi payloads, or other types of data.
+/// The output can be printed to the console and/or saved to a file.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version)]
+struct CliArgs {
+    /// Text payload for the QR code
+    #[arg(short = 't', long = "text", value_name = "TEXT")]
+    pub text: Option<String>,
 
-    match args.get_payload() {
-        HowMode::TextPayload(text_payload) => {
-            println!("Generating Text QR code");
-            println!("Text: {}", text_payload);
-        }
-        HowMode::WifiPayload(wifi_ssid, wifi_pass, wifi_auth) => {
-            println!("Generating Wifi QR code");
-            println!("SSID: {}", wifi_ssid);
-            println!("Password: {}", wifi_pass);
-            println!("Auth: {}", wifi_auth);
-        }
-    }
+    /// SSID for a Wi-Fi payload
+    #[arg(short = 's', long = "wifi-ssid", value_name = "SSID")]
+    pub wifi_ssid: Option<String>,
 
-    println!();
+    /// Password for a Wi-Fi payload
+    #[arg(short = 'p', long = "wifi-password", value_name = "PASSWORD")]
+    pub wifi_password: Option<String>,
+
+    /// Authentication type for a wifi payload (default: WPA)
+    #[arg(short = 'a', long = "wifi-auth", value_name = "AUTH")]
+    pub wifi_auth: Option<String>,
+
+    /// Skip printing the QR code to the console
+    #[arg(short = 'x', long = "dont-print")]
+    pub dont_print: bool,
+
+    /// Format of the output file, regardless of the filename extension
+    #[arg(short = 'f', long = "output-format", value_name = "FORMAT")]
+    pub output_format: Option<String>,
+
+    /// Output file name. If not specified, a random one is generated
+    #[arg(short = 'o', long = "output-file", value_name = "FILENAME")]
+    pub output_file: Option<String>,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
 }
 
-pub fn get_cli_arguments() -> Result<QrCodeConfig> {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_DESCRIPTION"),
-            "This tool can generate QR codes for text, URLs, wifi payloads, or other types of data. The output can be printed to the console and/or saved to a file."
-        )
-        .arg(Arg::new("text")
-            .long("text")
-            .short('t')
-            .value_name("text")
-            .help("Text payload for QR code."))
-        .arg(Arg::new("wifi-ssid")
-            .long("wifi-ssid")
-            .short('s')
-            .help("SSID for wifi payload."))
-    .arg(Arg::new("wifi-password")
-            .long("wifi-password")
-            .short('p')
-            .value_name("password")
-            .help("Password for wifi payload."))
-    .arg(Arg::new("wifi-auth")
-            .long("wifi-auth")
-            .short('a')
-            .help("Authentication type for wifi payload. (Default: WPA)"))
-    .arg(Arg::new("no-header")
-            .long("no-header")
-            .short('n')
-            .action(clap::ArgAction::SetTrue)
-            .help("Do not print header."))
-    .arg(Arg::new("dont-print")
-            .long("dont-print")
-            .short('x')
-            .action(clap::ArgAction::SetTrue)
-            .help("Skips printing QR code to console."))
-        .arg(Arg::new("output-format")
-            .long("output-format")
-            .short('f')
-            .help("Format of output file. This defines the actual format of the file, regardless of the filename."))
-        .arg(Arg::new("output-file")
-            .long("output-file")
-            .short('o')
-            .value_name("filename")
-            .help("Output file name. If not specified, will generate random."))
-        .get_matches();
+/// Parses command-line arguments and returns the runtime configuration.
+///
+/// # Errors
+/// Returns an error when neither a text payload nor a complete wifi payload
+/// (both an SSID and a password) is provided.
+pub fn initialize() -> Result<QrCodeConfig> {
+    let args = CliArgs::parse();
 
-    let text_payload = matches.get_one::<String>("text");
-    let wifi_ssid = matches.get_one::<String>("wifi-ssid");
-    let wifi_password = matches.get_one::<String>("wifi-password");
-    let wifi_auth = match matches.get_one::<String>("wifi-auth") {
-        Some(auth) => Some(auth.to_string()),
-        None => Some("WPA".to_string()),
-    };
-    let no_header = matches.get_flag("no-header");
-    let dont_print = matches.get_flag("dont-print");
-    let output_format = matches.get_one::<String>("output-format");
-    let output_file = matches.get_one::<String>("output-file");
+    let config = build_config(&args)?;
 
-    let is_text_payload_set = text_payload.is_some();
-    let is_wifi_payload_set = wifi_ssid.is_some() && wifi_password.is_some();
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        Some(|| {
+            print_header(&config);
+        }),
+    );
 
-    if !is_text_payload_set && !is_wifi_payload_set {
-        error!("Error: Either text or wifi payload must be provided.");
-        exit_error();
-        unreachable!();
-    } else if !is_text_payload_set {
-        if wifi_ssid.is_none() && wifi_password.is_some() {
-            error!("Error: Wifi payload doesn't have an SSID.");
-            exit_error();
-            unreachable!();
-        } else if wifi_ssid.is_some() && wifi_password.is_none() {
-            error!("Error: Wifi payload doesn't have a password.");
-            exit_error();
-            unreachable!();
+    Ok(config)
+}
+
+/// Validates the parsed arguments and resolves them into a [`QrCodeConfig`].
+fn build_config(args: &CliArgs) -> Result<QrCodeConfig> {
+    if args.text.is_none() {
+        match (args.wifi_ssid.is_some(), args.wifi_password.is_some()) {
+            (true, true) => {}
+            (true, false) => {
+                anyhow::bail!("Wifi payload is missing a password (--wifi-password).")
+            }
+            (false, true) => anyhow::bail!("Wifi payload is missing an SSID (--wifi-ssid)."),
+            (false, false) => anyhow::bail!(
+                "Either a text payload (--text) or a wifi payload (--wifi-ssid with --wifi-password) must be provided."
+            ),
         }
     }
+
+    let wifi_auth = args.wifi_auth.clone().unwrap_or_else(|| "WPA".to_string());
 
     Ok(QrCodeConfig::new(
         QrCodePayload::new(
-            text_payload.map(|text| text.to_string()),
-            wifi_ssid.map(|ssid| ssid.to_string()),
-            wifi_password.map(|password| password.to_string()),
-            wifi_auth.map(|auth| auth.to_string()),
+            args.text.clone(),
+            args.wifi_ssid.clone(),
+            args.wifi_password.clone(),
+            Some(wifi_auth),
         ),
-        no_header,
-        dont_print,
-        output_format.map(|format| format.to_string()),
-        output_file.map(|file| file.to_string()),
+        args.dont_print,
+        args.output_format.clone(),
+        args.output_file.clone(),
     ))
+}
+
+/// Prints the tool's runtime configuration, shown under `--app-header`.
+fn print_header(config: &QrCodeConfig) {
+    match config.get_payload() {
+        HowMode::TextPayload(text_payload) => {
+            println!("{} Payload: text", CONFIG_UL_ITEM_LEVEL_2);
+            println!("{} Text: {}", CONFIG_UL_ITEM_LEVEL_3, text_payload);
+        }
+        HowMode::WifiPayload(wifi_ssid, wifi_pass, wifi_auth) => {
+            println!("{} Payload: wifi", CONFIG_UL_ITEM_LEVEL_2);
+            println!("{} SSID: {}", CONFIG_UL_ITEM_LEVEL_3, wifi_ssid);
+            println!("{} Password: {}", CONFIG_UL_ITEM_LEVEL_3, wifi_pass);
+            println!("{} Auth: {}", CONFIG_UL_ITEM_LEVEL_3, wifi_auth);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn text_payload_builds_config() {
+        let args = CliArgs::try_parse_from(["qrcode", "--text", "hello"]).unwrap();
+        let config = build_config(&args).unwrap();
+        assert!(matches!(
+            config.get_payload(),
+            HowMode::TextPayload(text) if text == "hello"
+        ));
+    }
+
+    #[test]
+    fn wifi_payload_defaults_auth_to_wpa() {
+        let args =
+            CliArgs::try_parse_from(["qrcode", "--wifi-ssid", "net", "--wifi-password", "secret"])
+                .unwrap();
+        let config = build_config(&args).unwrap();
+        assert!(matches!(
+            config.get_payload(),
+            HowMode::WifiPayload(ssid, password, auth)
+                if ssid == "net" && password == "secret" && auth == "WPA"
+        ));
+    }
+
+    #[test]
+    fn no_payload_is_rejected() {
+        let args = CliArgs::try_parse_from(["qrcode"]).unwrap();
+        assert!(build_config(&args).is_err());
+    }
+
+    #[test]
+    fn wifi_without_password_is_rejected() {
+        let args = CliArgs::try_parse_from(["qrcode", "--wifi-ssid", "net"]).unwrap();
+        assert!(build_config(&args).is_err());
+    }
+
+    #[test]
+    fn wifi_without_ssid_is_rejected() {
+        let args = CliArgs::try_parse_from(["qrcode", "--wifi-password", "secret"]).unwrap();
+        assert!(build_config(&args).is_err());
+    }
 }

@@ -16,9 +16,9 @@ checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
 
 [[package]]
 name = "aho-corasick"
-version = "1.1.3"
+version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
+checksum = "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba"
 dependencies = [
  "memchr",
 ]
@@ -807,6 +807,7 @@ dependencies = [
 name = "common-cli"
 version = "1.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "common-utils",
  "tracing-subscriber",
@@ -1445,7 +1446,7 @@ checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
 
 [[package]]
 name = "eh-export"
-version = "2.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1464,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "eh-read"
-version = "2.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "azeventhubs",
@@ -1748,7 +1749,7 @@ checksum = "113497cf62a7d1cce30db4b961fe576483432af54df4eee4c1c360ba8ee8e1ab"
 dependencies = [
  "futures-util",
  "getrandom 0.2.16",
- "http 1.3.1",
+ "http",
  "js-sys",
  "pin-project-lite",
  "thiserror 1.0.69",
@@ -2033,16 +2034,13 @@ dependencies = [
 name = "get-lines"
 version = "2.0.0"
 dependencies = [
+ "aho-corasick",
  "anyhow",
  "clap",
  "cli-signal-monitor",
  "common-cli",
  "common-utils",
- "common-utils-ext",
- "futures-util",
  "tempfile",
- "tokio",
- "tokio-stream",
  "tracing",
 ]
 
@@ -2118,12 +2116,13 @@ dependencies = [
 
 [[package]]
 name = "gitignore"
-version = "1.1.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "common-cli",
+ "common-utils",
  "reqwest 0.13.4",
- "shared",
  "tempfile",
  "tokio",
  "tracing",
@@ -2155,9 +2154,9 @@ version = "1.0.2"
 dependencies = [
  "anyhow",
  "clap",
+ "common-cli",
+ "common-utils",
  "common-utils-ext",
- "ctrlc",
- "shared",
  "tracing",
 ]
 
@@ -2172,7 +2171,7 @@ dependencies = [
  "fnv",
  "futures-core",
  "futures-sink",
- "http 1.3.1",
+ "http",
  "indexmap",
  "slab",
  "tokio",
@@ -2230,7 +2229,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "headers-core",
- "http 1.3.1",
+ "http",
  "httpdate",
  "mime",
  "sha1",
@@ -2242,7 +2241,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54b4a22553d4242c49fddb9ba998a99962b5cc6f22cb5a3482bec22522403ce4"
 dependencies = [
- "http 1.3.1",
+ "http",
 ]
 
 [[package]]
@@ -2274,20 +2273,6 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.1.0"
-dependencies = [
- "clap",
- "mime_guess",
- "percent-encoding",
- "shared",
- "tempfile",
- "tokio",
- "tracing",
- "warp",
-]
-
-[[package]]
-name = "http"
 version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4a85d31aea989eead29a3aaf9e1115a180df8282431156e533de47660892565"
@@ -2304,7 +2289,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1efedce1fb8e6913f23e0c92de8e62cd5b772a67e7b3946df930a62566c93184"
 dependencies = [
  "bytes",
- "http 1.3.1",
+ "http",
 ]
 
 [[package]]
@@ -2315,7 +2300,7 @@ checksum = "b021d93e26becf5dc7e1b75b1bed1fd93124b374ceb73f43d4d4eafec896a64a"
 dependencies = [
  "bytes",
  "futures-core",
- "http 1.3.1",
+ "http",
  "http-body",
  "pin-project-lite",
 ]
@@ -2351,6 +2336,23 @@ name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
+name = "https"
+version = "2.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "common-cli",
+ "common-utils",
+ "common-utils-ext",
+ "mime_guess",
+ "percent-encoding",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "warp",
+]
 
 [[package]]
 name = "hurl"
@@ -2412,7 +2414,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "h2",
- "http 1.3.1",
+ "http",
  "http-body",
  "httparse",
  "httpdate",
@@ -2429,7 +2431,7 @@ version = "0.27.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3c93eb611681b207e1fe55d5a71ecf91572ec8a6705cdb6857f7d8d5242cf58"
 dependencies = [
- "http 1.3.1",
+ "http",
  "hyper",
  "hyper-util",
  "rustls",
@@ -2467,7 +2469,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "http 1.3.1",
+ "http",
  "http-body",
  "hyper",
  "ipnet",
@@ -2674,17 +2676,19 @@ checksum = "89194689a993ab15268672e99e7b0e19da2da3268ac682e8f02d29d4d1434cd7"
 
 [[package]]
 name = "imgx"
-version = "1.1.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "common-cli",
+ "common-file-utils",
+ "common-utils",
  "gif",
  "image",
  "imagequant",
  "indicatif",
  "num_cpus",
  "rayon",
- "shared",
  "tempfile",
  "tracing",
 ]
@@ -2957,16 +2961,18 @@ dependencies = [
 
 [[package]]
 name = "jwt"
-version = "1.0.3"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
  "colored",
+ "common-cli",
+ "common-utils",
+ "common-utils-ext",
  "jsonwebtoken",
  "serde",
  "serde_json",
- "shared",
  "tracing",
 ]
 
@@ -3164,7 +3170,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "logging-otel"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "common-cli",
  "raccoon-otel",
@@ -3172,13 +3178,15 @@ dependencies = [
 
 [[package]]
 name = "lookup"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "common-cli",
+ "common-file-utils",
+ "common-utils",
  "globset",
  "regex",
- "shared",
  "tempfile",
  "tracing",
  "walkdir",
@@ -3313,12 +3321,20 @@ name = "mock"
 version = "1.1.0"
 dependencies = [
  "anyhow",
- "chrono",
  "clap",
+ "common-cli",
+ "mock-data-utils",
+ "tracing",
+]
+
+[[package]]
+name = "mock-data-utils"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
  "fake",
  "rand 0.10.2",
- "shared",
- "tracing",
 ]
 
 [[package]]
@@ -3333,13 +3349,14 @@ dependencies = [
 
 [[package]]
 name = "mqtt"
-version = "1.0.2"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "common-cli",
+ "common-utils",
  "common-utils-ext",
  "rumqttc",
- "shared",
  "tokio",
  "tracing",
 ]
@@ -3363,17 +3380,21 @@ dependencies = [
 
 [[package]]
 name = "netquality"
-version = "1.1.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "cfspeedtest",
  "chrono",
  "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-serialization-utils",
+ "common-utils",
+ "logging-otel",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",
  "serde_json",
- "shared",
  "tokio",
  "tracing",
 ]
@@ -3744,7 +3765,7 @@ checksum = "5683015d09e2df236ef005b17f6f196f0d5f6313c4fa43a7b6a53b52776e4331"
 dependencies = [
  "async-trait",
  "bytes",
- "http 1.3.1",
+ "http",
  "opentelemetry",
  "reqwest 0.13.4",
 ]
@@ -3755,7 +3776,7 @@ version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
- "http 1.3.1",
+ "http",
  "opentelemetry",
  "opentelemetry-http",
  "opentelemetry-proto",
@@ -4057,17 +4078,20 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pingx"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
  "dns-lookup",
  "serde",
  "serde_json",
- "shared",
  "surge-ping",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4287,14 +4311,15 @@ dependencies = [
 
 [[package]]
 name = "qrcode"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "common-cli",
+ "common-utils",
  "image",
  "qrcodegen",
- "shared",
  "tempfile",
  "tracing",
 ]
@@ -4760,13 +4785,14 @@ checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
 name = "remove-zw"
-version = "1.1.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "common-cli",
+ "common-utils",
  "once_cell",
  "regex",
- "shared",
  "tempfile",
  "tracing",
 ]
@@ -4786,7 +4812,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http 1.3.1",
+ "http",
  "http-body",
  "http-body-util",
  "hyper",
@@ -4832,7 +4858,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http 1.3.1",
+ "http",
  "http-body",
  "http-body-util",
  "hyper",
@@ -5357,31 +5383,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "shared"
-version = "1.1.3"
-dependencies = [
- "anyhow",
- "arboard",
- "bytes",
- "chrono",
- "clap",
- "ctrlc",
- "dotenv",
- "futures",
- "notify",
- "raccoon-otel",
- "rstest",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "walkdir",
-]
-
-[[package]]
 name = "shared-eventhub"
 version = "1.0.0"
 dependencies = [
@@ -5389,9 +5390,11 @@ dependencies = [
  "azeventhubs",
  "chrono",
  "clap",
+ "common-cli",
+ "common-serialization-utils",
+ "common-utils",
  "rstest",
  "serde",
- "shared",
  "tracing-log",
  "tracing-subscriber",
  "url",
@@ -5566,13 +5569,14 @@ dependencies = [
 
 [[package]]
 name = "split"
-version = "1.0.2"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "log",
- "shared",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
  "tempfile",
  "tracing",
 ]
@@ -6078,13 +6082,14 @@ dependencies = [
 
 [[package]]
 name = "touch"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "common-cli",
+ "common-utils",
  "filetime",
- "shared",
  "tempfile",
  "tracing",
 ]
@@ -6113,7 +6118,7 @@ dependencies = [
  "bitflags 2.13.1",
  "bytes",
  "futures-util",
- "http 1.3.1",
+ "http",
  "http-body",
  "iri-string",
  "pin-project-lite",
@@ -6229,12 +6234,13 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "ts"
-version = "1.1.2"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "shared",
+ "common-cli",
+ "common-utils",
  "tracing",
 ]
 
@@ -6247,7 +6253,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "data-encoding",
- "http 1.3.1",
+ "http",
  "httparse",
  "log",
  "native-tls",
@@ -6445,7 +6451,7 @@ dependencies = [
  "bytes",
  "futures-util",
  "headers",
- "http 1.3.1",
+ "http",
  "http-body",
  "http-body-util",
  "hyper",
@@ -6663,28 +6669,30 @@ dependencies = [
 
 [[package]]
 name = "whisper"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
  "clap",
+ "common-cli",
  "rand 0.10.2",
  "rand06-compat",
  "ratatui",
  "rsa",
  "sha256",
- "shared",
  "tracing",
 ]
 
 [[package]]
 name = "whurl"
-version = "1.3.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "camino",
  "chrono",
  "clap",
+ "common-cli",
+ "common-utils",
  "common-utils-ext",
  "hurl",
  "hurl_core",
@@ -6692,7 +6700,6 @@ dependencies = [
  "rand 0.10.2",
  "regex",
  "serde_json",
- "shared",
  "tempfile",
  "thiserror 2.0.20",
  "tracing",

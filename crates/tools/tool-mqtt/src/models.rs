@@ -1,4 +1,4 @@
-pub struct MqttArgs {
+pub struct MqttConfig {
     pub command: MqttCommand,
     pub host: String,
     pub port: u16,
@@ -8,14 +8,13 @@ pub struct MqttArgs {
     pub password: Option<String>,
 }
 
-impl MqttArgs {
+impl MqttConfig {
     pub fn is_anonymous(&self) -> bool {
         self.username.is_none() && self.password.is_none()
     }
 }
 
 pub enum MqttCommand {
-    Unknown,
     Read,
     Post,
 }
@@ -24,8 +23,8 @@ pub enum MqttCommand {
 mod tests {
     use super::*;
 
-    fn args_with_credentials(username: Option<&str>, password: Option<&str>) -> MqttArgs {
-        MqttArgs {
+    fn args_with_credentials(username: Option<&str>, password: Option<&str>) -> MqttConfig {
+        MqttConfig {
             command: MqttCommand::Read,
             host: "localhost".to_string(),
             port: 1883,

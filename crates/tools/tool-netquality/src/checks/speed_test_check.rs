@@ -40,7 +40,7 @@ pub async fn run_speed_check(config: &NetQualityConfig) -> Result<SpeedResult> {
             Ok(ookla_result) => {
                 return Ok(build_speed_result(
                     ookla_result,
-                    expected_download,
+                    expected_download as f64,
                     expected_upload,
                     &download_thresholds,
                     &upload_thresholds,
@@ -56,7 +56,7 @@ pub async fn run_speed_check(config: &NetQualityConfig) -> Result<SpeedResult> {
 
     Ok(build_speed_result(
         cfspeedtest_result,
-        expected_download,
+        expected_download as f64,
         expected_upload,
         &download_thresholds,
         &upload_thresholds,
@@ -64,7 +64,7 @@ pub async fn run_speed_check(config: &NetQualityConfig) -> Result<SpeedResult> {
 }
 
 async fn run_embedded_speedtest(
-    expected_upload: Option<f64>,
+    expected_upload: Option<f32>,
     download_only: bool,
 ) -> Result<SpeedTestMeasurement> {
     spawn_blocking(move || -> Result<SpeedTestMeasurement> {
@@ -164,7 +164,7 @@ fn bytes_per_sec_to_mbps(bytes_per_sec: f64) -> f64 {
 fn build_speed_result(
     measurement: SpeedTestMeasurement,
     expected_download: f64,
-    expected_upload: Option<f64>,
+    expected_upload: Option<f32>,
     download_thresholds: &Thresholds,
     upload_thresholds: &Thresholds,
 ) -> SpeedResult {
@@ -175,9 +175,11 @@ fn build_speed_result(
     );
 
     let upload_threshold = match (measurement.upload_mbps, expected_upload) {
-        (Some(actual), Some(expected)) => {
-            Some(evaluate_threshold(actual, expected, upload_thresholds))
-        }
+        (Some(actual), Some(expected)) => Some(evaluate_threshold(
+            actual,
+            expected as f64,
+            upload_thresholds,
+        )),
         _ => None,
     };
 

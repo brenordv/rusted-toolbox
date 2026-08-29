@@ -1,6 +1,76 @@
-use crate::models::MockArgs;
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
+use crate::models::MockConfig;
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
+use common_cli::tool_exit_helpers::exit_error;
+use mock_data_utils::models::DataType;
+use tracing::error;
+
+/// Generate mock data for testing and development
+///
+/// Mock data generator CLI tool.
+///  Generates various types of mock data including personal information,
+///  internet data, random values, and commerce data.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about, after_long_help = get_help_text())]
+pub struct CliArgs {
+    /// Type of mock data to generate (e.g., person.first-name, internet.email)
+    #[arg(value_name = "DATA_TYPE", index = 1, required = true)]
+    pub data_type: String,
+
+    /// Locale for generating mock data (e.g., en-US, fr-FR)
+    #[arg(
+        short = 'l',
+        long = "locale",
+        required = false,
+        default_value = "en-US"
+    )]
+    pub locale: String,
+
+    /// Minimum value for generated data (e.g., for random integers)
+    #[arg(short = 'm', long = "min", required = false)]
+    pub min: Option<i32>,
+
+    /// Maximum value for generated data (e.g., for random integers)
+    #[arg(short = 'x', long = "max", required = false)]
+    pub max: Option<i32>,
+
+    /// Length of generated data (e.g., for strings or arrays)
+    #[arg(short = 'n', long = "length", required = false)]
+    pub length: Option<usize>,
+
+    /// Precision for generated data (e.g., for floating-point numbers)
+    #[arg(short = 'p', long = "precision", required = false)]
+    pub precision: Option<u32>,
+
+    /// Age for generated data (e.g., for birthday calculation)
+    #[arg(short = 'a', long = "age", required = false)]
+    pub age: Option<u32>,
+
+    /// Generate date in the past
+    #[arg(
+        short = 'a',
+        long = "past",
+        required = false,
+        conflicts_with = "future"
+    )]
+    pub past: bool,
+
+    /// Generate date in the future
+    #[arg(
+        short = 'f',
+        long = "future",
+        required = false,
+        conflicts_with = "past"
+    )]
+    pub future: bool,
+
+    /// Date range in years
+    #[arg(short = 'r', long = "range", required = false, default_value_t = 50)]
+    pub range: u32,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
+}
 
 /// Get help text for available data types
 fn get_help_text() -> &'static str {
@@ -45,132 +115,49 @@ Commerce:
   commerce.buzzword     - Generate a business buzzword"
 }
 
-/// Parses command-line arguments for mock data generator application.
-///
-/// Supports various data types with flexible options for customization.
-/// Generates one piece of mock data per execution.
-///
-/// # Errors
-/// Returns error if argument parsing fails
-///
-/// # Supported Commands
-/// - Personal: person.first-name, person.email, person.address, etc.
-/// - Internet: internet.username, internet.password, internet.url, etc.
-/// - Random: random.date, random.integer, random.color-hex, etc.
-/// - Commerce: commerce.company, commerce.product, commerce.job-title, etc.
-///
-/// # Global Options
-/// - `--locale <LOCALE>`: Set locale for region-specific data (default: en_US)
-///
-/// # Data-specific Options
-/// - `--min <NUMBER>`: Minimum value (for numbers)
-/// - `--max <NUMBER>`: Maximum value (for numbers)
-/// - `--length <NUMBER>`: Length specification (for passwords, etc.)
-/// - `--precision <NUMBER>`: Decimal precision (for floats)
-/// - `--age <NUMBER>`: Age for birthday calculation
-/// - `--past`: Generate past dates/times
-/// - `--future`: Generate future dates/times
-/// - `--range <YEARS>`: Date range in years (default: 50)
-///
-/// # Metadata
-///
-/// - Name: `MOCK_APP_NAME` (constant).
-/// - Version: `MOCK_VERSION` (constant).
-/// - Description: Generates mock data for testing and development purposes.
-///
-/// # Dependencies
-/// This function uses the `clap` crate for defining and parsing command-line arguments.
-///
-/// # Examples
-/// ```bash
-/// mock person.first-name
-/// mock person.email
-/// mock random.integer --min 1 --max 100
-/// mock internet.password --length 12
-/// mock random.date --past
-/// ```
-pub fn get_cli_arguments() -> MockArgs {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            "Generate mock data for testing and development",
-            "Mock data generator CLI tool.\n\n\
-            Generates various types of mock data including personal information, \
-            internet data, random values, and commerce data.\n\n\
-            USAGE:\n    \
-            mock [DATA_TYPE] [OPTIONS]\n\n\
-            EXAMPLES:\n    \
-            mock person.first-name\n    \
-            mock person.email\n    \
-            mock random.integer --min 1 --max 100\n    \
-            mock internet.password --length 12\n    \
-            mock random.date --past\n\n\
-            AVAILABLE DATA TYPES:\n\n",
-        )
-        .after_help(get_help_text())
-        .arg(
-            Arg::new("data_type")
-                .help("Type of mock data to generate (e.g., person.first-name, internet.email)")
-                .value_name("DATA_TYPE")
-                .index(1)
-                .required(true),
-        )
-        .arg(
-            Arg::new("locale")
-                .long("locale")
-                .value_name("LOCALE")
-                .help("Set locale for region-specific data")
-                .default_value("en_US"),
-        )
-        .arg(
-            Arg::new("min")
-                .long("min")
-                .value_name("NUMBER")
-                .help("Minimum value (for numbers)"),
-        )
-        .arg(
-            Arg::new("max")
-                .long("max")
-                .value_name("NUMBER")
-                .help("Maximum value (for numbers)"),
-        )
-        .arg(
-            Arg::new("length")
-                .long("length")
-                .value_name("NUMBER")
-                .help("Length specification (for passwords, strings, etc.)"),
-        )
-        .arg(
-            Arg::new("precision")
-                .long("precision")
-                .value_name("NUMBER")
-                .help("Decimal precision (for floats)"),
-        )
-        .arg(
-            Arg::new("age")
-                .long("age")
-                .value_name("NUMBER")
-                .help("Age for birthday calculation"),
-        )
-        .arg(
-            Arg::new("past")
-                .long("past")
-                .action(clap::ArgAction::SetTrue)
-                .help("Generate past dates/times"),
-        )
-        .arg(
-            Arg::new("future")
-                .long("future")
-                .action(clap::ArgAction::SetTrue)
-                .help("Generate future dates/times"),
-        )
-        .arg(
-            Arg::new("range")
-                .long("range")
-                .value_name("YEARS")
-                .help("Date range in years (default: 50)"),
-        )
-        .get_matches();
+pub fn initialize() -> MockConfig {
+    let args = CliArgs::parse();
 
-    MockArgs::parse(&matches)
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        Some(|| {}),
+    );
+
+    // Check min/max ranges
+    if let (Some(min), Some(max)) = (args.min, args.max) {
+        if min > max {
+            error!("Minimum value cannot be greater than maximum value");
+            exit_error();
+        }
+    }
+
+    // Check if data type is provided
+    if args.data_type.is_empty() {
+        error!("Data type must be specified");
+        exit_error();
+    }
+
+    let data_type = match DataType::from_command(args.data_type.as_str()) {
+        Ok(data_type) => data_type,
+        Err(err) => {
+            error!("{}", err);
+            exit_error();
+            unreachable!();
+        }
+    };
+
+    MockConfig::new(
+        data_type,
+        args.min,
+        args.max,
+        args.length,
+        args.precision,
+        args.age,
+        args.past,
+        args.future,
+        Some(args.range),
+    )
 }

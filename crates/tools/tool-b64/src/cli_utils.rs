@@ -65,7 +65,8 @@ pub struct CliArgs {
 pub fn initialize() -> B64Config {
     let args = CliArgs::parse();
 
-    args.common.app_boot_up_headerless(env!("CARGO_PKG_NAME"), false);
+    args.common
+        .app_boot_up_headerless(env!("CARGO_PKG_NAME"), false);
 
     B64Config::from_args(&args)
 }

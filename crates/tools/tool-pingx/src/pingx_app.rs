@@ -1,10 +1,10 @@
-use crate::cli_utils::print_header;
+use crate::cli_utils::print_supplemental_header;
 use crate::models::{IpMode, OutputMode, PacketResult, PingxArgs, ResolvedTargetInfo};
 use anyhow::Result;
 use chrono::Timelike;
+use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use dns_lookup::lookup_addr;
 use serde::Serialize;
-use shared::system::setup_graceful_shutdown::setup_graceful_shutdown;
 use std::net::{IpAddr, ToSocketAddrs};
 use surge_ping::{Client, ConfigBuilder, IcmpPacket, PingIdentifier, PingSequence, ICMP};
 use tokio::time::{sleep, Duration, Instant};
@@ -110,7 +110,7 @@ pub fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
 
 pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     let resolved = resolve_target(args)?;
-    print_header(args, &resolved);
+    print_supplemental_header(args, &resolved);
 
     // Verbose info
     if args.verbose && !args.quiet {

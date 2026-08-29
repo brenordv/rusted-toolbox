@@ -8,15 +8,15 @@ mod vars;
 mod whurl_app;
 mod whurl_utils;
 
-use crate::cli_utils::get_cli_arguments;
+use crate::cli_utils::initialize;
 use crate::whurl_app::{execute, print_error, resolve_log_level};
-use shared::logging::logging_helpers::initialize_log;
-use shared::system::tool_exit_helpers::exit_with_code;
+use common_cli::app_logger::AppLogger;
+use common_cli::tool_exit_helpers::exit_with_code;
 
 fn main() {
-    let cli = get_cli_arguments();
+    let cli = initialize();
     let log_level = resolve_log_level(&cli);
-    initialize_log(env!("CARGO_PKG_NAME"), log_level);
+    AppLogger::new(env!("CARGO_PKG_NAME"), log_level, false, false, false).init(false);
 
     if let Err(error) = execute(cli) {
         print_error(&error);

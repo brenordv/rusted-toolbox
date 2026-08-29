@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
+use common_utils::file_system::EnsureDirectoryExists;
 use csv::Writer;
 use shared_eventhub::eventhub_models::InboundMessage;
 use std::path::PathBuf;
-use common_utils::file_system::EnsureDirectoryExists;
 
 /// Exports an InboundMessage to a CSV file with optional metadata and condensed output.
 ///

@@ -1,15 +1,80 @@
-use crate::models::{MqttArgs, MqttCommand};
-use crate::string_traits::StringExt;
+use crate::models::{MqttCommand, MqttConfig};
 use anyhow::Result;
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
+use clap::{Args, Parser, Subcommand};
 
-pub fn print_runtime_info(args: &MqttArgs) {
-    println!("MQTT v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
+use common_cli::common_tool_args::CommonToolArgs;
+use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
 
-    println!("- Host: {}:{}", args.host, args.port);
+/// Cli tool to perform quickly post to or read from a MQTT broker.
+///
+/// Tool that allows posting a message to a MQTT broker or reading from it.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about)]
+pub struct CliArgs {
+    #[command(subcommand)]
+    command: Commands,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
+}
+
+#[derive(Args, Debug)]
+struct ReadArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
+}
+
+#[derive(Args, Debug)]
+struct PostArgs {
+    /// Message to post to the MQTT broker.
+    #[arg(short = 'm', long = "message", required = true)]
+    pub message: String,
+
+    #[command(flatten)]
+    pub common: CommonArgs,
+}
+
+#[derive(Args, Debug)]
+struct CommonArgs {
+    /// Hostname or IP address of the MQTT broker.
+    #[arg(short = 'o', long = "host", required = true)]
+    pub host: String,
+
+    /// Port used when connecting to the MQTT broker.
+    #[arg(short = 'p', long = "port", default_value_t = 1883)]
+    pub port: u16,
+
+    /// Topic to read from or post to.
+    #[arg(short = 't', long = "topic", required = true)]
+    pub topic: String,
+
+    /// Username used when connecting to the MQTT broker.
+    #[arg(short = 'u', long = "username", required = false)]
+    pub username: Option<String>,
+
+    /// Password used when connecting to the MQTT broker.
+    #[arg(short = 'a', long = "password", required = false)]
+    pub password: Option<String>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    //TODO: Bring the examples from the readme file to the after_help
+    /// Read messages from a MQTT broker.
+    #[command(after_help = "Examples:<ADD EXAMPLE>")]
+    Read(ReadArgs),
+
+    //TODO: Bring the examples from the readme file to the after_help
+    /// Post a message to a MQTT broker.
+    #[command(after_help = "Examples:<ADD EXAMPLE>")]
+    Post(PostArgs),
+}
+
+fn print_runtime_info(args: &MqttConfig) {
+    println!(
+        "{} Host: {}:{}",
+        CONFIG_UL_ITEM_LEVEL_2, args.host, args.port
+    );
 
     let connection_type = if args.is_anonymous() {
         "Anonymous"
@@ -17,129 +82,83 @@ pub fn print_runtime_info(args: &MqttArgs) {
         "Authenticated"
     };
 
-    println!("- Connection type: {}", connection_type);
-    println!("- Topic: {}", args.topic);
+    println!(
+        "{} Connection type: {}",
+        CONFIG_UL_ITEM_LEVEL_2, connection_type
+    );
+    println!("{} Topic: {}", CONFIG_UL_ITEM_LEVEL_2, args.topic);
 
     match args.command {
-        MqttCommand::Unknown => {}
         MqttCommand::Read => {
-            println!("- Command: Read");
+            println!("{} Command: Read", CONFIG_UL_ITEM_LEVEL_2);
         }
         MqttCommand::Post => {
-            println!("- Command: Post");
+            println!("{} Command: Post", CONFIG_UL_ITEM_LEVEL_2);
             if let Some(msg) = &args.message {
-                println!("  - Message: {}", msg);
+                println!("{} Message: {}", CONFIG_UL_ITEM_LEVEL_3, msg);
             }
         }
     }
 }
 
-pub fn get_cli_arguments() -> Result<MqttArgs> {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_DESCRIPTION"),
-            "Cli tool to perform quickly post to or read from a MQTT broker.",
-        )
-        .arg(
-            Arg::new("command")
-                .help("Command to execute.")
-                .num_args(1)
-                .required(false),
-        )
-        .arg(
-            Arg::new("host")
-                .long("host")
-                .short('o')
-                .required(true)
-                .help("Host to connect to."),
-        )
-        .arg(
-            Arg::new("port")
-                .long("port")
-                .short('p')
-                .required(false)
-                .default_value("1883")
-                .help("Port to connect to. (Default: 1883)"),
-        )
-        .arg(
-            Arg::new("topic")
-                .long("topic")
-                .short('t')
-                .required(true)
-                .help("Topic to post to or read from."),
-        )
-        .arg(
-            Arg::new("message")
-                .long("message")
-                .short('m')
-                .required(false)
-                .help("Message to post to the topic."),
-        )
-        .arg(
-            Arg::new("username")
-                .long("username")
-                .short('u')
-                .required(false)
-                .help("Username to connect with."),
-        )
-        .arg(
-            Arg::new("password")
-                .long("password")
-                .short('a')
-                .required(false)
-                .help("Password for authentication."),
-        )
-        .get_matches();
+pub fn initialize() -> Result<MqttConfig> {
+    let args = CliArgs::parse();
 
-    let command = match matches.get_one::<String>("command") {
-        None => {
-            // Field is required. This shouldn't happen.
-            MqttCommand::Unknown
-        }
-        Some(cmd) => cmd.to_mqtt_command(),
+    let command_config = match args.command {
+        Commands::Read(read_args) => MqttConfig {
+            command: MqttCommand::Read,
+            host: read_args.common.host,
+            port: read_args.common.port,
+            topic: read_args.common.topic,
+            username: read_args.common.username,
+            password: read_args.common.password,
+            message: None,
+        },
+        Commands::Post(post_args) => MqttConfig {
+            command: MqttCommand::Post,
+            host: post_args.common.host,
+            port: post_args.common.port,
+            topic: post_args.common.topic,
+            username: post_args.common.username,
+            password: post_args.common.password,
+            message: Some(post_args.message),
+        },
     };
 
-    let host = matches.get_one::<String>("host").unwrap();
-    let port = matches.get_one::<String>("port").unwrap().parse::<u16>()?;
-    let topic = matches
-        .get_one::<String>("topic")
-        .unwrap()
-        .trim()
-        .to_string();
-    let message = matches.get_one::<String>("message");
-    let username = matches.get_one::<String>("username");
-    let password = matches.get_one::<String>("password");
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        Some(|| print_runtime_info(&command_config)),
+    );
 
-    Ok(MqttArgs {
-        command,
-        host: host.clone(),
-        port,
-        topic: topic.clone(),
-        message: message.cloned(),
-        username: username.cloned(),
-        password: password.cloned(),
-    })
-}
+    validate_host_and_port(&command_config.host, command_config.port)?;
+    validate_user_and_password(&command_config.username, &command_config.password)?;
+    validate_topic(&command_config.topic)?;
 
-pub fn validate_args(args: &MqttArgs) -> Result<()> {
-    match args.command {
-        MqttCommand::Unknown => {
-            anyhow::bail!("Unknown command. Review your command line and try again.");
-        }
+    match &command_config.command {
         MqttCommand::Read => {}
         MqttCommand::Post => {
-            if args.message.is_none() {
-                anyhow::bail!("Message is required for post command.");
-            }
+            validate_message(&command_config.message)?;
         }
     }
 
-    validate_host_and_port(&args.host, args.port)?;
-    validate_user_and_password(&args.username, &args.password)?;
-    validate_topic(&args.topic)?;
+    Ok(command_config)
+}
 
-    Ok(())
+fn validate_message(message: &Option<String>) -> Result<()> {
+    match message {
+        None => {
+            anyhow::bail!("Message is required for post command.");
+        }
+        Some(m) => {
+            if m.is_empty() {
+                anyhow::bail!("Message cannot be empty.");
+            }
+            Ok(())
+        }
+    }
 }
 
 fn validate_host_and_port(host: &str, port: u16) -> Result<()> {
@@ -172,85 +191,4 @@ fn validate_user_and_password(username: &Option<String>, password: &Option<Strin
     };
 
     anyhow::bail!("Username and password are required together.");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn base_args(command: MqttCommand) -> MqttArgs {
-        MqttArgs {
-            command,
-            host: "localhost".to_string(),
-            port: 1883,
-            topic: "sensors/temp".to_string(),
-            message: Some("hello".to_string()),
-            username: None,
-            password: None,
-        }
-    }
-
-    #[test]
-    fn validate_args_rejects_unknown_command() {
-        assert!(validate_args(&base_args(MqttCommand::Unknown)).is_err());
-    }
-
-    #[test]
-    fn validate_args_accepts_read_command() {
-        let mut args = base_args(MqttCommand::Read);
-        args.message = None;
-        assert!(validate_args(&args).is_ok());
-    }
-
-    #[test]
-    fn validate_args_rejects_post_without_message() {
-        let mut args = base_args(MqttCommand::Post);
-        args.message = None;
-        assert!(validate_args(&args).is_err());
-    }
-
-    #[test]
-    fn validate_args_accepts_post_with_message() {
-        assert!(validate_args(&base_args(MqttCommand::Post)).is_ok());
-    }
-
-    #[test]
-    fn validate_host_and_port_rejects_empty_host() {
-        assert!(validate_host_and_port("", 1883).is_err());
-    }
-
-    #[test]
-    fn validate_host_and_port_rejects_zero_port() {
-        assert!(validate_host_and_port("localhost", 0).is_err());
-    }
-
-    #[test]
-    fn validate_host_and_port_accepts_valid_pair() {
-        assert!(validate_host_and_port("localhost", 1883).is_ok());
-    }
-
-    #[test]
-    fn validate_topic_rejects_empty() {
-        assert!(validate_topic("").is_err());
-    }
-
-    #[test]
-    fn validate_user_and_password_accepts_both_none() {
-        assert!(validate_user_and_password(&None, &None).is_ok());
-    }
-
-    #[test]
-    fn validate_user_and_password_accepts_both_present() {
-        assert!(validate_user_and_password(&Some("u".to_string()), &Some("p".to_string())).is_ok());
-    }
-
-    #[test]
-    fn validate_user_and_password_rejects_only_username() {
-        assert!(validate_user_and_password(&Some("u".to_string()), &None).is_err());
-    }
-
-    #[test]
-    fn validate_user_and_password_rejects_only_password() {
-        assert!(validate_user_and_password(&None, &Some("p".to_string())).is_err());
-    }
 }

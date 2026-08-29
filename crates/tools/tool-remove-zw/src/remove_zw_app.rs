@@ -1,8 +1,8 @@
 use crate::models::{InputSource, OutputTarget, RemoveZwArgs};
 use anyhow::{anyhow, Context, Result};
+use common_utils::constants::SIZE_8KB;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use shared::constants::general::SIZE_8KB;
 use std::borrow::Cow;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -583,7 +583,6 @@ mod tests {
             recursive: false,
             extensions: Vec::new(),
             verbose: false,
-            no_header: true,
             dry_run: false,
         }
     }

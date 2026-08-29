@@ -1,33 +1,146 @@
 use crate::files::ResolvedRunContext;
 use crate::models::{Cli, Command, DryRunArgs, ExecutionArgs, KeyValue, ListArgs, RunArgs};
 use camino::Utf8PathBuf;
-use clap::builder::ValueParser;
-use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
+use clap::{Args, Parser, Subcommand};
+use common_utils::constants::DASH_LINE;
 
-pub fn get_cli_arguments() -> Cli {
-    let matches = ClapCommand::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_DESCRIPTION"),
-            "This tool enables including one hurl file into another, and chaining their execution.",
-        )
-        .arg_required_else_help(true)
-        .subcommand_required(true)
-        .subcommand(build_list_subcommand())
-        .subcommand(build_run_subcommand())
-        .subcommand(build_dry_run_subcommand())
-        .get_matches();
+/// Wrapper for Hurl with a few additional features.
+///
+/// This tool enables including one hurl file into another, and chaining their execution.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version, arg_required_else_help = true)]
+struct CliArgs {
+    #[command(subcommand)]
+    pub command: CliCommand,
+}
 
-    let command = match matches.subcommand() {
-        Some(("list", sub_matches)) => Command::List(parse_list_args(sub_matches)),
-        Some(("run", sub_matches)) => Command::Run(parse_run_args(sub_matches)),
-        Some(("dry-run", sub_matches)) => Command::DryRun(parse_dry_run_args(sub_matches)),
-        _ => unreachable!("clap enforces one of the known subcommands"),
+#[derive(Subcommand, Debug)]
+enum CliCommand {
+    /// List available APIs or requests
+    List {
+        /// API name to inspect. When omitted, prints all APIs.
+        #[arg(value_name = "API", num_args = 0..=1)]
+        api: Option<String>,
+    },
+    /// Expand includes and execute a request collection
+    Run(RunCliArgs),
+    /// Expand includes and display the merged Hurl document
+    #[command(name = "dry-run")]
+    DryRun(DryRunCliArgs),
+}
+
+#[derive(Args, Debug)]
+struct ExecutionCliArgs {
+    /// API directory containing the Hurl file.
+    #[arg(value_name = "API")]
+    api: String,
+
+    /// Name of the Hurl file to execute (extension optional, relative to the API directory).
+    #[arg(value_name = "FILE")]
+    file: String,
+
+    /// Named environment to load from the API's vars directory.
+    #[arg(long = "env", value_name = "NAME")]
+    env: Option<String>,
+
+    /// Path to an additional variables file (key=value pairs).
+    #[arg(long = "vars-file", value_name = "PATH", value_parser = clap::value_parser!(Utf8PathBuf))]
+    vars_file: Option<Utf8PathBuf>,
+
+    /// Provide an inline variable assignment (can be repeated).
+    #[arg(long = "var", value_name = "KEY=VALUE", value_parser = parse_key_value)]
+    var: Vec<KeyValue>,
+
+    /// Override the root directory for resolving file, responses, and captures.
+    #[arg(long = "file-root", value_name = "PATH", value_parser = clap::value_parser!(Utf8PathBuf))]
+    file_root: Option<Utf8PathBuf>,
+
+    /// Increase output verbosity. Pass twice for extra detail.
+    #[arg(long = "verbose", short = 'v', action = clap::ArgAction::Count)]
+    verbose: u8,
+}
+
+#[derive(Args, Debug)]
+struct RunCliArgs {
+    #[command(flatten)]
+    exec: ExecutionCliArgs,
+
+    /// Write execution JSON report to the given path.
+    #[arg(long = "json", value_name = "PATH", value_parser = clap::value_parser!(Utf8PathBuf))]
+    json: Option<Utf8PathBuf>,
+
+    /// Emit a concise test-style summary after execution.
+    #[arg(long = "test")]
+    test: bool,
+
+    /// Suppress header/log output and print only the final result object as JSON.
+    #[arg(long = "print-only-full-response")]
+    print_only_full_response: bool,
+
+    /// Suppress header/log output and print only the last response body.
+    #[arg(long = "print-only-response-body")]
+    print_only_response_body: bool,
+
+    /// Disable header/log output (behaves similar to legacy mode).
+    #[arg(long = "silent")]
+    silent: bool,
+}
+
+#[derive(Args, Debug)]
+struct DryRunCliArgs {
+    #[command(flatten)]
+    exec: ExecutionCliArgs,
+
+    /// Print boundary markers between includes.
+    #[arg(
+        long = "show-boundaries",
+        value_name = "BOOL",
+        num_args = 0..=1,
+        default_value = "true",
+        default_missing_value = "true",
+        value_parser = clap::value_parser!(bool)
+    )]
+    show_boundaries: bool,
+}
+
+/// Parses command-line arguments and returns the runtime configuration.
+pub fn initialize() -> Cli {
+    let args = CliArgs::parse();
+
+    to_cli(args)
+}
+
+/// Maps the parsed derive-based arguments onto the tool's runtime model.
+fn to_cli(args: CliArgs) -> Cli {
+    let command = match args.command {
+        CliCommand::List { api } => Command::List(ListArgs { api }),
+        CliCommand::Run(run) => Command::Run(RunArgs {
+            exec: to_execution_args(run.exec),
+            json_output: run.json,
+            test_mode: run.test,
+            print_only_full_response: run.print_only_full_response,
+            print_only_response_body: run.print_only_response_body,
+            silent: run.silent,
+        }),
+        CliCommand::DryRun(dry_run) => Command::DryRun(DryRunArgs {
+            exec: to_execution_args(dry_run.exec),
+            show_boundaries: dry_run.show_boundaries,
+        }),
     };
 
     Cli { command }
+}
+
+fn to_execution_args(exec: ExecutionCliArgs) -> ExecutionArgs {
+    ExecutionArgs {
+        api: exec.api,
+        file: exec.file,
+        env: exec.env,
+        vars_file: exec.vars_file,
+        inline_vars: exec.var,
+        file_root: exec.file_root,
+        verbosity: exec.verbose,
+    }
 }
 
 pub fn print_runtime_info(context: &ResolvedRunContext, args: &RunArgs) {
@@ -75,177 +188,6 @@ pub fn print_runtime_info(context: &ResolvedRunContext, args: &RunArgs) {
     println!();
 }
 
-fn build_list_subcommand() -> ClapCommand {
-    ClapCommand::new("list")
-        .about("List available APIs or requests")
-        .arg(
-            Arg::new("api")
-                .value_name("API")
-                .help("API name to inspect. When omitted, prints all APIs.")
-                .num_args(0..=1),
-        )
-}
-
-fn build_run_subcommand() -> ClapCommand {
-    add_execution_args(
-        ClapCommand::new("run")
-            .about("Expand includes and execute a request collection")
-            .arg(
-                Arg::new("json")
-                    .long("json")
-                    .value_name("PATH")
-                    .value_parser(clap::value_parser!(Utf8PathBuf))
-                    .help("Write execution JSON report to the given path."),
-            )
-            .arg(
-                Arg::new("test")
-                    .long("test")
-                    .action(ArgAction::SetTrue)
-                    .help("Emit a concise test-style summary after execution."),
-            )
-            .arg(
-                Arg::new("print-only-full-response")
-                    .long("print-only-full-response")
-                    .action(ArgAction::SetTrue)
-                    .help("Suppress header/log output and print only the final result object as JSON."),
-            )
-            .arg(
-                Arg::new("print-only-response-body")
-                    .long("print-only-response-body")
-                    .action(ArgAction::SetTrue)
-                    .help("Suppress header/log output and print only the last response body."),
-            )
-            .arg(
-                Arg::new("silent")
-                    .long("silent")
-                    .action(ArgAction::SetTrue)
-                    .help("Disable header/log output (behaves similar to legacy mode)."),
-            ),
-    )
-}
-
-fn build_dry_run_subcommand() -> ClapCommand {
-    add_execution_args(
-        ClapCommand::new("dry-run")
-            .about("Expand includes and display the merged Hurl document")
-            .arg(
-                Arg::new("show-boundaries")
-                    .long("show-boundaries")
-                    .value_name("BOOL")
-                    .num_args(0..=1)
-                    .default_value("true")
-                    .default_missing_value("true")
-                    .value_parser(clap::value_parser!(bool))
-                    .help("Print boundary markers between includes."),
-            ),
-    )
-}
-
-fn parse_list_args(matches: &ArgMatches) -> ListArgs {
-    ListArgs {
-        api: matches.get_one::<String>("api").cloned(),
-    }
-}
-
-fn parse_run_args(matches: &ArgMatches) -> RunArgs {
-    RunArgs {
-        exec: parse_execution_args(matches),
-        json_output: matches.get_one::<Utf8PathBuf>("json").cloned(),
-        test_mode: matches.get_flag("test"),
-        print_only_full_response: matches.get_flag("print-only-full-response"),
-        print_only_response_body: matches.get_flag("print-only-response-body"),
-        silent: matches.get_flag("silent"),
-    }
-}
-
-fn parse_dry_run_args(matches: &ArgMatches) -> DryRunArgs {
-    DryRunArgs {
-        exec: parse_execution_args(matches),
-        show_boundaries: matches
-            .get_one::<bool>("show-boundaries")
-            .copied()
-            .unwrap_or(true),
-    }
-}
-
-fn parse_execution_args(matches: &ArgMatches) -> ExecutionArgs {
-    let api = matches
-        .get_one::<String>("api")
-        .cloned()
-        .expect("`api` should be required by clap");
-    let file = matches
-        .get_one::<String>("file")
-        .cloned()
-        .expect("`file` should be required by clap");
-
-    let inline_vars = matches
-        .get_many::<KeyValue>("var")
-        .map(|values| values.cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
-
-    ExecutionArgs {
-        api,
-        file,
-        env: matches.get_one::<String>("env").cloned(),
-        vars_file: matches.get_one::<Utf8PathBuf>("vars-file").cloned(),
-        inline_vars,
-        file_root: matches.get_one::<Utf8PathBuf>("file-root").cloned(),
-        verbosity: matches.get_count("verbose"),
-    }
-}
-
-fn add_execution_args(command: ClapCommand) -> ClapCommand {
-    command
-        .arg(
-            Arg::new("api")
-                .value_name("API")
-                .help("API directory containing the Hurl file.")
-                .required(true),
-        )
-        .arg(
-            Arg::new("file")
-                .value_name("FILE")
-                .help("Name of the Hurl file to execute (extension optional, relative to the API directory).")
-                .required(true),
-        )
-        .arg(
-            Arg::new("env")
-                .long("env")
-                .value_name("NAME")
-                .help("Named environment to load from the API's vars directory."),
-        )
-        .arg(
-            Arg::new("vars-file")
-                .long("vars-file")
-                .value_name("PATH")
-                .value_parser(clap::value_parser!(Utf8PathBuf))
-                .help("Path to an additional variables file (key=value pairs)."),
-        )
-        .arg(
-            Arg::new("var")
-                .long("var")
-                .value_name("KEY=VALUE")
-                .num_args(1)
-                .action(ArgAction::Append)
-                .value_parser(ValueParser::new(parse_key_value))
-                .help("Provide an inline variable assignment (can be repeated)."),
-        )
-        .arg(
-            Arg::new("file-root")
-                .long("file-root")
-                .value_name("PATH")
-                .value_parser(clap::value_parser!(Utf8PathBuf))
-                .help("Override the root directory for resolving file, responses, and captures."),
-        )
-        .arg(
-            Arg::new("verbose")
-                .long("verbose")
-                .short('v')
-                .action(ArgAction::Count)
-                .help("Increase output verbosity. Pass twice for extra detail."),
-        )
-}
-
 fn parse_key_value(raw: &str) -> Result<KeyValue, String> {
     let Some((key, value)) = raw.split_once('=') else {
         return Err("expected KEY=VALUE".to_string());
@@ -263,4 +205,59 @@ fn parse_key_value(raw: &str) -> Result<KeyValue, String> {
     }
 
     Ok(KeyValue { key, value })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn run_subcommand_maps_execution_args() {
+        let args = CliArgs::try_parse_from([
+            "whurl",
+            "run",
+            "my-api",
+            "login",
+            "--env",
+            "staging",
+            "--var",
+            "token=abc",
+            "-vv",
+        ])
+        .unwrap();
+        let cli = to_cli(args);
+
+        match cli.command {
+            Command::Run(run) => {
+                assert_eq!(run.exec.api, "my-api");
+                assert_eq!(run.exec.file, "login");
+                assert_eq!(run.exec.env.as_deref(), Some("staging"));
+                assert_eq!(run.exec.verbosity, 2);
+                assert_eq!(run.exec.inline_vars.len(), 1);
+                assert_eq!(run.exec.inline_vars[0].key, "token");
+            }
+            other => panic!("expected run command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dry_run_show_boundaries_defaults_to_true() {
+        let args = CliArgs::try_parse_from(["whurl", "dry-run", "my-api", "login"]).unwrap();
+        let cli = to_cli(args);
+        match cli.command {
+            Command::DryRun(dry_run) => assert!(dry_run.show_boundaries),
+            other => panic!("expected dry-run command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inline_var_rejects_missing_equals() {
+        assert!(CliArgs::try_parse_from(["whurl", "run", "api", "file", "--var", "bad"]).is_err());
+    }
 }

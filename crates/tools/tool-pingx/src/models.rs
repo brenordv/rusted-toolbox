@@ -32,8 +32,6 @@ pub struct PingxArgs {
     pub output: OutputMode,
     pub stats_every_secs: Option<f64>,
     pub beep_on_loss: bool,
-    pub compact_header: bool,
-    pub no_header: bool,
     pub stop_on_error: bool, // stop on the first error when running with only default options
 }
 

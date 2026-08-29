@@ -1,32 +1,12 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
+use clap::ValueEnum;
+use common_cli::tool_path_helpers::get_tool_path;
+use common_serialization_utils::load_json_file_to_object::load_json_file_to_object;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
-
-#[derive(Debug, Clone)]
-pub struct NetQualityCliArgs {
-    pub config_path: Option<PathBuf>,
-    pub urls: Vec<String>,
-    pub replace_urls: bool,
-    pub expected_download_mbps: Option<f64>,
-    pub expected_upload_mbps: Option<f64>,
-    pub download_thresholds: Option<Thresholds>,
-    pub upload_thresholds: Option<Thresholds>,
-    pub min_download_notification_threshold: Option<ThresholdCategory>,
-    pub min_upload_notification_threshold: Option<ThresholdCategory>,
-    pub connectivity_delay_secs: Option<u64>,
-    pub speed_delay_secs: Option<u64>,
-    pub connectivity_timeout_secs: Option<u64>,
-    pub outage_backoff_secs: Option<u64>,
-    pub outage_backoff_max_secs: Option<u64>,
-    pub db_path: Option<PathBuf>,
-    pub speedtest_cli_path: Option<PathBuf>,
-    pub telegram_token: Option<String>,
-    pub telegram_chat_id: Option<String>,
-    pub otel_endpoint: Option<String>,
-    pub verbose: bool,
-}
 
 #[derive(Debug, Clone)]
 pub struct NetQualityConfig {
@@ -34,6 +14,193 @@ pub struct NetQualityConfig {
     pub speed: SpeedConfig,
     pub notifications: NotificationConfig,
     pub storage: StorageConfig,
+    pub otel_endpoint: String,
+}
+
+const DEFAULT_CONNECTIVITY_DELAY_SECS: u64 = 60;
+const DEFAULT_CONNECTIVITY_TIMEOUT_SECS: u64 = 10;
+const DEFAULT_OUTAGE_BACKOFF_SECS: u64 = 10;
+const DEFAULT_OUTAGE_BACKOFF_MAX_SECS: u64 = 3_600;
+const DEFAULT_SPEED_DELAY_SECS: u64 = 14_400;
+const DEFAULT_CLEANUP_INTERVAL_DAYS: u64 = 365;
+
+impl NetQualityConfig {
+    pub async fn from_config(config_path: PathBuf) -> Result<Self> {
+        if !config_path.exists() {
+            anyhow::bail!(
+                "Config file '{:?}' does not exist or cannot be accessed.",
+                config_path
+            )
+        }
+
+        let config_file = load_json_file_to_object::<ConfigFile>(config_path.as_path()).await?;
+
+        Ok(NetQualityConfig {
+            connectivity: resolve_connectivity(config_file.connectivity)?,
+            speed: resolve_speed(config_file.speed)?,
+            notifications: resolve_notifications(config_file.notifications)?,
+            storage: resolve_storage(config_file.storage)?,
+            otel_endpoint: String::new(),
+        })
+    }
+}
+
+fn resolve_connectivity(config: Option<ConnectivityConfigFile>) -> Result<ConnectivityConfig> {
+    let delay_secs = config
+        .as_ref()
+        .and_then(|c| c.delay_secs)
+        .unwrap_or(DEFAULT_CONNECTIVITY_DELAY_SECS);
+    let timeout_secs = config
+        .as_ref()
+        .and_then(|c| c.timeout_secs)
+        .unwrap_or(DEFAULT_CONNECTIVITY_TIMEOUT_SECS);
+    let outage_backoff_secs = config
+        .as_ref()
+        .and_then(|c| c.outage_backoff_secs)
+        .unwrap_or(DEFAULT_OUTAGE_BACKOFF_SECS);
+    let outage_backoff_max_secs = config
+        .as_ref()
+        .and_then(|c| c.outage_backoff_max_secs)
+        .unwrap_or(DEFAULT_OUTAGE_BACKOFF_MAX_SECS);
+    let url_mode = config
+        .as_ref()
+        .and_then(|c| c.url_mode)
+        .unwrap_or(UrlMode::Merge);
+    let user_urls = config.and_then(|c| c.urls).unwrap_or_default();
+
+    if delay_secs == 0 || timeout_secs == 0 {
+        return Err(anyhow!(
+            "Connectivity delay and timeout must be greater than zero."
+        ));
+    }
+    if outage_backoff_secs == 0 || outage_backoff_max_secs == 0 {
+        return Err(anyhow!("Outage backoff values must be greater than zero."));
+    }
+    if outage_backoff_max_secs < outage_backoff_secs {
+        return Err(anyhow!(
+            "Outage backoff max must be greater than or equal to outage backoff."
+        ));
+    }
+
+    let mut urls: Vec<String> = match url_mode {
+        UrlMode::Merge => DEFAULT_URLS
+            .iter()
+            .map(|url| url.to_string())
+            .chain(user_urls)
+            .collect(),
+        UrlMode::Replace => user_urls,
+    };
+    urls = dedupe_urls(urls);
+    if urls.is_empty() {
+        urls = DEFAULT_URLS.iter().map(|url| url.to_string()).collect();
+    }
+
+    Ok(ConnectivityConfig {
+        delay: Duration::from_secs(delay_secs),
+        timeout: Duration::from_secs(timeout_secs),
+        outage_backoff: Duration::from_secs(outage_backoff_secs),
+        outage_backoff_max: Duration::from_secs(outage_backoff_max_secs),
+        urls,
+    })
+}
+
+fn resolve_speed(config: Option<SpeedConfigFile>) -> Result<SpeedConfig> {
+    let config = config
+        .context("Config file must include a 'speed' section with an expected download speed.")?;
+
+    let download_thresholds = config
+        .download_thresholds
+        .unwrap_or_else(Thresholds::default_thresholds);
+    download_thresholds
+        .validate()
+        .context("Invalid download thresholds")?;
+
+    let upload_thresholds = config
+        .upload_thresholds
+        .unwrap_or_else(Thresholds::default_thresholds);
+    upload_thresholds
+        .validate()
+        .context("Invalid upload thresholds")?;
+
+    Ok(SpeedConfig {
+        expected_download_mbps: config.expected_download_mbps,
+        expected_upload_mbps: config.expected_upload_mbps,
+        delay: Duration::from_secs(config.delay_secs.unwrap_or(DEFAULT_SPEED_DELAY_SECS)),
+        download_thresholds,
+        upload_thresholds,
+        speedtest_cli_path: config.speedtest_cli_path,
+    })
+}
+
+fn resolve_notifications(config: Option<NotificationConfigFile>) -> Result<NotificationConfig> {
+    let config = match config {
+        Some(c) => c,
+        None => {
+            return Ok(NotificationConfig {
+                telegram: None,
+                min_download_threshold: ThresholdCategory::Medium,
+                min_upload_threshold: ThresholdCategory::Slow,
+            })
+        }
+    };
+
+    let telegram = match config.telegram {
+        Some(t) => match (t.bot_token, t.chat_id) {
+            (Some(bot_token), Some(chat_id)) => Some(TelegramConfig { bot_token, chat_id }),
+            (None, None) => None,
+            _ => {
+                return Err(anyhow!(
+                    "Telegram bot token and chat ID must both be provided together."
+                ))
+            }
+        },
+        None => None,
+    };
+
+    Ok(NotificationConfig {
+        telegram,
+        min_download_threshold: config
+            .min_download_threshold
+            .unwrap_or(ThresholdCategory::Medium),
+        min_upload_threshold: config
+            .min_upload_threshold
+            .unwrap_or(ThresholdCategory::Slow),
+    })
+}
+
+fn resolve_storage(config: Option<StorageConfigFile>) -> Result<StorageConfig> {
+    let (db_path, cleanup_enabled, cleanup_interval_days) = match config {
+        Some(c) => (
+            c.db_path,
+            c.cleanup_enabled.unwrap_or(true),
+            c.cleanup_interval_days
+                .unwrap_or(DEFAULT_CLEANUP_INTERVAL_DAYS),
+        ),
+        None => (None, true, DEFAULT_CLEANUP_INTERVAL_DAYS),
+    };
+
+    if cleanup_interval_days == 0 {
+        return Err(anyhow!(
+            "Storage cleanup interval days must be greater than zero."
+        ));
+    }
+
+    let db_path = match db_path {
+        Some(path) => path,
+        None => get_tool_path()
+            .context("Failed to resolve tool path for database default")?
+            .join("netquality.db"),
+    };
+
+    let cleanup_interval_secs = cleanup_interval_days
+        .checked_mul(86_400)
+        .ok_or_else(|| anyhow!("Storage cleanup interval days is too large."))?;
+
+    Ok(StorageConfig {
+        db_path,
+        cleanup_enabled,
+        cleanup_interval: Duration::from_secs(cleanup_interval_secs),
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -47,8 +214,8 @@ pub struct ConnectivityConfig {
 
 #[derive(Debug, Clone)]
 pub struct SpeedConfig {
-    pub expected_download_mbps: f64,
-    pub expected_upload_mbps: Option<f64>,
+    pub expected_download_mbps: f32,
+    pub expected_upload_mbps: Option<f32>,
     pub delay: Duration,
     pub download_thresholds: Thresholds,
     pub upload_thresholds: Thresholds,
@@ -134,8 +301,8 @@ pub struct ConnectivityConfigFile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeedConfigFile {
-    pub expected_download_mbps: Option<f64>,
-    pub expected_upload_mbps: Option<f64>,
+    pub expected_download_mbps: f32,
+    pub expected_upload_mbps: Option<f32>,
     pub delay_secs: Option<u64>,
     pub download_thresholds: Option<Thresholds>,
     pub upload_thresholds: Option<Thresholds>,
@@ -193,7 +360,7 @@ pub fn dedupe_urls(urls: Vec<String>) -> Vec<String> {
     result
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(ValueEnum, Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ThresholdCategory {
     VerySlow,
@@ -201,6 +368,18 @@ pub enum ThresholdCategory {
     Medium,
     MediumFast,
     Expected,
+}
+
+impl fmt::Display for ThresholdCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ThresholdCategory::VerySlow => write!(f, "Very Slow"),
+            ThresholdCategory::Slow => write!(f, "Slow"),
+            ThresholdCategory::Medium => write!(f, "Medium"),
+            ThresholdCategory::MediumFast => write!(f, "Medium Fast"),
+            ThresholdCategory::Expected => write!(f, "Expected"),
+        }
+    }
 }
 
 impl ThresholdCategory {

@@ -1,5 +1,5 @@
-use std::fmt;
 use clap::ValueEnum;
+use std::fmt;
 
 #[derive(ValueEnum, Debug, PartialEq, Clone)]
 pub enum ToolLogLevel {

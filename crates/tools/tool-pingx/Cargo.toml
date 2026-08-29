@@ -1,6 +1,6 @@
 [package]
 name = "pingx"
-version = "1.0.0"
+version = "2.0.0"
 description = "Cross platform CLI tool to ping other hosts."
 edition.workspace = true
 authors.workspace = true
@@ -8,13 +8,19 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
-clap = { workspace = true }
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+cli-signal-monitor = { workspace = true }
+
+# External
 anyhow = { workspace = true }
-tokio = { workspace = true }
-# ICMP/ICMPv6 ping implementation (RFC 792/4443)
-surge-ping = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+dns-lookup = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-dns-lookup = { workspace = true }
-chrono = { workspace = true }
+# ICMP/ICMPv6 ping implementation (RFC 792/4443)
+surge-ping = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

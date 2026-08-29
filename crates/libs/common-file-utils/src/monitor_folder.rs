@@ -10,6 +10,7 @@
 //! - Errors that occur during the invocation of the passed `on_created_handler` are propagated.
 
 use anyhow::Result;
+use common_utils::file_system::EnsureDirectoryExists;
 use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
 use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
@@ -20,7 +21,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tracing::debug;
-use common_utils::file_system::EnsureDirectoryExists;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum EventType {

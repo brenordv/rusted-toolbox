@@ -1,6 +1,6 @@
 [package]
 name = "lookup"
-version = "2.0.0"
+version = "3.0.0"
 description = "Tool to recursively search for text in files"
 edition.workspace = true
 authors.workspace = true
@@ -8,12 +8,17 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
-clap = { workspace = true }
+# Internal
+common-cli = { workspace = true }
+common-file-utils = { workspace = true }
+common-utils = { workspace = true }
+
+# External
 anyhow = { workspace = true }
-tracing = { workspace = true }
-regex = { workspace = true }
+clap = { workspace = true }
 globset = { workspace = true }
+regex = { workspace = true }
+tracing = { workspace = true }
 walkdir = { workspace = true }
 
 [dev-dependencies]

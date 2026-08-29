@@ -1,6 +1,13 @@
 # Changelog
 
-## 1.1.0 - 2026-08-03
+## 2.0.0
+- Refactored to fit the new tooling: CLI parsing now uses the `clap` derive API and the shared `CommonToolArgs`, replacing the hand-built `Command` from the retired `shared` crate.
+- Dropped the `-n/--no-header` flag. The runtime configuration is now shown on demand with the shared `--app-header` flag, which prints to stdout.
+- Gained the shared runtime flags: `-L/--log-level` (case insensitive), `--app-header`, `--log-to-console`, `--log-to-file`, and `--rotate-log-file-by-day`.
+- Verbose reporting now uses the shared `--verbose` flag (the previous short alias is gone).
+- Exit codes are explicit: `0` on success and `1` on failure.
+
+## 1.1.0
 - Strip a leading UTF-8 byte-order mark (BOM) from text files, counted separately from zero-width characters.
 - Add `--dry-run` / `-d`: report which files would be modified and how, without writing anything.
 - Fix `--output FILE`: the file is now written even when the input is already clean (previously nothing was created).
@@ -10,7 +17,7 @@
 - Print the runtime header to stderr so stdout holds only the cleaned content or the dry-run report.
 - Spell out in the header and `--help` that with no path it reads standard input and works as a filter, so the wait for input is expected rather than confusing.
 
-## 1.0.0 - 2026-01-29
+## 1.0.0
 - Initial release of the `remove-zw` tool.
 - Removes all Unicode format (Cf) characters from stdin, files, or directories.
 - Non-destructive by default (writes `<stem>.cleaned<ext>`); supports `--in-place`, `--output`, `--recursive`, and `--extensions`.

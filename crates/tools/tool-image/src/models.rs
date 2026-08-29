@@ -12,7 +12,7 @@ pub enum FilterType {
     Lanczos3,
 }
 
-pub struct EditArgs {
+pub struct ImageConfig {
     pub input_files: Vec<PathBuf>,
     pub resize: Option<ResizeSpec>,
     pub grayscale: bool,

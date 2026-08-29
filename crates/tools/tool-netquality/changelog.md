@@ -1,2 +1,5 @@
-# 1.0.0 (2026-01-23)
+# 2.0.0
+- Refactored to fit the new tooling.
+
+# 1.0.0
 Initial release

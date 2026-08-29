@@ -1,5 +1,5 @@
-use common_cli::tool_exit_helpers::{exit_error, exit_success};
 use anyhow::Result;
+use common_cli::tool_exit_helpers::{exit_error, exit_success};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 

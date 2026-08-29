@@ -1,120 +1,111 @@
 use crate::models::{IpMode, OutputMode, PingxArgs, ResolvedTargetInfo};
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
+use anyhow::Result;
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
+use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
 
-pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_DESCRIPTION"),
-            "Cross platform CLI tool to ping other hosts. Like ping, but with extra functionalities, for convenience.",
-        )
-        .arg(
-            Arg::new("target")
-                .help("Hostname or IP address to ping")
-                .index(1)
-                .required(true),
-        )
-        .arg(
-            Arg::new("count")
-                .short('c')
-                .long("count")
-                .value_name("N")
-                .help("Number of packets to send (-1 for infinite)")
-                .value_parser(clap::value_parser!(i64))
-                .required(false),
-        )
-        .arg(
-            Arg::new("interval")
-                .short('i')
-                .long("interval")
-                .value_name("SECS")
-                .help("Interval between packets in seconds (e.g., 0.5)")
-                .value_parser(clap::value_parser!(f64))
-                .required(false),
-        )
-        .arg(
-            Arg::new("size")
-                .short('s')
-                .long("size")
-                .value_name("BYTES")
-                .help("ICMP payload size in bytes (default 56)")
-                .value_parser(clap::value_parser!(usize))
-                .required(false),
-        )
-        .arg(
-            Arg::new("timeout")
-                .short('w')
-                .long("timeout")
-                .value_name("SECS")
-                .help("Per reply timeout in seconds")
-                .value_parser(clap::value_parser!(f64))
-                .required(false),
-        )
-        .arg(
-            Arg::new("deadline")
-                .short('W')
-                .long("deadline")
-                .value_name("SECS")
-                .help("Stop after total elapsed seconds")
-                .value_parser(clap::value_parser!(f64))
-                .required(false),
-        )
-        .arg(
-            Arg::new("continuous")
-                .short('T')
-                .long("continuous")
-                .action(clap::ArgAction::SetTrue)
-                .help("Ping until interrupted"),
-        )
-        .arg(Arg::new("ipv4").short('4').long("ipv4").action(clap::ArgAction::SetTrue).help("Force IPv4"))
-        .arg(Arg::new("ipv6").short('6').long("ipv6").action(clap::ArgAction::SetTrue).help("Force IPv6"))
-        .arg(Arg::new("timestamp").short('D').long("timestamp").action(clap::ArgAction::SetTrue).help("Prefix each reply with timestamp"))
-        .arg(Arg::new("quiet").short('q').long("quiet").action(clap::ArgAction::SetTrue).help("Quiet mode: only summary"))
-        .arg(Arg::new("verbose").short('v').long("verbose").action(clap::ArgAction::SetTrue).help("Verbose output"))
-        .arg(Arg::new("numeric").short('n').long("numeric").action(clap::ArgAction::SetTrue).help("Don't resolve reverse DNS"))
-        .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
-                .value_name("MODE|TEMPLATE")
-                .help("Output: default|json|csv or custom template")
-                .required(false),
-        )
-        .arg(
-            Arg::new("stats-every")
-                .short('e')
-                .long("stats-every")
-                .value_name("SECS")
-                .help("Print stats every N seconds")
-                .value_parser(clap::value_parser!(f64))
-                .required(false),
-        )
-        .arg(Arg::new("beep").short('b').long("beep").action(clap::ArgAction::SetTrue).help("Beep on packet loss"))
-        .arg(Arg::new("compact-header").short('m').long("compact-header").action(clap::ArgAction::SetTrue).help("Print compact header"))
-        .arg(Arg::new("no-header").short('p').long("no-header").action(clap::ArgAction::SetTrue).help("Do not print header"))
-        .get_matches();
+/// Cross-platform CLI tool to ping other hosts.
+///
+/// Like ping, but with extra functionalities, for convenience.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version)]
+struct CliArgs {
+    /// Hostname or IP address to ping
+    pub target: String,
 
-    let target = matches.get_one::<String>("target").unwrap().to_string();
-    let interval_secs = matches.get_one::<f64>("interval").copied().unwrap_or(1.0);
-    let payload_size_bytes = matches.get_one::<usize>("size").copied().unwrap_or(56);
-    let per_reply_timeout_secs = matches.get_one::<f64>("timeout").copied().unwrap_or(2.0);
-    let overall_deadline_secs = matches.get_one::<f64>("deadline").copied();
-    let ip_mode = match (matches.get_flag("ipv4"), matches.get_flag("ipv6")) {
+    /// Number of packets to send (-1 for infinite)
+    #[arg(short = 'c', long = "count", value_name = "N")]
+    pub count: Option<i64>,
+
+    /// Interval between packets in seconds (e.g., 0.5)
+    #[arg(short = 'i', long = "interval", value_name = "SECS")]
+    pub interval: Option<f64>,
+
+    /// ICMP payload size in bytes (default 56)
+    #[arg(short = 's', long = "size", value_name = "BYTES")]
+    pub size: Option<usize>,
+
+    /// Per reply timeout in seconds
+    #[arg(short = 'w', long = "timeout", value_name = "SECS")]
+    pub timeout: Option<f64>,
+
+    /// Stop after total elapsed seconds
+    #[arg(short = 'W', long = "deadline", value_name = "SECS")]
+    pub deadline: Option<f64>,
+
+    /// Ping until interrupted, even if the host is unreachable
+    #[arg(short = 'T', long = "continuous")]
+    pub continuous: bool,
+
+    /// Force IPv4
+    #[arg(short = '4', long = "ipv4", conflicts_with = "ipv6")]
+    pub ipv4: bool,
+
+    /// Force IPv6
+    #[arg(short = '6', long = "ipv6", conflicts_with = "ipv4")]
+    pub ipv6: bool,
+
+    /// Prefix each reply with timestamp
+    #[arg(short = 'D', long = "timestamp")]
+    pub timestamp: bool,
+
+    /// Quiet mode: only summary
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+
+    /// Don't resolve reverse DNS
+    #[arg(short = 'n', long = "numeric")]
+    pub numeric: bool,
+
+    /// Output: default|json|csv or custom template
+    #[arg(short = 'o', long = "output", value_name = "MODE|TEMPLATE")]
+    pub output: Option<String>,
+
+    /// Print stats every N seconds
+    #[arg(short = 'e', long = "stats-every", value_name = "SECS")]
+    pub stats_every: Option<f64>,
+
+    /// Beep on packet loss
+    #[arg(short = 'b', long = "beep")]
+    pub beep: bool,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
+}
+
+/// Parses command-line arguments and returns the runtime configuration.
+///
+/// # Errors
+/// Returns an error when `--ipv4` and `--ipv6` are combined, when `--count` is
+/// outside the accepted range, or when an `--output` template contains no tags.
+pub fn initialize() -> Result<PingxArgs> {
+    let args = CliArgs::parse();
+
+    let config = build_config(&args)?;
+
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        true,
+        false,
+        Some(|| {
+            print_header(&config);
+        }),
+    );
+
+    Ok(config)
+}
+
+/// Validates the parsed arguments and resolves them into a [`PingxArgs`].
+fn build_config(args: &CliArgs) -> Result<PingxArgs> {
+    let ip_mode = match (args.ipv4, args.ipv6) {
         (true, true) => anyhow::bail!("--ipv4 and --ipv6 are mutually exclusive"),
         (true, false) => IpMode::V4,
         (false, true) => IpMode::V6,
         (false, false) => IpMode::Auto,
     };
-    let timestamp_prefix = matches.get_flag("timestamp");
-    let quiet = matches.get_flag("quiet");
-    let verbose = matches.get_flag("verbose");
-    let numeric = matches.get_flag("numeric");
-    let output = match matches
-        .get_one::<String>("output")
-        .map(|s| s.to_lowercase())
-    {
+
+    let output = match args.output.as_deref().map(|s| s.to_lowercase()) {
         None => OutputMode::Default,
         Some(ref s) if s == "default" => OutputMode::Default,
         Some(ref s) if s == "json" => OutputMode::Json,
@@ -125,103 +116,108 @@ pub fn get_cli_arguments() -> anyhow::Result<PingxArgs> {
                     "Invalid --output template: must contain at least one tag like %host%, %ip%, %time%"
                 );
             }
-            OutputMode::Template(template.clone())
+            OutputMode::Template(template)
         }
     };
-    let stats_every_secs = matches.get_one::<f64>("stats-every").copied();
-    let beep_on_loss = matches.get_flag("beep");
-    let compact_header = matches.get_flag("compact-header");
-    let no_header = matches.get_flag("no-header");
 
-    let count = matches.get_one::<i64>("count").copied().unwrap_or(-1);
+    let count = args.count.unwrap_or(-1);
     if count == 0 || count < -1 {
         anyhow::bail!("--count must be -1 (for infinite, but in this case you can also use --continuous) or >= 1");
     }
-    let explicit_count_inf = matches.value_source("count").is_some() && count == -1;
-    let continuous = matches.get_flag("continuous");
+
+    let explicit_count_inf = args.count.is_some() && count == -1;
+    let continuous = args.continuous;
     let stop_on_error = !continuous && !explicit_count_inf;
 
     Ok(PingxArgs {
-        target,
+        target: args.target.clone(),
         count,
-        interval_secs,
-        payload_size_bytes,
-        per_reply_timeout_secs,
-        overall_deadline_secs,
+        interval_secs: args.interval.unwrap_or(1.0),
+        payload_size_bytes: args.size.unwrap_or(56),
+        per_reply_timeout_secs: args.timeout.unwrap_or(2.0),
+        overall_deadline_secs: args.deadline,
         continuous,
         ip_mode,
-        timestamp_prefix,
-        quiet,
-        verbose,
-        numeric,
+        timestamp_prefix: args.timestamp,
+        quiet: args.quiet,
+        verbose: args.common.verbose,
+        numeric: args.numeric,
         output,
-        stats_every_secs,
-        beep_on_loss,
-        compact_header,
-        no_header,
+        stats_every_secs: args.stats_every,
+        beep_on_loss: args.beep,
         stop_on_error,
     })
 }
 
-pub fn print_header(args: &PingxArgs, resolved: &ResolvedTargetInfo) {
-    if args.no_header || args.quiet {
-        return;
-    }
-
-    if args.compact_header {
-        let header_size = if resolved.ip.is_ipv4() {
-            20 + 8
-        } else {
-            40 + 8
-        };
-        println!(
-            "PING {} ({}) {}({}) bytes of data.",
-            resolved.host,
-            resolved.ip,
-            args.payload_size_bytes,
-            args.payload_size_bytes + header_size
-        );
-        return;
-    }
-
-    println!("XPing v{}", env!("CARGO_PKG_VERSION"));
-    println!("{}", DASH_LINE);
-    println!("- Host: {}", resolved.host);
-    println!("- IP: {}", resolved.ip);
+pub fn print_supplemental_header(args: &PingxArgs, resolved_target_info: &ResolvedTargetInfo) {
+    println!("{} Resolved Target", CONFIG_UL_ITEM_LEVEL_2);
     println!(
-        "- Reverse DNS: {}",
-        resolved.reverse_dns.as_deref().unwrap_or("(disabled)")
+        "{} Host: {}",
+        CONFIG_UL_ITEM_LEVEL_3, resolved_target_info.host
     );
-    let header_size = if resolved.ip.is_ipv4() {
+    println!("{} IP: {}", CONFIG_UL_ITEM_LEVEL_3, resolved_target_info.ip);
+    println!(
+        "{} Reverse DNS: {}",
+        CONFIG_UL_ITEM_LEVEL_3,
+        resolved_target_info
+            .reverse_dns
+            .as_deref()
+            .unwrap_or("(disabled)")
+    );
+
+    let header_size = if resolved_target_info.ip.is_ipv4() {
         20 + 8
     } else {
         40 + 8
     };
+
     println!(
-        "- Packet Size: {} (with headers: {})",
+        "{} Packet Size: {} (with headers: {})",
+        CONFIG_UL_ITEM_LEVEL_3,
         args.payload_size_bytes,
         args.payload_size_bytes + header_size
     );
+}
+
+fn print_header(args: &PingxArgs) {
+    println!("{} Host: {}", CONFIG_UL_ITEM_LEVEL_2, args.target);
+
     if args.is_infinite() {
-        println!("- Continuous mode");
+        println!("{} Continuous mode", CONFIG_UL_ITEM_LEVEL_2);
     } else {
-        println!("- Count: {}", args.count);
+        println!("{} Count: {}", CONFIG_UL_ITEM_LEVEL_2, args.count);
     }
-    println!("- Interval: {} seconds", args.interval_secs);
-    println!("- Timeout: {} seconds", args.per_reply_timeout_secs);
+
+    println!(
+        "{} Interval: {} seconds",
+        CONFIG_UL_ITEM_LEVEL_2, args.interval_secs
+    );
+
+    println!(
+        "{} Timeout: {} seconds",
+        CONFIG_UL_ITEM_LEVEL_2, args.per_reply_timeout_secs
+    );
+
     if let Some(deadline) = args.overall_deadline_secs {
-        println!("- Stop after total elapsed: {} seconds", deadline);
+        println!(
+            "{} Stop after total elapsed: {} seconds",
+            CONFIG_UL_ITEM_LEVEL_2, deadline
+        );
     }
-    println!("- Stop on error: {}", args.stop_on_error);
+
+    println!(
+        "{} Stop on error: {}",
+        CONFIG_UL_ITEM_LEVEL_2, args.stop_on_error
+    );
+
     let output_mode = match &args.output {
         OutputMode::Default => "default".to_string(),
         OutputMode::Json => "json".to_string(),
         OutputMode::Csv => "csv".to_string(),
         OutputMode::Template(template) => format!("template: {}", template),
     };
-    println!("- Output: {}", output_mode);
 
-    println!();
+    println!("{} Output: {}", CONFIG_UL_ITEM_LEVEL_2, output_mode);
 }
 
 fn template_has_any_tag(template: &str) -> bool {
@@ -238,4 +234,57 @@ fn template_has_any_tag(template: &str) -> bool {
         "%error%",
     ];
     tags.iter().any(|tag| t.contains(tag))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn ipv4_and_ipv6_are_mutually_exclusive() {
+        let args = CliArgs::try_parse_from(["pingx", "host", "-4", "-6"]).unwrap();
+        assert!(build_config(&args).is_err());
+    }
+
+    #[test]
+    fn count_zero_is_rejected() {
+        let args = CliArgs::try_parse_from(["pingx", "host", "-c", "0"]).unwrap();
+        assert!(build_config(&args).is_err());
+    }
+
+    #[test]
+    fn defaults_are_applied() {
+        let args = CliArgs::try_parse_from(["pingx", "host"]).unwrap();
+        let config = build_config(&args).unwrap();
+        assert_eq!(config.count, -1);
+        assert_eq!(config.interval_secs, 1.0);
+        assert_eq!(config.payload_size_bytes, 56);
+        assert_eq!(config.per_reply_timeout_secs, 2.0);
+        assert_eq!(config.ip_mode, IpMode::Auto);
+        assert_eq!(config.output, OutputMode::Default);
+        assert!(config.stop_on_error);
+    }
+
+    #[test]
+    fn explicit_infinite_count_disables_stop_on_error() {
+        let args = CliArgs::try_parse_from(["pingx", "host", "-c=-1"]).unwrap();
+        let config = build_config(&args).unwrap();
+        assert!(!config.stop_on_error);
+    }
+
+    #[test]
+    fn output_template_requires_a_tag() {
+        let bad = CliArgs::try_parse_from(["pingx", "host", "-o", "no tags here"]).unwrap();
+        assert!(build_config(&bad).is_err());
+
+        let good = CliArgs::try_parse_from(["pingx", "host", "-o", "%host% %time%"]).unwrap();
+        let config = build_config(&good).unwrap();
+        assert!(matches!(config.output, OutputMode::Template(_)));
+    }
 }

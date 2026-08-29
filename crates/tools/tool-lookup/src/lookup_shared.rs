@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use shared::system::folder_walkthrough::list_all_files_recursively;
+use common_file_utils::file_system::list_all_files_recursively;
 use std::path::{Path, PathBuf};
 
 // Accept patterns like "txt", ".txt", "*.txt", "Md", ".env", "*.env", "env"

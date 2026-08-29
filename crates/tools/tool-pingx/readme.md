@@ -36,13 +36,20 @@ pingx <target> [OPTIONS]
 - -6, --ipv6                     Force IPv6
 - -D, --timestamp                Prefix each reply with an RFC3339 timestamp
 - -q, --quiet                    Quiet mode: suppress packet lines, print only summary
-- -v, --verbose                  Verbose output (extra diagnostics)
+- --verbose                      Verbose output (extra diagnostics)
 - -n, --numeric                  Do not perform reverse DNS lookup
 - -o, --output <MODE|TEMPLATE>   Output mode: default | csv | json | or a custom template string
 - -e, --stats-every <SECS>       Print stats every N seconds
 - -b, --beep                     Beep on packet loss
 - -m, --compact-header           Print a compact header (one-line, ping-like)
 - -p, --no-header                Do not print the initial header
+
+Shared runtime options (from the common tooling):
+- --app-header                   Print the tool name, version, and runtime config header
+- -L, --log-level <LEVEL>        Log level: trace | debug | info | warn | error | disabled (case insensitive; default: warn)
+- --log-to-console               Log to stdout instead of the default stderr
+- --log-to-file                  Also write logs to a file
+- --rotate-log-file-by-day       Rotate the log file by day
 
 Notes:
 - --ipv4 and --ipv6 are mutually exclusive.

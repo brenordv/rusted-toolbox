@@ -1,4 +1,4 @@
-use crate::models::MqttArgs;
+use crate::models::MqttConfig;
 use anyhow::Result;
 use common_utils_ext::new_guid::new_guid;
 use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, Outgoing, QoS};
@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
 
-pub async fn read_messages(args: &MqttArgs) -> Result<()> {
+pub async fn read_messages(args: &MqttConfig) -> Result<()> {
     let (topic, client, mut event_loop) = create_connection_options("reader".to_string(), args);
 
     info!("Subscribing to topic: {}", topic);
@@ -37,7 +37,7 @@ pub async fn read_messages(args: &MqttArgs) -> Result<()> {
 
 fn create_connection_options(
     client_id: String,
-    args: &MqttArgs,
+    args: &MqttConfig,
 ) -> (String, AsyncClient, EventLoop) {
     debug!("Creating connection options");
     let topic = args.topic.clone();
@@ -66,7 +66,7 @@ fn create_connection_options(
     (topic, client, event_loop)
 }
 
-pub async fn post_message(args: &MqttArgs) -> Result<()> {
+pub async fn post_message(args: &MqttConfig) -> Result<()> {
     let message = match &args.message {
         None => {
             anyhow::bail!("No message provided");

@@ -53,9 +53,9 @@ Dry run: 1 would modify, 1 unchanged, 2 skipped.
 $ remove-zw --output - notes.txt
 ```
 
-### Verbose output and no header
+### Verbose output
 ```bash
-$ remove-zw --verbose --no-header notes.txt
+$ remove-zw --verbose notes.txt
 ```
 
 ## Notes

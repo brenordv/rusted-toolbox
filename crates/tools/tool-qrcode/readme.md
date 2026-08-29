@@ -24,7 +24,13 @@ quick sharing of information, WiFi credentials, URLs, or any text data that need
 - `-o, --output-file <FILENAME>`: Custom output filename (auto-generates if not specified)
 - `-f, --output-format <FORMAT>`: Output file format (png, svg)
 - `-x, --dont-print`: Skip printing QR code to console
-- `-n, --no-header`: Suppress runtime information header
+
+### Shared Runtime Options
+- `--app-header`: Print the tool name, version, and runtime configuration
+- `-L, --log-level <LEVEL>`: Log level: trace | debug | info | warn | error | disabled (case insensitive; default: warn)
+- `--log-to-console`: Log to stdout instead of the default stderr
+- `--log-to-file`: Also write logs to a file
+- `--rotate-log-file-by-day`: Rotate the log file by day
 
 ## Examples
 
@@ -33,13 +39,8 @@ quick sharing of information, WiFi credentials, URLs, or any text data that need
 ```bash
 qrcode --text "Hello, World!"
 ```
-**Output:**
+**Output:** (add `--app-header` to also print the tool and payload details)
 ```
-QrCode Generator v1.0.0
----------------------------
-Generating Text QR code
-Text: Hello, World
-
   ██████████████  ██████  ██      ██  ██████████████  
   ██          ██  ██  ██    ████████  ██          ██  
   ██  ██████  ██  ██████  ██  ████    ██  ██████  ██  
@@ -81,15 +82,9 @@ qrcode --wifi-ssid "MyNetwork" --wifi-password "SecurePass123" --wifi-auth WPA2
 ```
 **Output:**
 ```
-QrCode Generator v1.0.0
----------------------------
-Generating Wifi QR code
-SSID: MyNetwork
-Password: SecurePass123
-Auth: WPA2
-
 [Console QR Code Display]
 ```
+With `--app-header`, the tool also prints the payload type, SSID, password, and auth before the code.
 
 ### SVG Output with Custom Filename
 **Command:**
@@ -101,7 +96,7 @@ qrcode --text "Contact: john@example.com" --output-format svg --output-file cont
 ### Silent Generation (No Console Output)
 **Command:**
 ```bash
-qrcode --text "Quick data transfer" --output-format png --dont-print --no-header
+qrcode --text "Quick data transfer" --output-format png --dont-print
 ```
 **Output:** Silently creates PNG file without console display
 

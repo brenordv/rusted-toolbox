@@ -21,6 +21,5 @@ pub struct RemoveZwArgs {
     pub recursive: bool,
     pub extensions: Vec<String>,
     pub verbose: bool,
-    pub no_header: bool,
     pub dry_run: bool,
 }

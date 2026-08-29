@@ -6,21 +6,12 @@ mod models;
 mod ui;
 mod whisper_app;
 
-use crate::cli_utils::get_cli_arguments;
+use crate::cli_utils::initialize;
 use crate::whisper_app::{create_handlers, start_chat_session};
 use anyhow::Result;
-use shared::logging::app_logger::LogLevel;
-use shared::logging::logging_helpers::get_default_log_builder;
 
 fn main() -> Result<()> {
-    // Change the boolean flags below to enable logging to console and/or file.
-    // This helps with debugging if you need.
-    get_default_log_builder(env!("CARGO_PKG_NAME"), LogLevel::Info)
-        .log_to_console(false)
-        .log_to_file(false, false)
-        .init();
-
-    let cli_args = get_cli_arguments()?;
+    let cli_args = initialize()?;
     let chat_session = start_chat_session(cli_args)?;
 
     let (outgoing_messages_handler, incoming_message_handler, ui_handler) =

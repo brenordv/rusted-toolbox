@@ -1,27 +1,29 @@
 use chrono::{DateTime, Duration, Utc};
+use clap::ValueEnum;
 use colored::Colorize;
+use common_utils::string_utils::format_duration_to_string;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use shared::utils::format_duration_to_string::format_duration_to_string;
+use std::fmt;
 
+#[derive(ValueEnum, Debug, PartialEq, Clone)]
 pub enum JwtPrint {
     Pretty,
     Csv,
     Json,
 }
 
-impl JwtPrint {
-    pub fn from_str(s: &str) -> Result<JwtPrint, String> {
-        match s.trim().to_lowercase().as_str() {
-            "pretty" => Ok(JwtPrint::Pretty),
-            "csv" => Ok(JwtPrint::Csv),
-            "json" => Ok(JwtPrint::Json),
-            _ => Err(format!("Invalid print format: {}", s)),
+impl fmt::Display for JwtPrint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JwtPrint::Pretty => write!(f, "Pretty"),
+            JwtPrint::Csv => write!(f, "CSV"),
+            JwtPrint::Json => write!(f, "JSON"),
         }
     }
 }
 
-pub struct JwtArgs {
+pub struct JwtConfig {
     pub token: String,
     pub print: JwtPrint,
     pub claim_to_clipboard: Option<String>,
@@ -108,18 +110,6 @@ pub struct TokenInfo {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn jwt_print_from_str_parses_known_formats() {
-        assert!(matches!(JwtPrint::from_str("pretty"), Ok(JwtPrint::Pretty)));
-        assert!(matches!(JwtPrint::from_str("CSV"), Ok(JwtPrint::Csv)));
-        assert!(matches!(JwtPrint::from_str("  json  "), Ok(JwtPrint::Json)));
-    }
-
-    #[test]
-    fn jwt_print_from_str_rejects_unknown_format() {
-        assert!(JwtPrint::from_str("yaml").is_err());
-    }
 
     fn claims_with_exp(exp: Option<Value>) -> Claims {
         let mut extra = Map::new();

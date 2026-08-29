@@ -1,9 +1,9 @@
 use crate::models::{HowMode, QrCodeConfig};
 use anyhow::Result;
 use chrono::Local;
+use common_utils::datetime_utc_utils::DateTimeUtilsExt;
 use image::{ImageBuffer, Luma};
 use qrcodegen::{QrCode, QrCodeEcc};
-use shared::utils::datetime_utc_utils::DateTimeUtilsExt;
 use std::fs::File;
 use std::io::Write;
 use tracing::{debug, info};
@@ -164,7 +164,6 @@ mod tests {
     fn text_config(output_format: Option<String>, output_file: Option<String>) -> QrCodeConfig {
         QrCodeConfig::new(
             QrCodePayload::new(Some("https://example.com".to_string()), None, None, None),
-            true,
             true,
             output_format,
             output_file,

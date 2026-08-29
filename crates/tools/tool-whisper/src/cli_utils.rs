@@ -1,60 +1,69 @@
 use crate::models::shared_types::RuntimeType;
 use crate::models::whisper_args::WhisperArgs;
 use anyhow::Result;
-use clap::{Arg, Command};
-use shared::command_line::cli_builder::CommandExt;
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
 
-const DEFAULT_PORT: u16 = 2428; // The word chat in the old T9
+/// Bare-bones, secure, and private P2P chat.
+///
+/// Start in host mode with --wait to listen for a connection, or in client mode with --connect to
+/// reach a host. Messages are end-to-end encrypted.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version)]
+struct CliArgs {
+    /// Host mode: listen for connections on the given port (default: 2428)
+    #[arg(
+        short = 'w',
+        long = "wait",
+        value_name = "PORT",
+        num_args = 0..=1,
+        default_missing_value = "2428"
+    )]
+    pub wait: Option<u16>,
 
-pub fn get_cli_arguments() -> Result<WhisperArgs> {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_DESCRIPTION"),
-            "Bare-bones, secure, and private P2P chat",
-        )
-        .arg(
-            Arg::new("wait")
-                .long("wait")
-                .short('w')
-                .value_name("PORT")
-                .value_parser(clap::value_parser!(u16))
-                .required(false)
-                .help(format!(
-                    "Host mode: Listen for connections on the specified port (default: {})",
-                    DEFAULT_PORT
-                )),
-        )
-        .arg(
-            Arg::new("connect")
-                .long("connect")
-                .short('c')
-                .value_name("HOST:PORT")
-                .help("Client mode: Connect to the specified host and port (format: host:port)"),
-        )
-        .arg(
-            Arg::new("bind-to-all-interfaces")
-                .long("bind-to-all-interfaces")
-                .short('b')
-                .action(clap::ArgAction::SetTrue)
-                .help("Bind to all interfaces (default: bind to localhost)"),
-        )
-        .get_matches();
+    /// Client mode: connect to the given host and port (format: host:port)
+    #[arg(short = 'c', long = "connect", value_name = "HOST:PORT")]
+    pub connect: Option<String>,
 
-    let ip = if *matches
-        .get_one::<bool>("bind-to-all-interfaces")
-        .unwrap_or(&false)
-    {
+    /// Bind to all interfaces (default: bind to localhost)
+    #[arg(short = 'b', long = "bind-to-all-interfaces")]
+    pub bind_to_all_interfaces: bool,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
+}
+
+/// Parses command-line arguments and returns the runtime configuration.
+///
+/// # Errors
+/// Returns an error when neither `--wait` (host mode) nor `--connect` (client mode) is provided.
+pub fn initialize() -> Result<WhisperArgs> {
+    let args = CliArgs::parse();
+
+    let config = build_args(&args)?;
+
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        None::<fn()>,
+    );
+
+    Ok(config)
+}
+
+/// Resolves the parsed CLI arguments into the runtime configuration.
+///
+/// `--wait` takes precedence over `--connect` when both are supplied.
+fn build_args(args: &CliArgs) -> Result<WhisperArgs> {
+    let ip = if args.bind_to_all_interfaces {
         "0.0.0.0"
     } else {
         "127.0.0.1"
     };
 
-    if matches.contains_id("wait") {
-        let port = matches
-            .get_one::<u16>("wait")
-            .copied()
-            .unwrap_or(DEFAULT_PORT);
+    if let Some(port) = args.wait {
         return Ok(WhisperArgs {
             host: format!("{}:{}", ip, port),
             runtime: RuntimeType::Host,
@@ -62,15 +71,59 @@ pub fn get_cli_arguments() -> Result<WhisperArgs> {
         });
     }
 
-    let connect_address = matches.get_one::<String>("connect").cloned();
+    match &args.connect {
+        Some(connect_address) => Ok(WhisperArgs {
+            host: connect_address.clone(),
+            runtime: RuntimeType::Client,
+            role: "CLIENT".to_string(),
+        }),
+        None => anyhow::bail!("You must specify either --wait or --connect"),
+    }
+}
 
-    if connect_address.is_none() {
-        anyhow::bail!("You must specify either --wait or --connect");
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
     }
 
-    Ok(WhisperArgs {
-        host: connect_address.unwrap(),
-        runtime: RuntimeType::Client,
-        role: "CLIENT".to_string(),
-    })
+    #[test]
+    fn wait_selects_host_mode_on_localhost() {
+        let args = CliArgs::try_parse_from(["whisper", "--wait", "3000"]).unwrap();
+        let config = build_args(&args).unwrap();
+        assert!(matches!(config.runtime, RuntimeType::Host));
+        assert_eq!(config.host, "127.0.0.1:3000");
+    }
+
+    #[test]
+    fn wait_without_value_uses_default_port() {
+        let args = CliArgs::try_parse_from(["whisper", "--wait"]).unwrap();
+        let config = build_args(&args).unwrap();
+        assert_eq!(config.host, "127.0.0.1:2428");
+    }
+
+    #[test]
+    fn bind_to_all_interfaces_uses_wildcard_host() {
+        let args = CliArgs::try_parse_from(["whisper", "--wait", "3000", "-b"]).unwrap();
+        let config = build_args(&args).unwrap();
+        assert_eq!(config.host, "0.0.0.0:3000");
+    }
+
+    #[test]
+    fn connect_selects_client_mode() {
+        let args = CliArgs::try_parse_from(["whisper", "--connect", "example.com:3000"]).unwrap();
+        let config = build_args(&args).unwrap();
+        assert!(matches!(config.runtime, RuntimeType::Client));
+        assert_eq!(config.host, "example.com:3000");
+    }
+
+    #[test]
+    fn neither_wait_nor_connect_is_rejected() {
+        let args = CliArgs::try_parse_from(["whisper"]).unwrap();
+        assert!(build_args(&args).is_err());
+    }
 }

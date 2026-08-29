@@ -1,120 +1,87 @@
 use crate::models::{InputSource, OutputTarget, RemoveZwArgs};
 use anyhow::{anyhow, Result};
-use clap::{builder::NonEmptyStringValueParser, Arg, ArgAction, Command};
-use shared::command_line::cli_builder::CommandExt;
-use shared::constants::general::DASH_LINE;
+use clap::{builder::NonEmptyStringValueParser, Parser};
+use common_cli::common_tool_args::CommonToolArgs;
+use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
 use std::fs;
 use std::path::PathBuf;
 
-/// Print runtime info to stderr, keeping stdout for cleaned content and the
-/// dry-run report so both stay pipeable.
-pub fn print_runtime_info(args: &RemoveZwArgs) {
-    eprintln!("Remove-ZW v{}", env!("CARGO_PKG_VERSION"));
-    eprintln!("{}", DASH_LINE);
+/// Remove zero-width Unicode format characters from text.
+///
+/// Removes all Unicode format (Cf) characters from input text. With no FILE, or when FILE is -,
+/// it reads standard input and works as a filter (for example: cat file | remove-zw). To clean
+/// files on disk, pass a file or directory path.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version)]
+struct CliArgs {
+    /// Files or directories to process; with none (or '-') reads stdin as a filter
+    #[arg(num_args = 0..)]
+    pub files: Vec<String>,
 
-    eprintln!("- Inputs:");
-    for input in &args.inputs {
-        match input {
-            InputSource::Stdin => {
-                eprintln!("  - stdin (filter mode: pipe input or pass a file/dir; Ctrl+Z then Enter to end)")
-            }
-            InputSource::File(path) => eprintln!("  - {}", path.display()),
-            InputSource::Directory(path) => eprintln!("  - {} (dir)", path.display()),
-        }
-    }
+    /// Write output to FILE instead of stdout (use '-' for stdout)
+    #[arg(
+        short = 'o',
+        long = "output",
+        value_name = "FILE",
+        value_parser = NonEmptyStringValueParser::new()
+    )]
+    pub output: Option<String>,
 
-    eprintln!("- Output:");
-    if args.dry_run {
-        eprintln!("  - Dry run (nothing written)");
-    } else if args.in_place {
-        eprintln!("  - In place");
-    } else if let Some(output) = &args.output {
-        match output {
-            OutputTarget::Stdout => eprintln!("  - Stdout"),
-            OutputTarget::File(path) => eprintln!("  - {}", path.display()),
-        }
-    } else if args
-        .inputs
-        .iter()
-        .all(|input| matches!(input, InputSource::Stdin))
-    {
-        eprintln!("  - Stdout");
-    } else {
-        eprintln!("  - Per-file cleaned output");
-    }
+    /// Overwrite input files in place (ignored for stdin)
+    #[arg(long = "in-place")]
+    pub in_place: bool,
 
-    eprintln!("- Verbose: {}", args.verbose);
-    eprintln!("- Recursive: {}", args.recursive);
-    if args.extensions.is_empty() {
-        eprintln!("- Extensions: (all)");
-    } else {
-        eprintln!("- Extensions: {:?}", args.extensions);
-    }
-    eprintln!();
+    /// When a directory is provided, process files recursively
+    #[arg(short = 'r', long = "recursive")]
+    pub recursive: bool,
+
+    /// Report which files would be modified and how, without writing anything
+    #[arg(short = 'd', long = "dry-run")]
+    pub dry_run: bool,
+
+    /// Comma-separated list of file extensions to include (e.g. txt,md,rs)
+    #[arg(
+        short = 'e',
+        long = "extensions",
+        value_name = "EXTS",
+        value_parser = NonEmptyStringValueParser::new()
+    )]
+    pub extensions: Option<String>,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
 }
 
-pub fn get_cli_arguments() -> RemoveZwArgs {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            "Remove zero-width Unicode format characters from text.",
-            "Removes all Unicode format (Cf) characters from input text. With no FILE, or when FILE is -, it reads standard input and works as a filter (for example: cat file | remove-zw). To clean files on disk, pass a file or directory path.",
-        )
-        .preset_arg_verbose(None)
-        .arg(
-            Arg::new("no-header")
-                .long("no-header")
-                .short('n')
-                .action(ArgAction::SetTrue)
-                .help("Do not print header."),
-        )
-        .arg(
-            Arg::new("output")
-                .long("output")
-                .short('o')
-                .value_name("FILE")
-                .value_parser(NonEmptyStringValueParser::new())
-                .help("Write output to FILE instead of stdout (use '-' for stdout)"),
-        )
-        .arg(
-            Arg::new("in-place")
-                .long("in-place")
-                .action(ArgAction::SetTrue)
-                .help("Overwrite input files in place (ignored for stdin)"),
-        )
-        .arg(
-            Arg::new("recursive")
-                .long("recursive")
-                .short('r')
-                .action(ArgAction::SetTrue)
-                .help("When a directory is provided, process files recursively"),
-        )
-        .arg(
-            Arg::new("dry-run")
-                .long("dry-run")
-                .short('d')
-                .action(ArgAction::SetTrue)
-                .help("Report which files would be modified and how, without writing anything"),
-        )
-        .arg(
-            Arg::new("extensions")
-                .long("extensions")
-                .short('e')
-                .value_name("EXTS")
-                .value_parser(NonEmptyStringValueParser::new())
-                .help("Comma-separated list of file extensions to include (e.g. txt,md,rs)"),
-        )
-        .arg(
-            Arg::new("files")
-                .help("Files or directories to process; with none (or '-') reads stdin as a filter")
-                .action(ArgAction::Append)
-                .num_args(0..),
-        )
-        .get_matches();
+/// Parses command-line arguments and returns the runtime configuration.
+///
+/// # Errors
+/// Returns an error when the argument combination is invalid (see [`validate_args`]),
+/// for example stdin specified more than once or `--output` combined with `--in-place`.
+pub fn initialize() -> Result<RemoveZwArgs> {
+    let args = CliArgs::parse();
 
-    let inputs = matches
-        .get_many::<String>("files")
-        .unwrap_or_default()
+    let config = build_args(&args);
+
+    validate_args(&config)?;
+
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        true,
+        false,
+        Some(|| {
+            print_header(&config);
+        }),
+    );
+
+    Ok(config)
+}
+
+/// Maps the parsed CLI arguments into the runtime configuration.
+fn build_args(args: &CliArgs) -> RemoveZwArgs {
+    let inputs = args
+        .files
+        .iter()
         .map(|value| map_input_value(value))
         .collect::<Vec<_>>();
 
@@ -124,29 +91,72 @@ pub fn get_cli_arguments() -> RemoveZwArgs {
         inputs
     };
 
-    let output = matches
-        .get_one::<String>("output")
-        .map(|value| value.as_str())
-        .map(parse_output_target);
+    let output = args.output.as_deref().map(parse_output_target);
 
-    let extensions = matches
-        .get_one::<String>("extensions")
-        .map(|value| parse_extensions(value))
+    let extensions = args
+        .extensions
+        .as_deref()
+        .map(parse_extensions)
         .unwrap_or_default();
 
     RemoveZwArgs {
         inputs,
         output,
-        in_place: matches.get_flag("in-place"),
-        recursive: matches.get_flag("recursive"),
+        in_place: args.in_place,
+        recursive: args.recursive,
         extensions,
-        verbose: matches.get_flag("verbose"),
-        no_header: matches.get_flag("no-header"),
-        dry_run: matches.get_flag("dry-run"),
+        verbose: args.common.verbose,
+        dry_run: args.dry_run,
     }
 }
 
-pub fn validate_args(args: &RemoveZwArgs) -> Result<()> {
+/// Prints the tool's runtime configuration, shown under `--app-header`.
+fn print_header(args: &RemoveZwArgs) {
+    println!("{} Inputs:", CONFIG_UL_ITEM_LEVEL_2);
+    for input in &args.inputs {
+        match input {
+            InputSource::Stdin => {
+                println!("{} stdin (filter mode)", CONFIG_UL_ITEM_LEVEL_3)
+            }
+            InputSource::File(path) => println!("{} {}", CONFIG_UL_ITEM_LEVEL_3, path.display()),
+            InputSource::Directory(path) => {
+                println!("{} {} (dir)", CONFIG_UL_ITEM_LEVEL_3, path.display())
+            }
+        }
+    }
+
+    println!("{} Output:", CONFIG_UL_ITEM_LEVEL_2);
+    if args.dry_run {
+        println!("{} Dry run (nothing written)", CONFIG_UL_ITEM_LEVEL_3);
+    } else if args.in_place {
+        println!("{} In place", CONFIG_UL_ITEM_LEVEL_3);
+    } else if let Some(output) = &args.output {
+        match output {
+            OutputTarget::Stdout => println!("{} Stdout", CONFIG_UL_ITEM_LEVEL_3),
+            OutputTarget::File(path) => println!("{} {}", CONFIG_UL_ITEM_LEVEL_3, path.display()),
+        }
+    } else if args
+        .inputs
+        .iter()
+        .all(|input| matches!(input, InputSource::Stdin))
+    {
+        println!("{} Stdout", CONFIG_UL_ITEM_LEVEL_3);
+    } else {
+        println!("{} Per-file cleaned output", CONFIG_UL_ITEM_LEVEL_3);
+    }
+
+    println!("{} Recursive: {}", CONFIG_UL_ITEM_LEVEL_2, args.recursive);
+    if args.extensions.is_empty() {
+        println!("{} Extensions: (all)", CONFIG_UL_ITEM_LEVEL_2);
+    } else {
+        println!(
+            "{} Extensions: {:?}",
+            CONFIG_UL_ITEM_LEVEL_2, args.extensions
+        );
+    }
+}
+
+fn validate_args(args: &RemoveZwArgs) -> Result<()> {
     let stdin_count = args
         .inputs
         .iter()
@@ -235,6 +245,7 @@ fn parse_extensions(value: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
     use tempfile::tempdir;
 
     fn args_with(inputs: Vec<InputSource>) -> RemoveZwArgs {
@@ -245,9 +256,13 @@ mod tests {
             recursive: false,
             extensions: Vec::new(),
             verbose: false,
-            no_header: true,
             dry_run: false,
         }
+    }
+
+    #[test]
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
     }
 
     #[test]
@@ -312,19 +327,19 @@ mod tests {
     }
 
     #[test]
-    fn print_runtime_info_covers_dry_run_and_default_modes() {
-        // Smoke test: the header prints to stderr for both a dry-run and a
-        // default per-file invocation without panicking.
+    fn print_header_covers_dry_run_and_default_modes() {
+        // Smoke test: the header prints for a dry-run and a default per-file
+        // invocation without panicking.
         let mut dry = args_with(vec![InputSource::Directory(PathBuf::from("docs"))]);
         dry.dry_run = true;
         dry.recursive = true;
         dry.extensions = vec!["txt".to_string()];
-        print_runtime_info(&dry);
+        print_header(&dry);
 
         let default = args_with(vec![InputSource::File(PathBuf::from("a.txt"))]);
-        print_runtime_info(&default);
+        print_header(&default);
 
         let to_stdout = args_with(vec![InputSource::Stdin]);
-        print_runtime_info(&to_stdout);
+        print_header(&to_stdout);
     }
 }

@@ -2,23 +2,27 @@ mod cli_utils;
 mod models;
 mod pingx_app;
 
-use anyhow::Result;
-use pingx_app::run_ping;
-use shared::logging::app_logger::LogLevel;
-use shared::logging::logging_helpers::initialize_log;
+use crate::cli_utils::initialize;
+use crate::pingx_app::run_ping;
+use common_cli::tool_exit_helpers::{exit_error, exit_success};
+use tracing::error;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Error);
-
-    let args = match cli_utils::get_cli_arguments() {
+async fn main() {
+    let args = match initialize() {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
+            error!("Failed to parse arguments: {}", e);
+            exit_error();
+            unreachable!();
         }
     };
 
-    run_ping(&args).await?;
-    Ok(())
+    match run_ping(&args).await {
+        Ok(()) => exit_success(),
+        Err(e) => {
+            error!("Failed to ping target: {}", e);
+            exit_error();
+        }
+    }
 }

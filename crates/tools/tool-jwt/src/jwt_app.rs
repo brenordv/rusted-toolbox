@@ -1,11 +1,13 @@
 use crate::models::{Claims, ExpirationStatus, TokenInfo};
 use anyhow::{anyhow, Result};
 use colored::Colorize;
+use common_cli::tool_exit_helpers::exit_error;
+use common_utils_ext::copy_string_to_clipboard::copy_to_clipboard;
 use jsonwebtoken::dangerous::insecure_decode;
 use serde_json::{Map, Value};
-use shared::utils::copy_string_to_clipboard::copy_to_clipboard;
 use std::borrow::Cow;
 use std::process;
+use tracing::error;
 
 /// Decodes JWT token without signature verification.
 ///
@@ -117,8 +119,8 @@ pub fn copy_claim_to_clipboard(argument_to_copy: String, claims: &Map<String, Va
     match copy_to_clipboard(text_to_copy.as_ref()) {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("Error copying to clipboard: {}", e);
-            process::exit(1);
+            error!("Error copying to clipboard: {}", e);
+            exit_error();
         }
     };
 }

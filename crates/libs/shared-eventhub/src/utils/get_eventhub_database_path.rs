@@ -1,6 +1,6 @@
 use crate::utils::extract_eventhub_endpoint_from_connection_string::extract_eventhub_endpoint_from_connection_string;
-use shared::system::resolve_path_with_base::resolve_path_with_base;
 use std::path::PathBuf;
+use common_utils::file_system::resolve_path_with_base;
 
 pub fn get_eventhub_database_path(
     connection_string: &str,

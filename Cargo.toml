@@ -16,12 +16,16 @@ license = "GPL-3.0-only"
 # Internal crates
 cli-signal-monitor = { path = "crates/libs/cli-signal-monitor" }
 common-cli = { path = "crates/libs/common-cli" }
+common-file-utils = { path = "crates/libs/common-file-utils" }
 common-utils = { path = "crates/libs/common-utils" }
 common-utils-ext = { path = "crates/libs/common-utils-ext" }
-shared = { path = "crates/libs/shared-DELETE" }
+common-serialization-utils = { path = "crates/libs/common-serialization-utils" }
+logging-otel = { path = "crates/libs/logging-otel" }
+mock-data-utils = { path = "crates/libs/mock-data-utils" }
 shared-eventhub = { path = "crates/libs/shared-eventhub" }
 
 # External crates
+aho-corasick = "1.1.5"
 anyhow = "1.0.104"
 arboard = "3.6.1"
 async-trait = "0.1.92"

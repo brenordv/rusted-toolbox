@@ -1,6 +1,6 @@
 [package]
 name = "imgx"
-version = "1.1.0"
+version = "2.0.0"
 description = "Quick way for editing images from the terminal"
 edition.workspace = true
 authors.workspace = true
@@ -8,16 +8,21 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
+# Internal
+common-cli = { workspace = true }
+common-file-utils = { workspace = true }
+common-utils = { workspace = true }
+
+# External
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["color"] }
-tracing = { workspace = true }
-indicatif = { workspace = true }
-rayon = { workspace = true }
-num_cpus = { workspace = true }
-image = { workspace = true, features = ["png", "jpeg", "gif", "webp", "tiff", "avif"] }
 gif = { workspace = true }
+image = { workspace = true, features = ["png", "jpeg", "gif", "webp", "tiff", "avif"] }
 imagequant = { workspace = true }
+indicatif = { workspace = true }
+num_cpus = { workspace = true }
+rayon = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

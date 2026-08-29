@@ -1,8 +1,11 @@
-# 1.1.0 (2025-11-13)
+# 2.0.0
+- Refactored to fit the new tooling.
+
+# 1.1.0
 - Added a random car brand data option.
 
-# 1.0.1 (2025-09-25)
+# 1.0.1
 - Updated dependencies.
 
-# 1.0.0 (2025-08-16)
+# 1.0.0
 Initial release

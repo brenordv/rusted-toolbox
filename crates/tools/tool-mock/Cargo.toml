@@ -8,10 +8,11 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
-clap = { workspace = true }
+# Internal
+common-cli = { workspace = true }
+mock-data-utils = { workspace = true }
+
+# External
 anyhow = { workspace = true }
+clap = { workspace = true }
 tracing = { workspace = true }
-rand = { workspace = true }
-chrono = { workspace = true }
-fake = { workspace = true }

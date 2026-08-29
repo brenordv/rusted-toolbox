@@ -1,23 +1,27 @@
-use crate::cli_utils::{get_cli_arguments, print_runtime_info};
-use crate::qrcode_app::generate_qrcode;
-use anyhow::Result;
-use shared::logging::app_logger::LogLevel;
-use shared::logging::logging_helpers::initialize_log;
-
 mod cli_utils;
 mod models;
 mod qrcode_app;
 
-fn main() -> Result<()> {
-    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Error);
+use crate::cli_utils::initialize;
+use crate::qrcode_app::generate_qrcode;
+use common_cli::tool_exit_helpers::{exit_error, exit_success};
+use tracing::error;
 
-    let config = get_cli_arguments()?;
+fn main() {
+    let config = match initialize() {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to parse arguments: {}", e);
+            exit_error();
+            unreachable!();
+        }
+    };
 
-    if !config.no_header {
-        print_runtime_info(&config);
+    match generate_qrcode(&config) {
+        Ok(()) => exit_success(),
+        Err(e) => {
+            error!("Failed to generate QR code: {}", e);
+            exit_error();
+        }
     }
-
-    generate_qrcode(&config)?;
-
-    Ok(())
 }

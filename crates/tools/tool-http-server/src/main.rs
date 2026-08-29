@@ -1,7 +1,7 @@
-use crate::cli_utils::{get_cli_arguments, print_runtime_info};
+use crate::cli_utils::initialize;
 use crate::http_app::start_server;
-use shared::logging::app_logger::LogLevel;
-use shared::logging::logging_helpers::initialize_log;
+use common_cli::tool_exit_helpers::exit_error;
+use tracing::error;
 
 mod cli_utils;
 mod http_app;
@@ -9,11 +9,15 @@ mod models;
 
 #[tokio::main]
 async fn main() {
-    initialize_log(env!("CARGO_PKG_NAME"), LogLevel::Info);
+    let args = initialize();
 
-    let args = get_cli_arguments();
-
-    print_runtime_info(&args);
-
-    start_server(args).await;
+    match args {
+        Ok(a) => {
+            start_server(a).await;
+        }
+        Err(e) => {
+            error!("{}", e);
+            exit_error()
+        }
+    }
 }

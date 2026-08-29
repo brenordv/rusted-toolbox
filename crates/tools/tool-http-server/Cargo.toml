@@ -1,6 +1,6 @@
 [package]
-name = "http"
-version = "1.1.0"
+name = "https"
+version = "2.0.0"
 description = "Lightweight async HTTP server for quickly serving static files with directory browsing, MIME detection, logging, and secure development-focused features."
 edition.workspace = true
 authors.workspace = true
@@ -8,13 +8,19 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true }
-tokio = { workspace = true }
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+common-utils-ext = { workspace = true }
+
+# External
+anyhow = { workspace = true }
 clap = { workspace = true }
-warp = { workspace = true }
-percent-encoding = { workspace = true }
 mime_guess = { workspace = true }
+percent-encoding = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
+warp = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

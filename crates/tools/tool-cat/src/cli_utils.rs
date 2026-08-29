@@ -1,4 +1,3 @@
-use std::ptr::null;
 use crate::models::CatConfig;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
@@ -61,7 +60,8 @@ pub struct CliArgs {
 pub fn initialize() -> CatConfig {
     let args = CliArgs::parse();
 
-    args.common.app_boot_up_headerless(env!("CARGO_PKG_NAME"), false);
+    args.common
+        .app_boot_up_headerless(env!("CARGO_PKG_NAME"), false);
 
     CatConfig::from_args(&args)
 }

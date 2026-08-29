@@ -1,10 +1,10 @@
-use crate::cli_utils::{get_cli_arguments, print_runtime_info, validate_cli_arguments};
+use crate::cli_utils::initialize;
 use crate::jwt_app::{
     copy_claim_to_clipboard, decode_jwt_token, print_token_csv, print_token_json,
     print_token_pretty,
 };
 use crate::models::JwtPrint;
-use shared::system::tool_exit_helpers::{exit_error, exit_success};
+use common_cli::tool_exit_helpers::{exit_error, exit_success};
 use tracing::error;
 
 mod cli_utils;
@@ -20,11 +20,7 @@ mod models;
 /// - 0: Success or empty claims
 /// - 1: Decoding failure or errors
 fn main() {
-    let args = get_cli_arguments();
-
-    validate_cli_arguments(&args);
-
-    print_runtime_info(&args);
+    let args = initialize();
 
     let token_info = match decode_jwt_token(&args.token) {
         Ok(info) => info,
@@ -36,7 +32,7 @@ fn main() {
     };
 
     if token_info.claims.is_empty() {
-        eprintln!("Token claims are empty");
+        error!("Token claims are empty");
         exit_success();
     }
 

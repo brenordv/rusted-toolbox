@@ -1,4 +1,7 @@
-# 2.0.0 (2025-10-31)
+# 3.0.0
+- Refactored to fit the new tooling.
+
+# 2.0.0
 - Introduced subcommands: `text` and `files`.
   - `text` retains previous behavior and adds a concise positional form: `lookup text "your text"`.
   - Prior flags like `--text/-t`, `--extension/-e`, `--path/-p`, `--current-only/-c`, `--line-only/-l`, and `--no-header` remain supported under the `text` subcommand.
@@ -15,10 +18,10 @@
 - Internal refactor: shared, tool-specific helpers extracted to `lookup_shared.rs`; `lookup_text_app.rs` and `lookup_files_app.rs` contain subcommand-specific logic.
 - Dependencies added for filename search: `regex`, `globset`, `walkdir`.
 
-# 1.0.1 (2025-10-03)
+# 1.0.1
 - Added support for matching by exact file name for dotfiles or bare names.
   - Pattern ".env" matches basename ".env"
   - Pattern "env" matches basename "env"
 
-# 1.0.0 (2025-10-03)
+# 1.0.0
 - Initial release.

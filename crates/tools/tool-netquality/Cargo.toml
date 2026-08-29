@@ -1,6 +1,6 @@
 [package]
 name = "netquality"
-version = "1.1.0"
+version = "2.0.0"
 description = "Cross platform CLI tool that monitors internet connectivity and speed."
 edition.workspace = true
 authors.workspace = true
@@ -8,16 +8,24 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-shared = { workspace = true, features = ["otel"] }
-clap = { workspace = true }
+# Internal
+common-cli = { workspace = true }
+common-serialization-utils = { workspace = true }
+common-utils = { workspace = true }
+logging-otel = { workspace = true }
+cli-signal-monitor = {workspace = true }
+
+# External
 anyhow = { workspace = true }
+cfspeedtest = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
 # cfspeedtest 2.2.2 (latest) builds on reqwest 0.12 and its speed_test() takes a
 # reqwest 0.12 Client, so this crate stays on 0.12 instead of the workspace's 0.13.
+# There's a PR to fix that: https://github.com/code-inflation/cfspeedtest/pull/303
 reqwest = { version = "0.12.28", features = ["blocking", "json"] }
+rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tracing = { workspace = true }
-rusqlite = { workspace = true }
-cfspeedtest = { workspace = true }
 tokio = { workspace = true }
-chrono = { workspace = true }
+tracing = { workspace = true }

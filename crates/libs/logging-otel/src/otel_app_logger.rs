@@ -71,8 +71,11 @@ impl OtelAppLogger for AppLogger {
                     .export_timeout(Duration::from_secs(30))
                     .build();
 
-                match raccoon_otel::setup_otel_with_layers(service_name, Some(options), extra_layers)
-                {
+                match raccoon_otel::setup_otel_with_layers(
+                    service_name,
+                    Some(options),
+                    extra_layers,
+                ) {
                     Ok(guard) => {
                         return Some(OtelGuard {
                             _inner: guard,

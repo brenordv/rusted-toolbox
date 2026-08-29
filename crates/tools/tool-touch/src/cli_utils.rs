@@ -1,133 +1,97 @@
 use crate::models::{TouchArgs, TouchTimeWord};
+use anyhow::{anyhow, Result};
 use chrono::{Datelike, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
-use clap::{Arg, Command};
+use clap::Parser;
+use common_cli::common_tool_args::CommonToolArgs;
 use filetime::FileTime;
-use shared::command_line::cli_builder::CommandExt;
 use std::io;
 
-/// Parses command-line arguments for the touch utility.
+/// Update the access and modification times of each FILE to the current time.
 ///
-/// Uses clap for argument parsing and validation. Supports Unix touch
-/// command options including timestamps, reference files, and file creation control.
-///
-/// # Returns
-/// Parsed and validated `TouchArgs` structure containing all user options
-/// and file list to process.
-///
-/// # Arguments Supported
-/// - `-a`: Change access time only
-/// - `-c, --no-create`: Don't create missing files  
-/// - `-d, --date`: Parse date string for timestamp
-/// - `-m`: Change modification time only
-/// - `-r, --reference`: Use reference file's timestamps
-/// - `-t`: Use formatted timestamp string
-/// - `--time`: Specify which time to change (access/modify)
-/// - `files`: List of files to touch
+/// Mimics the Unix 'touch' command. A FILE argument that does not exist is created empty, unless
+/// -c is supplied. A FILE argument of - is handled specially and refers to standard output.
+#[derive(Parser, Debug)]
+#[command(about, long_about, version)]
+struct CliArgs {
+    /// Change only the access time
+    #[arg(short = 'a')]
+    pub access: bool,
+
+    /// Do not create any files
+    #[arg(short = 'c', long = "no-create")]
+    pub no_create: bool,
+
+    /// Parse STRING and use it instead of the current time
+    #[arg(short = 'd', long = "date", value_name = "STRING")]
+    pub date: Option<String>,
+
+    /// (ignored)
+    #[arg(short = 'f')]
+    pub ignore: bool,
+
+    /// Affect each symbolic link instead of any referenced file
+    #[arg(short = 'n', long = "no-dereference")]
+    pub no_dereference: bool,
+
+    /// Change only the modification time
+    #[arg(short = 'm')]
+    pub modify: bool,
+
+    /// Use this file's times instead of current time
+    #[arg(short = 'r', long = "reference", value_name = "FILE")]
+    pub reference: Option<String>,
+
+    /// Use specified time instead of current time
+    #[arg(short = 't', value_name = "[[CC]YY]MMDDhhmm[.ss]")]
+    pub time_spec: Option<String>,
+
+    /// Specify which time to change: access, atime, use, modify, mtime
+    #[arg(long = "time", value_name = "WORD")]
+    pub time: Option<String>,
+
+    /// Files to touch
+    #[arg(value_name = "FILE", required = true, num_args = 1..)]
+    pub files: Vec<String>,
+
+    #[command(flatten)]
+    pub common: CommonToolArgs,
+}
+
+/// Parses command-line arguments and returns the runtime configuration.
 ///
 /// # Errors
-/// Exits with error on invalid arguments, date parsing failures,
-/// or reference file access issues.
-pub fn get_cli_arguments() -> TouchArgs {
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .add_basic_metadata(
-            env!("CARGO_PKG_VERSION"),
-            "Update the access and modification times of each FILE to the current time.",
-            "Mimics the Unix 'touch' command.\
-            Update the access and modification times of each FILE to the current time.\n\n\
-            A FILE argument that does not exist is created empty, unless -c or -h is supplied.\n\n\
-            A FILE argument string of - is handled specially and causes touch to change the times \
-            of the file associated with standard output.",
-        )
-        .arg(
-            Arg::new("access")
-                .short('a')
-                .action(clap::ArgAction::SetTrue)
-                .help("Change only the access time"),
-        )
-        .arg(
-            Arg::new("no-create")
-                .short('c')
-                .long("no-create")
-                .action(clap::ArgAction::SetTrue)
-                .help("Do not create any files"),
-        )
-        .arg(
-            Arg::new("date")
-                .short('d')
-                .long("date")
-                .value_name("STRING")
-                .help("Parse STRING and use it instead of current time"),
-        )
-        .arg(
-            // Yeah, I know. Just keeping it close to the original implementation.
-            Arg::new("ignore")
-                .short('f')
-                .action(clap::ArgAction::SetTrue)
-                .help("(ignored)"),
-        )
-        .arg(
-            Arg::new("no-dereference")
-                .short('n') // -h is used for help, so I needed to change this.
-                .long("no-dereference")
-                .action(clap::ArgAction::SetTrue)
-                .help("Affect each symbolic link instead of any referenced file"),
-        )
-        .arg(
-            Arg::new("modify")
-                .short('m')
-                .action(clap::ArgAction::SetTrue)
-                .help("Change only the modification time"),
-        )
-        .arg(
-            Arg::new("reference")
-                .short('r')
-                .long("reference")
-                .value_name("FILE")
-                .help("Use this file's times instead of current time"),
-        )
-        .arg(
-            Arg::new("time-spec")
-                .short('t')
-                .value_name("[[CC]YY]MMDDhhmm[.ss]")
-                .help("Use specified time instead of current time"),
-        )
-        .arg(
-            Arg::new("time")
-                .long("time")
-                .value_name("WORD")
-                .help("Specify which time to change: access, atime, use, modify, mtime"),
-        )
-        .arg(
-            Arg::new("files")
-                .value_name("FILE")
-                .action(clap::ArgAction::Append)
-                .required(true)
-                .help("Files to touch"),
-        )
-        .get_matches();
+/// Returns an error for an invalid `--time` word, an unparseable `--date` or `-t` time spec,
+/// an inaccessible `--reference` file, or when more than one time source is provided.
+pub fn initialize() -> Result<TouchArgs> {
+    let args = CliArgs::parse();
 
-    let access = matches.get_flag("access");
-    let no_create = matches.get_flag("no-create");
-    let ignore = matches.get_flag("ignore");
-    let no_dereference = matches.get_flag("no-dereference");
-    let modify = matches.get_flag("modify");
+    let config = build_touch_args(&args)?;
 
-    // Convert time argument to TouchTimeWord
-    let time = match matches.get_one::<String>("time") {
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        None::<fn()>,
+    );
+
+    Ok(config)
+}
+
+/// Validates the parsed arguments and resolves them into a [`TouchArgs`].
+fn build_touch_args(args: &CliArgs) -> Result<TouchArgs> {
+    let time = match &args.time {
         Some(time_str) => match time_str.to_lowercase().as_str() {
             "access" | "atime" | "use" => TouchTimeWord::AccessOnly,
             "modify" | "mtime" => TouchTimeWord::ModifyOnly,
-            _ => {
-                eprintln!("Invalid time specification: {}", time_str);
-                std::process::exit(1);
-            }
+            other => return Err(anyhow!("Invalid time specification: {}", other)),
         },
         None => {
-            if access && modify {
+            if args.access && args.modify {
                 TouchTimeWord::AccessAndModify
-            } else if access {
+            } else if args.access {
                 TouchTimeWord::AccessOnly
-            } else if modify {
+            } else if args.modify {
                 TouchTimeWord::ModifyOnly
             } else {
                 TouchTimeWord::AccessAndModify
@@ -135,90 +99,51 @@ pub fn get_cli_arguments() -> TouchArgs {
         }
     };
 
-    let date: Option<FileTime> = match matches.get_one::<String>("date") {
-        Some(date_str) => match parse_date_string(date_str) {
-            Ok(date_filetype) => Some(date_filetype),
-            Err(_) => {
-                eprintln!("Error parsing date string: {}", date_str);
-                std::process::exit(1);
-            }
-        },
-        _ => None,
+    let date = match &args.date {
+        Some(date_str) => Some(
+            parse_date_string(date_str)
+                .map_err(|_| anyhow!("Error parsing date string: {}", date_str))?,
+        ),
+        None => None,
     };
 
-    let time_spec: Option<FileTime> = match matches.get_one::<String>("time-spec") {
-        Some(time_spec_str) => match parse_time_spec(time_spec_str) {
-            Ok(time_spec_filetime) => Some(time_spec_filetime),
-            Err(_) => {
-                eprintln!("Error parsing time-spec string: {}", time_spec_str);
-                std::process::exit(1);
-            }
-        },
-        _ => None,
+    let time_spec = match &args.time_spec {
+        Some(time_spec_str) => Some(
+            parse_time_spec(time_spec_str)
+                .map_err(|_| anyhow!("Error parsing time-spec string: {}", time_spec_str))?,
+        ),
+        None => None,
     };
 
-    let reference: Option<(FileTime, FileTime)> = match matches.get_one::<String>("reference") {
-        Some(reference_str) => match get_reference_times(reference_str, no_dereference) {
-            Ok((atime, mtime)) => Some((atime, mtime)),
-            Err(_) => {
-                eprintln!("Error parsing reference string: {}", reference_str);
-                std::process::exit(1);
-            }
-        },
-        _ => None,
+    let reference = match &args.reference {
+        Some(reference_str) => Some(
+            get_reference_times(reference_str, args.no_dereference)
+                .map_err(|_| anyhow!("Error parsing reference string: {}", reference_str))?,
+        ),
+        None => None,
     };
 
-    let files: Vec<String> = matches
-        .get_many::<String>("files")
-        .unwrap_or_default()
-        .cloned()
-        .collect();
+    let time_sources = [date.is_some(), time_spec.is_some(), reference.is_some()]
+        .iter()
+        .filter(|&&provided| provided)
+        .count();
 
-    TouchArgs {
-        access,
-        no_create,
+    if time_sources > 1 {
+        return Err(anyhow!("Cannot specify times from more than one source"));
+    }
+
+    Ok(TouchArgs {
+        access: args.access,
+        no_create: args.no_create,
         date,
-        ignore,
-        no_dereference,
-        modify,
+        ignore: args.ignore,
+        no_dereference: args.no_dereference,
+        modify: args.modify,
         reference,
         time_spec,
         time,
-        files,
-    }
-}
-
-/// Validates command-line arguments for consistency and completeness.
-///
-/// Ensures at least one file is specified and only one time source
-/// is provided (date, time_spec, or reference).
-///
-/// # Parameters
-/// - `args`: Parsed touch arguments to validate
-///
-/// # Panics
-/// - No files specified
-/// - Multiple time sources provided simultaneously
-pub fn validate_cli_arguments(args: &TouchArgs) {
-    if args.files.is_empty() {
-        panic!("No files specified");
-    }
-
-    let mut time_sources = 0;
-
-    if args.date.is_some() {
-        time_sources += 1;
-    }
-    if args.time_spec.is_some() {
-        time_sources += 1;
-    }
-    if args.reference.is_some() {
-        time_sources += 1;
-    }
-
-    if time_sources > 1 {
-        panic!("Cannot specify times from more than one source");
-    }
+        files: args.files.clone(),
+    })
 }
 
 fn parse_date_string(date_str: &str) -> Result<FileTime, String> {
@@ -339,4 +264,49 @@ fn get_reference_times(
     let mtime = FileTime::from_last_modification_time(&metadata);
 
     Ok((atime, mtime))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn access_and_modify_default_to_both() {
+        let args = CliArgs::try_parse_from(["touch", "file.txt"]).unwrap();
+        let config = build_touch_args(&args).unwrap();
+        assert!(matches!(config.time, TouchTimeWord::AccessAndModify));
+    }
+
+    #[test]
+    fn access_flag_selects_access_only() {
+        let args = CliArgs::try_parse_from(["touch", "-a", "file.txt"]).unwrap();
+        let config = build_touch_args(&args).unwrap();
+        assert!(matches!(config.time, TouchTimeWord::AccessOnly));
+    }
+
+    #[test]
+    fn invalid_time_word_is_rejected() {
+        let args = CliArgs::try_parse_from(["touch", "--time", "bogus", "file.txt"]).unwrap();
+        assert!(build_touch_args(&args).is_err());
+    }
+
+    #[test]
+    fn multiple_time_sources_are_rejected() {
+        let args = CliArgs::try_parse_from([
+            "touch",
+            "-d",
+            "2024-01-01",
+            "-t",
+            "202401011200",
+            "file.txt",
+        ])
+        .unwrap();
+        assert!(build_touch_args(&args).is_err());
+    }
 }
