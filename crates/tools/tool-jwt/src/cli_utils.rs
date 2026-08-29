@@ -71,7 +71,6 @@ pub fn initialize() -> JwtConfig {
     if config.token.is_empty() {
         error!("Token cannot be empty.");
         exit_error();
-        unreachable!();
     }
 
     config

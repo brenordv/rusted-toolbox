@@ -17,7 +17,6 @@ fn main() {
         Err(e) => {
             error!("{}", e);
             exit_error();
-            unreachable!();
         }
     };
 

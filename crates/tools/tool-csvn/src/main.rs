@@ -17,11 +17,8 @@ fn main() {
         Ok(a) => a,
         Err(e) => {
             // Logging is not installed yet at this point, so report on stderr directly.
-            eprintln!("{} failed to parse arguments: {}", CSVN_APP_NAME, e);
-            exit_error();
-
-            // The `exit_error()` ends the program, the return statement makes the compiler happy.
-            return;
+            error!("{} failed to parse arguments: {}", CSVN_APP_NAME, e);
+            exit_error();;
         }
     };
 

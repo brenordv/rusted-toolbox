@@ -74,7 +74,6 @@ pub fn initialize() -> ImageConfig {
         Err(e) => {
             error!("{e}");
             exit_error();
-            unreachable!()
         }
     };
 
@@ -104,7 +103,7 @@ fn expand_input_paths(paths: &Vec<String>) -> Result<Vec<PathBuf>> {
 
         if candidate.is_dir() {
             debug!("Expanding directory: {}", candidate.display());
-            expanded_paths.extend(list_all_files_recursively(&candidate.to_path_buf()));
+            expanded_paths.extend(list_all_files_recursively(candidate));
             continue;
         }
 

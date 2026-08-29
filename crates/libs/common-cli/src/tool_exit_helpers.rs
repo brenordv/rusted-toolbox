@@ -8,11 +8,10 @@
 /// - This function does not run any `Drop` implementations of active variables or resources.
 ///   Therefore, resources such as open files or sockets may not be properly cleaned up.
 /// - Use this function only when an immediate and clean exit is necessary.
-pub fn exit_success() {
+pub fn exit_success() -> ! {
     std::process::exit(0);
 }
 
-// TODO: Note for future self: Refactor this to receive the error message as a parameter, and exit the process in a way the the compiler knows that.
 /// Exits the current process with a status code indicating an error.
 ///
 /// This function will immediately terminate the program and return a
@@ -23,7 +22,7 @@ pub fn exit_success() {
 /// - This function does not run any `Drop` implementations of active variables or resources.
 ///   Therefore, resources such as open files or sockets may not be properly cleaned up.
 /// - Use this function only when an immediate and clean exit is necessary.
-pub fn exit_error() {
+pub fn exit_error() -> ! {
     std::process::exit(1);
 }
 
@@ -45,15 +44,13 @@ pub fn exit_error() {
 /// - This function does not run any `Drop` implementations of active variables or resources.
 ///   Therefore, resources such as open files or sockets may not be properly cleaned up.
 /// - Use this function only when an immediate and clean exit is necessary.
-pub fn exit_with_code(code: i32) {
+pub fn exit_with_code(code: i32) -> ! {
     if code == 0 {
         exit_success();
-        return;
     }
 
     if code == 1 {
         exit_error();
-        return;
     }
 
     std::process::exit(code);

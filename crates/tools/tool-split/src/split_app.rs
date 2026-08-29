@@ -199,7 +199,7 @@ fn update_progress_feedback(
         "[L/s:{:.2}][Total Lines:{:.0} Data:{} Files:{}][Cur. File:{} - {}]                        ",
         lines_per_second,
         total_lines_processed,
-        format_bytes_to_string(total_bytes_read),
+        format_bytes_to_string(*total_bytes_read),
         current_file_number,
         current_line_count,
         current_output_file

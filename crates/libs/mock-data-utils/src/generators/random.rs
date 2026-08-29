@@ -1,6 +1,6 @@
 use crate::models::MockOptions;
 use anyhow::Result;
-use chrono::{Duration, Local, NaiveTime, Utc};
+use chrono::{Duration, Local, NaiveTime, Timelike, Utc};
 use rand::RngExt;
 
 /// Generate a random date
@@ -23,23 +23,29 @@ pub fn generate_date(options: &MockOptions) -> Result<String> {
     Ok(date.format("%Y-%m-%d").to_string())
 }
 
-/// Generate a random time
+/// Generate a random time.
+///
+/// With `past`, the result is at or before the current time of day; with
+/// `future`, at or after it; with neither, any time of day. When both `past` and
+/// `future` are set, `past` wins (matching `generate_date`).
 pub fn generate_time(options: &MockOptions) -> Result<String> {
-    let now = Local::now().time();
+    const LAST_SECOND_OF_DAY: u32 = 86_399;
 
-    let time = if options.past || options.future {
-        // Generate random time within the day
-        let hour = rand::rng().random_range(0..24);
-        let minute = rand::rng().random_range(0..60);
-        let second = rand::rng().random_range(0..60);
-        NaiveTime::from_hms_opt(hour, minute, second).unwrap_or(now)
+    let now = Local::now()
+        .time()
+        .num_seconds_from_midnight()
+        .min(LAST_SECOND_OF_DAY);
+
+    let seconds = if options.past {
+        rand::rng().random_range(0..=now)
+    } else if options.future {
+        rand::rng().random_range(now..=LAST_SECOND_OF_DAY)
     } else {
-        // Generate completely random time
-        let hour = rand::rng().random_range(0..24);
-        let minute = rand::rng().random_range(0..60);
-        let second = rand::rng().random_range(0..60);
-        NaiveTime::from_hms_opt(hour, minute, second).unwrap_or(now)
+        rand::rng().random_range(0..=LAST_SECOND_OF_DAY)
     };
+
+    let time = NaiveTime::from_num_seconds_from_midnight_opt(seconds, 0)
+        .unwrap_or_else(|| Local::now().time());
 
     Ok(time.format("%H:%M:%S").to_string())
 }
@@ -281,5 +287,59 @@ mod tests {
     #[test]
     fn generate_car_brand_is_non_empty() {
         assert!(!generate_car_brand(&options()).unwrap().is_empty());
+    }
+
+    fn seconds_of_day_now() -> u32 {
+        Local::now().time().num_seconds_from_midnight().min(86_399)
+    }
+
+    fn parse_seconds(hhmmss: &str) -> u32 {
+        NaiveTime::parse_from_str(hhmmss, "%H:%M:%S")
+            .unwrap()
+            .num_seconds_from_midnight()
+    }
+
+    #[test]
+    fn generate_time_past_is_at_or_before_now() {
+        let mut opts = options();
+        opts.past = true;
+
+        let before = seconds_of_day_now();
+        let output = generate_time(&opts).unwrap();
+        let after = seconds_of_day_now();
+
+        let value = parse_seconds(&output);
+        if after >= before {
+            assert!(value <= after, "past time {value} should be <= now {after}");
+        }
+    }
+
+    #[test]
+    fn generate_time_future_is_at_or_after_now() {
+        let mut opts = options();
+        opts.future = true;
+
+        let before = seconds_of_day_now();
+        let output = generate_time(&opts).unwrap();
+        let after = seconds_of_day_now();
+
+        let value = parse_seconds(&output);
+        if after >= before {
+            assert!(
+                value >= before,
+                "future time {value} should be >= earlier now {before}"
+            );
+        }
+    }
+
+    #[test]
+    fn generate_time_both_flags_produce_parseable_output() {
+        let mut opts = options();
+        opts.past = true;
+        opts.future = true;
+
+        let output = generate_time(&opts).unwrap();
+
+        assert!(NaiveTime::parse_from_str(&output, "%H:%M:%S").is_ok());
     }
 }

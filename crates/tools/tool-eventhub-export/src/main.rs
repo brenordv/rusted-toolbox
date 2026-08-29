@@ -108,18 +108,15 @@ async fn main() {
         Ok(()) => {
             println!("Export completed successfully!");
             exit_success();
-            return;
         }
         Err(_e) if shutdown.load(std::sync::atomic::Ordering::Relaxed) => {
             exporter.shutdown();
             println!("Export interrupted by user");
             exit_with_code(EXIT_CODE_INTERRUPTED_BY_USER);
-            return;
         }
         Err(e) => {
             error!("Export failed: {}", e);
             exit_error();
-            return;
         }
     };
 }

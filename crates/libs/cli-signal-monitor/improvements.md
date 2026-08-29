@@ -1,5 +1,4 @@
 # Basic
 [ ] Add more test coverage to the tool, if reasonable. Also let's check we if we can group similar tests and group them using rstest.
 [ ] Research improvements to the app.
-[ ] Create the `readme` file.
-[ ] Review otel endpoint implementation so it can be used by other crates as transparently as possible.
+[ ] Create the `readme` content

@@ -4,6 +4,9 @@ use fake::faker::internet::en::*;
 use fake::Fake;
 use rand::RngExt;
 
+const PASSWORD_CHARSET: &str =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+
 /// Generate a random username
 pub fn generate_username(_options: &MockOptions) -> Result<String> {
     Ok(Username().fake::<String>())
@@ -13,12 +16,11 @@ pub fn generate_username(_options: &MockOptions) -> Result<String> {
 pub fn generate_password(options: &MockOptions) -> Result<String> {
     let length = options.length.unwrap_or(12);
 
-    let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+    let charset: Vec<char> = PASSWORD_CHARSET.chars().collect();
+    let mut rng = rand::rng();
+
     let password: String = (0..length)
-        .map(|_| {
-            let idx = rand::rng().random_range(0..chars.len());
-            chars.chars().nth(idx).unwrap()
-        })
+        .map(|_| charset[rng.random_range(0..charset.len())])
         .collect();
 
     Ok(password)
@@ -72,9 +74,6 @@ mod tests {
     use super::*;
     use crate::models::DataType;
 
-    const ALLOWED_PASSWORD_CHARS: &str =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
-
     fn options() -> MockOptions {
         MockOptions {
             data_type: DataType::Username,
@@ -101,7 +100,7 @@ mod tests {
         opts.length = Some(20);
         let password = generate_password(&opts).unwrap();
         assert_eq!(password.chars().count(), 20);
-        assert!(password.chars().all(|c| ALLOWED_PASSWORD_CHARS.contains(c)));
+        assert!(password.chars().all(|c| PASSWORD_CHARSET.contains(c)));
     }
 
     #[test]
@@ -129,5 +128,18 @@ mod tests {
         let url = generate_file_url(&options()).unwrap();
         assert!(url.contains("://files."));
         assert!(url.contains("/downloads/"));
+    }
+
+    #[test]
+    fn generate_username_is_non_empty() {
+        assert!(!generate_username(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_password_default_uses_only_charset() {
+        let password = generate_password(&options()).unwrap();
+
+        assert_eq!(password.chars().count(), 12);
+        assert!(password.chars().all(|c| PASSWORD_CHARSET.contains(c)));
     }
 }

@@ -60,8 +60,13 @@ pub struct CliArgs {
 pub fn initialize() -> CatConfig {
     let args = CliArgs::parse();
 
-    args.common
-        .app_boot_up_headerless(env!("CARGO_PKG_NAME"), false);
+    args.common.app_boot_up(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        false,
+        false,
+        Some(|| {}),
+    );
 
     CatConfig::from_args(&args)
 }

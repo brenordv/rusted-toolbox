@@ -145,7 +145,6 @@ pub fn initialize() -> MockConfig {
         Err(err) => {
             error!("{}", err);
             exit_error();
-            unreachable!();
         }
     };
 

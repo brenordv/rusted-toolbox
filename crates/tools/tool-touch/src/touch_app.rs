@@ -20,7 +20,7 @@ fn create_file_if_needed(file: &str, no_create: bool) -> Result<bool> {
         return Ok(true); // stdout always exists
     }
 
-    let path = get_full_filepath_from_string(&file.to_string());
+    let path = get_full_filepath_from_string(file);
 
     if path.exists() {
         Ok(true)
@@ -59,7 +59,7 @@ pub fn touch_file(file: &str, args: &TouchArgs) -> Result<()> {
     }
 
     // Create a file if needed
-    let file_obj = get_full_filepath_from_string(&file.to_string());
+    let file_obj = get_full_filepath_from_string(file);
 
     let file_exists = create_file_if_needed(file, args.no_create)?;
 

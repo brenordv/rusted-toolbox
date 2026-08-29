@@ -1,6 +1,6 @@
 [package]
 name = "common-utils"
-version = "1.0.0"
+version = "2.0.0"
 description = "Common utils that can be used by any tools. Should be kept as dependency-free as possible."
 edition.workspace = true
 authors.workspace = true
@@ -13,3 +13,4 @@ chrono = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+tempfile = { workspace = true }

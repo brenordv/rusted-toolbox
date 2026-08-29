@@ -54,4 +54,13 @@ mod tests {
         let filename_safe_dt = dt.get_datetime_as_filename_safe_string();
         assert!(!filename_safe_dt.is_empty());
     }
+
+    #[test]
+    fn get_elapsed_time_is_positive_for_a_past_instant() {
+        let past = Utc::now() - chrono::Duration::seconds(10);
+
+        let elapsed = past.get_elapsed_time();
+
+        assert!(elapsed.num_seconds() >= 10);
+    }
 }

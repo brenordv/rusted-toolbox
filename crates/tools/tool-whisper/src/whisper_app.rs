@@ -224,8 +224,6 @@ pub fn create_handlers(mut chat_session: ChatSession) -> Result<ChatHandlers> {
         info!("Disconnected. Session duration: {:?}", duration);
 
         exit_success();
-
-        Ok(())
     });
 
     // All set up.

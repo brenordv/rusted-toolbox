@@ -1,14 +1,27 @@
 use clap::ValueEnum;
 use std::fmt;
 
+/// The log level selected by a tool's `--log-level` flag.
+///
+/// `Warn` and `Warning` are synonyms that both map to tracing's `warn`; `Warn`
+/// intentionally renders as "Warning" in the runtime-config header, so the header
+/// label differs from the tracing level name. `Disabled` silences all output and
+/// overrides `RUST_LOG`.
 #[derive(ValueEnum, Debug, PartialEq, Clone)]
 pub enum ToolLogLevel {
+    /// Trace level and above (most verbose).
     Trace,
+    /// Debug level and above.
     Debug,
+    /// Informational messages and above.
     Info,
+    /// Warnings and above; synonym of `Warning`.
     Warn,
+    /// Warnings and above; synonym of `Warn`.
     Warning,
+    /// Errors only.
     Error,
+    /// No output; overrides `RUST_LOG`.
     Disabled,
 }
 

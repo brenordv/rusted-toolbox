@@ -1,6 +1,6 @@
 [package]
 name = "common-cli-env"
-version = "1.0.0"
+version = "1.1.0"
 description = "Utils related to loading and managing environment variables into the cli."
 edition.workspace = true
 authors.workspace = true
@@ -8,5 +8,9 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+# External
 anyhow = { workspace = true }
-dotenv = { workspace = true }
+dotenvy = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

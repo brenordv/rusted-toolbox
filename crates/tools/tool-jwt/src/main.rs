@@ -27,7 +27,6 @@ fn main() {
         Err(e) => {
             error!("Error decoding token: {}", e);
             exit_error();
-            unreachable!();
         }
     };
 

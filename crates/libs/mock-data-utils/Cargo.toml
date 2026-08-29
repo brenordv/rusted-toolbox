@@ -1,6 +1,6 @@
 [package]
 name = "mock-data-utils"
-version = "1.0.0"
+version = "1.1.0"
 description = "Mock data generator utils."
 edition.workspace = true
 authors.workspace = true
@@ -8,7 +8,6 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-
 # External
 anyhow = { workspace = true }
 chrono = { workspace = true }

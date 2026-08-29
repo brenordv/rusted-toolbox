@@ -1,3 +1,6 @@
+//! Shared command-line machinery for the toolbox: the common CLI flags every tool
+//! flattens in, the logging bootstrap, and the process exit helpers.
+
 pub mod app_logger;
 pub mod common_tool_args;
 pub mod tool_exit_helpers;

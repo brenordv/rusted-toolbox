@@ -17,7 +17,6 @@ fn main() {
         Err(e) => {
             error!("Failed to parse arguments: {}", e);
             exit_error();
-            unreachable!();
         }
     };
 

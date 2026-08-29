@@ -1,14 +1,29 @@
-/// Configuration options for mock data generation
+/// Configuration options for mock data generation.
 #[derive(Debug)]
 pub struct MockOptions {
+    /// Which kind of data to generate.
     pub data_type: DataType,
+    /// Inclusive lower bound; honored by `random.integer` and `random.float`.
     pub min: Option<i32>,
+    /// Inclusive upper bound; honored by `random.integer` and `random.float`.
     pub max: Option<i32>,
+    /// Output length; honored by `internet.password` and other length-bounded
+    /// generators such as `commerce.product-description`.
     pub length: Option<usize>,
+    /// Number of decimal places; honored by `random.float`.
     pub precision: Option<u32>,
+    /// Target age in years; honored by `person.birthday`.
     pub age: Option<u32>,
+    /// Restrict output to the past; honored by `random.date`, `random.time`,
+    /// `random.datetime`, and `random.timestamp`. When both `past` and `future`
+    /// are set, `past` wins.
     pub past: bool,
+    /// Restrict output to the future; honored by `random.date`, `random.time`,
+    /// `random.datetime`, and `random.timestamp`. When both `past` and `future`
+    /// are set, `past` wins.
     pub future: bool,
+    /// Half-width in years of the sampling window; honored by `random.date`,
+    /// `random.datetime`, and `random.timestamp`. Must be at least 1.
     pub range: Option<u32>,
 }
 

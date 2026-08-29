@@ -19,7 +19,6 @@ async fn main() -> Result<()> {
         Err(error) => {
             error!("Failed to initialize tool: {}", error);
             exit_error();
-            unreachable!();
         }
     };
 
@@ -32,6 +31,4 @@ async fn main() -> Result<()> {
             exit_error();
         }
     };
-
-    Ok(())
 }

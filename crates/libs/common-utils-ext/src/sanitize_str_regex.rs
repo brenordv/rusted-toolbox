@@ -2,7 +2,8 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use std::borrow::Cow;
 
-static NON_PRINTABLE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\p{C}").unwrap());
+static NON_PRINTABLE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\p{C}").expect("hardcoded \\p{C} pattern is valid"));
 
 /// Removes non-printable characters using a precompiled regex.
 pub fn clean_str_regex(input: &str) -> Cow<'_, str> {

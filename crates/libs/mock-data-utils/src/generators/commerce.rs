@@ -222,4 +222,14 @@ mod tests {
     fn generate_company_is_non_empty() {
         assert!(!generate_company(&options()).unwrap().is_empty());
     }
+
+    #[test]
+    fn generate_job_title_is_non_empty() {
+        assert!(!generate_job_title(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_industry_is_non_empty() {
+        assert!(!generate_industry(&options()).unwrap().is_empty());
+    }
 }

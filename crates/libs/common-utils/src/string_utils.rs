@@ -1,4 +1,3 @@
-use anyhow::Result;
 use chrono::Duration;
 
 pub fn sanitize_string_for_filename(input: &str) -> String {
@@ -20,20 +19,9 @@ pub fn sanitize_string_for_filename(input: &str) -> String {
         .to_string()
 }
 
-pub fn sanitize_string_for_table_name(list_name: &str) -> Result<String> {
-    let name = list_name.trim();
-    if name.is_empty() {
-        anyhow::bail!("List name cannot be empty");
-    }
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        anyhow::bail!("Invalid list name '{}': must be alphanumeric or _", name);
-    }
-    Ok(name.to_string())
-}
-
 /// Converts a `Duration` object into a formatted time string representation in the format `HH:MM:SS.mmm`.
 ///
-/// This function processes a `Duration` and formats its total time components into a human-readable string.
+/// This function processes an ` Duration ` and formats its total time components into a human-readable string.
 /// The output string follows a fixed format structure where:
 /// - `HH` represents hours (padded to 2 digits),
 /// - `MM` represents minutes (padded to 2 digits),
@@ -69,7 +57,7 @@ pub fn format_duration_to_string(duration: Duration) -> String {
 ///
 /// # Arguments
 ///
-/// * `bytes` - A reference to a `u64` representing the size in bytes to be formatted.
+/// * `bytes` - A `u64` representing the size in bytes to be formatted.
 ///
 /// # Returns
 ///
@@ -79,9 +67,9 @@ pub fn format_duration_to_string(duration: Duration) -> String {
 /// - If the value is less than 1024, it remains in `bytes`.
 /// - For values 1024 and above, it is converted iteratively into KB, MB, GB, or TB as appropriate.
 /// - Decimal values are shown for units larger than `bytes`, with two digits of precision.
-pub fn format_bytes_to_string(bytes: &u64) -> String {
+pub fn format_bytes_to_string(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["bytes", "KB", "MB", "GB", "TB"];
-    let mut value = *bytes as f64;
+    let mut value = bytes as f64;
     let mut unit = &UNITS[0];
 
     for next_unit in &UNITS[1..] {
@@ -98,7 +86,7 @@ pub fn format_bytes_to_string(bytes: &u64) -> String {
     let whole_part = parts[0];
     let decimal_part = parts[1];
 
-    // Add thousands separators to the integer part
+    // Add thousand separators to the integer part
     let mut formatted_with_commas = String::new();
     for (i, c) in whole_part.chars().rev().enumerate() {
         if i != 0 && i % 3 == 0 {
@@ -114,4 +102,75 @@ pub fn format_bytes_to_string(bytes: &u64) -> String {
     };
 
     format!("{}{} {}", formatted_with_commas, decimal_suffix, unit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_filename_passes_clean_name_through() {
+        assert_eq!(
+            sanitize_string_for_filename("hello_world-1.txt"),
+            "hello_world-1.txt"
+        );
+    }
+
+    #[test]
+    fn sanitize_filename_replaces_reserved_characters() {
+        assert_eq!(sanitize_string_for_filename("a/b:c*d?"), "a_b_c_d_");
+    }
+
+    #[test]
+    fn sanitize_filename_empty_input_stays_empty() {
+        assert_eq!(sanitize_string_for_filename(""), "");
+    }
+
+    #[test]
+    fn format_duration_zero() {
+        assert_eq!(format_duration_to_string(Duration::zero()), "00:00:00.000");
+    }
+
+    #[test]
+    fn format_duration_subsecond_renders_milliseconds() {
+        assert_eq!(
+            format_duration_to_string(Duration::milliseconds(250)),
+            "00:00:00.250"
+        );
+    }
+
+    #[test]
+    fn format_duration_over_an_hour() {
+        assert_eq!(
+            format_duration_to_string(Duration::milliseconds(3_661_005)),
+            "01:01:01.005"
+        );
+    }
+
+    #[test]
+    fn format_bytes_zero_is_plain_bytes() {
+        assert_eq!(format_bytes_to_string(0), "0 bytes");
+    }
+
+    #[test]
+    fn format_bytes_below_one_kb_stays_in_bytes() {
+        assert_eq!(format_bytes_to_string(512), "512 bytes");
+    }
+
+    #[test]
+    fn format_bytes_at_one_kb_switches_unit_and_shows_decimals() {
+        assert_eq!(format_bytes_to_string(1024), "1.00 KB");
+    }
+
+    #[test]
+    fn format_bytes_adds_thousands_separator() {
+        assert_eq!(format_bytes_to_string(1000), "1,000 bytes");
+    }
+
+    #[test]
+    fn format_bytes_renders_fractional_kb() {
+        // Pins the `{:.2}` decimal rendering that the parts[0]/parts[1] split
+        // depends on: without the decimal point the fractional suffix is lost.
+        assert_eq!(format_bytes_to_string(1536), "1.50 KB");
+    }
 }

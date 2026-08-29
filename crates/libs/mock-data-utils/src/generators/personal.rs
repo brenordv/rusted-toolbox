@@ -109,8 +109,10 @@ pub fn generate_birthday(options: &MockOptions) -> Result<String> {
         _ => rand::rng().random_range(1..=31),
     };
 
-    let birthday = NaiveDate::from_ymd_opt(birth_year, month, day)
-        .unwrap_or_else(|| NaiveDate::from_ymd_opt(birth_year, 1, 1).unwrap());
+    let birthday = NaiveDate::from_ymd_opt(birth_year, month, day).unwrap_or_else(|| {
+        NaiveDate::from_ymd_opt(birth_year, 1, 1)
+            .expect("January 1 of a computed valid year exists")
+    });
 
     Ok(birthday.format("%Y-%m-%d").to_string())
 }
@@ -171,5 +173,45 @@ mod tests {
     #[test]
     fn generate_full_name_is_non_empty() {
         assert!(!generate_full_name(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_first_name_is_non_empty() {
+        assert!(!generate_first_name(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_last_name_is_non_empty() {
+        assert!(!generate_last_name(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_phone_is_non_empty() {
+        assert!(!generate_phone(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_street_is_non_empty() {
+        assert!(!generate_street(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_city_is_non_empty() {
+        assert!(!generate_city(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_state_is_non_empty() {
+        assert!(!generate_state(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_country_is_non_empty() {
+        assert!(!generate_country(&options()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_postal_code_is_non_empty() {
+        assert!(!generate_postal_code(&options()).unwrap().is_empty());
     }
 }
