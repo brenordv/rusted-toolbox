@@ -35,7 +35,7 @@ pub fn generate_email(_options: &MockOptions) -> Result<String> {
     ];
     let domain = domains[rand::rng().random_range(0..domains.len())];
 
-    Ok(format!("{}.{}@{}", first_name, last_name, domain))
+    Ok(format!("{first_name}.{last_name}@{domain}"))
 }
 
 /// Generate a phone number
@@ -77,8 +77,7 @@ pub fn generate_address(_options: &MockOptions) -> Result<String> {
     let zip = PostCode().fake::<String>();
 
     Ok(format!(
-        "{} {}, {}, {} {}",
-        street_number, street_name, city, state, zip
+        "{street_number} {street_name}, {city}, {state} {zip}"
     ))
 }
 
@@ -122,6 +121,7 @@ mod tests {
     use super::*;
     use crate::models::DataType;
     use chrono::Datelike;
+    use rstest::rstest;
 
     fn options() -> MockOptions {
         MockOptions {
@@ -170,48 +170,17 @@ mod tests {
         assert!(address.matches(',').count() >= 2);
     }
 
-    #[test]
-    fn generate_full_name_is_non_empty() {
-        assert!(!generate_full_name(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_first_name_is_non_empty() {
-        assert!(!generate_first_name(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_last_name_is_non_empty() {
-        assert!(!generate_last_name(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_phone_is_non_empty() {
-        assert!(!generate_phone(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_street_is_non_empty() {
-        assert!(!generate_street(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_city_is_non_empty() {
-        assert!(!generate_city(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_state_is_non_empty() {
-        assert!(!generate_state(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_country_is_non_empty() {
-        assert!(!generate_country(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_postal_code_is_non_empty() {
-        assert!(!generate_postal_code(&options()).unwrap().is_empty());
+    #[rstest]
+    #[case::first_name(generate_first_name)]
+    #[case::last_name(generate_last_name)]
+    #[case::full_name(generate_full_name)]
+    #[case::phone(generate_phone)]
+    #[case::street(generate_street)]
+    #[case::city(generate_city)]
+    #[case::state(generate_state)]
+    #[case::country(generate_country)]
+    #[case::postal_code(generate_postal_code)]
+    fn generator_output_is_non_empty(#[case] generator: fn(&MockOptions) -> Result<String>) {
+        assert!(!generator(&options()).unwrap().is_empty());
     }
 }

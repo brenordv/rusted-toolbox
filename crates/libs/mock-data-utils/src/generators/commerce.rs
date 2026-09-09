@@ -48,12 +48,21 @@ pub fn generate_product(_options: &MockOptions) -> Result<String> {
     let adjective = adjectives[rand::rng().random_range(0..adjectives.len())];
     let noun = nouns[rand::rng().random_range(0..nouns.len())];
 
-    Ok(format!("{} {}", adjective, noun))
+    Ok(format!("{adjective} {noun}"))
 }
 
-/// Generate a random product description
+/// Generate a random product description of at most `options.length` bytes
+/// (default 100).
+///
+/// Whole sentences are appended while they fit. When even the first sentence
+/// does not fit, it is cut at the last whole word inside the limit, or
+/// mid-word for a limit shorter than the first word, so any nonzero `length`
+/// yields a non-empty description. A `length` of zero yields an empty string.
 pub fn generate_product_description(options: &MockOptions) -> Result<String> {
     let length = options.length.unwrap_or(100);
+    if length == 0 {
+        return Ok(String::new());
+    }
 
     let features = [
         "cutting-edge technology",
@@ -97,34 +106,45 @@ pub fn generate_product_description(options: &MockOptions) -> Result<String> {
     ];
 
     let mut description = String::new();
-    let mut current_length = 0;
 
-    while current_length < length {
+    loop {
         let verb = verbs[rand::rng().random_range(0..verbs.len())];
         let benefit = benefits[rand::rng().random_range(0..benefits.len())];
         let feature = features[rand::rng().random_range(0..features.len())];
 
-        let sentence = format!("This product is {} {} through {}. ", verb, benefit, feature);
+        let sentence = format!("This product is {verb} {benefit} through {feature}. ");
 
-        if current_length + sentence.len() > length {
+        if description.len() + sentence.len() > length {
+            if description.is_empty() {
+                description = truncate_at_word_boundary(&sentence, length);
+            }
             break;
         }
 
         description.push_str(&sentence);
-        current_length += sentence.len();
     }
 
-    // Trim to desired length if necessary
-    if description.len() > length {
-        description.truncate(length);
-        // Try to end at a word boundary
-        if let Some(last_space) = description.rfind(' ') {
-            description.truncate(last_space);
-        }
-        description.push('.');
+    Ok(description.trim_end().to_string())
+}
+
+/// Cuts `sentence` to at most `length` bytes, preferring the last whole word
+/// inside the limit and falling back to a mid-word (char-boundary) cut when the
+/// limit is shorter than the first word.
+fn truncate_at_word_boundary(sentence: &str, length: usize) -> String {
+    if sentence.len() <= length {
+        return sentence.to_string();
     }
 
-    Ok(description.trim().to_string())
+    let mut cut = length;
+    while !sentence.is_char_boundary(cut) {
+        cut -= 1;
+    }
+
+    let head = &sentence[..cut];
+    match head.rfind(' ') {
+        Some(space) if space > 0 => head[..space].to_string(),
+        _ => head.to_string(),
+    }
 }
 
 /// Generate a random job title
@@ -181,6 +201,7 @@ pub fn generate_buzzword(_options: &MockOptions) -> Result<String> {
 mod tests {
     use super::*;
     use crate::models::DataType;
+    use rstest::rstest;
 
     fn options() -> MockOptions {
         MockOptions {
@@ -196,6 +217,15 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case::company(generate_company)]
+    #[case::job_title(generate_job_title)]
+    #[case::industry(generate_industry)]
+    #[case::buzzword(generate_buzzword)]
+    fn generator_output_is_non_empty(#[case] generator: fn(&MockOptions) -> Result<String>) {
+        assert!(!generator(&options()).unwrap().is_empty());
+    }
+
     #[test]
     fn generate_product_has_two_non_empty_words() {
         let product = generate_product(&options()).unwrap();
@@ -205,31 +235,41 @@ mod tests {
     }
 
     #[test]
-    fn generate_product_description_respects_length() {
+    fn product_description_zero_length_is_empty() {
         let mut opts = options();
-        opts.length = Some(200);
+        opts.length = Some(0);
+
+        assert_eq!(generate_product_description(&opts).unwrap(), "");
+    }
+
+    // The sentence template spans roughly 64 to 91 bytes, so the cases below
+    // cover a mid-word cut (3), a word-boundary cut (10, 50), the band where a
+    // sentence only sometimes fits (70), and multi-sentence output (200).
+    #[rstest]
+    #[case::shorter_than_first_word(3)]
+    #[case::tiny(10)]
+    #[case::below_one_sentence(50)]
+    #[case::sometimes_one_sentence(70)]
+    #[case::several_sentences(200)]
+    fn product_description_is_non_empty_and_respects_length(#[case] length: usize) {
+        let mut opts = options();
+        opts.length = Some(length);
+
         let description = generate_product_description(&opts).unwrap();
+
         assert!(!description.is_empty());
-        assert!(description.len() <= 200);
+        assert!(description.len() <= length);
     }
 
-    #[test]
-    fn generate_buzzword_is_non_empty() {
-        assert!(!generate_buzzword(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_company_is_non_empty() {
-        assert!(!generate_company(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_job_title_is_non_empty() {
-        assert!(!generate_job_title(&options()).unwrap().is_empty());
-    }
-
-    #[test]
-    fn generate_industry_is_non_empty() {
-        assert!(!generate_industry(&options()).unwrap().is_empty());
+    #[rstest]
+    #[case::mid_word_cut("This product is designed to", 6, "This")]
+    #[case::shorter_than_first_word("This product", 3, "Thi")]
+    #[case::exact_fit("Short one.", 100, "Short one.")]
+    fn truncate_at_word_boundary_cases(
+        #[case] sentence: &str,
+        #[case] length: usize,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(truncate_at_word_boundary(sentence, length), expected);
     }
 }

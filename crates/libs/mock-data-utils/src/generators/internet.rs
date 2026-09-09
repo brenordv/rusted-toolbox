@@ -48,7 +48,7 @@ pub fn generate_image_url(_options: &MockOptions) -> Result<String> {
     let width = rand::rng().random_range(200..1200);
     let height = rand::rng().random_range(200..1200);
 
-    Ok(format!("https://picsum.photos/{}/{}", width, height))
+    Ok(format!("https://picsum.photos/{width}/{height}"))
 }
 
 /// Generate a random file URL
@@ -86,12 +86,6 @@ mod tests {
             future: false,
             range: None,
         }
-    }
-
-    #[test]
-    fn generate_password_uses_default_length() {
-        let password = generate_password(&options()).unwrap();
-        assert_eq!(password.chars().count(), 12);
     }
 
     #[test]

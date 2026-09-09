@@ -98,7 +98,7 @@ pub fn generate_color_hex(_options: &MockOptions) -> Result<String> {
     let g = rand::rng().random_range(0..256);
     let b = rand::rng().random_range(0..256);
 
-    Ok(format!("#{:02x}{:02x}{:02x}", r, g, b))
+    Ok(format!("#{r:02x}{g:02x}{b:02x}"))
 }
 
 /// Generate random RGB color values
@@ -107,7 +107,7 @@ pub fn generate_color_rgb(_options: &MockOptions) -> Result<String> {
     let g = rand::rng().random_range(0..256);
     let b = rand::rng().random_range(0..256);
 
-    Ok(format!("rgb({}, {}, {})", r, g, b))
+    Ok(format!("rgb({r}, {g}, {b})"))
 }
 
 /// Generate a random integer

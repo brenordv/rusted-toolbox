@@ -1,6 +1,6 @@
 [package]
 name = "mock-data-utils"
-version = "1.1.0"
+version = "1.1.1"
 description = "Mock data generator utils."
 edition.workspace = true
 authors.workspace = true
@@ -13,3 +13,6 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 fake = { workspace = true }
 rand = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

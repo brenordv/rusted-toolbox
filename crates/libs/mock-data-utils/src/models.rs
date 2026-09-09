@@ -8,7 +8,8 @@ pub struct MockOptions {
     /// Inclusive upper bound; honored by `random.integer` and `random.float`.
     pub max: Option<i32>,
     /// Output length; honored by `internet.password` and other length-bounded
-    /// generators such as `commerce.product-description`.
+    /// generators such as `commerce.product-description`. Zero is honored
+    /// literally and yields an empty string.
     pub length: Option<usize>,
     /// Number of decimal places; honored by `random.float`.
     pub precision: Option<u32>,
@@ -115,7 +116,7 @@ impl DataType {
             "commerce.industry" => Ok(DataType::Industry),
             "commerce.buzzword" => Ok(DataType::Buzzword),
 
-            _ => Err(format!("Unknown data type: {}", command)),
+            _ => Err(format!("Unknown data type: {command}")),
         }
     }
 
