@@ -113,6 +113,19 @@ mod tests {
     }
 
     #[test]
+    fn process_environment_wins_over_env_file() {
+        // CCE_TEST_C is touched only by this test (the suite's one-test-per-var
+        // convention for process-global state).
+        std::env::set_var("CCE_TEST_C", "from-process");
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(".env"), "CCE_TEST_C=from-file\n").unwrap();
+
+        load_env_from_dirs(&[dir.path().to_path_buf()]).unwrap();
+
+        assert_eq!(std::env::var("CCE_TEST_C").unwrap(), "from-process");
+    }
+
+    #[test]
     fn malformed_env_returns_context_error() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join(".env"), "CCE_TEST_D=\"unclosed\n").unwrap();

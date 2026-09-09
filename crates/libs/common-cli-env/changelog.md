@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+- Created the readme: search order, "already-set process variables win"
+  precedence, and the trust caveats (working-directory fallback, dotenvy's
+  raw-line echo in parse errors).
+- Added a test pinning that the process environment wins over a `.env` value.
+
 ## 1.1.0
 - Swapped the unmaintained `dotenv` dependency for `dotenvy` (RUSTSEC-2021-0141
   lists it as the maintained alternative).
