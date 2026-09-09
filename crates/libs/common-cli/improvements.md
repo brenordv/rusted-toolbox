@@ -1,4 +1,14 @@
 # Basic
-[ ] Add more test coverage to the tool, if reasonable. Also let's check we if we can group similar tests and group them using rstest.
-[ ] Research improvements to the app.
-[ ] Investigate how to implement the TODO items 
+[x] Add more test coverage to the tool, if reasonable. Also let's check we if we can group similar tests and group them using rstest.
+    Outcome (1.2.1): added byte-pinning tests for the header formatter and clap parse tests for CommonToolArgs (via a test-local Parser wrapper). Kept the existing well-named plan()/tracing_level tests as plain #[test]s; rstest grouping there would be churn without a readability win.
+[x] Research improvements to the app.
+    Outcome (1.2.1): the TODO resolution below was the improvement found; no other defects. Logging contract documented in the readme.
+[x] Investigate how to implement the TODO items
+    Outcome (1.2.1): resolved. Header rendering moved into the pure pub(crate) `header_format` module (section/item/standard-header renderers wrapping the CONFIG_UL constants); `app_boot_up` prints the rendered strings and its output bytes are pinned by tests.
+[x] Promote the `header_format` renderers to public API when the tools adopt them for their `tool_header_printer` sections (tools stage decision; they still print with CONFIG_UL constants directly today).
+    Outcome (1.3.0): promoted. `format_config_section`/`format_config_item` are public and a `format_config_item_level3` was added for the nested lines; the tool header printers adopted them in the tools stage. `render_standard_header` stays crate-private (only `app_boot_up` renders the standard block).
+[x] Grow a boot variant for tools that own their verbosity flag and derive their own log level (the blocker recorded in tool-whurl's improvements.md).
+    Outcome (1.4.0): added `CommonToolArgsNoVerbose` (no `--verbose`; `--log-level` as an Option so an explicit value is distinguishable from "not passed") with `resolved_level` and `app_boot_up_with_level`. Both boot paths share one private header-print helper and a test pins the shared flag definitions in sync. First consumer: whurl 3.0.0.
+[ ] Add a label-only level-2 renderer to header_format (e.g. format_config_label) for lines like 'Resolved Target:' that have no value; pingx and remove-zw still hand-assemble those from CONFIG_UL constants.
+[x] Harden `--log-to-file`: create the log directory and file with restrictive permissions (0o600-style) instead of the process umask; execution logs can carry response bodies and other sensitive content. Applies workspace-wide via AppLogger::file_layer.
+    Outcome (1.4.1): on Unix the logs dir is created 0o700 (`DirBuilder::mode`; pre-existing dirs keep their mode) and the file opens 0o600, with a handle-based `set_permissions` that also tightens a pre-existing wide file; a failed tighten fails closed (stderr warning, file layer skipped). Windows keeps profile-ACL inheritance. Covers both `file_layer` consumers (init and logging-otel). Not covered: shared-eventhub's own file logger (crate on hold) still writes under the current working directory with default permissions.

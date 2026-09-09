@@ -162,21 +162,22 @@ impl AppLogger {
 
     /// Builds the file-writing layer when this logger is configured to log to a
     /// file, creating the log directory, resolving the (optionally date-rotated)
-    /// path, and opening it for append. Returns `None` when file logging is
+    /// path, and opening it for appending. Returns `None` when file logging is
     /// disabled, when the log directory cannot be created, or when the file cannot
-    /// be opened. Each failure writes a single warning naming the path and the
+    /// be opened (which on Unix includes a file whose permissions could not be
+    /// restricted). Each failure writes a single warning naming the path and the
     /// error to stderr, since the logging system cannot use `tracing` to report
     /// its own bootstrap failure.
     ///
     /// The layer is typed over the global [`Registry`] so it can be added to a
-    /// subscriber owned elsewhere (for example the OpenTelemetry one) rather
+    /// subscriber owned elsewhere (for example, the OpenTelemetry one) rather
     /// than only the one built by [`AppLogger::init`].
     pub fn file_layer(&self) -> Option<BoxedLayer> {
         if !self.to_file {
             return None;
         }
 
-        if let Err(error) = std::fs::create_dir_all(&self.log_file_folder) {
+        if let Err(error) = create_log_dir(&self.log_file_folder) {
             eprintln!(
                 "Warning: could not create log directory {}: {error}",
                 self.log_file_folder.display()
@@ -186,11 +187,7 @@ impl AppLogger {
 
         let log_file = self.resolve_log_filename();
 
-        match std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_file)
-        {
+        match open_log_file(&log_file) {
             Ok(file) => Some(
                 tracing_subscriber::fmt::layer()
                     .with_writer(file)
@@ -216,6 +213,58 @@ impl AppLogger {
 
         self.log_file_folder.join(filename)
     }
+}
+
+/// Creates the log directory and any missing parents. On Unix every directory
+/// it creates is owner-only (0o700), because log files can carry sensitive
+/// content (whurl execution logs include response bodies); a directory that
+/// already exists keeps its permissions.
+#[cfg(unix)]
+fn create_log_dir(path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path)
+}
+
+/// Creates the log directory and any missing parents. Windows has no mode
+/// bits; the directory inherits the parent's ACL (the user profile).
+#[cfg(not(unix))]
+fn create_log_dir(path: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(path)
+}
+
+/// Opens the log file for append, creating it owner-read/write (0o600). A file
+/// that already exists is tightened to the same mode through the open handle
+/// (fchmod semantics: no path re-resolution), so a log created wide by an older
+/// version is healed on the next run. When the tighten fails, the error is
+/// returned instead of the handle: logging sensitive content into a file whose
+/// permissions could not be restricted is the outcome this function exists to
+/// prevent.
+#[cfg(unix)]
+fn open_log_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(path)?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+
+    Ok(file)
+}
+
+/// Opens the log file for append. Windows has no mode bits; the file inherits
+/// the parent directory's ACL (the user profile).
+#[cfg(not(unix))]
+fn open_log_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
 }
 
 #[cfg(test)]
@@ -382,6 +431,67 @@ mod tests {
         let app_logger = AppLogger::new("t", ToolLogLevel::Warn, false, false, false);
 
         assert!(app_logger.file_layer().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_log_dir_creates_owner_only_components() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("nested").join("logs");
+
+        create_log_dir(&target).unwrap();
+
+        // mkdir(2) applies `mode & !umask`, so this asserts only that
+        // group/other bits are clear; asserting owner bits would fail under an
+        // owner-bit-clearing umask.
+        for dir in [root.path().join("nested"), target] {
+            let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+            assert_eq!(
+                mode & 0o077,
+                0,
+                "created log dir must have no group/other bits: {}",
+                dir.display()
+            );
+        }
+    }
+
+    // The file assertions below are exact: open_log_file ends in a
+    // handle-based set_permissions (fchmod), which umask does not filter.
+
+    #[cfg(unix)]
+    #[test]
+    fn open_log_file_creates_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("app.log");
+
+        open_log_file(&path).unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "created log file must be owner-only");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_log_file_tightens_pre_existing_wide_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("app.log");
+        std::fs::write(&path, b"old content").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        open_log_file(&path).unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "pre-existing log file must be tightened on open"
+        );
     }
 
     #[test]

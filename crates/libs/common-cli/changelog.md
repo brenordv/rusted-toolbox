@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.5.0
+- Added the `broken_pipe` module: a `BrokenPipe` marker type plus `write_out`/`flush_out` wrappers
+  that map a closed-pipe write failure into the marker inside the `anyhow` chain, so a streaming
+  tool can end quietly with exit 0 when its consumer stops reading (`tool big.txt | head`). First
+  consumers: head, tail, and rxget; cat, b64, and split still carry local copies of the pattern
+  and can adopt it later.
+
+## 1.4.1
+- `--log-to-file` now restricts log-file permissions on Unix: the logs directory is created 0o700
+  and the file is opened 0o600. A file that already exists is tightened to owner-only through the
+  open handle on the next run, so logs created wide by earlier versions heal themselves. If the
+  tighten fails, file logging is skipped for that run with the usual stderr warning rather than
+  writing sensitive content into a file that stayed readable. Execution logs can carry response
+  bodies, which is what makes the mode worth enforcing.
+- Covers every active tool that logs through `AppLogger::file_layer`, on both the standard and
+  OpenTelemetry init paths. On Windows the log keeps inheriting the parent directory's ACL (the
+  user profile); there is no mode-bit equivalent there.
+
+## 1.4.0
+- Added `CommonToolArgsNoVerbose`, a second flatten shape for tools that own
+  their verbosity flag: the shared flags minus `--verbose`, with `--log-level`
+  as an `Option` so "not passed" stays distinguishable. `resolved_level` picks
+  the explicit flag over the tool's derived default, and
+  `app_boot_up_with_level` boots logging and the `--app-header` block from that
+  resolved level. First consumer: whurl, whose `-v` count flag would collide
+  with the shared bool `--verbose`.
+- Both boot paths print the header block through one private helper, and a test
+  pins the shared flag definitions in sync across the two structs, so neither
+  the bytes nor the flags can drift.
+
+## 1.3.0
+- The `header_format` module is now public: `format_config_section` and
+  `format_config_item` are exported, and a new `format_config_item_level3`
+  covers the nested detail lines. Tool header printers can build their sections
+  from these renderers instead of hand-assembling lines from the `CONFIG_UL_*`
+  constants (which stay public and unchanged). Output bytes are pinned by tests.
+- `exit_success`, `exit_error`, and `exit_with_code` flush stdout and stderr
+  before `std::process::exit`, so output printed just before an exit helper is
+  no longer lost to the skipped `Drop` of Rust's buffered stdout. They still do
+  not run `Drop` implementations.
+
+## 1.2.1
+- The `--app-header` block is now rendered by a private pure formatter
+  (`header_format`) whose tests pin the exact output bytes; `app_boot_up`
+  prints the rendered string, and its output is byte-identical to before. This
+  resolves the old TODO about the hand-assembled CONFIG_UL printing.
+- Added clap parse tests for the flattened `CommonToolArgs` (defaults,
+  case-insensitive `--log-level`).
+- Readme gained a "Logging contract" section.
+
 ## 1.2.0
 - Exit helpers `exit_success`, `exit_error`, and `exit_with_code` now return `!`,
   so the compiler treats a call as diverging.

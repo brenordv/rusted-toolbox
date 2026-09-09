@@ -1,3 +1,13 @@
+use std::io::Write;
+
+/// Flushes stdout and stderr, ignoring flush failures (a closed pipe must not
+/// prevent the exit). `std::process::exit` skips `Drop`, so Rust's buffered
+/// stdout would otherwise lose output printed just before an exit helper runs.
+fn flush_stdio() {
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+}
+
 /// Exits the current process with a status code indicating success.
 ///
 /// This function will immediately terminate the program and return a
@@ -5,10 +15,13 @@
 /// conventionally indicates that the program completed successfully.
 ///
 /// # Important
+/// - stdout and stderr are flushed before exiting, so buffered `print!` output
+///   is not lost.
 /// - This function does not run any `Drop` implementations of active variables or resources.
 ///   Therefore, resources such as open files or sockets may not be properly cleaned up.
 /// - Use this function only when an immediate and clean exit is necessary.
 pub fn exit_success() -> ! {
+    flush_stdio();
     std::process::exit(0);
 }
 
@@ -19,10 +32,13 @@ pub fn exit_success() -> ! {
 /// conventionally indicates that the program terminated with an error.
 ///
 /// # Important
+/// - stdout and stderr are flushed before exiting, so buffered `print!` output
+///   is not lost.
 /// - This function does not run any `Drop` implementations of active variables or resources.
 ///   Therefore, resources such as open files or sockets may not be properly cleaned up.
 /// - Use this function only when an immediate and clean exit is necessary.
 pub fn exit_error() -> ! {
+    flush_stdio();
     std::process::exit(1);
 }
 
@@ -41,6 +57,8 @@ pub fn exit_error() -> ! {
 /// required.
 ///
 /// # Important
+/// - stdout and stderr are flushed before exiting, so buffered `print!` output
+///   is not lost.
 /// - This function does not run any `Drop` implementations of active variables or resources.
 ///   Therefore, resources such as open files or sockets may not be properly cleaned up.
 /// - Use this function only when an immediate and clean exit is necessary.
@@ -53,5 +71,6 @@ pub fn exit_with_code(code: i32) -> ! {
         exit_error();
     }
 
+    flush_stdio();
     std::process::exit(code);
 }

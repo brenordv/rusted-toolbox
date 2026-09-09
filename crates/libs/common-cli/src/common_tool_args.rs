@@ -1,11 +1,14 @@
 use crate::app_logger::AppLogger;
+use crate::header_format::{format_config_section, render_standard_header};
 use crate::tool_log_level::ToolLogLevel;
 use clap::Args;
-use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_1, CONFIG_UL_ITEM_LEVEL_2, DASH_LINE};
 
 /// The CLI flags shared by every tool: logging level and channels, the header
 /// toggle, and verbose mode. Flattened into each tool's argument parser with
 /// `#[command(flatten)]`.
+///
+/// Keep the shared flag definitions in sync with [`CommonToolArgsNoVerbose`];
+/// the sync is pinned by a test in this module.
 #[derive(Args, Debug)]
 #[command(about, long_about, version)]
 pub struct CommonToolArgs {
@@ -57,9 +60,9 @@ impl CommonToolArgs {
     /// Boots the tool: initializes logging, then prints the standard header and
     /// runtime-config block when `--app-header` is set. `tool_header_printer`, when
     /// provided, appends a tool-specific config section under the shared block.
-    // TODO: Note for future-self: Review this. I'm not happy with this. This method, while good because centralizes the
-    // boot process of all tools, it's also bad because of the boilerplate code it generates.
-    // Also the whole print with CONFIG_UL_ITEM_LEVEL_1/2/3 is bothering me. Should probably have a helper function that does this.
+    ///
+    /// The header bytes come from `header_format::render_standard_header`, whose
+    /// tests pin the exact output.
     pub fn app_boot_up(
         &self,
         app_name: &str,
@@ -74,37 +77,282 @@ impl CommonToolArgs {
             return;
         }
 
-        println!("{} ({})", app_name, app_version);
-        println!("{}", DASH_LINE);
-
-        println!("{} Basic Runtime Config", CONFIG_UL_ITEM_LEVEL_1);
-        if uses_verbose_flag {
-            println!("{} Verbose mode: {}", CONFIG_UL_ITEM_LEVEL_2, self.verbose);
+        let header = if uses_verbose_flag {
+            self.render_header(app_name, app_version, self.verbose)
         } else {
-            println!("{} Verbose mode: <unused>", CONFIG_UL_ITEM_LEVEL_2);
+            self.render_header(app_name, app_version, "<unused>")
+        };
+        print_header_block(&header, tool_header_printer);
+    }
+
+    fn render_header(
+        &self,
+        app_name: &str,
+        app_version: &str,
+        verbose: impl std::fmt::Display,
+    ) -> String {
+        render_standard_header(
+            app_name,
+            app_version,
+            verbose,
+            &self.default_logging_level,
+            self.log_to_stdout,
+            self.log_to_file,
+            self.rotate_log_file_by_day,
+        )
+    }
+}
+
+/// Prints the rendered standard header, the optional tool-specific config
+/// section, and the trailing blank line. Both boot paths print through here so
+/// the `--app-header` byte layout cannot drift between them.
+fn print_header_block(header: &str, tool_header_printer: Option<impl FnOnce()>) {
+    println!("{header}");
+
+    if let Some(printer) = tool_header_printer {
+        println!("{}", format_config_section("Tool Runtime Config"));
+        printer();
+    }
+
+    println!();
+}
+
+/// The shared CLI flags for a tool that owns its own verbosity flag and derives
+/// its own default log level. Three differences from [`CommonToolArgs`]: there
+/// is no `--verbose` (the tool defines its own, typically a `-v` count flag; a
+/// second `--verbose` in the same command is a clap debug panic), `--log-level`
+/// carries no baked default, so `None` means "not passed" and the tool supplies
+/// its derived default through
+/// [`app_boot_up_with_level`](Self::app_boot_up_with_level), and there are no
+/// `#[command(about, long_about, version)]` attributes, so a flattening tool
+/// never inherits those from this struct and must declare its own.
+///
+/// Keep the shared flag definitions in sync with [`CommonToolArgs`]; the sync
+/// is pinned by a test in this module.
+#[derive(Args, Clone, Debug, Default)]
+pub struct CommonToolArgsNoVerbose {
+    /// Shows the header with tool name, version, and runtime options
+    #[arg(long = "app-header")]
+    pub app_header: bool,
+
+    /// Sets the log level; when omitted, the tool picks its own default.
+    /// Output goes to stderr by default with no channel flag needed;
+    /// `disabled` silences everything and overrides `RUST_LOG`, while every
+    /// other level yields to `RUST_LOG` when it is set.
+    #[arg(long = "log-level", ignore_case = true)]
+    pub log_level: Option<ToolLogLevel>,
+
+    /// Log to stdout instead of the default stderr
+    #[arg(long = "log-to-console")]
+    pub log_to_stdout: bool,
+
+    /// If the tool should log to a file
+    #[arg(long = "log-to-file")]
+    pub log_to_file: bool,
+
+    /// Rotate the log file by day
+    #[arg(long = "rotate-log-file-by-day")]
+    pub rotate_log_file_by_day: bool,
+}
+
+impl CommonToolArgsNoVerbose {
+    /// Resolves the effective log level: an explicit `--log-level` wins over
+    /// the tool's `derived` default, even when the tool derived that default
+    /// from other flags (a silent mode, say).
+    pub fn resolved_level(&self, derived: ToolLogLevel) -> ToolLogLevel {
+        self.log_level.clone().unwrap_or(derived)
+    }
+
+    /// Boots the tool like [`CommonToolArgs::app_boot_up`], with the log level
+    /// resolved by [`resolved_level`](Self::resolved_level) from the tool's
+    /// `derived_level` and the optional explicit `--log-level`. The header's
+    /// Verbose-mode line shows whatever `verbose` renders (a count, for a tool
+    /// with a `-v` count flag), and the Log-level line shows the resolved
+    /// effective level, never the raw flag.
+    pub fn app_boot_up_with_level(
+        &self,
+        app_name: &str,
+        app_version: &str,
+        derived_level: ToolLogLevel,
+        verbose: impl std::fmt::Display,
+        force_disable_log: bool,
+        tool_header_printer: Option<impl FnOnce()>,
+    ) {
+        let effective_level = self.resolved_level(derived_level);
+
+        AppLogger::new(
+            app_name,
+            effective_level.clone(),
+            self.log_to_stdout,
+            self.log_to_file,
+            self.rotate_log_file_by_day,
+        )
+        .init(force_disable_log);
+
+        if !self.app_header {
+            return;
         }
-        println!(
-            "{} Log level: {}",
-            CONFIG_UL_ITEM_LEVEL_2, self.default_logging_level
+
+        let header = render_standard_header(
+            app_name,
+            app_version,
+            verbose,
+            &effective_level,
+            self.log_to_stdout,
+            self.log_to_file,
+            self.rotate_log_file_by_day,
         );
-        println!(
-            "{} Log to stdout: {}",
-            CONFIG_UL_ITEM_LEVEL_2, self.log_to_stdout
+        print_header_block(&header, tool_header_printer);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser, Debug)]
+    struct TestCli {
+        #[command(flatten)]
+        common: CommonToolArgs,
+    }
+
+    #[test]
+    fn defaults_are_warn_level_with_all_flags_off() {
+        let cli = TestCli::parse_from(["test"]);
+
+        // The default lands on the `Warning` synonym, not `Warn`: clap renders
+        // `default_value_t` through Display ("Warning") and parses it back.
+        // Both variants map to tracing's `warn`.
+        assert_eq!(cli.common.default_logging_level, ToolLogLevel::Warning);
+        assert_eq!(cli.common.default_logging_level.to_tracing_level(), "warn");
+        assert!(!cli.common.app_header);
+        assert!(!cli.common.verbose);
+        assert!(!cli.common.log_to_stdout);
+        assert!(!cli.common.log_to_file);
+        assert!(!cli.common.rotate_log_file_by_day);
+    }
+
+    #[test]
+    fn log_level_parses_case_insensitively() {
+        let cli = TestCli::parse_from(["test", "--log-level", "DEBUG"]);
+
+        assert_eq!(cli.common.default_logging_level, ToolLogLevel::Debug);
+    }
+
+    #[derive(Parser, Debug)]
+    struct TestCliNoVerbose {
+        #[command(flatten)]
+        common: CommonToolArgsNoVerbose,
+    }
+
+    /// Mirrors the consumer shape the struct exists for: a tool-owned `-v`
+    /// count flag next to the flatten.
+    #[derive(Parser, Debug)]
+    struct TestCliOwnedVerbose {
+        #[arg(long = "verbose", short = 'v', action = clap::ArgAction::Count)]
+        verbose: u8,
+
+        #[command(flatten)]
+        common: CommonToolArgsNoVerbose,
+    }
+
+    #[test]
+    fn no_verbose_flatten_coexists_with_tool_owned_verbose_count() {
+        use clap::CommandFactory;
+        TestCliOwnedVerbose::command().debug_assert();
+
+        let cli = TestCliOwnedVerbose::parse_from(["test", "-vv", "--log-level", "debug"]);
+
+        assert_eq!(cli.verbose, 2);
+        assert_eq!(cli.common.log_level, Some(ToolLogLevel::Debug));
+    }
+
+    #[test]
+    fn no_verbose_defaults_match_default_impl() {
+        let parsed = TestCliNoVerbose::parse_from(["test"]).common;
+        let default = CommonToolArgsNoVerbose::default();
+
+        // The list-style boot path substitutes Default::default() for a parse,
+        // so the two must agree field for field.
+        assert_eq!(parsed.log_level, default.log_level);
+        assert_eq!(parsed.app_header, default.app_header);
+        assert_eq!(parsed.log_to_stdout, default.log_to_stdout);
+        assert_eq!(parsed.log_to_file, default.log_to_file);
+        assert_eq!(
+            parsed.rotate_log_file_by_day,
+            default.rotate_log_file_by_day
         );
-        println!(
-            "{} Log to file: {}",
-            CONFIG_UL_ITEM_LEVEL_2, self.log_to_file
-        );
-        println!(
-            "{} Rotate log file by day: {}",
-            CONFIG_UL_ITEM_LEVEL_2, self.rotate_log_file_by_day
+        assert_eq!(parsed.log_level, None);
+        assert!(!parsed.app_header);
+    }
+
+    #[test]
+    fn no_verbose_log_level_parses_case_insensitively() {
+        let cli = TestCliNoVerbose::parse_from(["test", "--log-level", "DEBUG"]);
+
+        assert_eq!(cli.common.log_level, Some(ToolLogLevel::Debug));
+    }
+
+    #[test]
+    fn resolved_level_prefers_explicit_flag_over_derived() {
+        let explicit = TestCliNoVerbose::parse_from(["test", "--log-level", "info"]).common;
+        assert_eq!(
+            explicit.resolved_level(ToolLogLevel::Error),
+            ToolLogLevel::Info
         );
 
-        if let Some(printer) = tool_header_printer {
-            println!("{} Tool Runtime Config", CONFIG_UL_ITEM_LEVEL_1);
-            printer();
+        let omitted = TestCliNoVerbose::parse_from(["test"]).common;
+        assert_eq!(
+            omitted.resolved_level(ToolLogLevel::Error),
+            ToolLogLevel::Error
+        );
+    }
+
+    #[test]
+    fn shared_flag_definitions_stay_in_sync() {
+        use clap::CommandFactory;
+        let full = TestCli::command();
+        let no_verbose = TestCliNoVerbose::command();
+
+        for id in [
+            "app_header",
+            "log_to_stdout",
+            "log_to_file",
+            "rotate_log_file_by_day",
+        ] {
+            let in_full = full
+                .get_arguments()
+                .find(|arg| arg.get_id().as_str() == id)
+                .expect("flag missing from CommonToolArgs");
+            let in_no_verbose = no_verbose
+                .get_arguments()
+                .find(|arg| arg.get_id().as_str() == id)
+                .expect("flag missing from CommonToolArgsNoVerbose");
+
+            assert_eq!(in_full.get_long(), in_no_verbose.get_long());
+            assert_eq!(
+                in_full.get_help().map(ToString::to_string),
+                in_no_verbose.get_help().map(ToString::to_string)
+            );
         }
 
-        println!();
+        assert!(
+            no_verbose
+                .get_arguments()
+                .all(|arg| arg.get_id().as_str() != "verbose"),
+            "CommonToolArgsNoVerbose must not define --verbose"
+        );
+
+        // The log-level field ids differ across the structs, so the loop above
+        // cannot pair them; pin the shared long name explicitly.
+        for command in [&full, &no_verbose] {
+            assert!(
+                command
+                    .get_arguments()
+                    .any(|arg| arg.get_long() == Some("log-level")),
+                "both structs must expose --log-level"
+            );
+        }
     }
 }
