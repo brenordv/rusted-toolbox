@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+- Wrote the readme, which was an empty file: polling contract, `immediate_exit`
+  semantics (exit 0, skipped `Drop` and its telemetry-loss consequence), and the
+  once-per-process constraint.
+
 ## 1.0.0
 - Shutdown messages now go to stderr instead of stdout, keeping stdout a clean
   data channel for piped consumers.

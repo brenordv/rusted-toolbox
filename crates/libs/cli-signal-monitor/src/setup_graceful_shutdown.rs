@@ -26,11 +26,11 @@ fn create_manual_shutdown_handler(immediate_exit: bool) -> Result<Arc<AtomicBool
 ///
 /// With `immediate_exit` false (every current caller), the handler flips the
 /// returned `AtomicBool` to `true` on interrupt; the application polls it (for
-/// example `while !flag.load(Ordering::Relaxed)`) and winds down its own work.
+/// example, `while !flag.load(Ordering::Relaxed)`) and winds down its own work.
 /// The flag starts `false` and only ever transitions to `true`.
 ///
 /// With `immediate_exit` true, the handler exits the process itself, with code 0.
-/// A script therefore cannot distinguish an interrupt from a normal success by
+/// A script, therefore, cannot distinguish an interrupt from a normal success by
 /// exit code alone; this is intentional while the mode has no callers
 /// (`common_utils::constants::EXIT_CODE_INTERRUPTED_BY_USER` is available if an
 /// interrupt ever needs a distinct exit code).

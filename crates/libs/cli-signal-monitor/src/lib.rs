@@ -1,7 +1,7 @@
 //! Installs a Ctrl-C (SIGINT) handler for graceful shutdown.
 //!
 //! [`setup_graceful_shutdown`](setup_graceful_shutdown::setup_graceful_shutdown)
-//! either exits the process immediately on interrupt, or flips a shared
+//! either exits the process immediately on interrupt or flips a shared
 //! `AtomicBool` that the application polls to wind down its own work:
 //!
 //! ```no_run
