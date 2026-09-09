@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+- Created the readme: the three helpers and why the crate is separate from
+  `common-utils`.
+- The `new_guid` test now also pins the documented lowercase rendering.
+
 ## 1.1.0
 - Re-exported `copy_to_clipboard`, `new_guid`, and `clean_str_regex` at the crate
   root for shorter call paths.

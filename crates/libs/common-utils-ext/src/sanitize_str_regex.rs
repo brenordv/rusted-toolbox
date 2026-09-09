@@ -101,8 +101,8 @@ mod tests {
     #[test]
     fn test_clean_str_regex_large_string() {
         let clean_part = "a".repeat(1000);
-        let input = format!("{}\n{}\t{}", clean_part, clean_part, clean_part);
-        let expected = format!("{}{}{}", clean_part, clean_part, clean_part);
+        let input = format!("{clean_part}\n{clean_part}\t{clean_part}");
+        let expected = format!("{clean_part}{clean_part}{clean_part}");
         assert_eq!(clean_str_regex(&input), expected);
     }
 }

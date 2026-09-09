@@ -10,11 +10,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_guid_is_a_valid_hyphenated_uuid() {
+    fn new_guid_is_a_valid_hyphenated_lowercase_uuid() {
         let guid = new_guid();
 
         assert!(Uuid::parse_str(&guid).is_ok());
         assert_eq!(guid.len(), 36);
+        assert_eq!(guid, guid.to_lowercase());
     }
 
     #[test]
