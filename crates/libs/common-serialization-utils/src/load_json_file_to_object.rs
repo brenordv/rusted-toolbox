@@ -92,6 +92,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn type_mismatch_reports_parse_error() {
+        let error = write_and_load(r#"{"name":"widget","count":"three"}"#)
+            .await
+            .unwrap_err();
+
+        assert!(format!("{error:#}").contains("parse"));
+    }
+
+    #[tokio::test]
     async fn missing_file_reports_read_error() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("does-not-exist.json");

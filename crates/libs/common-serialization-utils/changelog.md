@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+- Created the readme: async contract, BOM handling, error contexts.
+- Added a test pinning that a type mismatch (valid JSON, wrong target shape)
+  reports the parse-error context.
+
 ## 1.1.0
 - Removed the `cargo new` scaffolding (`add` and its test).
 - Re-exported `load_json_file_to_object` at the crate root for a shorter path.
