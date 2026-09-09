@@ -51,6 +51,16 @@ mod tests {
     }
 
     #[test]
+    fn nonexistent_path_yields_no_files() {
+        let root = tempdir().unwrap();
+        let missing = root.path().join("does-not-exist");
+
+        let found: Vec<PathBuf> = list_all_files_recursively(&missing).collect();
+
+        assert!(found.is_empty());
+    }
+
+    #[test]
     fn a_file_path_yields_just_that_file() {
         let root = tempdir().unwrap();
         let file = root.path().join("only.txt");

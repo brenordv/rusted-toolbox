@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1
+- Created the readme: the helper, the silent-skip contract, file-path input
+  behavior.
+- Added a test pinning that a nonexistent path yields no files (the silent-skip
+  contract).
+
 ## 2.0.0
 - Removed the unused `monitor_folder` async watcher module: its debounce drained
   accumulated paths under the latest event's kind, the sample handler did not
