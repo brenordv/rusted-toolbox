@@ -10,6 +10,9 @@ pub fn get_user_home_folder() -> Option<PathBuf> {
     env::home_dir()
 }
 
+/// Returns the current working directory, falling back to the relative path
+/// `.` when it cannot be resolved (for example, when the directory was deleted
+/// out from under the process).
 pub fn get_current_dir() -> PathBuf {
     env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
@@ -61,7 +64,7 @@ pub fn get_filename_with_current_date(
         chrono::Local::now().format(now_format)
     };
 
-    format!("{}-{}.{}", prefix, now, ext)
+    format!("{prefix}-{now}.{ext}")
 }
 
 pub trait EnsureDirectoryExists {

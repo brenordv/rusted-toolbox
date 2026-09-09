@@ -1,5 +1,13 @@
 use chrono::Duration;
 
+/// Makes `input` safer to use as a filename, by character substitution only:
+/// filesystem-reserved characters (`< > : " | ? * \ /`) and other special
+/// characters become `_`, spaces become `-`, and leading/trailing dots are
+/// trimmed.
+///
+/// This does not handle Windows reserved device names (`CON`, `NUL`, `PRN`,
+/// ...), and an input consisting only of dots collapses to an empty string;
+/// callers that need those guarantees must add their own checks.
 pub fn sanitize_string_for_filename(input: &str) -> String {
     input
         .chars()
@@ -43,10 +51,7 @@ pub fn format_duration_to_string(duration: Duration) -> String {
     let seconds = (total_milliseconds % 60_000) / 1_000;
     let milliseconds = total_milliseconds % 1_000;
 
-    format!(
-        "{:02}:{:02}:{:02}.{:03}",
-        hours, minutes, seconds, milliseconds
-    )
+    format!("{hours:02}:{minutes:02}:{seconds:02}.{milliseconds:03}")
 }
 
 /// Formats a given byte value into a human-readable string representation with appropriate units.
@@ -81,7 +86,7 @@ pub fn format_bytes_to_string(bytes: u64) -> String {
         }
     }
 
-    let formatted_number = format!("{:.2}", value);
+    let formatted_number = format!("{value:.2}");
     let parts: Vec<&str> = formatted_number.split('.').collect();
     let whole_part = parts[0];
     let decimal_part = parts[1];
@@ -98,79 +103,49 @@ pub fn format_bytes_to_string(bytes: u64) -> String {
     let decimal_suffix = if *unit == "bytes" {
         "".to_string()
     } else {
-        format!(".{}", decimal_part)
+        format!(".{decimal_part}")
     };
 
-    format!("{}{} {}", formatted_with_commas, decimal_suffix, unit)
+    format!("{formatted_with_commas}{decimal_suffix} {unit}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn sanitize_filename_passes_clean_name_through() {
-        assert_eq!(
-            sanitize_string_for_filename("hello_world-1.txt"),
-            "hello_world-1.txt"
-        );
+    #[rstest]
+    #[case::clean_name_passes_through("hello_world-1.txt", "hello_world-1.txt")]
+    #[case::reserved_characters_replaced("a/b:c*d?", "a_b_c_d_")]
+    #[case::spaces_become_hyphens("my file.txt", "my-file.txt")]
+    #[case::surrounding_dots_trimmed(".hidden.", "hidden")]
+    #[case::only_dots_collapse_to_empty("...", "")]
+    #[case::empty_stays_empty("", "")]
+    fn sanitize_filename_cases(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(sanitize_string_for_filename(input), expected);
     }
 
-    #[test]
-    fn sanitize_filename_replaces_reserved_characters() {
-        assert_eq!(sanitize_string_for_filename("a/b:c*d?"), "a_b_c_d_");
+    #[rstest]
+    #[case::zero(Duration::zero(), "00:00:00.000")]
+    #[case::subsecond_renders_milliseconds(Duration::milliseconds(250), "00:00:00.250")]
+    #[case::over_an_hour(Duration::milliseconds(3_661_005), "01:01:01.005")]
+    #[case::negative_uses_magnitude(Duration::milliseconds(-1_500), "00:00:01.500")]
+    fn format_duration_cases(#[case] duration: Duration, #[case] expected: &str) {
+        assert_eq!(format_duration_to_string(duration), expected);
     }
 
-    #[test]
-    fn sanitize_filename_empty_input_stays_empty() {
-        assert_eq!(sanitize_string_for_filename(""), "");
-    }
-
-    #[test]
-    fn format_duration_zero() {
-        assert_eq!(format_duration_to_string(Duration::zero()), "00:00:00.000");
-    }
-
-    #[test]
-    fn format_duration_subsecond_renders_milliseconds() {
-        assert_eq!(
-            format_duration_to_string(Duration::milliseconds(250)),
-            "00:00:00.250"
-        );
-    }
-
-    #[test]
-    fn format_duration_over_an_hour() {
-        assert_eq!(
-            format_duration_to_string(Duration::milliseconds(3_661_005)),
-            "01:01:01.005"
-        );
-    }
-
-    #[test]
-    fn format_bytes_zero_is_plain_bytes() {
-        assert_eq!(format_bytes_to_string(0), "0 bytes");
-    }
-
-    #[test]
-    fn format_bytes_below_one_kb_stays_in_bytes() {
-        assert_eq!(format_bytes_to_string(512), "512 bytes");
-    }
-
-    #[test]
-    fn format_bytes_at_one_kb_switches_unit_and_shows_decimals() {
-        assert_eq!(format_bytes_to_string(1024), "1.00 KB");
-    }
-
-    #[test]
-    fn format_bytes_adds_thousands_separator() {
-        assert_eq!(format_bytes_to_string(1000), "1,000 bytes");
-    }
-
-    #[test]
-    fn format_bytes_renders_fractional_kb() {
-        // Pins the `{:.2}` decimal rendering that the parts[0]/parts[1] split
-        // depends on: without the decimal point the fractional suffix is lost.
-        assert_eq!(format_bytes_to_string(1536), "1.50 KB");
+    // The fractional_kb case pins the `{:.2}` decimal rendering that the
+    // parts[0]/parts[1] split depends on: without the decimal point the
+    // fractional suffix is lost.
+    #[rstest]
+    #[case::zero_is_plain_bytes(0, "0 bytes")]
+    #[case::below_one_kb_stays_in_bytes(512, "512 bytes")]
+    #[case::thousands_separator(1000, "1,000 bytes")]
+    #[case::one_kb_switches_unit_and_shows_decimals(1024, "1.00 KB")]
+    #[case::fractional_kb(1536, "1.50 KB")]
+    #[case::one_tb(1 << 40, "1.00 TB")]
+    #[case::above_tb_stays_in_tb(1024 * (1 << 40), "1,024.00 TB")]
+    fn format_bytes_cases(#[case] bytes: u64, #[case] expected: &str) {
+        assert_eq!(format_bytes_to_string(bytes), expected);
     }
 }

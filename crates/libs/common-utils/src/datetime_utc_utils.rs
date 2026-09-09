@@ -2,11 +2,18 @@ use chrono::{DateTime, Local, TimeDelta, Utc};
 
 const DATE_TIME_TO_SAFE_FILENAME_FORMAT: &str = "%Y-%m-%d--%H-%M-%S--%f";
 
+/// Elapsed-time helper for UTC timestamps.
 pub trait DateTimeUtcUtils {
+    /// Returns the time elapsed from `self` until now (UTC). Negative when
+    /// `self` is in the future.
     fn get_elapsed_time(&self) -> TimeDelta;
 }
 
+/// Filename-safe rendering for datetimes, implemented for both `Local` and
+/// `Utc` timestamps.
 pub trait DateTimeUtilsExt {
+    /// Renders the datetime as `YYYY-MM-DD--HH-MM-SS--<nanoseconds>`: no
+    /// colons, spaces, or slashes, so the result is safe inside a filename.
     fn get_datetime_as_filename_safe_string(&self) -> String;
 }
 
