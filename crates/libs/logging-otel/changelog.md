@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1
+- Created the readme: feature gate, endpoint resolution, an adoption recipe,
+  and the contracts that only lived in doc comments (guard lifetime vs exit
+  helpers, stdout inversion on the OTel path, `RUST_LOG` seeding side effect,
+  disabled-level semantics, failure degradation).
+- The OTel setup-failure warning no longer prints the raw error, which could
+  plausibly embed the OTLP endpoint; the endpoint is never logged by contract.
+- Added a test pinning that `--log-level disabled` returns no guard.
+
 ## 1.1.0
 - Endpoint resolution now normalizes whitespace and treats an empty value as
   absent, for both the parameter and `OTEL_EXPORTER_OTLP_ENDPOINT`.

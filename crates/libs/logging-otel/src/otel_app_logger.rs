@@ -121,8 +121,15 @@ impl OtelAppLogger for AppLogger {
                             _private: (),
                         })
                     }
-                    Err(e) => {
-                        eprintln!("Warning: failed to initialize OpenTelemetry: {e}");
+                    Err(_) => {
+                        // The raw error is deliberately not printed: raccoon-otel's
+                        // setup errors can plausibly embed the OTLP endpoint, and
+                        // this crate's contract is to never log that value.
+                        eprintln!(
+                            "Warning: failed to initialize OpenTelemetry; falling back to \
+                             standard logging. The error is withheld because it may contain \
+                             the OTLP endpoint."
+                        );
                     }
                 }
             }
@@ -258,6 +265,25 @@ mod tests {
         let logger = AppLogger::new("logging-otel-test", ToolLogLevel::Info, false, false, false);
 
         let guard = logger.init_with_otel("logging-otel-test", Some("http://collector:4318"), true);
+
+        assert!(guard.is_none());
+    }
+
+    #[test]
+    fn init_with_otel_disabled_level_returns_none() {
+        // Asserts only on the return value; probing the global dispatcher would
+        // couple this test to run order. The Disabled level short-circuits
+        // before endpoint resolution, so the endpoint here is never read.
+        let logger = AppLogger::new(
+            "logging-otel-test",
+            ToolLogLevel::Disabled,
+            false,
+            false,
+            false,
+        );
+
+        let guard =
+            logger.init_with_otel("logging-otel-test", Some("http://collector:4318"), false);
 
         assert!(guard.is_none());
     }
