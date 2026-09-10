@@ -1,0 +1,24 @@
+[package]
+name = "tail"
+version = "1.1.0"
+description = "Port of the Unix tail command"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+cli-signal-monitor = { workspace = true }
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+shared-head-tail = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tempfile = { workspace = true }
