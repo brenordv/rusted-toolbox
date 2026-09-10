@@ -1,6 +1,6 @@
 [package]
 name = "split"
-version = "2.0.0"
+version = "2.0.1"
 description = "Tool for splitting large UTF-8 text or CSV files by line count with header preservation, progress feedback, and graceful shutdown."
 edition.workspace = true
 authors.workspace = true

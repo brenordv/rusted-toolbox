@@ -9,7 +9,15 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tracing::error;
+use tracing::{error, warn};
+
+/// How a split run ended: the whole input was processed, or the user
+/// interrupted it after some parts were already written.
+#[derive(Debug, PartialEq)]
+pub enum RunOutcome {
+    Completed,
+    Interrupted,
+}
 
 /// Creates a buffered file reader with 128KB buffer for input file.
 ///
@@ -26,16 +34,20 @@ pub fn get_input_file_reader(args: &SplitArgs) -> Result<BufReader<File>> {
 ///
 /// Reads file line by line, creates output files with specified prefix and numbering.
 /// In CSV mode, preserves headers in each output file. Provides progress feedback.
+/// On interruption the line already read is still written, so no data is dropped.
 ///
 /// # Errors
-/// Returns error if file operations fail
-pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) -> Result<()> {
+/// Returns error if file operations fail or the input is not valid UTF-8.
+pub fn process_input_file(
+    args: &SplitArgs,
+    shutdown_signal: Arc<AtomicBool>,
+) -> Result<RunOutcome> {
     // Open the input file
     let mut reader = get_input_file_reader(args)?;
 
     let start_time = Utc::now();
 
-    let feedback_interval = args.feedback_interval as f64;
+    let feedback_interval = args.feedback_interval as u64;
 
     let mut current_file_number = 1;
 
@@ -43,11 +55,15 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
 
     let mut current_output_writer: Option<BufWriter<File>> = None;
 
-    let mut total_lines_processed: f64 = 0.0;
+    let mut total_lines_processed: u64 = 0;
 
     let mut output_filename = String::new();
 
     let mut total_data_read: u64 = 0;
+
+    let mut feedback_enabled = true;
+
+    let mut outcome = RunOutcome::Completed;
 
     // Pre-allocate string buffer for line reading to avoid repeated allocations
     let mut line_buffer = String::with_capacity(1024);
@@ -63,17 +79,11 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
             Ok(0) => break, // End of a file
             Ok(bytes) => bytes,
             Err(e) => {
-                error!("Error reading line: {}", e);
-                break;
+                return Err(e).context("Failed to read from the input file (is it valid UTF-8?)");
             }
         };
 
         total_data_read += bytes_read as u64;
-
-        if shutdown_signal.load(Ordering::Relaxed) {
-            println!("\n- Saving progress and exiting gracefully...");
-            break;
-        }
 
         // Remove trailing newline for consistent processing
         let line = if line_buffer.ends_with('\n') {
@@ -97,7 +107,7 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
 
             let file = File::create(&output_path).context(format!(
                 "Failed to create output file: [{}]",
-                &output_path.display()
+                output_path.display()
             ))?;
 
             // Use BufWriter with a large buffer (64KB) for better write performance
@@ -107,7 +117,7 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
             if let Some(ref header) = csv_header {
                 writeln!(writer, "{}", header).context(format!(
                     "Failed to write CSV header to output file: [{}]",
-                    &output_path.display()
+                    output_path.display()
                 ))?;
             }
 
@@ -118,12 +128,20 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
         if let Some(ref mut writer) = current_output_writer {
             writeln!(writer, "{}", line).context(format!(
                 "Failed to write line to output file: [{}]",
-                &output_filename
+                output_filename
             ))?;
         }
 
         current_line_count += 1;
-        total_lines_processed += 1.0;
+        total_lines_processed += 1;
+
+        // The line already read is written before honoring the shutdown, so an
+        // interrupted run never drops data it has consumed.
+        if shutdown_signal.load(Ordering::Relaxed) {
+            println!("\n- Saving progress and exiting gracefully...");
+            outcome = RunOutcome::Interrupted;
+            break;
+        }
 
         // Check if we need to start a new file
         if current_line_count >= args.lines_per_file {
@@ -141,15 +159,20 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
         }
 
         // Update progress less frequently to avoid I/O overhead
-        if total_lines_processed % feedback_interval == 0.0 {
-            update_progress_feedback(
+        if feedback_enabled && total_lines_processed.is_multiple_of(feedback_interval) {
+            let mut stdout = std::io::stdout();
+            if let Err(e) = update_progress_feedback(
+                &mut stdout,
                 &start_time,
                 current_file_number,
                 current_line_count,
                 total_lines_processed,
                 &output_filename,
-                &total_data_read,
-            );
+                total_data_read,
+            ) {
+                warn!("Progress feedback disabled: cannot write to stdout: {}", e);
+                feedback_enabled = false;
+            }
         }
     }
 
@@ -160,14 +183,20 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
         }
     }
 
-    update_progress_feedback(
-        &start_time,
-        current_file_number,
-        current_line_count,
-        total_lines_processed,
-        &output_filename,
-        &total_data_read,
-    );
+    if feedback_enabled {
+        let mut stdout = std::io::stdout();
+        if let Err(e) = update_progress_feedback(
+            &mut stdout,
+            &start_time,
+            current_file_number,
+            current_line_count,
+            total_lines_processed,
+            &output_filename,
+            total_data_read,
+        ) {
+            warn!("Progress feedback disabled: cannot write to stdout: {}", e);
+        }
+    }
 
     println!();
     println!(
@@ -175,39 +204,38 @@ pub fn process_input_file(args: &SplitArgs, shutdown_signal: Arc<AtomicBool>) ->
         format_duration_to_string(start_time.get_elapsed_time())
     );
 
-    Ok(())
+    Ok(outcome)
 }
 
-/// Displays progress feedback with lines/second, data processed, and current file info.
+/// Writes one progress-feedback line (lines/second, data processed, current
+/// file info) to `output`, overwriting the current console line.
 ///
-/// Overwrites console line with real-time progress information.
-///
-/// # Panics
-/// Panics if stdout flush fails
+/// # Errors
+/// Returns the write or flush error so the caller can stop further feedback.
 fn update_progress_feedback(
+    output: &mut dyn Write,
     start_time: &DateTime<Utc>,
     current_file_number: i32,
     current_line_count: usize,
-    total_lines_processed: f64,
+    total_lines_processed: u64,
     current_output_file: &str,
-    total_bytes_read: &u64,
-) {
+    total_bytes_read: u64,
+) -> std::io::Result<()> {
     let elapsed = start_time.get_elapsed_time();
-    let lines_per_second = total_lines_processed / elapsed.as_seconds_f64();
+    let lines_per_second = total_lines_processed as f64 / elapsed.as_seconds_f64();
 
     let msg = format!(
-        "[L/s:{:.2}][Total Lines:{:.0} Data:{} Files:{}][Cur. File:{} - {}]                        ",
+        "[L/s:{:.2}][Total Lines:{} Data:{} Files:{}][Cur. File:{} - {}]                        ",
         lines_per_second,
         total_lines_processed,
-        format_bytes_to_string(*total_bytes_read),
+        format_bytes_to_string(total_bytes_read),
         current_file_number,
         current_line_count,
         current_output_file
     );
 
-    print!("\r{}", msg);
-
-    std::io::stdout().flush().expect("Failed to flush stdout");
+    write!(output, "\r{}", msg)?;
+    output.flush()
 }
 
 /// Creates output file path with prefix, input name, and file number.
@@ -310,8 +338,9 @@ mod tests {
         fs::create_dir_all(&outdir).unwrap();
         let args = args_for(&input, &outdir, 2, false);
 
-        process_input_file(&args, Arc::new(AtomicBool::new(false))).unwrap();
+        let outcome = process_input_file(&args, Arc::new(AtomicBool::new(false))).unwrap();
 
+        assert_eq!(outcome, RunOutcome::Completed);
         assert_eq!(
             fs::read_to_string(outdir.join("split_input_1.txt")).unwrap(),
             "l1\nl2\n"
@@ -349,7 +378,24 @@ mod tests {
     }
 
     #[test]
-    fn process_input_file_stops_before_writing_when_shutdown_set() {
+    fn process_input_file_writes_crlf_body_lines_with_lf() {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("input.txt");
+        fs::write(&input, "l1\r\nl2\r\n").unwrap();
+        let outdir = dir.path().join("out");
+        fs::create_dir_all(&outdir).unwrap();
+        let args = args_for(&input, &outdir, 10, false);
+
+        process_input_file(&args, Arc::new(AtomicBool::new(false))).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(outdir.join("split_input_1.txt")).unwrap(),
+            "l1\nl2\n"
+        );
+    }
+
+    #[test]
+    fn process_input_file_interrupt_keeps_the_line_already_read() {
         let dir = tempdir().unwrap();
         let input = dir.path().join("input.txt");
         fs::write(&input, "l1\nl2\nl3\n").unwrap();
@@ -357,9 +403,43 @@ mod tests {
         fs::create_dir_all(&outdir).unwrap();
         let args = args_for(&input, &outdir, 2, false);
 
-        process_input_file(&args, Arc::new(AtomicBool::new(true))).unwrap();
+        let outcome = process_input_file(&args, Arc::new(AtomicBool::new(true))).unwrap();
 
-        assert!(!outdir.join("split_input_1.txt").exists());
+        assert_eq!(outcome, RunOutcome::Interrupted);
+        assert_eq!(
+            fs::read_to_string(outdir.join("split_input_1.txt")).unwrap(),
+            "l1\n"
+        );
+    }
+
+    #[test]
+    fn process_input_file_propagates_read_errors() {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("input.txt");
+        // 0xFF is never valid UTF-8, so read_line fails on the second line.
+        fs::write(&input, [b'l', b'1', b'\n', 0xFF, 0xFE, b'\n']).unwrap();
+        let outdir = dir.path().join("out");
+        fs::create_dir_all(&outdir).unwrap();
+        let args = args_for(&input, &outdir, 10, false);
+
+        let result = process_input_file(&args, Arc::new(AtomicBool::new(false)));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn update_progress_feedback_writes_one_overwriting_line() {
+        let start = Utc::now();
+        let mut output: Vec<u8> = Vec::new();
+
+        update_progress_feedback(&mut output, &start, 2, 5, 105, "split_input_2.txt", 1024)
+            .unwrap();
+
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.starts_with("\r[L/s:"));
+        assert!(text.contains("Total Lines:105"));
+        assert!(text.contains("Files:2"));
+        assert!(text.contains("split_input_2.txt"));
     }
 
     #[test]

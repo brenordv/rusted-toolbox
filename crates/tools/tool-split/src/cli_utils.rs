@@ -2,7 +2,7 @@ use crate::models::SplitArgs;
 use anyhow::{Context, Result};
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
-use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
+use common_cli::header_format::format_config_item;
 use common_utils::file_system::get_current_dir;
 use std::path::{Path, PathBuf};
 
@@ -47,11 +47,11 @@ struct CliArgs {
 ///
 /// # Errors
 /// Returns an error when the input file does not exist, `--lines-per-file` is zero,
-/// or the output directory cannot be created.
+/// `--feedback-interval` is zero, or the output directory cannot be created.
 pub fn initialize() -> Result<SplitArgs> {
     let args = CliArgs::parse();
 
-    let config = build_args(&args);
+    let config = build_args(&args, &get_current_dir());
 
     validate_and_prepare(&config)?;
 
@@ -68,9 +68,10 @@ pub fn initialize() -> Result<SplitArgs> {
     Ok(config)
 }
 
-/// Resolves the parsed CLI arguments into the runtime configuration.
-fn build_args(args: &CliArgs) -> SplitArgs {
-    let current_working_dir = get_current_dir();
+/// Resolves the parsed CLI arguments into the runtime configuration. Relative
+/// paths are resolved against `base_dir`.
+fn build_args(args: &CliArgs, base_dir: &Path) -> SplitArgs {
+    let current_working_dir = base_dir.to_path_buf();
 
     let input_file_path = PathBuf::from(&args.file);
     let input_file = if input_file_path.is_absolute() {
@@ -119,7 +120,7 @@ fn build_args(args: &CliArgs) -> SplitArgs {
 ///
 /// # Errors
 /// Returns an error when the input file does not exist, `lines_per_file` is zero,
-/// or the output directory cannot be created.
+/// `feedback_interval` is zero, or the output directory cannot be created.
 fn validate_and_prepare(args: &SplitArgs) -> Result<()> {
     if !Path::new(&args.input_file).exists() {
         anyhow::bail!("Input file '{}' does not exist", args.input_file);
@@ -127,6 +128,10 @@ fn validate_and_prepare(args: &SplitArgs) -> Result<()> {
 
     if args.lines_per_file == 0 {
         anyhow::bail!("Lines per file must be greater than 0");
+    }
+
+    if args.feedback_interval == 0 {
+        anyhow::bail!("Feedback interval must be greater than 0");
     }
 
     let output_dir = PathBuf::from(&args.output_dir);
@@ -144,17 +149,17 @@ fn validate_and_prepare(args: &SplitArgs) -> Result<()> {
 
 /// Prints the tool's runtime configuration, shown under `--app-header`.
 fn print_header(args: &SplitArgs) {
-    println!("{} Input file: {}", CONFIG_UL_ITEM_LEVEL_2, args.input_file);
-    println!("{} Output dir: {}", CONFIG_UL_ITEM_LEVEL_2, args.output_dir);
+    println!("{}", format_config_item("Input file", &args.input_file));
+    println!("{}", format_config_item("Output dir", &args.output_dir));
     println!(
-        "{} Lines per file: {}",
-        CONFIG_UL_ITEM_LEVEL_2, args.lines_per_file
+        "{}",
+        format_config_item("Lines per file", args.lines_per_file)
     );
-    println!("{} File prefix: {}", CONFIG_UL_ITEM_LEVEL_2, args.prefix);
-    println!("{} CSV mode: {}", CONFIG_UL_ITEM_LEVEL_2, args.csv_mode);
+    println!("{}", format_config_item("File prefix", &args.prefix));
+    println!("{}", format_config_item("CSV mode", args.csv_mode));
     println!(
-        "{} Feedback interval: {}",
-        CONFIG_UL_ITEM_LEVEL_2, args.feedback_interval
+        "{}",
+        format_config_item("Feedback interval", args.feedback_interval)
     );
 }
 
@@ -227,5 +232,69 @@ mod tests {
         args.lines_per_file = 0;
 
         assert!(validate_and_prepare(&args).is_err());
+    }
+
+    #[test]
+    fn validate_and_prepare_rejects_zero_feedback_interval() {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("input.txt");
+        fs::write(&input, "a\n").unwrap();
+        let mut args = sample_args(
+            input.to_string_lossy().to_string(),
+            dir.path().to_string_lossy().to_string(),
+        );
+        args.feedback_interval = 0;
+
+        assert!(validate_and_prepare(&args).is_err());
+    }
+
+    fn cli_args_for(file: &str, output_dir: Option<&str>) -> CliArgs {
+        let mut argv = vec!["split", "-f", file];
+        if let Some(dir) = output_dir {
+            argv.push("-o");
+            argv.push(dir);
+        }
+        CliArgs::try_parse_from(argv).unwrap()
+    }
+
+    #[test]
+    fn build_args_joins_relative_input_onto_the_base_dir() {
+        let base = tempdir().unwrap();
+        let args = cli_args_for("data/input.txt", None);
+
+        let config = build_args(&args, base.path());
+
+        assert_eq!(
+            PathBuf::from(&config.input_file),
+            base.path().join("data").join("input.txt")
+        );
+    }
+
+    #[test]
+    fn build_args_defaults_output_dir_to_the_input_parent() {
+        let base = tempdir().unwrap();
+        let args = cli_args_for("data/input.txt", None);
+
+        let config = build_args(&args, base.path());
+
+        assert_eq!(PathBuf::from(&config.output_dir), base.path().join("data"));
+    }
+
+    #[test]
+    fn build_args_passes_absolute_paths_through() {
+        let base = tempdir().unwrap();
+        let elsewhere = tempdir().unwrap();
+        let target = tempdir().unwrap();
+        let absolute_input = elsewhere.path().join("input.txt");
+        let args = cli_args_for(
+            absolute_input.to_str().unwrap(),
+            Some(target.path().to_str().unwrap()),
+        );
+
+        let config = build_args(&args, base.path());
+
+        assert_eq!(PathBuf::from(&config.input_file), absolute_input);
+        assert_eq!(PathBuf::from(&config.output_dir), target.path());
+        assert_eq!(config.input_filename_without_extension, "input");
     }
 }

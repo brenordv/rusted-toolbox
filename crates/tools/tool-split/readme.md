@@ -6,8 +6,27 @@ The Split tool divides large text or CSV files into smaller files based on line 
 all output files when CSV mode is enabled, provides real-time progress feedback, and supports graceful shutdown.
 
 Notes: 
-1. We always assume an UTf-8 file, so other encodings might not be processed correctly.
+1. The input must be UTF-8. A byte sequence that is not valid UTF-8 stops the run with an error
+   (exit code 1); output written up to that point is left on disk.
 2. When splitting files in CSV mode, we are not validating the file or if there's any malformed data.
+
+## Command-line options
+
+| Flag                          | Description                                                                   |
+|-------------------------------|-------------------------------------------------------------------------------|
+| `-f, --file <FILE>`           | Path to the input file (required).                                            |
+| `-o, --output-dir <DIR>`      | Output directory. Defaults to the input file's directory. Created if missing. |
+| `-l, --lines-per-file <N>`    | Lines per output file (default 100, minimum 1).                               |
+| `-p, --file-prefix <PREFIX>`  | Prefix for output file names (default `split`).                               |
+| `-i, --feedback-interval <N>` | Lines between progress updates (default 100, minimum 1).                      |
+| `-c, --csv-mode`              | Repeat the first line (header) in every output file.                          |
+
+Shared flags from the common CLI: `--app-header`, `--log-level <level>` (long form only),
+`--log-to-console`, `--log-to-file`, `--rotate-log-file-by-day`.
+
+Exit codes: 0 on success, 1 on failure (including non-UTF-8 input), 130 when interrupted with
+Ctrl+C. On interruption the line already read is written before stopping, so no consumed data is
+lost, and the partial output stays on disk.
 
 ## Command Line Usage
 
@@ -87,5 +106,5 @@ The tool mimics the Unix `split` command but has some differences:
 | **Output naming**     | `xaa`, `xab`, `xac`...     | `prefix_filename_1.txt`, `prefix_filename_2.txt`... |
 | **CSV support**       | None                       | Headers preserved in CSV mode                       |
 | **Progress feedback** | None                       | Real-time progress display                          |
-| **Graceful shutdown** | Basic signal handling      | Preserves partial progress                          |
+| **Graceful shutdown** | Basic signal handling      | Preserves partial progress, exits 130               |
 | **File extensions**   | Preserves original or none | Uses `.txt` or `.csv` based on mode                 |
