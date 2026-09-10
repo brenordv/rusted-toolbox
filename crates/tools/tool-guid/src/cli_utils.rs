@@ -1,13 +1,13 @@
 use crate::models::GuidConfig;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
+use common_cli::header_format::format_config_item;
 use common_cli::tool_exit_helpers::exit_error;
-use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
 
 /// Generates GUIDs (uuid-v4) values, including empty.
 ///
 /// This tool can generate a single valid guid or an empty guid and copy this to the clipboard.
-/// Alternatively, it can continuously generate valid guids and output them to the terminal.
+/// Alternatively, it can generate N guids and print them one per line.
 #[derive(Parser, Debug)]
 #[command(about, long_about, version)]
 pub struct CliArgs {
@@ -41,47 +41,55 @@ pub struct CliArgs {
     pub common: CommonToolArgs,
 }
 
-/// Displays runtime configuration information.
-///
-/// Shows version, silence mode, interval settings, clipboard options, and empty GUID flags.
+/// Prints the tool section of the `--app-header` block: the multiple-generation
+/// target when set, otherwise the clipboard and empty-guid flags.
 pub fn print_runtime_info(args: &GuidConfig) {
     if let Some(generate_target) = args.generate_multiple {
         println!(
-            "{} Generate multiple guids: {}",
-            CONFIG_UL_ITEM_LEVEL_2, generate_target
+            "{}",
+            format_config_item("Generate multiple guids", generate_target)
         );
         return;
     }
 
     println!(
-        "{} Copy to clipboard: {}",
-        CONFIG_UL_ITEM_LEVEL_2, args.add_to_clipboard
+        "{}",
+        format_config_item("Copy to clipboard", args.add_to_clipboard)
     );
     println!(
-        "{} Empty Guid: {}",
-        CONFIG_UL_ITEM_LEVEL_2, args.generate_empty_guid
+        "{}",
+        format_config_item("Empty Guid", args.generate_empty_guid)
     );
+}
+
+/// Rejects a zero generation count; `None` (single-guid mode) and any positive
+/// count pass through unchanged.
+fn validate_multiple(generate_multiple: Option<usize>) -> anyhow::Result<Option<usize>> {
+    match generate_multiple {
+        Some(0) => {
+            anyhow::bail!("Invalid multiple generation count. Must be a positive integer.")
+        }
+        other => Ok(other),
+    }
 }
 
 /// Parses command-line arguments into GUID generation configuration.
 ///
-/// Supports single/continuous generation, clipboard copying, empty GUIDs, and silent mode.
+/// Validates the multiple-generation count, then boots logging and the optional
+/// app header.
 ///
 /// # Errors
 /// Terminates program if invalid arguments are provided
 pub fn initialize() -> GuidConfig {
     let args = CliArgs::parse();
 
-    let multiple_generation = match args.generate_multiple {
-        Some(n) => {
-            if n == 0 {
-                eprintln!("Error: Invalid multiple generation count. Must be a positive integer.");
-                exit_error();
-            }
-
-            Some(n)
+    let multiple_generation = match validate_multiple(args.generate_multiple) {
+        Ok(v) => v,
+        Err(err) => {
+            // Logging is not installed yet at this point, so report on stderr directly.
+            eprintln!("Error: {}", err);
+            exit_error();
         }
-        None => None,
     };
 
     let config = GuidConfig {
@@ -101,4 +109,30 @@ pub fn initialize() -> GuidConfig {
     );
 
     config
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_has_no_conflicting_flags() {
+        CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn validate_multiple_rejects_zero() {
+        assert!(validate_multiple(Some(0)).is_err());
+    }
+
+    #[test]
+    fn validate_multiple_accepts_positive_count() {
+        assert_eq!(validate_multiple(Some(3)).unwrap(), Some(3));
+    }
+
+    #[test]
+    fn validate_multiple_accepts_single_guid_mode() {
+        assert_eq!(validate_multiple(None).unwrap(), None);
+    }
 }

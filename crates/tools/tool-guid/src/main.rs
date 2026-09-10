@@ -9,19 +9,21 @@ mod models;
 
 /// GUID generator tool.
 ///
-/// Parses arguments, validates configuration, and generates GUIDs either once or continuously.
+/// Parses arguments, then generates a single guid (optionally empty, optionally
+/// copied to the clipboard) or N guids printed one per line.
 fn main() {
     let args = initialize();
 
     if let Some(target_guid_count) = args.generate_multiple {
-        let _ = generate_multiple_guid(target_guid_count).inspect_err(|e| {
-            error!("Error during continuous generation: {}", e);
+        let mut stdout = std::io::stdout();
+        if let Err(e) = generate_multiple_guid(target_guid_count, &mut stdout) {
+            error!("Error while writing guids: {}", e);
             exit_error();
-        });
+        }
     } else {
         let guid = create_guid(args.generate_empty_guid);
 
-        print!("{}", guid);
+        println!("{}", guid);
 
         if args.add_to_clipboard {
             copy_guid_to_clipboard(guid);

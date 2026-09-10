@@ -1,6 +1,7 @@
 /// Configuration for GUID generation operations.
 ///
-/// Defines behavior for clipboard copying, empty GUID generation, output mode, and intervals.
+/// Carries the clipboard flag, the empty-guid flag, and the optional
+/// multiple-generation count.
 pub struct GuidConfig {
     pub add_to_clipboard: bool,
     pub generate_empty_guid: bool,
