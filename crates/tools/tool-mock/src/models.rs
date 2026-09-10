@@ -61,3 +61,62 @@ impl FromArgs for MockOptions {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_args_maps_every_populated_field() {
+        let config = MockConfig::new(
+            DataType::Float,
+            Some(-3),
+            Some(42),
+            Some(8),
+            Some(2),
+            Some(30),
+            true,
+            false,
+            Some(5),
+        );
+
+        let options = MockOptions::from_args(&config);
+
+        assert!(matches!(options.data_type, DataType::Float));
+        assert_eq!(options.min, Some(-3));
+        assert_eq!(options.max, Some(42));
+        assert_eq!(options.length, Some(8));
+        assert_eq!(options.precision, Some(2));
+        assert_eq!(options.age, Some(30));
+        assert!(options.past);
+        assert!(!options.future);
+        assert_eq!(options.range, Some(5));
+    }
+
+    #[test]
+    fn from_args_maps_empty_fields_and_future_flag() {
+        let config = MockConfig::new(
+            DataType::Timestamp,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            true,
+            None,
+        );
+
+        let options = MockOptions::from_args(&config);
+
+        assert!(matches!(options.data_type, DataType::Timestamp));
+        assert_eq!(options.min, None);
+        assert_eq!(options.max, None);
+        assert_eq!(options.length, None);
+        assert_eq!(options.precision, None);
+        assert_eq!(options.age, None);
+        assert!(!options.past);
+        assert!(options.future);
+        assert_eq!(options.range, None);
+    }
+}

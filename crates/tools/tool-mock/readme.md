@@ -8,7 +8,7 @@ A fast and intuitive CLI tool for generating various types of mock data for test
 - **Internet & Tech**: Usernames, passwords, URLs, image URLs, file URLs
 - **Random Data**: Dates, times, colors, integers, floats, car brands
 - **Commerce**: Company names, products, job titles, industries, buzzwords
-- **Flexible Options**: Support for ranges, locales, and data constraints
+- **Flexible Options**: Support for ranges and data constraints
 - **Simple Output**: Only prints the requested value, no extra formatting
 - **Fast Execution**: Quick startup and generation
 
@@ -85,20 +85,23 @@ mock commerce.job-title
 - `commerce.buzzword` - Generate a business buzzword
 
 ## Options
-### Global Options
-- `--help, -h` - Show help
-- `--version, -V` - Show version
-- `--locale <LOCALE>` - Set locale for region-specific data (default: en_US)
+### Global options
+- `-h, --help` - Show help
+- `-V, --version` - Show version
 
-### Data-specific Options
-- `--min <NUMBER>` - Minimum value (for numbers)
-- `--max <NUMBER>` - Maximum value (for numbers)
-- `--length <NUMBER>` - Length specification (for passwords, etc.)
-- `--precision <NUMBER>` - Decimal precision (for floats)
-- `--age <NUMBER>` - Age for birthday calculation
-- `--past` - Generate past dates/times
-- `--future` - Generate future dates/times
-- `--range <YEARS>` - Date range in years (default: 50)
+Shared flags from the common CLI: `--app-header` (print the runtime header block), `--verbose`,
+`--log-level <level>` (case insensitive), `--log-to-console`, `--log-to-file`,
+`--rotate-log-file-by-day`.
+
+### Data-specific options
+- `-m, --min <NUMBER>` - Minimum value (for numbers)
+- `-x, --max <NUMBER>` - Maximum value (for numbers)
+- `-n, --length <NUMBER>` - Length specification (for passwords, etc.)
+- `-p, --precision <NUMBER>` - Decimal precision (for floats)
+- `-a, --age <NUMBER>` - Age for birthday calculation
+- `--past` - Generate past dates/times (long-only; conflicts with `--future`)
+- `-f, --future` - Generate future dates/times (conflicts with `--past`)
+- `-r, --range <YEARS>` - Date range in years (default: 50)
 
 ## Examples with Options
 ```bash
@@ -129,10 +132,14 @@ mock commerce.product-description --length 150
 - **Scripting**: Generate data for automation scripts
 - **Documentation**: Create examples with realistic data
 
-## Error Handling
+## Error handling
 
-The tool provides clear error messages for:
-- Invalid data types (shows available options)
-- Invalid parameter combinations
-- Range validation for numeric inputs
-- Missing required parameters
+The tool reports a clear error for:
+- Unknown data types (the error names the rejected value; the full list of types is in `--help`)
+- `--min` greater than `--max`
+- Flag conflicts rejected by the parser (`--past` together with `--future`)
+- A missing `DATA_TYPE` argument
+
+## Project layout exception
+
+The repository convention (see `CONTRIBUTING.md`) is that each tool keeps its logic in an in-crate `<tool>_app.rs`. This tool deliberately deviates from that rule: there is no `mock_app.rs`, and the generation logic lives in the shared library crate `crates/libs/mock-data-utils` so other tools can also generate mock data. The binary is intentionally a thin CLI wrapper: `main.rs`, `cli_utils.rs`, and `models.rs`.

@@ -17,15 +17,6 @@ pub struct CliArgs {
     #[arg(value_name = "DATA_TYPE", index = 1, required = true)]
     pub data_type: String,
 
-    /// Locale for generating mock data (e.g., en-US, fr-FR)
-    #[arg(
-        short = 'l',
-        long = "locale",
-        required = false,
-        default_value = "en-US"
-    )]
-    pub locale: String,
-
     /// Minimum value for generated data (e.g., for random integers)
     #[arg(short = 'm', long = "min", required = false)]
     pub min: Option<i32>,
@@ -47,12 +38,7 @@ pub struct CliArgs {
     pub age: Option<u32>,
 
     /// Generate date in the past
-    #[arg(
-        short = 'a',
-        long = "past",
-        required = false,
-        conflicts_with = "future"
-    )]
+    #[arg(long = "past", required = false, conflicts_with = "future")]
     pub past: bool,
 
     /// Generate date in the future
@@ -115,6 +101,19 @@ Commerce:
   commerce.buzzword     - Generate a business buzzword"
 }
 
+/// Reject bounds where the minimum exceeds the maximum.
+///
+/// Only errors when both bounds are present; equal bounds are accepted.
+pub(crate) fn validate_range(min: Option<i32>, max: Option<i32>) -> anyhow::Result<()> {
+    if let (Some(min), Some(max)) = (min, max) {
+        if min > max {
+            anyhow::bail!("Minimum value cannot be greater than maximum value");
+        }
+    }
+
+    Ok(())
+}
+
 pub fn initialize() -> MockConfig {
     let args = CliArgs::parse();
 
@@ -126,12 +125,9 @@ pub fn initialize() -> MockConfig {
         Some(|| {}),
     );
 
-    // Check min/max ranges
-    if let (Some(min), Some(max)) = (args.min, args.max) {
-        if min > max {
-            error!("Minimum value cannot be greater than maximum value");
-            exit_error();
-        }
+    if let Err(err) = validate_range(args.min, args.max) {
+        error!("{}", err);
+        exit_error();
     }
 
     // Check if data type is provided
@@ -159,4 +155,39 @@ pub fn initialize() -> MockConfig {
         args.future,
         Some(args.range),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// Runs clap's self-checks, which catch definition errors such as two
+    /// flags sharing the same short.
+    #[test]
+    fn cli_definition_passes_clap_debug_assertions() {
+        CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn validate_range_rejects_min_greater_than_max() {
+        let err = validate_range(Some(10), Some(5)).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Minimum value cannot be greater than maximum value"
+        );
+    }
+
+    #[test]
+    fn validate_range_accepts_min_equal_to_max() {
+        assert!(validate_range(Some(7), Some(7)).is_ok());
+    }
+
+    #[test]
+    fn validate_range_accepts_missing_bounds() {
+        assert!(validate_range(None, None).is_ok());
+        assert!(validate_range(Some(3), None).is_ok());
+        assert!(validate_range(None, Some(3)).is_ok());
+    }
 }
