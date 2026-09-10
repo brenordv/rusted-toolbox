@@ -1,7 +1,7 @@
 use crate::models::TsArgs;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
-use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
+use common_cli::header_format::format_config_item;
 
 /// Convert Unix timestamps to datetime and vice versa.
 ///
@@ -48,7 +48,7 @@ fn print_header(args: &TsArgs) {
         &args.input
     };
 
-    println!("{} Input: {}", CONFIG_UL_ITEM_LEVEL_2, input);
+    println!("{}", format_config_item("Input", input));
 }
 
 #[cfg(test)]

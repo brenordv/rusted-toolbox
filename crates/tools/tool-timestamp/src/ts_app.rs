@@ -23,41 +23,67 @@ const LAYOUTS: &[&str] = &[
     "%d/%m/%Y",            // DD/MM/YYYY
 ];
 
+/// How a numeric input is read: bare seconds, or milliseconds when the token is
+/// longer than 10 digits (the milliseconds value keeps its raw form here; the
+/// caller divides by 1000).
+#[derive(Debug, PartialEq)]
+enum NumericInterpretation {
+    Seconds(i64),
+    Milliseconds(i64),
+}
+
+/// Classifies a numeric input token. Returns `None` when the token is not an
+/// integer. Tokens longer than 10 characters are read as milliseconds (a
+/// 10-digit seconds value covers dates up to November 2286).
+fn interpret_numeric(input: &str) -> Option<NumericInterpretation> {
+    let value = i64::from_str(input).ok()?;
+
+    if input.len() > 10 {
+        Some(NumericInterpretation::Milliseconds(value))
+    } else {
+        Some(NumericInterpretation::Seconds(value))
+    }
+}
+
 /// Processes input for timestamp conversion.
 ///
 /// Handles three scenarios:
 /// - Empty input: Shows current Unix timestamp and its datetime representation
 /// - Numeric input: Converts Unix timestamp to datetime (UTC and local)
 /// - String input: Converts datetime string to Unix timestamp
+///
+/// # Errors
+/// Returns an error when the input is neither a timestamp nor a datetime in a
+/// supported format, and when a timestamp is out of chrono's range.
 pub fn process_input(input: &str) -> Result<()> {
     if input.is_empty() {
         let now = print_current_unix_timestamp();
-        convert_unix_to_datetime(now)?;
+        print_unix_as_datetime(now)?;
         return Ok(());
     }
 
-    // Try to parse the input as a Unix timestamp (integer)
-    if let Ok(unix_timestamp) = i64::from_str(input) {
-        if input.len() > 10 {
-            // Update to > 11 after - November 20th, 2286.
+    match interpret_numeric(input) {
+        Some(NumericInterpretation::Milliseconds(value)) => {
             println!("- Not a standard Unix timestamp. Treating it as time in milliseconds.");
-            convert_unix_to_datetime(unix_timestamp / 1000)?;
-        } else {
-            convert_unix_to_datetime(unix_timestamp)?;
+            print_unix_as_datetime(value / 1000)?;
         }
-
-        return Ok(());
+        Some(NumericInterpretation::Seconds(value)) => {
+            print_unix_as_datetime(value)?;
+        }
+        None => {
+            // Not a number: treat it as a date-time string.
+            let timestamp = datetime_to_unix(input)?;
+            println!("Unix Timestamp: {}", timestamp);
+        }
     }
-
-    // If not a Unix timestamp, treat it as a date-time string
-    convert_datetime_to_unix(input)?;
 
     Ok(())
 }
 
 /// Gets and prints the current Unix timestamp.
 ///
-/// Uses local time to calculate seconds elapsed since Unix epoch (1970-01-01 00:00:00 UTC).
+/// The timestamp counts seconds since the Unix epoch (1970-01-01 00:00:00 UTC)
+/// and is timezone-independent.
 ///
 /// # Returns
 /// Current Unix timestamp as i64
@@ -67,10 +93,10 @@ fn print_current_unix_timestamp() -> i64 {
     current_time
 }
 
-/// Converts Unix timestamp to UTC and local datetime formats.
-///
-/// Displays both UTC time (ISO 8601 with Z suffix) and local time (with timezone offset).
-fn convert_unix_to_datetime(unix_timestamp: i64) -> Result<()> {
+/// Renders a Unix timestamp as the two output lines: UTC time (ISO 8601 with Z
+/// suffix) and local time (with timezone offset). The local line depends on the
+/// process timezone.
+fn format_unix_to_datetime(unix_timestamp: i64) -> Result<(String, String)> {
     let utc_time = Utc
         .timestamp_opt(unix_timestamp, 0)
         .single()
@@ -78,8 +104,18 @@ fn convert_unix_to_datetime(unix_timestamp: i64) -> Result<()> {
 
     let local_time = utc_time.with_timezone(&Local);
 
-    println!("UTC Time: {}", utc_time.format("%Y-%m-%dT%H:%M:%SZ"));
-    println!("Local Time: {}", local_time.format("%Y-%m-%dT%H:%M:%S%z"));
+    Ok((
+        format!("UTC Time: {}", utc_time.format("%Y-%m-%dT%H:%M:%SZ")),
+        format!("Local Time: {}", local_time.format("%Y-%m-%dT%H:%M:%S%z")),
+    ))
+}
+
+/// Prints the UTC and local datetime lines for a Unix timestamp.
+fn print_unix_as_datetime(unix_timestamp: i64) -> Result<()> {
+    let (utc_line, local_line) = format_unix_to_datetime(unix_timestamp)?;
+
+    println!("{}", utc_line);
+    println!("{}", local_line);
 
     Ok(())
 }
@@ -118,32 +154,23 @@ fn guess_datetime_format(input: &str) -> Result<i64> {
     );
 }
 
-/// Converts datetime string to Unix timestamp.
+/// Converts a datetime string to a Unix timestamp.
 ///
-/// First tries the default format "YYYY-MM-DD HH:MM:SS", then attempts format guessing.
-/// Prints the resulting Unix timestamp or error message if parsing fails.
-fn convert_datetime_to_unix(datetime_str: &str) -> Result<()> {
-    // First, try the default format
+/// First tries the default format "YYYY-MM-DD HH:MM:SS", then attempts format
+/// guessing across the supported layouts.
+///
+/// # Errors
+/// Returns an error when no supported format matches the input.
+fn datetime_to_unix(datetime_str: &str) -> Result<i64> {
     if let Ok(dt) = NaiveDateTime::parse_from_str(datetime_str, "%Y-%m-%d %H:%M:%S") {
-        let timestamp = Local
+        return Local
             .from_local_datetime(&dt)
             .single()
-            .context(format!("Invalid datetime: [{}]", datetime_str))?
-            .timestamp();
-
-        println!("Unix Timestamp: {}", timestamp);
-
-        return Ok(());
+            .context(format!("Invalid datetime: [{}]", datetime_str))
+            .map(|local| local.timestamp());
     }
 
-    // If the default format fails, attempt to guess the format
-    if let Ok(timestamp) = guess_datetime_format(datetime_str) {
-        println!("Unix Timestamp: {}", timestamp);
-    } else {
-        println!("Invalid date-time format. Unable to parse the input.");
-    }
-
-    Ok(())
+    guess_datetime_format(datetime_str)
 }
 
 #[cfg(test)]
@@ -180,13 +207,44 @@ mod tests {
     }
 
     #[test]
-    fn convert_unix_to_datetime_accepts_epoch() {
-        assert!(convert_unix_to_datetime(0).is_ok());
+    fn format_unix_to_datetime_pins_epoch_utc_line() {
+        let (utc_line, _) = format_unix_to_datetime(0).unwrap();
+
+        assert_eq!(utc_line, "UTC Time: 1970-01-01T00:00:00Z");
     }
 
     #[test]
-    fn convert_unix_to_datetime_rejects_out_of_range_value() {
-        assert!(convert_unix_to_datetime(i64::MAX).is_err());
+    fn format_unix_to_datetime_rejects_out_of_range_value() {
+        assert!(format_unix_to_datetime(i64::MAX).is_err());
+    }
+
+    #[test]
+    fn interpret_numeric_reads_up_to_ten_digits_as_seconds() {
+        assert_eq!(
+            interpret_numeric("1700000000"),
+            Some(NumericInterpretation::Seconds(1700000000))
+        );
+    }
+
+    #[test]
+    fn interpret_numeric_reads_longer_tokens_as_milliseconds() {
+        assert_eq!(
+            interpret_numeric("1700000000000"),
+            Some(NumericInterpretation::Milliseconds(1700000000000))
+        );
+    }
+
+    #[test]
+    fn interpret_numeric_returns_none_for_non_numeric_input() {
+        assert_eq!(interpret_numeric("2021-06-15"), None);
+    }
+
+    #[test]
+    fn milliseconds_input_yields_the_same_datetime_as_its_seconds_value() {
+        let from_ms = format_unix_to_datetime(1700000000000 / 1000).unwrap();
+        let from_secs = format_unix_to_datetime(1700000000).unwrap();
+
+        assert_eq!(from_ms, from_secs);
     }
 
     #[test]
@@ -202,7 +260,15 @@ mod tests {
     }
 
     #[test]
-    fn process_input_reports_unparseable_string_without_error() {
-        assert!(process_input("definitely not a timestamp").is_ok());
+    fn process_input_rejects_unparseable_string() {
+        assert!(process_input("definitely not a timestamp").is_err());
+    }
+
+    #[test]
+    fn datetime_to_unix_matches_default_and_guessed_formats() {
+        let default_format = datetime_to_unix("2021-06-15 12:30:00").unwrap();
+        let guessed = datetime_to_unix("2021/06/15 12:30:00").unwrap();
+
+        assert_eq!(default_format, guessed);
     }
 }
