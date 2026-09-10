@@ -11,7 +11,7 @@ mod models;
 async fn main() -> Result<()> {
     let args = initialize()?;
 
-    run_gitignore_maintainer(args.target_folder).await?;
+    run_gitignore_maintainer(args).await?;
 
     Ok(())
 }

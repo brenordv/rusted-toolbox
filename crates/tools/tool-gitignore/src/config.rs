@@ -1,4 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+
+/// Raw URL of the upstream AI agent artifacts template. Its uncommented
+/// entries cover local agent state (Aider histories, Claude Code local
+/// settings and logs, Gemini CLI debug files); the other agents it lists are
+/// commented-out examples upstream, and the sanitize step drops comments.
+pub const AI_ARTIFACTS_TEMPLATE_URL: &str =
+    "https://raw.githubusercontent.com/github/gitignore/main/Global/Agents.gitignore";
 
 pub struct Config {
     mappings: HashMap<String, String>,
@@ -183,9 +190,14 @@ impl Config {
             mappings.insert(key.to_string(), "https://raw.githubusercontent.com/github/gitignore/main/community/Golang/Hugo.gitignore".to_string());
         });
 
-        ".cursor|.cursor-tmp|cursor-output|.cursorrules".split("|").for_each(|key| {
-            mappings.insert(key.to_string(), "https://raw.githubusercontent.com/oslook/cursor-ai-downloads/refs/heads/main/.gitignore".to_string());
-        });
+        // AI agent footprints: local state dirs, histories, and logs. Each
+        // queues the shared artifacts template so agent-local files stay out
+        // of git.
+        ".claude|claude.local.md|.aider.chat.history.md|.aider.input.history|.cursor|.cursorrules|.windsurf|.codeium|.gemini|gemini-debug.log|.gemini-clipboard|.continue|.cline|.codex"
+            .split("|")
+            .for_each(|key| {
+                mappings.insert(key.to_string(), AI_ARTIFACTS_TEMPLATE_URL.to_string());
+            });
 
         ".idea|.fleet".split("|").for_each(|key| {
             mappings.insert(key.to_string(), "https://raw.githubusercontent.com/github/gitignore/main/Global/JetBrains.gitignore".to_string());
@@ -207,10 +219,13 @@ impl Config {
             );
         });
 
-        let map_keys = mappings
+        // Sorted so key matching (and the queued-for-download log) does not
+        // depend on HashMap iteration order.
+        let mut map_keys = mappings
             .keys()
             .map(|x| x.to_string())
             .collect::<Vec<String>>();
+        map_keys.sort();
 
         Self { mappings, map_keys }
     }
@@ -219,7 +234,7 @@ impl Config {
         &self,
         file: &str,
         keys_found: &mut HashSet<String>,
-        pending_urls: &mut HashSet<String>,
+        pending_urls: &mut BTreeSet<String>,
     ) -> Vec<String> {
         let mut new_keys: Vec<String> = vec![];
 
@@ -252,7 +267,7 @@ mod tests {
     fn update_map_keys_for_file_matches_known_extension() {
         let config = Config::new();
         let mut keys_found = HashSet::new();
-        let mut pending_urls = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
 
         let new_keys =
             config.update_map_keys_for_file("main.py", &mut keys_found, &mut pending_urls);
@@ -266,7 +281,7 @@ mod tests {
     fn update_map_keys_for_file_ignores_case() {
         let config = Config::new();
         let mut keys_found = HashSet::new();
-        let mut pending_urls = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
 
         let new_keys =
             config.update_map_keys_for_file("MAIN.PY", &mut keys_found, &mut pending_urls);
@@ -278,7 +293,7 @@ mod tests {
     fn update_map_keys_for_file_reports_each_key_once() {
         let config = Config::new();
         let mut keys_found = HashSet::new();
-        let mut pending_urls = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
 
         let first = config.update_map_keys_for_file("a.py", &mut keys_found, &mut pending_urls);
         let second = config.update_map_keys_for_file("b.py", &mut keys_found, &mut pending_urls);
@@ -289,10 +304,110 @@ mod tests {
     }
 
     #[test]
+    fn update_map_keys_for_file_matches_compound_key_by_whole_filename() {
+        let config = Config::new();
+        let mut keys_found = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
+
+        let new_keys = config.update_map_keys_for_file(
+            "my-app/next.config.js",
+            &mut keys_found,
+            &mut pending_urls,
+        );
+
+        // The whole-filename key matches, and so does the plain ".js" suffix
+        // key, so both templates get queued.
+        assert!(new_keys.contains(&"next.config.js".to_string()));
+        assert!(new_keys.contains(&".js".to_string()));
+        assert!(pending_urls.iter().any(|u| u.contains("Nextjs.gitignore")));
+        assert!(pending_urls.iter().any(|u| u.contains("Node.gitignore")));
+    }
+
+    #[test]
+    fn update_map_keys_for_file_matches_multi_extension_only_by_full_suffix() {
+        let config = Config::new();
+        let mut keys_found = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
+
+        let new_keys =
+            config.update_map_keys_for_file("archive.rs.bk", &mut keys_found, &mut pending_urls);
+
+        // Matching is a plain ends_with, so "archive.rs.bk" hits the ".rs.bk"
+        // key but not ".rs" (the string does not end with ".rs").
+        assert_eq!(new_keys, vec![".rs.bk".to_string()]);
+        assert!(!keys_found.contains(".rs"));
+        assert!(pending_urls.iter().any(|u| u.contains("Rust.gitignore")));
+    }
+
+    #[test]
+    fn update_map_keys_for_file_detects_ai_agent_state_footprints() {
+        let config = Config::new();
+        let mut keys_found = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
+
+        let dir_keys =
+            config.update_map_keys_for_file("my-app/.claude", &mut keys_found, &mut pending_urls);
+        let history_keys = config.update_map_keys_for_file(
+            "my-app/.aider.chat.history.md",
+            &mut keys_found,
+            &mut pending_urls,
+        );
+
+        assert!(dir_keys.contains(&".claude".to_string()));
+        assert!(history_keys.contains(&".aider.chat.history.md".to_string()));
+        assert!(pending_urls.contains(AI_ARTIFACTS_TEMPLATE_URL));
+    }
+
+    #[test]
+    fn update_map_keys_for_file_maps_cursor_footprints_to_the_artifacts_template() {
+        let config = Config::new();
+        let mut keys_found = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
+
+        let new_keys = config.update_map_keys_for_file(
+            "my-app/.cursorrules",
+            &mut keys_found,
+            &mut pending_urls,
+        );
+
+        assert!(new_keys.contains(&".cursorrules".to_string()));
+        assert!(pending_urls.contains(AI_ARTIFACTS_TEMPLATE_URL));
+    }
+
+    #[test]
+    fn update_map_keys_for_file_does_not_match_cursor_tmp_or_cursor_output() {
+        let config = Config::new();
+        let mut keys_found = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
+
+        let tmp_keys = config.update_map_keys_for_file(
+            "my-app/.cursor-tmp",
+            &mut keys_found,
+            &mut pending_urls,
+        );
+        let output_keys = config.update_map_keys_for_file(
+            "my-app/cursor-output",
+            &mut keys_found,
+            &mut pending_urls,
+        );
+
+        assert!(tmp_keys.is_empty());
+        assert!(output_keys.is_empty());
+        assert!(pending_urls.is_empty());
+    }
+
+    #[test]
+    fn mappings_reference_no_oslook_urls() {
+        let config = Config::new();
+
+        assert!(config.mappings.values().all(|url| !url.contains("oslook")));
+    }
+
+    #[test]
     fn update_map_keys_for_file_unknown_extension_matches_nothing() {
         let config = Config::new();
         let mut keys_found = HashSet::new();
-        let mut pending_urls = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
 
         let new_keys =
             config.update_map_keys_for_file("notes.unknownext", &mut keys_found, &mut pending_urls);

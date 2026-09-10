@@ -1,6 +1,6 @@
 [package]
 name = "gitignore"
-version = "2.0.0"
+version = "2.1.0"
 description = "Tool that scans the files and gets the appropriate data for creating/updating the gitignore file."
 edition.workspace = true
 authors.workspace = true
