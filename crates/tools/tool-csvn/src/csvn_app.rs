@@ -401,6 +401,60 @@ mod tests {
     }
 
     #[test]
+    fn normalize_into_warns_once_for_empty_column_without_default() {
+        let defaults = vec![None];
+        let headers = vec!["notes".to_string()];
+        let record = StringRecord::from(vec![""]);
+        let mut output = StringRecord::new();
+        let mut warned = vec![false];
+
+        normalize_into(
+            &defaults,
+            &headers,
+            &record,
+            false,
+            &mut output,
+            &mut warned,
+        );
+
+        assert_eq!(output.get(0), Some(""));
+        assert_eq!(warned, vec![true]);
+
+        normalize_into(
+            &defaults,
+            &headers,
+            &record,
+            false,
+            &mut output,
+            &mut warned,
+        );
+
+        assert_eq!(output.get(0), Some(""));
+        assert_eq!(warned, vec![true]);
+    }
+
+    #[test]
+    fn process_file_skips_unparseable_rows_and_completes() {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("data.csv");
+        // The second data row holds invalid UTF-8, which makes read_record error;
+        // the row is skipped and the run carries on with the next one.
+        fs::write(&input, b"name,city\nJohn,Paris\nBad,\xFF\xFE\nAlice,Rome\n").unwrap();
+        let config = config_for(
+            input,
+            None,
+            false,
+            HashMap::from([("*".to_string(), "N/A".to_string())]),
+        );
+
+        let interrupted = run(&config);
+
+        let output = fs::read_to_string(dir.path().join("data_normalized.csv")).unwrap();
+        assert!(!interrupted);
+        assert_eq!(output, "name,city\nJohn,Paris\nAlice,Rome\n");
+    }
+
+    #[test]
     fn get_output_normalized_file_inserts_suffix_before_extension() {
         let dir = tempdir().unwrap();
         let input = dir.path().join("data.csv");

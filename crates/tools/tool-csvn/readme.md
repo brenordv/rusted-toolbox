@@ -17,13 +17,23 @@ data consistent and prevents errors in downstream processing systems that cannot
 
 ## Command-Line Options
 - `-f, --file`: Input CSV file path (required)
-- `-e, --headers`: Comma-separated headers (optional, auto-detected if not provided)
-- `-i, --feedback-interval`: Progress update interval in rows (default: 100)
+- `-e, --headers`: Comma-separated headers (optional, auto-detected from the first row if not provided)
+  - Supplying this flag makes the input read as headerless: every row, including the first, is treated as data.
+    If the file actually starts with a header row, that row is normalized as data, so only use this flag for
+    files without one.
+- `-i, --feedback-interval`: Progress update interval in rows (default: 100, minimum: 1)
 - `-c, --clean-string`: Enable string cleaning (warning: significantly slows processing)
 - `-v, --value-map`: Key=Value pairs for default values (required, repeatable)
   - Use `*` as key for universal default value
   - Use specific column names for targeted defaults
   - Multiple mappings: `--value-map "name=Unknown" --value-map "age=0"`
+
+Value-map keys are trimmed and lowercased before matching, values lose one pair of surrounding
+quotes, and when the same key is supplied twice, the last value wins.
+
+Shared flags from the common CLI: `--app-header` (print the runtime header block), `--verbose`,
+`--log-level <level>` (case-insensitive), `--log-to-console`, `--log-to-file`,
+`--rotate-log-file-by-day`.
 
 ## Examples
 ### Basic Usage - Universal Default Value

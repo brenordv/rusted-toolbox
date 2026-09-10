@@ -2,7 +2,7 @@ use crate::models::CsvNConfig;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
-use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
+use common_cli::header_format::format_config_item;
 use common_utils::file_system::get_current_dir;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -42,43 +42,81 @@ pub struct CliArgs {
 /// Shows input file, headers, cleaning options, and default mappings.
 pub fn print_runtime_info(args: &CsvNConfig) {
     println!(
-        "{} Input file: {}",
-        CONFIG_UL_ITEM_LEVEL_2,
-        args.input_file.display()
+        "{}",
+        format_config_item("Input file", args.input_file.display())
     );
 
     if args.headers.is_some() {
-        println!("{} Headers: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.headers);
+        println!(
+            "{}",
+            format_config_item("Headers", format!("{:?}", args.headers))
+        );
     } else {
         println!(
-            "{} Headers: Will be inferred from file.",
-            CONFIG_UL_ITEM_LEVEL_2
+            "{}",
+            format_config_item("Headers", "Will be inferred from file.")
         );
     }
 
+    println!("{}", format_config_item("Clean string", args.clean_string));
     println!(
-        "{} Clean string: {}",
-        CONFIG_UL_ITEM_LEVEL_2, args.clean_string
+        "{}",
+        format_config_item("Default value map", format!("{:?}", args.default_value_map))
     );
     println!(
-        "{} Default value map: {:?}",
-        CONFIG_UL_ITEM_LEVEL_2, args.default_value_map
-    );
-    println!(
-        "{} Feedback Interval: {}",
-        CONFIG_UL_ITEM_LEVEL_2, args.feedback_interval
+        "{}",
+        format_config_item("Feedback Interval", args.feedback_interval)
     );
 
     println!(
-        "{} Note: rows with a mismatched column count are repaired to fit the header; unparseable rows are skipped. Both counts are reported at the end.",
-        CONFIG_UL_ITEM_LEVEL_2
+        "{}",
+        format_config_item(
+            "Note",
+            "rows with a mismatched column count are repaired to fit the header; unparseable rows are skipped. Both counts are reported at the end."
+        )
     );
 
     if args.clean_string {
-        println!("\n⚠ Warning: This will slow down the process by a lot!\n");
+        println!("\nWarning: This will slow down the process by a lot!\n");
     }
 
     println!();
+}
+
+/// Splits a comma-separated header string into trimmed header names.
+///
+/// Empty segments are kept as empty strings, so `"a,,b"` yields three headers, 
+/// and an empty input yields a single empty header.
+pub fn parse_headers(headers_arg: &str) -> Vec<String> {
+    headers_arg
+        .split(',')
+        .map(|field| field.trim().to_string())
+        .collect()
+}
+
+/// Builds the default-value map from raw `key=value` CLI pairs.
+///
+/// Keys are trimmed and lowercased (`*` is the wildcard key); values are
+/// trimmed and stripped of surrounding single or double quotes. A pair without
+/// `=` maps its key to an empty string. Duplicate keys keep the last value.
+pub fn parse_value_map(raw_pairs: &[String]) -> HashMap<String, String> {
+    raw_pairs
+        .iter()
+        .map(|raw_value_pair| {
+            let mut parts = raw_value_pair.splitn(2, '=');
+
+            let key = parts.next().unwrap_or("").trim().to_lowercase();
+
+            let value = parts
+                .next()
+                .unwrap_or("")
+                .trim()
+                .trim_matches(['"', '\''])
+                .to_string();
+
+            (key, value)
+        })
+        .collect()
 }
 
 /// Parses command-line arguments into CSV processing configuration.
@@ -105,33 +143,11 @@ pub fn initialize() -> Result<CsvNConfig> {
         ));
     }
 
-    let headers: Option<Vec<String>> = args.headers.map(|headers_arg| {
-        headers_arg
-            .split(',')
-            .map(|field| field.trim().to_string())
-            .collect()
-    });
+    let headers: Option<Vec<String>> = args.headers.map(|headers_arg| parse_headers(&headers_arg));
 
     let clean_string = args.clean_string;
 
-    let default_value_map: HashMap<String, String> = args
-        .value_map
-        .iter()
-        .map(|raw_value_pair| {
-            let mut parts = raw_value_pair.splitn(2, '=');
-
-            let key = parts.next().unwrap_or("").trim().to_lowercase();
-
-            let value = parts
-                .next()
-                .unwrap_or("")
-                .trim()
-                .trim_matches(['"', '\''])
-                .to_string();
-
-            (key, value)
-        })
-        .collect();
+    let default_value_map = parse_value_map(&args.value_map);
 
     let feedback_interval = args.feedback_interval;
 
@@ -159,6 +175,44 @@ pub fn initialize() -> Result<CsvNConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::wildcard_key(&["*=N/A"], "*", "N/A")]
+    #[case::key_is_lowercased(&["Name=John"], "name", "John")]
+    #[case::double_quotes_trimmed(&["k=\"v\""], "k", "v")]
+    #[case::single_quotes_trimmed(&["k='v'"], "k", "v")]
+    #[case::bare_key_maps_to_empty(&["flag"], "flag", "")]
+    fn parse_value_map_parses_single_pair(
+        #[case] raw: &[&str],
+        #[case] key: &str,
+        #[case] value: &str,
+    ) {
+        let raw: Vec<String> = raw.iter().map(|pair| pair.to_string()).collect();
+
+        let map = parse_value_map(&raw);
+
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get(key).map(String::as_str), Some(value));
+    }
+
+    #[test]
+    fn parse_value_map_duplicate_key_keeps_last_value() {
+        let raw = vec!["city=Paris".to_string(), "City=Rome".to_string()];
+
+        let map = parse_value_map(&raw);
+
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("city").map(String::as_str), Some("Rome"));
+    }
+
+    #[rstest]
+    #[case::split_and_trim("name, city ,age", &["name", "city", "age"])]
+    #[case::empty_segments_kept("a,,b", &["a", "", "b"])]
+    #[case::empty_input_yields_one_empty_header("", &[""])]
+    fn parse_headers_splits_on_commas(#[case] raw: &str, #[case] expected: &[&str]) {
+        assert_eq!(parse_headers(raw), expected);
+    }
 
     #[test]
     fn print_runtime_info_covers_header_and_clean_string_modes() {
