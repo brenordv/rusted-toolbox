@@ -13,7 +13,7 @@ end-to-end, with no external servers or third-party services involved.
 - Host/client architecture with flexible connection options
 - Message integrity and privacy protection
 - Cross-platform networking support
-- No logging or message history
+- Message content is never logged; no message history is stored
 - Fully private/anonymous
 
 ## Command-Line Options
@@ -23,12 +23,22 @@ end-to-end, with no external servers or third-party services involved.
 
 **Note**: You must specify either `--wait` or `--connect`. The default port 2428 corresponds to "CHAT" in T9 keypad notation.
 
+Shared flags from the common CLI are also accepted: `--app-header` (print the runtime header
+block), `--verbose`, `--log-level <level>` (case insensitive; default `warn`), `--log-to-console`,
+`--log-to-file`, `--rotate-log-file-by-day`. Debug logging records message sizes and counts only,
+never content.
+
 ## Examples
+
+The startup lines in the examples below are log events: they print to stderr and only appear when
+the log level is `info` or more detailed (the default is `warn`), so the commands here pass
+`--log-level info`. A plain run shows none of them and goes straight to the chat UI once the peer
+connects.
 
 ### Host Mode - Wait for Connection
 **Command:**
 ```bash
-whisper --wait
+whisper --wait --log-level info
 ```
 
 **Input:** Start server on default port 2428, listening on localhost
@@ -43,7 +53,7 @@ Waiting for someone to talk to...
 ### Host Mode - Custom Port and All Interfaces
 **Command:**
 ```bash
-whisper --wait 3000 --bind-to-all-interfaces
+whisper --wait 3000 --bind-to-all-interfaces --log-level info
 ```
 
 **Input:** Listen on port 3000, accessible from any network interface
@@ -58,7 +68,7 @@ Waiting for someone to talk to...
 ### Client Mode - Connect to Host
 **Command:**
 ```bash
-whisper --connect 192.168.1.100:2428
+whisper --connect 192.168.1.100:2428 --log-level info
 ```
 
 **Input:** Connect to a Whisper host running on 192.168.1.100:2428
@@ -75,7 +85,7 @@ Handshake completed!
 ### Complete Chat Session Example
 **Host Side:**
 ```bash
-$ whisper --wait
+$ whisper --wait --log-level info
 Generating Keypair...
 Generated keypair with fingerprint: HOST123456
 Initializing listener on: 127.0.0.1:2428
@@ -84,24 +94,23 @@ Client connected! Client address: 127.0.0.1:54321
 Starting handshake...
 Handshake completed!
 
-┌───────────────────────────────────────────┐
-│ whisper | v1.0.0                          │
-├───────────────────────────────────────────┤
-│ > Hello! This is the host speaking        │
-│ < Hi! Client here, connection works great │
-│ > Great! How's the encryption?            │
-│ < Perfect - all messages are secure       │
-├───────────────────────────────────────────┤
-│ What's on your mind?                      │
-│ [cursor here]                             │
-├───────────────────────────────────────────┤
-│ Press Esc to stop editing, Enter to send │
+whisper | v2.0.1
+> Hello! This is the host speaking
+< Hi! Client here, connection works great
+> Great! How's the encryption?
+< Perfect - all messages are secure
+┌What's on your mind?───────────────────────┐
+│[cursor here]                              │
 └───────────────────────────────────────────┘
+Press Esc to stop editing, Enter to send
 ```
+
+The banner shows the crate version at build time. Only the input box is bordered; the message
+history above it has no borders.
 
 **Client Side:**
 ```bash
-$ whisper --connect 127.0.0.1:2428
+$ whisper --connect 127.0.0.1:2428 --log-level info
 Generating Keypair...
 Generated keypair with fingerprint: CLIENT789ABC
 Connecting to: 127.0.0.1:2428
@@ -109,19 +118,15 @@ Connected! Creating connection manager...
 Starting handshake...
 Handshake completed!
 
-┌───────────────────────────────────────────┐
-│ whisper | v1.0.0                          │
-├───────────────────────────────────────────┤
-│ < Hello! This is the host speaking        │
-│ > Hi! Client here, connection works great │
-│ < Great! How's the encryption?            │
-│ > Perfect - all messages are secure       │
-├───────────────────────────────────────────┤
-│ What's on your mind?                      │
-│ [cursor here]                             │
-├───────────────────────────────────────────┤
-│ Press Esc to stop editing, Enter to send │
+whisper | v2.0.1
+< Hello! This is the host speaking
+> Hi! Client here, connection works great
+< Great! How's the encryption?
+> Perfect - all messages are secure
+┌What's on your mind?───────────────────────┐
+│[cursor here]                              │
 └───────────────────────────────────────────┘
+Press Esc to stop editing, Enter to send
 ```
 
 ## User Interface Controls
@@ -137,6 +142,13 @@ Handshake completed!
 - `Backspace`: Delete character before cursor
 - Type normally to enter text
 
+### System messages
+Local status lines appear in the message pane prefixed with `[system]`:
+- `message not sent: exceeds N bytes`: the typed message is longer than the encryption limit and was not transmitted.
+- `incoming message dropped: ...`: a frame arrived but could not be decrypted; the message is skipped and the session keeps running.
+- `receiving stopped: ...`: a frame could not be read (for example, its header announced a size over the 64 KiB cap). The stream is desynchronized at that point, so the receive side shuts down and no further messages arrive; sending still works.
+- `peer disconnected`: the other side closed the connection.
+
 ## Technical Details
 
 ### Encryption
@@ -149,6 +161,7 @@ Handshake completed!
 - **Transport**: TCP for reliable message delivery
 - **Message Format**: Length-prefixed binary protocol
 - **Header**: 4-byte big-endian message length
+- **Frame Cap**: Frames larger than 64 KiB are rejected without being read
 - **Payload**: Base64-encoded encrypted message content
 - **Connection**: Direct peer-to-peer, no intermediary servers
 
@@ -160,7 +173,7 @@ Handshake completed!
 
 ## Known Issues
 
-1. **Message Size Limitation**: RSA encryption limits message size to approximately 446 bytes for 4096-bit keys. Longer messages will fail to encrypt. I'll probably improve this later.
+1. **Message Size Limitation**: RSA PKCS#1 v1.5 caps a single message at the key size in bytes minus 11, which is about 501 bytes for the 4096-bit keys the tool generates. Oversized messages are not sent; the UI shows a `[system]` line with the limit. I'll probably improve this later.
 2. **No File Transfer**: Only text messages are supported; no file sharing capabilities.
 3. **Network Dependency**: Requires direct network connectivity between peers; doesn't work through NAT without port forwarding.
 

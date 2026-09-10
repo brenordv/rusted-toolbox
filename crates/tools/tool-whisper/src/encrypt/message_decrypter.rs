@@ -27,13 +27,18 @@ mod tests {
     use crate::encrypt::message_encrypter::MessageEncrypter;
     use rand06_compat::Rand0_6CompatExt;
     use rsa::RsaPublicKey;
+    use std::sync::LazyLock;
 
-    fn test_keypair() -> (RsaPrivateKey, RsaPublicKey) {
+    static TEST_KEYPAIR: LazyLock<(RsaPrivateKey, RsaPublicKey)> = LazyLock::new(|| {
         let rng = rand::rng();
         let mut rng06 = rng.compat();
         let private_key = RsaPrivateKey::new(&mut rng06, 2048).expect("key generation");
         let public_key = RsaPublicKey::from(&private_key);
         (private_key, public_key)
+    });
+
+    fn test_keypair() -> (RsaPrivateKey, RsaPublicKey) {
+        TEST_KEYPAIR.clone()
     }
 
     #[test]
@@ -42,9 +47,7 @@ mod tests {
         let decrypter = MessageDecrypter::new(private_key);
         let encrypter = MessageEncrypter::new(public_key).unwrap();
 
-        let ciphertext = encrypter
-            .encrypt_message(&"top secret".to_string())
-            .unwrap();
+        let ciphertext = encrypter.encrypt_message("top secret").unwrap();
         let plaintext = decrypter.decrypt_message(&ciphertext).unwrap();
 
         assert_eq!(plaintext, "top secret");

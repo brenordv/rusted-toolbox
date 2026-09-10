@@ -70,9 +70,7 @@ mod tests {
             encrypter.get_pub_key_fingerprint().unwrap()
         );
 
-        let ciphertext = encrypter
-            .encrypt_message(&"round trip".to_string())
-            .unwrap();
+        let ciphertext = encrypter.encrypt_message("round trip").unwrap();
         let plaintext = keypair
             .get_decrypter()
             .decrypt_message(&ciphertext)

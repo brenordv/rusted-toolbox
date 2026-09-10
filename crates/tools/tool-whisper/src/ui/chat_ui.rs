@@ -1,3 +1,4 @@
+use crate::models::shared_types::UiMessage;
 use anyhow::Result;
 use ratatui::crossterm::event::{poll, KeyEventKind};
 use ratatui::layout::Position;
@@ -31,6 +32,7 @@ enum InputMode {
 enum MessageKind {
     Own,
     Peer,
+    System,
 }
 
 enum ChatState {
@@ -56,6 +58,11 @@ impl Message {
                 let text = format!("< {}", self.text);
                 Line::from(Span::styled(text, Style::default().fg(color)))
             }
+            MessageKind::System => {
+                let color = Color::Yellow;
+                let text = format!("[system] {}", self.text);
+                Line::from(Span::styled(text, Style::default().fg(color)))
+            }
         }
     }
 }
@@ -64,7 +71,7 @@ pub struct ChatUi {
     // Base properties
     role_name: String,
     outgoing_tx: Sender<String>,
-    incoming_rx: Receiver<String>,
+    incoming_rx: Receiver<UiMessage>,
     // Ui properties
     /// Current value of the input box
     input: String,
@@ -88,7 +95,7 @@ impl PartialEq for ChatState {
 impl ChatUi {
     pub fn new(
         outgoing_tx: Sender<String>,
-        incoming_rx: Receiver<String>,
+        incoming_rx: Receiver<UiMessage>,
         role_name: String,
     ) -> Self {
         Self {
@@ -114,11 +121,24 @@ impl ChatUi {
         loop {
             // Processing received messages
             while let Ok(msg) = self.incoming_rx.try_recv() {
-                debug!("[{}] Received message: {}", self.role_name, msg);
-                self.messages.push(Message {
-                    text: msg,
-                    kind: MessageKind::Peer,
-                });
+                let message = match msg {
+                    UiMessage::Peer(text) => {
+                        debug!(
+                            role = %self.role_name,
+                            bytes = text.len(),
+                            "Received peer message"
+                        );
+                        Message {
+                            text,
+                            kind: MessageKind::Peer,
+                        }
+                    }
+                    UiMessage::System(text) => Message {
+                        text,
+                        kind: MessageKind::System,
+                    },
+                };
+                self.messages.push(message);
             }
 
             terminal.draw(|frame| self.draw(frame))?;
@@ -242,7 +262,11 @@ impl ChatUi {
         }
         let msg = std::mem::take(&mut self.input);
 
-        debug!("[{}] Submitting message: {}", self.role_name, msg);
+        debug!(
+            role = %self.role_name,
+            bytes = msg.len(),
+            "Submitting message"
+        );
         self.outgoing_tx.send(msg.clone())?;
 
         debug!(
@@ -307,4 +331,129 @@ impl ChatUi {
         self.character_index = 0;
     }
     //endregion: Ui
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    fn test_ui() -> ChatUi {
+        let (outgoing_tx, _outgoing_rx) = mpsc::channel();
+        let (_incoming_tx, incoming_rx) = mpsc::channel();
+        ChatUi::new(outgoing_tx, incoming_rx, "TEST".to_string())
+    }
+
+    fn rendered_text(message: &Message) -> String {
+        message
+            .format()
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
+    #[test]
+    fn enter_char_appends_multibyte_chars_and_advances_cursor() {
+        let mut ui = test_ui();
+
+        for c in "héllo, 世界".chars() {
+            ui.enter_char(c);
+        }
+
+        assert_eq!(ui.input, "héllo, 世界");
+        assert_eq!(ui.character_index, "héllo, 世界".chars().count());
+    }
+
+    #[test]
+    fn enter_char_inserts_at_cursor_position_by_character_not_byte() {
+        let mut ui = test_ui();
+        for c in "日本".chars() {
+            ui.enter_char(c);
+        }
+
+        ui.move_cursor_left();
+        ui.enter_char('a');
+
+        assert_eq!(ui.input, "日a本");
+        assert_eq!(ui.character_index, 2);
+    }
+
+    #[test]
+    fn byte_index_maps_character_position_to_byte_offset() {
+        let mut ui = test_ui();
+        ui.input = "aé日".to_string();
+
+        ui.character_index = 0;
+        assert_eq!(ui.byte_index(), 0);
+        ui.character_index = 1;
+        assert_eq!(ui.byte_index(), 1);
+        ui.character_index = 2;
+        assert_eq!(ui.byte_index(), 3);
+        ui.character_index = 3;
+        assert_eq!(ui.byte_index(), 6);
+    }
+
+    #[test]
+    fn delete_char_removes_the_character_before_the_cursor() {
+        let mut ui = test_ui();
+        for c in "aé日".chars() {
+            ui.enter_char(c);
+        }
+
+        ui.delete_char();
+        assert_eq!(ui.input, "aé");
+        assert_eq!(ui.character_index, 2);
+
+        ui.move_cursor_left();
+        ui.delete_char();
+        assert_eq!(ui.input, "é");
+        assert_eq!(ui.character_index, 0);
+    }
+
+    #[test]
+    fn delete_char_at_start_is_a_no_op() {
+        let mut ui = test_ui();
+        ui.enter_char('é');
+        ui.reset_cursor();
+
+        ui.delete_char();
+
+        assert_eq!(ui.input, "é");
+        assert_eq!(ui.character_index, 0);
+    }
+
+    #[test]
+    fn clamp_cursor_limits_position_to_character_count() {
+        let mut ui = test_ui();
+        ui.input = "日本語".to_string();
+
+        assert_eq!(ui.clamp_cursor(99), 3);
+        assert_eq!(ui.clamp_cursor(2), 2);
+    }
+
+    #[test]
+    fn system_messages_render_with_the_system_prefix() {
+        let message = Message {
+            text: "peer disconnected".to_string(),
+            kind: MessageKind::System,
+        };
+
+        assert_eq!(rendered_text(&message), "[system] peer disconnected");
+    }
+
+    #[test]
+    fn peer_and_own_messages_render_with_direction_markers() {
+        let own = Message {
+            text: "hi".to_string(),
+            kind: MessageKind::Own,
+        };
+        let peer = Message {
+            text: "hello".to_string(),
+            kind: MessageKind::Peer,
+        };
+
+        assert_eq!(rendered_text(&own), "> hi");
+        assert_eq!(rendered_text(&peer), "< hello");
+    }
 }
