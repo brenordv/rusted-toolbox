@@ -109,14 +109,14 @@ pub fn validate_config(config: &EventHubConfig) -> Result<()> {
     if !["txt", "csv", "json"].contains(&config.export_config.export_format.as_str()) {
         return Err(anyhow!(
             "Invalid export_format '{}'. Valid options are: txt, csv, json",
-            &config.export_config.export_format
+            config.export_config.export_format
         ));
     }
 
     if config.export_config.feedback_interval == 0 {
         return Err(anyhow!(
             "feedback_interval must be positive, got: {}",
-            &config.export_config.feedback_interval
+            config.export_config.feedback_interval
         ));
     }
 

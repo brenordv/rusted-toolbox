@@ -1,5 +1,9 @@
 # EventHub Reader (eh_read)
 
+> **On hold:** this tool is frozen until the official Microsoft Event Hubs crate for Rust ships
+> connection-string support; the planned refactor moves it onto that SDK. Parts of this readme are
+> known to lag the code until then.
+
 ## What it does
 
 The EventHub Reader (`eh_read`) is an Azure EventHub consumer that connects to EventHub services, reads messages from

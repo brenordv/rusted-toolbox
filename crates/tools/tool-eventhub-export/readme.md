@@ -1,5 +1,9 @@
 # EventHub Export Tool (eh-export)
 
+> **On hold:** this tool is frozen until the official Microsoft Event Hubs crate for Rust ships
+> connection-string support; the planned refactor moves it onto that SDK. Parts of this readme are
+> known to lag the code until then.
+
 ## What it does
 
 The EventHub Export Tool (`eh-export`) reads messages previously stored by the `eh-read` tool from a local Sled database

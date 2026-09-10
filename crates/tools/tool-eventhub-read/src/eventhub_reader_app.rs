@@ -685,7 +685,7 @@ impl EventHubReader {
                 let result = reader
                     .read_single_partition(&partition_id)
                     .await
-                    .context(format!("Failed to read partition: [{}]", &partition_id));
+                    .context(format!("Failed to read partition: [{}]", partition_id));
                 (partition_id, result)
             });
         }

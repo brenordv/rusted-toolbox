@@ -48,7 +48,7 @@ pub fn print_runtime_info(config: &mut EventHubConfig) {
     }
     println!(
         "- Feedback: Every {} second(s)",
-        &config.inbound_config.feedback_interval
+        config.inbound_config.feedback_interval
     );
     println!(
         "- Ignore Checkpoint: {}",
