@@ -1,9 +1,20 @@
 # Changelog
 
+## 2.1.0
+- Add `--check`: scans like `--dry-run` (writes nothing, same report lines, a `Check:` summary) and exits 0 when nothing would change, 1 when at least one input would be modified, and 2 when the run fails, so the tool works as a pipeline quality gate. Conflicts with `--in-place`, `--output`, and `--dry-run`.
+- Add `--keep-bom`: keeps a leading UTF-8 BOM instead of stripping it; a kept BOM does not count as a change, so a file whose only issue is the BOM is reported clean. Mid-stream U+FEFF characters are still removed.
+- Validation failures (for example a missing input file) now print `Invalid arguments: ...` to stderr; previously they exited silently. Under `--check` they exit 2 instead of 1, so a typo'd path reads as a tool error rather than a dirty tree.
+- Readme: corrected the runtime-header note (the header is opt-in via `--app-header` and prints to stdout; the old line still described the 1.1.0 always-on stderr header), listed the shared common-cli flags, and documented the short aliases `-o`, `-r`, `-d`, `-e`.
+
+## 2.0.1
+- The `label: value` header lines are rendered through `common-cli`'s `header_format` helpers; output bytes are unchanged.
+- Reading stdin now goes through a small `Read`-based seam so the stdin path is covered by tests; behavior is identical.
+- Test coverage extended: direct unit tests for the extension filter and the on-disk file classifier, tests for the stdin path (valid and invalid UTF-8), and end-to-end tests over the previously unused fixtures in `test-files/` (each `cf_*.txt` and `complex.txt` cleans, `no_cf.txt` stays untouched).
+
 ## 2.0.0
 - Refactored to fit the new tooling: CLI parsing now uses the `clap` derive API and the shared `CommonToolArgs`, replacing the hand-built `Command` from the retired `shared` crate.
 - Dropped the `-n/--no-header` flag. The runtime configuration is now shown on demand with the shared `--app-header` flag, which prints to stdout.
-- Gained the shared runtime flags: `-L/--log-level` (case insensitive), `--app-header`, `--log-to-console`, `--log-to-file`, and `--rotate-log-file-by-day`.
+- Gained the shared runtime flags: `--log-level` (case insensitive), `--app-header`, `--log-to-console`, `--log-to-file`, and `--rotate-log-file-by-day`.
 - Verbose reporting now uses the shared `--verbose` flag (the previous short alias is gone).
 - Exit codes are explicit: `0` on success and `1` on failure.
 

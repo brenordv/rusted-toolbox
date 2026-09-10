@@ -109,41 +109,48 @@ impl CleanResult {
     }
 }
 
-/// Strip a leading UTF-8 BOM and every Unicode format character from `bytes`.
+/// Strip every Unicode format character from `bytes`, and the leading UTF-8
+/// BOM unless `keep_bom` is set (a kept BOM stays in `cleaned` byte-exact and
+/// does not count as a change).
 ///
 /// Returns `None` only when the input (after any UTF-8 BOM) is not valid
 /// UTF-8. That is the single failure mode, so callers read `None` as "not
 /// text": a binary skip for files, a hard error for stdin.
-fn clean_bytes(bytes: &[u8]) -> Option<CleanResult> {
-    let (body, bom_removed) = strip_leading_utf8_bom(bytes);
+fn clean_bytes(bytes: &[u8], keep_bom: bool) -> Option<CleanResult> {
+    let (body, had_bom) = strip_leading_utf8_bom(bytes);
     let text = std::str::from_utf8(body).ok()?;
     let (cleaned, zero_width_removed) = strip_format_chars(text);
 
+    let (cleaned, bom_removed) = if had_bom && keep_bom {
+        (format!("\u{FEFF}{cleaned}"), false)
+    } else {
+        (cleaned.into_owned(), had_bom)
+    };
+
     Some(CleanResult {
-        cleaned: cleaned.into_owned(),
+        cleaned,
         bom_removed,
         zero_width_removed,
     })
 }
 
-/// Running per-input tally, reported as a summary at the end of a run.
+/// Running per-input tally, reported as a summary at the end of a run and
+/// used by `main` to derive the `--check` exit code.
 #[derive(Debug, Default)]
-struct RunStats {
-    modified: usize,
-    unchanged: usize,
-    skipped: usize,
+pub(crate) struct RunStats {
+    pub(crate) modified: usize,
+    pub(crate) unchanged: usize,
+    pub(crate) skipped: usize,
 }
 
-pub fn run(args: &RemoveZwArgs) -> Result<()> {
+pub fn run(args: &RemoveZwArgs) -> Result<RunStats> {
     let expanded_inputs = expand_inputs(args)?;
     let mut stats = RunStats::default();
 
     for input in expanded_inputs {
         match input {
             InputSource::Stdin => {
-                let bytes = read_stdin().context("Failed to read from stdin")?;
-                let result =
-                    clean_bytes(&bytes).ok_or_else(|| anyhow!("stdin is not valid UTF-8 text"))?;
+                let result = clean_stdin(io::stdin(), args.keep_bom)?;
                 handle_result(args, &InputSource::Stdin, &result, &mut stats)?;
             }
             InputSource::File(path) => process_file(args, path, &mut stats)?,
@@ -156,7 +163,7 @@ pub fn run(args: &RemoveZwArgs) -> Result<()> {
     }
 
     report_summary(args, &stats);
-    Ok(())
+    Ok(stats)
 }
 
 fn process_file(args: &RemoveZwArgs, path: PathBuf, stats: &mut RunStats) -> Result<()> {
@@ -182,7 +189,7 @@ fn process_file(args: &RemoveZwArgs, path: PathBuf, stats: &mut RunStats) -> Res
     let bytes =
         fs::read(&path).with_context(|| format!("Failed to read file '{}'", path.display()))?;
 
-    match clean_bytes(&bytes) {
+    match clean_bytes(&bytes, args.keep_bom) {
         Some(result) => handle_result(args, &InputSource::File(path), &result, stats),
         None => {
             report_skip(args, &path, "binary file", stats);
@@ -207,7 +214,7 @@ fn handle_result(
 
     let label = input_label(input);
 
-    if args.dry_run {
+    if args.report_only() {
         println!("{}", dry_run_line(&label, result));
         return Ok(());
     }
@@ -242,7 +249,7 @@ fn handle_result(
 
 fn report_skip(args: &RemoveZwArgs, path: &Path, reason: &str, stats: &mut RunStats) {
     stats.skipped += 1;
-    if args.dry_run {
+    if args.report_only() {
         println!("{}", skip_line(path, reason));
     } else if args.verbose {
         eprintln!("remove-zw: skipping '{}' ({})", path.display(), reason);
@@ -252,6 +259,8 @@ fn report_skip(args: &RemoveZwArgs, path: &Path, reason: &str, stats: &mut RunSt
 fn report_summary(args: &RemoveZwArgs, stats: &RunStats) {
     if args.dry_run {
         println!("{}", dry_run_summary_line(stats));
+    } else if args.check {
+        println!("{}", check_summary_line(stats));
     } else if args.verbose {
         eprintln!(
             "remove-zw: {} modified, {} unchanged, {} skipped.",
@@ -280,8 +289,18 @@ fn skip_line(path: &Path, reason: &str) -> String {
 
 /// Closing dry-run summary line.
 fn dry_run_summary_line(stats: &RunStats) -> String {
+    format!("Dry run: {}", summary_counts(stats))
+}
+
+/// Closing check-mode summary line; it prints only when the scan completed,
+/// so exits 0 and 1 always carry it and exit 2 never does.
+fn check_summary_line(stats: &RunStats) -> String {
+    format!("Check: {}", summary_counts(stats))
+}
+
+fn summary_counts(stats: &RunStats) -> String {
     format!(
-        "Dry run: {} would modify, {} unchanged, {} skipped.",
+        "{} would modify, {} unchanged, {} skipped.",
         stats.modified, stats.unchanged, stats.skipped
     )
 }
@@ -366,9 +385,17 @@ fn describe_target(target: &WriteTarget) -> String {
     }
 }
 
-fn read_stdin() -> Result<Vec<u8>> {
+/// The stdin arm of `run`: reads the whole stream and cleans it. Fails when
+/// the stream cannot be read or its bytes are not valid UTF-8 text.
+fn clean_stdin(reader: impl Read, keep_bom: bool) -> Result<CleanResult> {
+    let bytes = read_stdin(reader).context("Failed to read from stdin")?;
+    clean_bytes(&bytes, keep_bom).ok_or_else(|| anyhow!("stdin is not valid UTF-8 text"))
+}
+
+/// Reads a byte stream to its end. `run` hands it the real stdin.
+fn read_stdin(mut reader: impl Read) -> Result<Vec<u8>> {
     let mut buffer = Vec::new();
-    io::stdin()
+    reader
         .read_to_end(&mut buffer)
         .context("Failed to read stdin")?;
     Ok(buffer)
@@ -584,6 +611,8 @@ mod tests {
             extensions: Vec::new(),
             verbose: false,
             dry_run: false,
+            check: false,
+            keep_bom: false,
         }
     }
 
@@ -690,7 +719,7 @@ mod tests {
     fn clean_bytes_counts_bom_and_zero_width_separately() {
         let mut bytes = BOM_UTF8.to_vec();
         bytes.extend_from_slice("a\u{200B}b\u{200C}".as_bytes());
-        let result = clean_bytes(&bytes).unwrap();
+        let result = clean_bytes(&bytes, false).unwrap();
         assert_eq!(result.cleaned, "ab");
         assert!(result.bom_removed);
         assert_eq!(result.zero_width_removed, 2);
@@ -699,7 +728,7 @@ mod tests {
 
     #[test]
     fn clean_bytes_bom_only() {
-        let result = clean_bytes(&BOM_UTF8).unwrap();
+        let result = clean_bytes(&BOM_UTF8, false).unwrap();
         assert_eq!(result.cleaned, "");
         assert!(result.bom_removed);
         assert_eq!(result.zero_width_removed, 0);
@@ -708,7 +737,7 @@ mod tests {
 
     #[test]
     fn clean_bytes_zero_width_only() {
-        let result = clean_bytes("x\u{FEFF}y".as_bytes()).unwrap();
+        let result = clean_bytes("x\u{FEFF}y".as_bytes(), false).unwrap();
         // A mid-stream U+FEFF is a zero-width char, not a leading BOM.
         assert_eq!(result.cleaned, "xy");
         assert!(!result.bom_removed);
@@ -717,7 +746,7 @@ mod tests {
 
     #[test]
     fn clean_bytes_clean_input_reports_no_change() {
-        let result = clean_bytes(b"nothing to strip").unwrap();
+        let result = clean_bytes(b"nothing to strip", false).unwrap();
         assert!(!result.changed());
         assert!(!result.bom_removed);
         assert_eq!(result.zero_width_removed, 0);
@@ -725,14 +754,59 @@ mod tests {
 
     #[test]
     fn clean_bytes_empty_input() {
-        let result = clean_bytes(&[]).unwrap();
+        let result = clean_bytes(&[], false).unwrap();
         assert_eq!(result.cleaned, "");
         assert!(!result.changed());
     }
 
     #[test]
     fn clean_bytes_rejects_non_utf8() {
-        assert!(clean_bytes(&[0xFF, 0x28, 0x80]).is_none());
+        assert!(clean_bytes(&[0xFF, 0x28, 0x80], false).is_none());
+        assert!(clean_bytes(&[0xFF, 0x28, 0x80], true).is_none());
+    }
+
+    #[test]
+    fn keep_bom_retains_bom_bytes_and_counts_only_zero_width() {
+        let mut bytes = BOM_UTF8.to_vec();
+        bytes.extend_from_slice("a\u{200B}b\u{200C}".as_bytes());
+        let result = clean_bytes(&bytes, true).unwrap();
+        assert!(result.cleaned.as_bytes().starts_with(&BOM_UTF8));
+        assert_eq!(&result.cleaned.as_bytes()[BOM_UTF8.len()..], b"ab");
+        assert!(!result.bom_removed);
+        assert_eq!(result.zero_width_removed, 2);
+        assert!(result.changed());
+    }
+
+    #[test]
+    fn keep_bom_bom_only_input_is_unchanged_and_keeps_the_bytes() {
+        let result = clean_bytes(&BOM_UTF8, true).unwrap();
+        assert!(!result.changed());
+        assert!(!result.bom_removed);
+        // The kept BOM must survive in `cleaned`, so an explicit --output
+        // target cannot silently drop it.
+        assert_eq!(result.cleaned.as_bytes(), BOM_UTF8);
+    }
+
+    #[test]
+    fn keep_bom_without_bom_matches_default_behavior() {
+        let with_flag = clean_bytes("a\u{200B}b".as_bytes(), true).unwrap();
+        let without_flag = clean_bytes("a\u{200B}b".as_bytes(), false).unwrap();
+        assert_eq!(with_flag.cleaned, without_flag.cleaned);
+        assert_eq!(
+            with_flag.zero_width_removed,
+            without_flag.zero_width_removed
+        );
+    }
+
+    #[test]
+    fn keep_bom_still_removes_mid_stream_feff() {
+        let mut bytes = BOM_UTF8.to_vec();
+        bytes.extend_from_slice("x\u{FEFF}y".as_bytes());
+        let result = clean_bytes(&bytes, true).unwrap();
+        assert!(result.cleaned.as_bytes().starts_with(&BOM_UTF8));
+        assert_eq!(&result.cleaned.as_bytes()[BOM_UTF8.len()..], b"xy");
+        assert_eq!(result.zero_width_removed, 1);
+        assert!(!result.bom_removed);
     }
 
     #[test]
@@ -859,6 +933,42 @@ mod tests {
             resolve_disposition(&args, &input, true),
             Disposition::Write(WriteTarget::InPlace(PathBuf::from("in.txt")))
         );
+    }
+
+    #[test]
+    fn extension_filter_empty_never_skips() {
+        assert!(!should_skip_by_extension(Path::new("note.txt"), &[]));
+        assert!(!should_skip_by_extension(Path::new("Makefile"), &[]));
+    }
+
+    #[test]
+    fn extension_filter_skips_extensionless_file() {
+        let filter = vec!["txt".to_string()];
+        assert!(should_skip_by_extension(Path::new("Makefile"), &filter));
+    }
+
+    #[test]
+    fn extension_filter_matches_case_insensitively() {
+        // The filter entries arrive lowercased from parse_extensions; the
+        // file's extension is lowercased before comparison.
+        let filter = vec!["txt".to_string()];
+        assert!(!should_skip_by_extension(Path::new("NOTE.TXT"), &filter));
+        assert!(!should_skip_by_extension(Path::new("note.txt"), &filter));
+        assert!(should_skip_by_extension(Path::new("note.md"), &filter));
+    }
+
+    #[test]
+    fn clean_stdin_cleans_valid_utf8() {
+        let result = clean_stdin("a\u{200B}b\u{FEFF}c".as_bytes(), false).unwrap();
+        assert_eq!(result.cleaned, "abc");
+        assert_eq!(result.zero_width_removed, 2);
+        assert!(!result.bom_removed);
+    }
+
+    #[test]
+    fn clean_stdin_rejects_invalid_utf8() {
+        let err = clean_stdin(&[0xFF, 0x28, 0x80][..], false).unwrap_err();
+        assert!(err.to_string().contains("not valid UTF-8"));
     }
 
     // --- End-to-end tests over run(), writing to temp files ---
@@ -991,6 +1101,97 @@ mod tests {
     }
 
     #[test]
+    fn run_check_writes_nothing_and_reports_counts() {
+        let dir = tempdir().unwrap();
+        stdfs::write(dir.path().join("dirty.txt"), "a\u{200B}b".as_bytes()).unwrap();
+        stdfs::write(dir.path().join("clean.txt"), b"clean").unwrap();
+        stdfs::write(dir.path().join("blob.dat"), [0u8, 1, 2, 3, 0]).unwrap();
+
+        let mut args = base_args();
+        args.inputs = vec![InputSource::Directory(dir.path().to_path_buf())];
+        args.check = true;
+        let stats = run(&args).unwrap();
+
+        assert_eq!(stats.modified, 1);
+        assert_eq!(stats.unchanged, 1);
+        assert_eq!(stats.skipped, 1);
+        assert!(!dir.path().join("dirty.cleaned.txt").exists());
+        assert_eq!(
+            stdfs::read(dir.path().join("dirty.txt")).unwrap(),
+            "a\u{200B}b".as_bytes()
+        );
+    }
+
+    #[test]
+    fn run_keep_bom_with_output_writes_the_bom_bytes() {
+        // An explicit --output target is written even for a clean input; the
+        // kept BOM must land in the written bytes.
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("in.txt");
+        let out = dir.path().join("out.txt");
+        let mut bytes = BOM_UTF8.to_vec();
+        bytes.extend_from_slice(b"content");
+        stdfs::write(&src, &bytes).unwrap();
+
+        let mut args = base_args();
+        args.inputs = vec![InputSource::File(src)];
+        args.output = Some(OutputTarget::File(out.clone()));
+        args.keep_bom = true;
+        let stats = run(&args).unwrap();
+
+        assert_eq!(stats.unchanged, 1);
+        assert_eq!(stdfs::read(&out).unwrap(), bytes);
+    }
+
+    #[test]
+    fn run_keep_bom_in_place_leaves_bom_only_dirty_file_untouched() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("bom.txt");
+        let mut bytes = BOM_UTF8.to_vec();
+        bytes.extend_from_slice(b"text");
+        stdfs::write(&src, &bytes).unwrap();
+
+        let mut args = base_args();
+        args.inputs = vec![InputSource::File(src.clone())];
+        args.in_place = true;
+        args.keep_bom = true;
+        let stats = run(&args).unwrap();
+
+        assert_eq!(stats.unchanged, 1);
+        assert_eq!(stdfs::read(&src).unwrap(), bytes);
+    }
+
+    #[test]
+    fn run_returns_stats_for_a_mixed_directory() {
+        let dir = tempdir().unwrap();
+        stdfs::write(dir.path().join("a.txt"), "a\u{200B}a".as_bytes()).unwrap();
+        stdfs::write(dir.path().join("b.txt"), "b\u{200C}b".as_bytes()).unwrap();
+        stdfs::write(dir.path().join("clean.txt"), b"clean").unwrap();
+
+        let mut args = base_args();
+        args.inputs = vec![InputSource::Directory(dir.path().to_path_buf())];
+        args.in_place = true;
+        let stats = run(&args).unwrap();
+
+        assert_eq!(stats.modified, 2);
+        assert_eq!(stats.unchanged, 1);
+        assert_eq!(stats.skipped, 0);
+    }
+
+    #[test]
+    fn check_summary_line_wording() {
+        let stats = RunStats {
+            modified: 1,
+            unchanged: 2,
+            skipped: 3,
+        };
+        assert_eq!(
+            check_summary_line(&stats),
+            "Check: 1 would modify, 2 unchanged, 3 skipped."
+        );
+    }
+
+    #[test]
     fn run_skips_utf16_file_intact() {
         let dir = tempdir().unwrap();
         let src = dir.path().join("u16.txt");
@@ -1097,5 +1298,104 @@ mod tests {
             stdfs::read_to_string(dir.path().join("v.cleaned.txt")).unwrap(),
             "ab"
         );
+    }
+
+    #[test]
+    fn classify_file_reads_leading_sample_from_disk() {
+        let dir = tempdir().unwrap();
+
+        let text = dir.path().join("text.txt");
+        stdfs::write(&text, "plain text content").unwrap();
+        assert_eq!(classify_file(&text).unwrap(), SampleKind::Text);
+
+        let binary = dir.path().join("blob.dat");
+        stdfs::write(&binary, [b'a', 0x00, b'b', 0x01]).unwrap();
+        assert_eq!(classify_file(&binary).unwrap(), SampleKind::Binary);
+
+        let utf16 = dir.path().join("u16.txt");
+        stdfs::write(&utf16, [0xFF, 0xFE, b'h', 0x00, b'i', 0x00]).unwrap();
+        assert_eq!(
+            classify_file(&utf16).unwrap(),
+            SampleKind::UnsupportedEncoding
+        );
+    }
+
+    // --- End-to-end tests over the tracked fixtures in test-files/ ---
+
+    fn fixture_path(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test-files")
+            .join(name)
+    }
+
+    #[test]
+    fn run_cleans_complex_fixture_copy_in_place() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("complex.txt");
+        stdfs::copy(fixture_path("complex.txt"), &src).unwrap();
+
+        let original = stdfs::read_to_string(fixture_path("complex.txt")).unwrap();
+        assert!(FORMAT_RE.is_match(&original), "fixture lost its Cf chars");
+
+        let mut args = base_args();
+        args.inputs = vec![InputSource::File(src.clone())];
+        args.in_place = true;
+        run(&args).unwrap();
+
+        let cleaned = stdfs::read_to_string(&src).unwrap();
+        assert!(!FORMAT_RE.is_match(&cleaned));
+        assert!(cleaned.len() < original.len());
+        // The visible text survives; only the invisible characters go.
+        assert!(cleaned.contains("Line one: HelloWorld"));
+        assert!(cleaned.contains("Line five: End."));
+    }
+
+    #[test]
+    fn run_reports_no_cf_fixture_unchanged() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("no_cf.txt");
+        stdfs::copy(fixture_path("no_cf.txt"), &src).unwrap();
+
+        let mut args = base_args();
+        args.inputs = vec![InputSource::File(src.clone())];
+        run(&args).unwrap();
+
+        // Already clean: no sidecar is written and the copy is untouched.
+        assert!(!dir.path().join("no_cf.cleaned.txt").exists());
+        assert_eq!(
+            stdfs::read(&src).unwrap(),
+            stdfs::read(fixture_path("no_cf.txt")).unwrap()
+        );
+    }
+
+    #[test]
+    fn run_cleans_each_single_char_fixture() {
+        // Every fixture embeds its format character mid-line ("A<char>B"), so
+        // none of them start with a BOM.
+        let names = [
+            "cf_u200b.txt",
+            "cf_u200c.txt",
+            "cf_u200d.txt",
+            "cf_u2060.txt",
+            "cf_ufeff.txt",
+        ];
+        let dir = tempdir().unwrap();
+        for name in names {
+            stdfs::copy(fixture_path(name), dir.path().join(name)).unwrap();
+        }
+
+        let mut args = base_args();
+        args.inputs = vec![InputSource::Directory(dir.path().to_path_buf())];
+        args.in_place = true;
+        run(&args).unwrap();
+
+        for name in names {
+            let original = stdfs::read_to_string(fixture_path(name)).unwrap();
+            assert!(FORMAT_RE.is_match(&original), "{name} lost its Cf char");
+            let cleaned = stdfs::read_to_string(dir.path().join(name)).unwrap();
+            assert!(!FORMAT_RE.is_match(&cleaned), "{name} was not cleaned");
+            assert!(cleaned.len() < original.len(), "{name} did not shrink");
+            assert!(cleaned.contains("AB"), "{name} lost its visible text");
+        }
     }
 }

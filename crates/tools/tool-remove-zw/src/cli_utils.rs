@@ -2,6 +2,7 @@ use crate::models::{InputSource, OutputTarget, RemoveZwArgs};
 use anyhow::{anyhow, Result};
 use clap::{builder::NonEmptyStringValueParser, Parser};
 use common_cli::common_tool_args::CommonToolArgs;
+use common_cli::header_format::format_config_item;
 use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
 use std::fs;
 use std::path::PathBuf;
@@ -39,6 +40,14 @@ struct CliArgs {
     #[arg(short = 'd', long = "dry-run")]
     pub dry_run: bool,
 
+    /// Report like --dry-run and exit 0 (nothing to change), 1 (changes needed), or 2 (error)
+    #[arg(long = "check", conflicts_with_all = ["in_place", "output", "dry_run"])]
+    pub check: bool,
+
+    /// Keep a leading UTF-8 byte-order mark instead of stripping it
+    #[arg(long = "keep-bom")]
+    pub keep_bom: bool,
+
     /// Comma-separated list of file extensions to include (e.g. txt,md,rs)
     #[arg(
         short = 'e',
@@ -52,29 +61,27 @@ struct CliArgs {
     pub common: CommonToolArgs,
 }
 
-/// Parses command-line arguments and returns the runtime configuration.
-///
-/// # Errors
-/// Returns an error when the argument combination is invalid (see [`validate_args`]),
-/// for example stdin specified more than once or `--output` combined with `--in-place`.
-pub fn initialize() -> Result<RemoveZwArgs> {
+/// Parses the command line and returns the runtime configuration together
+/// with the shared tool flags. clap itself exits (code 2) on usage errors, so
+/// this cannot fail; cross-flag validation is `main`'s next step, kept
+/// separate so the exit code can depend on `--check`.
+pub fn parse_and_build() -> (RemoveZwArgs, CommonToolArgs) {
     let args = CliArgs::parse();
-
     let config = build_args(&args);
+    (config, args.common)
+}
 
-    validate_args(&config)?;
-
-    args.common.app_boot_up(
+/// Boots logging and the optional `--app-header` block for a validated config.
+pub fn boot(common: &CommonToolArgs, config: &RemoveZwArgs) {
+    common.app_boot_up(
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         true,
         false,
         Some(|| {
-            print_header(&config);
+            print_header(config);
         }),
     );
-
-    Ok(config)
 }
 
 /// Maps the parsed CLI arguments into the runtime configuration.
@@ -107,10 +114,16 @@ fn build_args(args: &CliArgs) -> RemoveZwArgs {
         extensions,
         verbose: args.common.verbose,
         dry_run: args.dry_run,
+        check: args.check,
+        keep_bom: args.keep_bom,
     }
 }
 
 /// Prints the tool's runtime configuration, shown under `--app-header`.
+///
+/// `label: value` lines are rendered through the shared `format_config_item`;
+/// the `Inputs:`/`Output:` group lines and their nested value bullets have no
+/// `label: value` shape, so they print from the `CONFIG_UL_*` constants.
 fn print_header(args: &RemoveZwArgs) {
     println!("{} Inputs:", CONFIG_UL_ITEM_LEVEL_2);
     for input in &args.inputs {
@@ -128,6 +141,8 @@ fn print_header(args: &RemoveZwArgs) {
     println!("{} Output:", CONFIG_UL_ITEM_LEVEL_2);
     if args.dry_run {
         println!("{} Dry run (nothing written)", CONFIG_UL_ITEM_LEVEL_3);
+    } else if args.check {
+        println!("{} Check (report only)", CONFIG_UL_ITEM_LEVEL_3);
     } else if args.in_place {
         println!("{} In place", CONFIG_UL_ITEM_LEVEL_3);
     } else if let Some(output) = &args.output {
@@ -145,18 +160,19 @@ fn print_header(args: &RemoveZwArgs) {
         println!("{} Per-file cleaned output", CONFIG_UL_ITEM_LEVEL_3);
     }
 
-    println!("{} Recursive: {}", CONFIG_UL_ITEM_LEVEL_2, args.recursive);
+    println!("{}", format_config_item("Recursive", args.recursive));
+    println!("{}", format_config_item("Keep BOM", args.keep_bom));
     if args.extensions.is_empty() {
-        println!("{} Extensions: (all)", CONFIG_UL_ITEM_LEVEL_2);
+        println!("{}", format_config_item("Extensions", "(all)"));
     } else {
         println!(
-            "{} Extensions: {:?}",
-            CONFIG_UL_ITEM_LEVEL_2, args.extensions
+            "{}",
+            format_config_item("Extensions", format!("{:?}", args.extensions))
         );
     }
 }
 
-fn validate_args(args: &RemoveZwArgs) -> Result<()> {
+pub(crate) fn validate_args(args: &RemoveZwArgs) -> Result<()> {
     let stdin_count = args
         .inputs
         .iter()
@@ -257,12 +273,44 @@ mod tests {
             extensions: Vec::new(),
             verbose: false,
             dry_run: false,
+            check: false,
+            keep_bom: false,
         }
     }
 
     #[test]
     fn cli_definition_has_no_conflicting_flags() {
         CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn check_conflicts_with_write_modes_and_dry_run() {
+        // clap rejects these combinations at parse time (its usage-error exit
+        // code is pinned at process level in tests/cli_tests.rs).
+        for conflicting in [
+            ["remove-zw", "--check", "--in-place"],
+            ["remove-zw", "--check", "--dry-run"],
+        ] {
+            assert!(
+                CliArgs::try_parse_from(conflicting).is_err(),
+                "{conflicting:?} should be rejected"
+            );
+        }
+        assert!(CliArgs::try_parse_from(["remove-zw", "--check", "--output", "x"]).is_err());
+    }
+
+    #[test]
+    fn check_and_keep_bom_flow_into_the_config() {
+        let args = CliArgs::try_parse_from(["remove-zw", "--check", "--keep-bom", "in.txt"]);
+        let config = build_args(&args.unwrap());
+        assert!(config.check);
+        assert!(config.keep_bom);
+        assert!(config.report_only());
+
+        let plain = build_args(&CliArgs::try_parse_from(["remove-zw", "in.txt"]).unwrap());
+        assert!(!plain.check);
+        assert!(!plain.keep_bom);
+        assert!(!plain.report_only());
     }
 
     #[test]
@@ -341,5 +389,10 @@ mod tests {
 
         let to_stdout = args_with(vec![InputSource::Stdin]);
         print_header(&to_stdout);
+
+        let mut check = args_with(vec![InputSource::File(PathBuf::from("a.txt"))]);
+        check.check = true;
+        check.keep_bom = true;
+        print_header(&check);
     }
 }

@@ -22,4 +22,13 @@ pub struct RemoveZwArgs {
     pub extensions: Vec<String>,
     pub verbose: bool,
     pub dry_run: bool,
+    pub check: bool,
+    pub keep_bom: bool,
+}
+
+impl RemoveZwArgs {
+    /// True in the modes that only report (dry run and check) and never write.
+    pub fn report_only(&self) -> bool {
+        self.dry_run || self.check
+    }
 }
