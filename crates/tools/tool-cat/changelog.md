@@ -1,8 +1,10 @@
-# 2.0.1
+# Changelog
+
+## 2.0.1
 - Added tests for `CatConfig::from_args` flag expansion (`-A`, `-e`, `-t`, and `-b` with `-n`), the `needs_line_processing` truth table, parse-to-run coverage for `-b` and `-A`, and combined `-n -s` and `-n -E` runs.
 - Readme: corrected the `-L disabled` claim to the actual `--log-level disabled` flag (there is no `-L` short form) and added a command-line options section covering the tool flags, the shared flags, and the accepted no-op `-u`.
 
-# 2.0.0
+## 2.0.0
 - Refactored to fit the new tooling
 - Rewrote the formatting path as a byte-oriented chunk scanner: it handles non-UTF-8 input, preserves carriage returns, and runs in bounded memory regardless of line length.
 - Buffered and locked stdout for the whole run, building each input chunk in a reusable buffer written in one call, so the formatting modes keep throughput close to a plain copy instead of a syscall per character.
@@ -12,8 +14,8 @@
 - A missing or unreadable file is reported, and the run continues with the remaining files, exiting non-zero at the end.
 - A closed output pipe (`cat big.txt | head`) ends the run quietly with exit 0 instead of reporting a writing error. This diverges from `GNU cat`, which exits 141 from SIGPIPE; re-raising the signal is not portable to Windows.
 
-# 1.0.1
+## 1.0.1
 - Updated dependencies.
 
-# 1.0.0
+## 1.0.0
 - Initial release.
