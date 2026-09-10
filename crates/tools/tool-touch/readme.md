@@ -18,13 +18,27 @@ various options.
 ## Command-Line Options
 - `-a`: Change access time only
 - `-c, --no-create`: Don't create files that don't exist  
-- `-d, --date <STRING>`: Parse date string and use as timestamp
+- `-d, --date <STRING>`: Parse date string and use as timestamp. Accepted forms: POSIX/ISO
+  `YYYY-MM-DDThh:mm:SS[.frac][Z]` (`T` or a space; frac takes `.` or `,`; `Z` means UTC, otherwise
+  local), `YYYY-MM-DD [hh:mm[:ss]]`, US month-first `MM/DD/YYYY [hh:mm[:ss]]` (the GNU convention),
+  `DD Mon YYYY [hh:mm[:ss]]`, RFC-2822 style with offset (`Mon, 15 Jan 2024 10:30:45 +0000`), and
+  `now`. Date-only values resolve to local midnight. GNU relative items (`yesterday`, `2 days ago`)
+  are not supported. tool-timestamp parses day-first; the difference is deliberate, touch follows
+  the original.
+- `-f`: Accepted and ignored (compatibility flag, as in GNU touch)
 - `-m`: Change modification time only
 - `-n, --no-dereference`: Update symlink timestamps instead of target file
 - `-r, --reference <FILE>`: Copy timestamps from reference file
 - `-t <TIME>`: Use formatted timestamp `[[CC]YY]MMDDhhmm[.ss]`
 - `--time <WORD>`: Specify which time to change (`access`, `atime`, `use`, `modify`, `mtime`)
 - `<FILES>`: One or more files to touch
+
+Shared flags (available in every tool of the toolbox):
+- `--app-header`: Show the header with tool name, version, and runtime options
+- `--log-level <LEVEL>`: Set the log level (long-only flag, case insensitive; defaults to `warn`)
+- `--log-to-console`: Log to stdout instead of the default stderr
+- `--log-to-file`: Also write logs to a file
+- `--rotate-log-file-by-day`: Rotate the log file daily
 
 ## Examples
 ### Basic Usage - Update to Current Time
@@ -34,13 +48,7 @@ touch file1.txt file2.txt
 ```
 
 **Input:** Two existing or non-existing files
-**Output:** Files created if missing, timestamps set to current time
-
-**Result:**
-```
-file1.txt - access time: 2024-01-15 10:30:45, modify time: 2024-01-15 10:30:45
-file2.txt - access time: 2024-01-15 10:30:45, modify time: 2024-01-15 10:30:45
-```
+**Output:** Files created if missing, timestamps set to current time. Nothing is printed on success.
 
 ### Update Access Time Only
 **Command:**
@@ -51,11 +59,6 @@ touch -a existing_file.txt
 **Input:** File with current modify time: 2024-01-10 08:00:00
 **Output:** Access time updated, modification time preserved
 
-**Result:**
-```
-existing_file.txt - access time: 2024-01-15 10:30:45, modify time: 2024-01-10 08:00:00
-```
-
 ### Set Specific Date and Time
 **Command:**
 ```bash
@@ -63,12 +66,7 @@ touch -d "2024-12-25 15:30:00" holiday_file.txt
 ```
 
 **Input:** Non-existing file
-**Output:** File created with specified timestamp
-
-**Result:**
-```
-holiday_file.txt - access time: 2024-12-25 15:30:00, modify time: 2024-12-25 15:30:00
-```
+**Output:** File created with both timestamps set to 2024-12-25 15:30:00
 
 ### Copy Timestamps from Reference File
 **Command:**
@@ -82,12 +80,6 @@ touch -r reference.txt target1.txt target2.txt
 
 **Output:** Target files get reference file's timestamps
 
-**Result:**
-```
-target1.txt - access time: 2024-01-01 12:00:00, modify time: 2024-01-01 11:30:00
-target2.txt - access time: 2024-01-01 12:00:00, modify time: 2024-01-01 11:30:00
-```
-
 ### Don't Create Missing Files
 **Command:**
 ```bash
@@ -95,13 +87,7 @@ touch -c nonexistent.txt existing.txt
 ```
 
 **Input:** One missing file, one existing file
-**Output:** Only existing file timestamps updated, no error for missing file
-
-**Result:**
-```
-nonexistent.txt - not created, no error
-existing.txt - timestamps updated to current time
-```
+**Output:** Only existing file timestamps updated; the missing file is not created and causes no error
 
 ### Using Formatted Time Specification
 **Command:**
@@ -110,12 +96,7 @@ touch -t 202412251530.45 new_year_prep.txt
 ```
 
 **Input:** Non-existing file
-**Output:** File created with specified timestamp (2024-12-25 15:30:45)
-
-**Result:**
-```
-new_year_prep.txt - access time: 2024-12-25 15:30:45, modify time: 2024-12-25 15:30:45
-```
+**Output:** File created with both timestamps set to 2024-12-25 15:30:45
 
 ## Known Issues
 

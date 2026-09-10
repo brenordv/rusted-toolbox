@@ -66,3 +66,65 @@ impl TouchArgs {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args_with(
+        date: Option<FileTime>,
+        time_spec: Option<FileTime>,
+        reference: Option<(FileTime, FileTime)>,
+    ) -> TouchArgs {
+        TouchArgs {
+            access: false,
+            no_create: false,
+            date,
+            ignore: false,
+            no_dereference: false,
+            modify: false,
+            reference,
+            time_spec,
+            time: TouchTimeWord::AccessAndModify,
+            files: vec![],
+        }
+    }
+
+    #[test]
+    fn get_current_filetime_is_none_without_time_sources() {
+        assert!(args_with(None, None, None).get_current_filetime().is_none());
+    }
+
+    #[test]
+    fn get_current_filetime_prefers_date_over_other_sources() {
+        let date = FileTime::from_unix_time(100, 0);
+        let time_spec = FileTime::from_unix_time(200, 0);
+        let reference = (
+            FileTime::from_unix_time(300, 0),
+            FileTime::from_unix_time(400, 0),
+        );
+        let args = args_with(Some(date), Some(time_spec), Some(reference));
+        assert_eq!(args.get_current_filetime(), Some((date, date)));
+    }
+
+    #[test]
+    fn get_current_filetime_prefers_time_spec_over_reference() {
+        let time_spec = FileTime::from_unix_time(200, 0);
+        let reference = (
+            FileTime::from_unix_time(300, 0),
+            FileTime::from_unix_time(400, 0),
+        );
+        let args = args_with(None, Some(time_spec), Some(reference));
+        assert_eq!(args.get_current_filetime(), Some((time_spec, time_spec)));
+    }
+
+    #[test]
+    fn get_current_filetime_falls_back_to_reference_pair() {
+        let reference = (
+            FileTime::from_unix_time(300, 0),
+            FileTime::from_unix_time(400, 0),
+        );
+        let args = args_with(None, None, Some(reference));
+        assert_eq!(args.get_current_filetime(), Some(reference));
+    }
+}

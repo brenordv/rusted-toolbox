@@ -28,7 +28,7 @@ fn create_file_if_needed(file: &str, no_create: bool) -> Result<bool> {
         Ok(false)
     } else {
         // Create a file with appropriate permissions (0666 minus umask)
-        File::create(path).context(format!("Failed to create file: {}", &file))?;
+        File::create(path).context(format!("Failed to create file: {}", file))?;
         Ok(true)
     }
 }
@@ -78,7 +78,7 @@ pub fn touch_file(file: &str, args: &TouchArgs) -> Result<()> {
         process_current_update_times(args, &file_obj, times, update_access, update_modify)
             .context(format!(
                 "Failed to get current times for file: [{}]",
-                &file_obj.display()
+                file_obj.display()
             ))?;
 
     let (final_atime, final_mtime) = get_times_to_use_when_updating_file(
@@ -218,12 +218,12 @@ fn update_file_times(
     if args.no_dereference {
         set_symlink_file_times(file_obj, final_atime, final_mtime).context(format!(
             "Failed to set file times for symlink: [{}]",
-            &file_obj.display()
+            file_obj.display()
         ))?;
     } else {
         set_file_times(file_obj, final_atime, final_mtime).context(format!(
             "Failed to set file times for file: [{}]",
-            &file_obj.display()
+            file_obj.display()
         ))?;
     }
 
@@ -237,6 +237,20 @@ mod tests {
     use filetime::FileTime;
     use std::fs;
     use tempfile::TempDir;
+
+    /// Pins both timestamps of `path` to a fixed past instant and returns the
+    /// values read back from the filesystem. Starting from a pinned past
+    /// instant makes "updated" and "unchanged" assertions unambiguous
+    /// regardless of when the file was created.
+    fn pin_file_times(path: &std::path::Path) -> (FileTime, FileTime) {
+        let pinned = FileTime::from_unix_time(946_684_800, 0); // 2000-01-01 00:00:00 UTC
+        set_file_times(path, pinned, pinned).unwrap();
+        let metadata = fs::metadata(path).unwrap();
+        (
+            FileTime::from_last_access_time(&metadata),
+            FileTime::from_last_modification_time(&metadata),
+        )
+    }
 
     /// Helper function to create a TouchArgs with default values for testing
     fn create_test_touch_args() -> TouchArgs {
@@ -397,13 +411,11 @@ mod tests {
         let file_path = temp_dir.path().join("test_access.txt");
         fs::write(&file_path, "test").unwrap();
 
-        // Get original times
-        let metadata = fs::metadata(&file_path).unwrap();
-        let original_atime = FileTime::from_last_access_time(&metadata);
-        let original_mtime = FileTime::from_last_modification_time(&metadata);
-
-        // Wait a bit to ensure time difference
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Let any file-content scanner triggered by the write above finish, so
+        // a scan does not bump the access time mid-test, then pin the
+        // timestamps.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let (original_atime, original_mtime) = pin_file_times(&file_path);
 
         let mut args = create_test_touch_args();
         args.time = TouchTimeWord::AccessOnly;
@@ -427,13 +439,11 @@ mod tests {
         let file_path = temp_dir.path().join("test_modify.txt");
         fs::write(&file_path, "test").unwrap();
 
-        // Get original times
-        let metadata = fs::metadata(&file_path).unwrap();
-        let original_atime = FileTime::from_last_access_time(&metadata);
-        let original_mtime = FileTime::from_last_modification_time(&metadata);
-
-        // Wait a bit to ensure time difference
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Let any file-content scanner triggered by the write above finish, so
+        // a scan does not bump the access time mid-test, then pin the
+        // timestamps.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let (original_atime, original_mtime) = pin_file_times(&file_path);
 
         let mut args = create_test_touch_args();
         args.time = TouchTimeWord::ModifyOnly;
@@ -457,13 +467,11 @@ mod tests {
         let file_path = temp_dir.path().join("test_both.txt");
         fs::write(&file_path, "test").unwrap();
 
-        // Get original times
-        let metadata = fs::metadata(&file_path).unwrap();
-        let original_atime = FileTime::from_last_access_time(&metadata);
-        let original_mtime = FileTime::from_last_modification_time(&metadata);
-
-        // Wait a bit to ensure time difference
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Let any file-content scanner triggered by the write above finish, so
+        // a scan does not bump the access time mid-test, then pin the
+        // timestamps.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let (original_atime, original_mtime) = pin_file_times(&file_path);
 
         let mut args = create_test_touch_args();
         args.time = TouchTimeWord::AccessAndModify;
