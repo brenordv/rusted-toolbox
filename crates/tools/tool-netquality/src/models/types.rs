@@ -14,7 +14,10 @@ pub struct NetQualityConfig {
     pub speed: SpeedConfig,
     pub notifications: NotificationConfig,
     pub storage: StorageConfig,
-    pub otel_endpoint: String,
+    /// OTLP endpoint for OpenTelemetry export. Handed to `logging-otel`, which
+    /// also falls back to `OTEL_EXPORTER_OTLP_ENDPOINT` when this is absent.
+    /// The value is never printed or logged; only its presence is shown.
+    pub otel_endpoint: Option<String>,
 }
 
 const DEFAULT_CONNECTIVITY_DELAY_SECS: u64 = 60;
@@ -40,7 +43,7 @@ impl NetQualityConfig {
             speed: resolve_speed(config_file.speed)?,
             notifications: resolve_notifications(config_file.notifications)?,
             storage: resolve_storage(config_file.storage)?,
-            otel_endpoint: String::new(),
+            otel_endpoint: config_file.otel_endpoint,
         })
     }
 }
@@ -82,18 +85,7 @@ fn resolve_connectivity(config: Option<ConnectivityConfigFile>) -> Result<Connec
         ));
     }
 
-    let mut urls: Vec<String> = match url_mode {
-        UrlMode::Merge => DEFAULT_URLS
-            .iter()
-            .map(|url| url.to_string())
-            .chain(user_urls)
-            .collect(),
-        UrlMode::Replace => user_urls,
-    };
-    urls = dedupe_urls(urls);
-    if urls.is_empty() {
-        urls = DEFAULT_URLS.iter().map(|url| url.to_string()).collect();
-    }
+    let urls = resolve_urls(user_urls, url_mode);
 
     Ok(ConnectivityConfig {
         delay: Duration::from_secs(delay_secs),
@@ -287,6 +279,8 @@ pub struct ConfigFile {
     pub speed: Option<SpeedConfigFile>,
     pub notifications: Option<NotificationConfigFile>,
     pub storage: Option<StorageConfigFile>,
+    /// Top-level OTLP endpoint for OpenTelemetry export.
+    pub otel_endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -343,6 +337,26 @@ pub const DEFAULT_URLS: &[&str] = &[
     "https://8.8.8.8",
 ];
 
+/// Applies `url_mode` to the user URL list: `Merge` prepends the default URLs,
+/// `Replace` keeps only the user list. The result is deduplicated and falls
+/// back to the defaults when it ends up empty.
+pub fn resolve_urls(user_urls: Vec<String>, url_mode: UrlMode) -> Vec<String> {
+    let mut urls: Vec<String> = match url_mode {
+        UrlMode::Merge => DEFAULT_URLS
+            .iter()
+            .map(|url| url.to_string())
+            .chain(user_urls)
+            .collect(),
+        UrlMode::Replace => user_urls,
+    };
+    urls = dedupe_urls(urls);
+    if urls.is_empty() {
+        urls = DEFAULT_URLS.iter().map(|url| url.to_string()).collect();
+    }
+
+    urls
+}
+
 pub fn dedupe_urls(urls: Vec<String>) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut result = Vec::new();
@@ -362,6 +376,9 @@ pub fn dedupe_urls(urls: Vec<String>) -> Vec<String> {
 
 #[derive(ValueEnum, Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+// snake_case CLI value names (very_slow, medium_fast, ...) match the config-file
+// spelling and the readme; ignore_case on the args accepts any input casing.
+#[value(rename_all = "snake_case")]
 pub enum ThresholdCategory {
     VerySlow,
     Slow,
@@ -468,5 +485,222 @@ mod tests {
         };
 
         assert!(thresholds.validate().is_err());
+    }
+
+    fn connectivity_file(
+        delay_secs: u64,
+        timeout_secs: u64,
+        outage_backoff_secs: u64,
+        outage_backoff_max_secs: u64,
+    ) -> ConnectivityConfigFile {
+        ConnectivityConfigFile {
+            delay_secs: Some(delay_secs),
+            timeout_secs: Some(timeout_secs),
+            outage_backoff_secs: Some(outage_backoff_secs),
+            outage_backoff_max_secs: Some(outage_backoff_max_secs),
+            urls: None,
+            url_mode: None,
+        }
+    }
+
+    #[test]
+    fn resolve_connectivity_rejects_zero_delay_or_timeout() {
+        assert!(resolve_connectivity(Some(connectivity_file(0, 10, 10, 3_600))).is_err());
+        assert!(resolve_connectivity(Some(connectivity_file(60, 0, 10, 3_600))).is_err());
+    }
+
+    #[test]
+    fn resolve_connectivity_rejects_backoff_max_below_backoff() {
+        assert!(resolve_connectivity(Some(connectivity_file(60, 10, 20, 10))).is_err());
+    }
+
+    #[test]
+    fn resolve_connectivity_none_uses_defaults() {
+        let connectivity = resolve_connectivity(None).expect("defaults should resolve");
+
+        assert_eq!(connectivity.delay, Duration::from_secs(60));
+        assert_eq!(connectivity.timeout, Duration::from_secs(10));
+        assert_eq!(connectivity.outage_backoff, Duration::from_secs(10));
+        assert_eq!(connectivity.outage_backoff_max, Duration::from_secs(3_600));
+        assert_eq!(connectivity.urls, DEFAULT_URLS.to_vec());
+    }
+
+    #[test]
+    fn resolve_connectivity_merge_mode_prepends_defaults_and_dedupes() {
+        let mut config = connectivity_file(60, 10, 10, 3_600);
+        config.urls = Some(vec![
+            "https://example.com/health".to_string(),
+            "https://1.1.1.1".to_string(),
+        ]);
+        config.url_mode = Some(UrlMode::Merge);
+
+        let connectivity = resolve_connectivity(Some(config)).expect("merge should resolve");
+
+        assert_eq!(connectivity.urls.len(), DEFAULT_URLS.len() + 1);
+        assert_eq!(connectivity.urls[0], DEFAULT_URLS[0]);
+        assert_eq!(
+            connectivity.urls.last().map(String::as_str),
+            Some("https://example.com/health")
+        );
+    }
+
+    #[test]
+    fn resolve_connectivity_replace_mode_keeps_only_user_urls() {
+        let mut config = connectivity_file(60, 10, 10, 3_600);
+        config.urls = Some(vec!["https://example.com/health".to_string()]);
+        config.url_mode = Some(UrlMode::Replace);
+
+        let connectivity = resolve_connectivity(Some(config)).expect("replace should resolve");
+
+        assert_eq!(connectivity.urls, vec!["https://example.com/health"]);
+    }
+
+    #[test]
+    fn resolve_urls_falls_back_to_defaults_when_empty() {
+        let urls = resolve_urls(Vec::new(), UrlMode::Replace);
+
+        assert_eq!(urls, DEFAULT_URLS.to_vec());
+    }
+
+    fn speed_file() -> SpeedConfigFile {
+        SpeedConfigFile {
+            expected_download_mbps: 100.0,
+            expected_upload_mbps: None,
+            delay_secs: None,
+            download_thresholds: None,
+            upload_thresholds: None,
+            speedtest_cli_path: None,
+        }
+    }
+
+    #[test]
+    fn resolve_speed_requires_the_section() {
+        assert!(resolve_speed(None).is_err());
+    }
+
+    #[test]
+    fn resolve_speed_applies_defaults() {
+        let speed = resolve_speed(Some(speed_file())).expect("speed should resolve");
+
+        assert_eq!(speed.expected_download_mbps, 100.0);
+        assert_eq!(speed.expected_upload_mbps, None);
+        assert_eq!(speed.delay, Duration::from_secs(14_400));
+        assert_eq!(speed.download_thresholds, Thresholds::default_thresholds());
+        assert_eq!(speed.upload_thresholds, Thresholds::default_thresholds());
+        assert_eq!(speed.speedtest_cli_path, None);
+    }
+
+    #[test]
+    fn resolve_speed_rejects_invalid_thresholds() {
+        let mut config = speed_file();
+        config.download_thresholds = Some(Thresholds {
+            very_slow: 50.0,
+            slow: 30.0,
+            medium: 65.0,
+            medium_fast: 85.0,
+        });
+
+        assert!(resolve_speed(Some(config)).is_err());
+    }
+
+    #[test]
+    fn resolve_storage_rejects_zero_cleanup_interval_days() {
+        let config = StorageConfigFile {
+            db_path: Some(PathBuf::from("netquality-test.db")),
+            cleanup_enabled: None,
+            cleanup_interval_days: Some(0),
+        };
+
+        assert!(resolve_storage(Some(config)).is_err());
+    }
+
+    #[test]
+    fn resolve_storage_uses_explicit_path_and_converts_days() {
+        let config = StorageConfigFile {
+            db_path: Some(PathBuf::from("netquality-test.db")),
+            cleanup_enabled: Some(false),
+            cleanup_interval_days: Some(2),
+        };
+
+        let storage = resolve_storage(Some(config)).expect("storage should resolve");
+
+        assert_eq!(storage.db_path, PathBuf::from("netquality-test.db"));
+        assert!(!storage.cleanup_enabled);
+        assert_eq!(storage.cleanup_interval, Duration::from_secs(2 * 86_400));
+    }
+
+    #[test]
+    fn resolve_notifications_defaults_when_missing() {
+        let notifications = resolve_notifications(None).expect("defaults should resolve");
+
+        assert!(notifications.telegram.is_none());
+        assert_eq!(
+            notifications.min_download_threshold,
+            ThresholdCategory::Medium
+        );
+        assert_eq!(notifications.min_upload_threshold, ThresholdCategory::Slow);
+    }
+
+    #[test]
+    fn resolve_notifications_rejects_partial_telegram() {
+        let config = NotificationConfigFile {
+            telegram: Some(TelegramConfigFile {
+                bot_token: Some("token".to_string()),
+                chat_id: None,
+            }),
+            min_download_threshold: None,
+            min_upload_threshold: None,
+        };
+
+        assert!(resolve_notifications(Some(config)).is_err());
+    }
+
+    #[test]
+    fn resolve_notifications_accepts_full_telegram_and_overrides() {
+        let config = NotificationConfigFile {
+            telegram: Some(TelegramConfigFile {
+                bot_token: Some("token".to_string()),
+                chat_id: Some("chat".to_string()),
+            }),
+            min_download_threshold: Some(ThresholdCategory::Expected),
+            min_upload_threshold: Some(ThresholdCategory::VerySlow),
+        };
+
+        let notifications = resolve_notifications(Some(config)).expect("should resolve");
+
+        let telegram = notifications.telegram.expect("telegram should be set");
+        assert_eq!(telegram.bot_token, "token");
+        assert_eq!(telegram.chat_id, "chat");
+        assert_eq!(
+            notifications.min_download_threshold,
+            ThresholdCategory::Expected
+        );
+        assert_eq!(
+            notifications.min_upload_threshold,
+            ThresholdCategory::VerySlow
+        );
+    }
+
+    #[test]
+    fn threshold_category_severity_rank_is_ascending() {
+        let ordered = [
+            ThresholdCategory::VerySlow,
+            ThresholdCategory::Slow,
+            ThresholdCategory::Medium,
+            ThresholdCategory::MediumFast,
+            ThresholdCategory::Expected,
+        ];
+
+        for window in ordered.windows(2) {
+            assert!(window[0].severity_rank() < window[1].severity_rank());
+        }
+    }
+
+    #[test]
+    fn threshold_category_is_at_or_below_compares_ranks() {
+        assert!(ThresholdCategory::VerySlow.is_at_or_below(ThresholdCategory::Medium));
+        assert!(ThresholdCategory::Medium.is_at_or_below(ThresholdCategory::Medium));
+        assert!(!ThresholdCategory::Expected.is_at_or_below(ThresholdCategory::Medium));
+        assert!(!ThresholdCategory::MediumFast.is_at_or_below(ThresholdCategory::Slow));
     }
 }

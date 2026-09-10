@@ -1,12 +1,14 @@
 use crate::models::{
-    ConnectivityConfig, NetQualityConfig, NotificationConfig, SpeedConfig, StorageConfig,
-    TelegramConfig, ThresholdCategory, Thresholds,
+    resolve_urls, ConnectivityConfig, NetQualityConfig, NotificationConfig, SpeedConfig,
+    StorageConfig, TelegramConfig, ThresholdCategory, Thresholds, UrlMode,
 };
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{ArgAction, Parser};
 use common_cli::common_tool_args::CommonToolArgs;
+use common_cli::header_format::format_config_item_level3;
 use common_cli::tool_path_helpers::get_tool_path;
 use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
+use logging_otel::{OtelCommonToolArgs, OtelGuard};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -17,27 +19,31 @@ use std::time::Duration;
 #[command(author, version, about, long_about)]
 pub struct CliArgs {
     /// Path to the configuration file.
+    // The conflict entries are clap argument IDs (field names), not the long
+    // flag spellings.
     #[arg(long="config",
     required = false,
     conflicts_with_all = &[
     "url",
-    "replace-urls",
-    "expected-download",
-    "expected-upload",
-    "download-thresholds",
-    "upload-thresholds",
-    "min-download-threshold",
-    "min-upload-threshold",
-    "connectivity-delay",
-    "speed-delay",
-    "connectivity-timeout",
-    "outage-backoff",
-    "outage-backoff-max",
-    "db-path",
-    "speedtest-cli-path",
-    "telegram-token",
-    "telegram-chat-id",
-    "otel-endpoint"
+    "replace_urls",
+    "expected_download",
+    "expected_upload",
+    "download_thresholds",
+    "upload_thresholds",
+    "min_download_threshold",
+    "min_upload_threshold",
+    "connectivity_delay",
+    "speed_delay",
+    "connectivity_timeout",
+    "outage_backoff",
+    "outage_backoff_max",
+    "db_path",
+    "disable_db_cleanup_enabled",
+    "db_cleanup_interval",
+    "speedtest_cli_path",
+    "telegram_token",
+    "telegram_chat_id",
+    "otel_endpoint"
     ])]
     pub config: Option<PathBuf>,
 
@@ -57,12 +63,8 @@ pub struct CliArgs {
     )]
     expected_download: Option<f32>,
 
-    /// Expected upload speed in Mbps.
-    #[arg(
-        long = "expected-upload",
-        value_name = "Mbps",
-        required_unless_present = "config"
-    )]
+    /// Expected upload speed in Mbps. When omitted, upload checks are disabled.
+    #[arg(long = "expected-upload", value_name = "Mbps", required = false)]
     expected_upload: Option<f32>,
 
     /// Download thresholds (very slow, slow, medium, and medium fast) as comma-separated percentages.
@@ -74,11 +76,26 @@ pub struct CliArgs {
     upload_thresholds: String,
 
     /// Minimum download threshold to trigger notifications (very_slow|slow|medium|medium_fast|expected).
-    #[arg(long="min-download-threshold", value_name = "threshold", required = false, default_value_t = ThresholdCategory::Medium)]
+    // String defaults, not default_value_t: the Display labels ("Medium",
+    // "Very Slow") are not valid snake_case CLI values, so rendering a variant
+    // as the default could fail to parse back.
+    #[arg(
+        long = "min-download-threshold",
+        value_name = "THRESHOLD",
+        required = false,
+        ignore_case = true,
+        default_value = "medium"
+    )]
     min_download_threshold: ThresholdCategory,
 
     /// Minimum upload threshold to trigger notifications (very_slow|slow|medium|medium_fast|expected).
-    #[arg(long="min-upload-threshold", value_name = "THRESHOLD", required = false, default_value_t = ThresholdCategory::Slow)]
+    #[arg(
+        long = "min-upload-threshold",
+        value_name = "THRESHOLD",
+        required = false,
+        ignore_case = true,
+        default_value = "slow"
+    )]
     min_upload_threshold: ThresholdCategory,
 
     /// Connectivity check delay in seconds.
@@ -165,7 +182,7 @@ impl NetQualityConfig {
             speed: SpeedConfig::from_args(args).context("Failed to parse speed config")?,
             notifications: NotificationConfig::from_args(args),
             storage: StorageConfig::from_args(args).context("Failed to parse storage config")?,
-            otel_endpoint: args.otel_endpoint.clone().unwrap_or_default(),
+            otel_endpoint: args.otel_endpoint.clone(),
         })
     }
 }
@@ -176,7 +193,12 @@ impl ConnectivityConfig {
         let timeout = Duration::from_secs(args.connectivity_timeout as u64);
         let outage_backoff = Duration::from_secs(args.outage_backoff as u64);
         let outage_backoff_max = Duration::from_secs(args.outage_backoff_max as u64);
-        let urls = args.url.clone();
+        let url_mode = if args.replace_urls {
+            UrlMode::Replace
+        } else {
+            UrlMode::Merge
+        };
+        let urls = resolve_urls(args.url.clone(), url_mode);
 
         ConnectivityConfig {
             delay,
@@ -198,7 +220,7 @@ impl SpeedConfig {
         let download_thresholds = parse_thresholds(args.download_thresholds.as_str())
             .context("Failed to parse download thresholds")?;
         let upload_thresholds = parse_thresholds(args.upload_thresholds.as_str())
-            .context("Failed to parse download thresholds")?;
+            .context("Failed to parse upload thresholds")?;
 
         let speedtest_cli_path = args.speedtest_cli_path.clone();
 
@@ -216,7 +238,7 @@ impl SpeedConfig {
 impl NotificationConfig {
     fn from_args(args: &CliArgs) -> Self {
         let telegram = TelegramConfig::from_args(args);
-        let min_download_threshold = args.min_upload_threshold;
+        let min_download_threshold = args.min_download_threshold;
         let min_upload_threshold = args.min_upload_threshold;
 
         NotificationConfig {
@@ -245,16 +267,14 @@ impl TelegramConfig {
 
 impl StorageConfig {
     fn from_args(args: &CliArgs) -> Result<Self> {
+        // No existence check: db::create_database creates the file and any
+        // missing parent directories on startup.
         let db_path = match &args.db_path {
             Some(p) => p.clone(),
             None => get_tool_path()
                 .context("Failed to get tool path")?
                 .join("netquality.db"),
         };
-
-        if !db_path.exists() {
-            bail!("Database path does not exist")
-        }
 
         let cleanup_interval = Duration::from_secs(args.db_cleanup_interval as u64);
 
@@ -266,44 +286,74 @@ impl StorageConfig {
     }
 }
 
-pub async fn initialize() -> Result<NetQualityConfig> {
+/// Parses the CLI, resolves the configuration, and boots logging with optional
+/// OpenTelemetry export. The returned guard, when present, must stay alive for
+/// the whole run and be dropped before any exit helper so telemetry flushes.
+pub async fn initialize() -> Result<(NetQualityConfig, Option<OtelGuard>)> {
     let args = CliArgs::parse();
 
     let config = match args.config {
         None => NetQualityConfig::from_args(&args)?,
         Some(config_path) => NetQualityConfig::from_config(config_path)
             .await
-            .context("")?,
+            .context("Failed to load configuration file")?,
     };
 
-    args.common.app_boot_up(
+    let otel_guard = args.common.app_boot_up_with_otel(
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         false,
         false,
+        config.otel_endpoint.as_deref(),
         Some(|| {
             print_runtime_info(&config);
         }),
     );
 
-    Ok(config)
+    Ok((config, otel_guard))
+}
+
+/// Presence flag for the header line: an endpoint counts when the configured
+/// value, or the OTEL_EXPORTER_OTLP_ENDPOINT variable that logging-otel falls
+/// back to, is non-empty after trimming. Only presence is reported; the
+/// endpoint value itself is never printed.
+fn otel_export_configured(config: &NetQualityConfig) -> bool {
+    let has_value = |value: &str| !value.trim().is_empty();
+
+    config
+        .otel_endpoint
+        .as_deref()
+        .map(has_value)
+        .unwrap_or(false)
+        || std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            .map(|value| has_value(&value))
+            .unwrap_or(false)
 }
 
 fn print_runtime_info(config: &NetQualityConfig) {
     let connectivity = &config.connectivity;
     println!("{} Connectivity Config", CONFIG_UL_ITEM_LEVEL_2);
-    println!("{} Delay: {:?}", CONFIG_UL_ITEM_LEVEL_3, connectivity.delay);
     println!(
-        "{} Timeout: {:?}",
-        CONFIG_UL_ITEM_LEVEL_3, connectivity.timeout
+        "{}",
+        format_config_item_level3("Delay", format!("{:?}", connectivity.delay))
     );
     println!(
-        "{} Outage backoff: {:?}",
-        CONFIG_UL_ITEM_LEVEL_3, connectivity.outage_backoff
+        "{}",
+        format_config_item_level3("Timeout", format!("{:?}", connectivity.timeout))
     );
     println!(
-        "{} Outage backoff max: {:?}",
-        CONFIG_UL_ITEM_LEVEL_3, connectivity.outage_backoff_max
+        "{}",
+        format_config_item_level3(
+            "Outage backoff",
+            format!("{:?}", connectivity.outage_backoff)
+        )
+    );
+    println!(
+        "{}",
+        format_config_item_level3(
+            "Outage backoff max",
+            format!("{:?}", connectivity.outage_backoff_max)
+        )
     );
     println!(
         "{} URLs ({}):",
@@ -317,78 +367,110 @@ fn print_runtime_info(config: &NetQualityConfig) {
     let speed = &config.speed;
     println!("{} Speed Config", CONFIG_UL_ITEM_LEVEL_2);
     println!(
-        "{} Expected download: {} Mbps",
-        CONFIG_UL_ITEM_LEVEL_3, speed.expected_download_mbps
+        "{}",
+        format_config_item_level3(
+            "Expected download",
+            format!("{} Mbps", speed.expected_download_mbps)
+        )
     );
     match speed.expected_upload_mbps {
         Some(upload) => println!(
-            "{} Expected upload: {} Mbps",
-            CONFIG_UL_ITEM_LEVEL_3, upload
+            "{}",
+            format_config_item_level3("Expected upload", format!("{} Mbps", upload))
         ),
         None => println!(
-            "{} Expected upload: <download only>",
-            CONFIG_UL_ITEM_LEVEL_3
+            "{}",
+            format_config_item_level3("Expected upload", "<download only>")
         ),
     }
-    println!("{} Delay: {:?}", CONFIG_UL_ITEM_LEVEL_3, speed.delay);
     println!(
-        "{} Download thresholds (%): {}/{}/{}/{}",
-        CONFIG_UL_ITEM_LEVEL_3,
-        speed.download_thresholds.very_slow,
-        speed.download_thresholds.slow,
-        speed.download_thresholds.medium,
-        speed.download_thresholds.medium_fast
+        "{}",
+        format_config_item_level3("Delay", format!("{:?}", speed.delay))
     );
     println!(
-        "{} Upload thresholds (%): {}/{}/{}/{}",
-        CONFIG_UL_ITEM_LEVEL_3,
-        speed.upload_thresholds.very_slow,
-        speed.upload_thresholds.slow,
-        speed.upload_thresholds.medium,
-        speed.upload_thresholds.medium_fast
+        "{}",
+        format_config_item_level3(
+            "Download thresholds (%)",
+            format!(
+                "{}/{}/{}/{}",
+                speed.download_thresholds.very_slow,
+                speed.download_thresholds.slow,
+                speed.download_thresholds.medium,
+                speed.download_thresholds.medium_fast
+            )
+        )
+    );
+    println!(
+        "{}",
+        format_config_item_level3(
+            "Upload thresholds (%)",
+            format!(
+                "{}/{}/{}/{}",
+                speed.upload_thresholds.very_slow,
+                speed.upload_thresholds.slow,
+                speed.upload_thresholds.medium,
+                speed.upload_thresholds.medium_fast
+            )
+        )
     );
     match &speed.speedtest_cli_path {
         Some(path) => println!(
-            "{} Speedtest CLI: {}",
-            CONFIG_UL_ITEM_LEVEL_3,
-            path.display()
+            "{}",
+            format_config_item_level3("Speedtest CLI", path.display())
         ),
         None => println!(
-            "{} Speedtest CLI: embedded (cfspeedtest)",
-            CONFIG_UL_ITEM_LEVEL_3
+            "{}",
+            format_config_item_level3("Speedtest CLI", "embedded (cfspeedtest)")
         ),
     }
 
     let notifications = &config.notifications;
     println!("{} Notifications Config", CONFIG_UL_ITEM_LEVEL_2);
-    match &notifications.telegram {
-        Some(_) => println!("{} Telegram: enabled", CONFIG_UL_ITEM_LEVEL_3),
-        None => println!("{} Telegram: disabled", CONFIG_UL_ITEM_LEVEL_3),
-    }
+    let telegram_state = match &notifications.telegram {
+        Some(_) => "enabled",
+        None => "disabled",
+    };
+    println!("{}", format_config_item_level3("Telegram", telegram_state));
+    // Presence only; the endpoint value is never printed. "configured" rather
+    // than "enabled": this line prints before OTel initialization runs, and a
+    // setup failure can still fall back to standard logging.
+    let otel_state = if otel_export_configured(config) {
+        "configured"
+    } else {
+        "not configured"
+    };
     println!(
-        "{} Min download threshold: {}",
-        CONFIG_UL_ITEM_LEVEL_3, notifications.min_download_threshold
+        "{}",
+        format_config_item_level3("OpenTelemetry export", otel_state)
     );
     println!(
-        "{} Min upload threshold: {}",
-        CONFIG_UL_ITEM_LEVEL_3, notifications.min_upload_threshold
+        "{}",
+        format_config_item_level3(
+            "Min download threshold",
+            notifications.min_download_threshold
+        )
+    );
+    println!(
+        "{}",
+        format_config_item_level3("Min upload threshold", notifications.min_upload_threshold)
     );
 
     let storage = &config.storage;
     println!("{} Storage Config", CONFIG_UL_ITEM_LEVEL_2);
     println!(
-        "{} Database path: {}",
-        CONFIG_UL_ITEM_LEVEL_3,
-        storage.db_path.display()
+        "{}",
+        format_config_item_level3("Database path", storage.db_path.display())
     );
     println!(
-        "{} Cleanup enabled: {}",
-        CONFIG_UL_ITEM_LEVEL_3, storage.cleanup_enabled
+        "{}",
+        format_config_item_level3("Cleanup enabled", storage.cleanup_enabled)
     );
     println!(
-        "{} Cleanup interval: {} day(s)",
-        CONFIG_UL_ITEM_LEVEL_3,
-        storage.cleanup_interval.as_secs() / 86_400
+        "{}",
+        format_config_item_level3(
+            "Cleanup interval",
+            format!("{:?}", storage.cleanup_interval)
+        )
     );
 }
 
@@ -419,4 +501,120 @@ fn parse_thresholds(value: &str) -> Result<Thresholds> {
     thresholds.validate().context("Invalid threshold values")?;
 
     Ok(thresholds)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::DEFAULT_URLS;
+
+    fn parse_args(extra: &[&str]) -> CliArgs {
+        let mut argv = vec![
+            "netquality",
+            "--expected-download",
+            "100",
+            "--speedtest-cli-path",
+            "speedtest",
+        ];
+        argv.extend_from_slice(extra);
+        CliArgs::try_parse_from(argv).expect("CLI args should parse")
+    }
+
+    #[test]
+    fn parse_thresholds_accepts_four_values_with_spaces() {
+        let thresholds = parse_thresholds("30, 50 ,65,85").expect("should parse");
+
+        assert_eq!(thresholds.very_slow, 30.0);
+        assert_eq!(thresholds.slow, 50.0);
+        assert_eq!(thresholds.medium, 65.0);
+        assert_eq!(thresholds.medium_fast, 85.0);
+    }
+
+    #[test]
+    fn parse_thresholds_rejects_wrong_value_count() {
+        assert!(parse_thresholds("30,50,65").is_err());
+        assert!(parse_thresholds("30,50,65,85,95").is_err());
+    }
+
+    #[test]
+    fn parse_thresholds_rejects_non_numeric_values() {
+        assert!(parse_thresholds("30,abc,65,85").is_err());
+    }
+
+    #[test]
+    fn parse_thresholds_delegates_order_and_range_validation() {
+        assert!(parse_thresholds("50,30,65,85").is_err());
+        assert!(parse_thresholds("30,50,65,185").is_err());
+    }
+
+    #[test]
+    fn min_download_threshold_comes_from_its_own_flag() {
+        let args = parse_args(&[
+            "--min-download-threshold",
+            "medium_fast",
+            "--min-upload-threshold",
+            "very_slow",
+        ]);
+
+        let notifications = NotificationConfig::from_args(&args);
+
+        assert_eq!(
+            notifications.min_download_threshold,
+            ThresholdCategory::MediumFast
+        );
+        assert_eq!(
+            notifications.min_upload_threshold,
+            ThresholdCategory::VerySlow
+        );
+    }
+
+    #[test]
+    fn min_threshold_defaults_resolve_to_documented_variants() {
+        let args = parse_args(&[]);
+
+        let notifications = NotificationConfig::from_args(&args);
+
+        assert_eq!(
+            notifications.min_download_threshold,
+            ThresholdCategory::Medium
+        );
+        assert_eq!(notifications.min_upload_threshold, ThresholdCategory::Slow);
+    }
+
+    #[test]
+    fn replace_urls_flag_replaces_the_default_list() {
+        let args = parse_args(&["--replace-urls", "--url", "https://example.com/health"]);
+
+        let connectivity = ConnectivityConfig::from_args(&args);
+
+        assert_eq!(connectivity.urls, vec!["https://example.com/health"]);
+    }
+
+    #[test]
+    fn urls_merge_with_defaults_without_replace_flag() {
+        let args = parse_args(&["--url", "https://example.com/health"]);
+
+        let connectivity = ConnectivityConfig::from_args(&args);
+
+        assert_eq!(connectivity.urls.len(), DEFAULT_URLS.len() + 1);
+        assert_eq!(connectivity.urls[0], DEFAULT_URLS[0]);
+        assert_eq!(
+            connectivity.urls.last().map(String::as_str),
+            Some("https://example.com/health")
+        );
+    }
+
+    #[test]
+    fn storage_from_args_accepts_missing_db_file() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db_path = dir.path().join("not-created-yet").join("netquality.db");
+        let db_path_str = db_path.to_string_lossy().to_string();
+        let args = parse_args(&["--db-path", db_path_str.as_str()]);
+
+        let storage = StorageConfig::from_args(&args).expect("storage config should resolve");
+
+        assert_eq!(storage.db_path, db_path);
+        assert!(storage.cleanup_enabled);
+        assert_eq!(storage.cleanup_interval, Duration::from_secs(3_600));
+    }
 }

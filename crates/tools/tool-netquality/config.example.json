@@ -1,4 +1,5 @@
 {
+  "otel_endpoint": "http://localhost:4318",
   "storage": {
     "db_path": "netquality.db",
     "cleanup_enabled": true,
@@ -38,7 +39,6 @@
       "bot_token": "YOUR_BOT_TOKEN",
       "chat_id": "YOUR_CHAT_ID"
     },
-    "otel_endpoint": "http://localhost:4318",
     "min_download_threshold": "medium_fast",
     "min_upload_threshold": "slow"
   }

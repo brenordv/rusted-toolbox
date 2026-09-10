@@ -1,6 +1,6 @@
 [package]
 name = "netquality"
-version = "2.0.0"
+version = "2.1.0"
 description = "Cross platform CLI tool that monitors internet connectivity and speed."
 edition.workspace = true
 authors.workspace = true
@@ -12,7 +12,9 @@ license.workspace = true
 common-cli = { workspace = true }
 common-serialization-utils = { workspace = true }
 common-utils = { workspace = true }
-logging-otel = { workspace = true }
+# The otel feature pulls in raccoon-otel so a provided endpoint exports for
+# real; without it logging-otel only warns and falls back to standard logging.
+logging-otel = { workspace = true, features = ["otel"] }
 cli-signal-monitor = {workspace = true }
 
 # External
@@ -29,3 +31,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

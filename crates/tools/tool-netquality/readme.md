@@ -12,9 +12,9 @@ It runs a simple 1-second loop that schedules connectivity and speed checks usin
 - Notifies on outage recovery and speed threshold changes
 
 ## Command-Line Options
-- `-c, --config <FILE>`: Path to `config.json` (optional)
+- `--config <FILE>`: Path to a JSON configuration file (mutually exclusive with the tool-specific flags below)
 - `--url <URL>`: Connectivity check URL (repeatable)
-- `--replace-urls`: Replace a default URL list instead of merging
+- `--replace-urls`: Replace the default URL list with the `--url` values instead of merging
 - `--expected-download <MBPS>`: Expected download speed in Mbps (required if not in config)
 - `--expected-upload <MBPS>`: Expected upload speed in Mbps (optional)
 - `--download-thresholds <V,S,M,MF>`: Download thresholds as percentages (e.g. `30,50,65,85`)
@@ -27,21 +27,29 @@ It runs a simple 1-second loop that schedules connectivity and speed checks usin
 - `--outage-backoff <SECS>`: Outage backoff delay in seconds
 - `--outage-backoff-max <SECS>`: Maximum outage backoff delay in seconds
 - `--db-path <FILE>`: SQLite database path
-- `--speedtest-cli-path <FILE>`: Path to Ookla `speedtest` CLI binary
+- `--db-cleanup-interval <SECS>`: Database cleanup interval in seconds (default: `3600`)
+- `--disable-db-cleanup-enabled`: Disable the periodic database cleanup
+- `--speedtest-cli-path <FILE>`: Path to Ookla `speedtest` CLI binary (required if not in config)
 - `--telegram-token <TOKEN>`: Telegram bot token
 - `--telegram-chat-id <CHAT>`: Telegram chat ID
 - `--otel-endpoint <URL>`: OpenTelemetry OTLP endpoint
-- `-v, --verbose`: Enable verbose logs
 
-## Configuration Loading order and overrides
-To make this tool simpler to use, NetQuality loads configuration in this order:
-1. `config.json` in the same folder as the executable, then...
-2. `config.json` in the current working directory, and then...
-3. `--config` file (if provided), and lastly...
-4. Command-line overrides.
+Shared flags from the common CLI: `--app-header` (print the runtime header block), `--verbose`
+(accepted, unused), `--log-level <level>` (case insensitive; default `warn`), `--log-to-console`,
+`--log-to-file`, `--rotate-log-file-by-day`.
 
-I designed it this way so you can keep things like notification tokens and chat IDs in a single file next to the 
- executable and then override just what you need.
+## Configuration loading
+NetQuality has two mutually exclusive configuration modes:
+- **Config file**: pass `--config <FILE>` and every setting comes from that JSON file (see
+  `config.example.json` in this folder for a complete example). The tool-specific flags cannot
+  be combined with `--config`.
+- **CLI flags**: without `--config`, everything comes from the command line; `--expected-download`
+  and `--speedtest-cli-path` are required, the rest falls back to the defaults below. Note: in CLI
+  mode the cleanup default is `--db-cleanup-interval 3600` seconds, while config mode uses
+  `cleanup_interval_days` (default `365`).
+
+There is no auto-discovery of a `config.json` next to the executable and no merging between the
+two modes.
 
 ## Configuration defaults
 Here are the built-in defaults NetQuality uses when a setting is not provided:
@@ -49,7 +57,7 @@ Here are the built-in defaults NetQuality uses when a setting is not provided:
 - `storage.cleanup_enabled`: `true`
 - `storage.cleanup_interval_days`: `365` days
 - `connectivity.delay_secs`: `60`
-- `connectivity.timeout_secs`: `1`
+- `connectivity.timeout_secs`: `10`
 - `connectivity.outage_backoff_secs`: `10`
 - `connectivity.outage_backoff_max_secs`: `3600`
 - `connectivity.url_mode`: `merge`
@@ -70,10 +78,15 @@ Here are the built-in defaults NetQuality uses when a setting is not provided:
 - `notifications.telegram`: not set
 - `notifications.min_download_threshold`: `medium`
 - `notifications.min_upload_threshold`: `slow`
+- `otel_endpoint` (top level): not set (falls back to the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable)
 
 ## Example `config.json`
+A ready-to-edit sample ships as `config.example.json` in this folder; its connectivity intervals
+are shorter than this example's (`delay_secs: 10`, `timeout_secs: 1`) so a first run gives quick
+feedback.
 ```json
 {
+  "otel_endpoint": "http://localhost:4318",
   "storage": {
     "db_path": "netquality.db",
     "cleanup_enabled": true,
@@ -81,7 +94,7 @@ Here are the built-in defaults NetQuality uses when a setting is not provided:
   },
   "connectivity": {
     "delay_secs": 60,
-    "timeout_secs": 1,
+    "timeout_secs": 10,
     "outage_backoff_secs": 10,
     "outage_backoff_max_secs": 3600,
     "url_mode": "merge",
@@ -247,25 +260,24 @@ Example output:
 
 
 
-# Usage Examples
-### Run with defaults + CLI overrides
-```bash
-netquality --expected-download 100 --expected-upload 20 --telegram-token TOKEN --telegram-chat-id 123
-```
+# OpenTelemetry export
+NetQuality can export its traces and logs to an OpenTelemetry collector via `logging-otel`.
+The OTLP endpoint is resolved in this order:
+1. `--otel-endpoint <URL>` (CLI mode) or the top-level `otel_endpoint` key (config-file mode).
+2. The `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable (resolved by `logging-otel`).
 
-### Use a custom config file
-```bash
-netquality --config ./config.json
-```
-
-### Replace the URL list
-```bash
-netquality --expected-download 200 --replace-urls --url https://example.com/health --url https://1.1.1.1
-```
+Things worth knowing:
+- The endpoint value is never logged or printed anywhere, because OTLP endpoints can carry
+  credentials. The `--app-header` output only shows a presence line:
+  `OpenTelemetry export: configured` or `not configured`. The line reports that an endpoint is
+  present, not that the export initialized; if setup fails, the tool falls back to standard
+  logging.
+- While an endpoint is active, console log output goes to **stdout** (raccoon-otel's console
+  layer) instead of the usual stderr default. `--log-to-file` still works alongside the export.
+- Without an endpoint, logging behaves exactly as before (stderr by default).
 
 ## Creating alerts
-If you are using the OpenTelemetry instrumentation (enabled via `--otel-endpoint` or the
-`OTEL_EXPORTER_OTLP_ENDPOINT` environment variable), you can create alerts based on the
+If you are using the OpenTelemetry instrumentation, you can create alerts based on the
 `netquality.notification` span and its `notification.message` attribute:
 
 1. **Internet speed degraded**: `notification.message` contains `"Speed change detected"`
@@ -275,3 +287,37 @@ Note: there is no explicit "outage started" event. The `netquality.notification`
 user-facing notification is sent (speed change or outage recovery), so long healthy periods will also have no
 notification spans. A dead-man's switch based solely on the absence of these spans is not reliable for detecting
 outages.
+
+# Usage Examples
+### Run with defaults + CLI overrides
+```bash
+netquality --expected-download 100 --expected-upload 20 --speedtest-cli-path speedtest --telegram-token TOKEN --telegram-chat-id 123
+```
+
+### Use a custom config file
+```bash
+netquality --config ./config.json
+```
+
+### Replace the URL list
+```bash
+netquality --expected-download 200 --speedtest-cli-path speedtest --replace-urls --url https://example.com/health --url https://1.1.1.1
+```
+
+# Docker
+The `Dockerfile` in this folder builds the tool from the workspace root and packages it on top of
+Ubuntu 24.04 together with Ookla's Speedtest CLI:
+
+```bash
+# From the workspace root:
+docker build -f crates/tools/tool-netquality/Dockerfile -t netquality .
+docker run --rm netquality --expected-download 100 --db-path /data/netquality.db
+```
+
+Details:
+- The image downloads the Speedtest CLI to `/usr/local/bin/speedtest` and exposes its location
+  through the `SPEEDTEST_CLI_PATH` environment variable.
+- The entrypoint script appends `--speedtest-cli-path "$SPEEDTEST_CLI_PATH"` to the arguments
+  automatically unless you pass `--speedtest-cli-path` yourself, so `--expected-download` is the
+  only required flag inside the container.
+- The working directory is `/data`; mount a volume there to keep the SQLite database across runs.

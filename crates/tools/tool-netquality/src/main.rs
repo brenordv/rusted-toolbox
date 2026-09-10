@@ -14,15 +14,19 @@ use tracing::error;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = match initialize().await {
-        Ok(args) => args,
+    let (config, otel_guard) = match initialize().await {
+        Ok(initialized) => initialized,
         Err(error) => {
             error!("Failed to initialize tool: {}", error);
             exit_error();
         }
     };
 
-    let result = run_app(&args).await;
+    let result = run_app(&config).await;
+
+    // The exit helpers end the process without running Drop, so the OTel guard
+    // is dropped here to flush buffered telemetry before any of them is called.
+    drop(otel_guard);
 
     match result {
         Ok(_) => exit_success(),
