@@ -5,7 +5,6 @@ use common_cli::tool_exit_helpers::exit_error;
 use common_utils_ext::copy_string_to_clipboard::copy_to_clipboard;
 use jsonwebtoken::dangerous::insecure_decode;
 use serde_json::{Map, Value};
-use std::borrow::Cow;
 use std::process;
 use tracing::error;
 
@@ -33,7 +32,7 @@ pub fn decode_jwt_token(token: &str) -> Result<TokenInfo> {
 /// Prints JWT claims as CSV format.
 ///
 /// Outputs headers and values as CSV rows with proper escaping.
-/// Sorts keys alphabetically for consistent output.
+/// Prints "No claims found" when there are no claims.
 pub fn print_token_csv(claims: &Map<String, Value>) {
     // Exit early if there are no claims
     if claims.is_empty() {
@@ -41,6 +40,16 @@ pub fn print_token_csv(claims: &Map<String, Value>) {
         return;
     }
 
+    println!("{}", format_csv(claims));
+}
+
+/// Formats JWT claims as a two-line CSV document: a header row and a value row.
+///
+/// Sorts keys alphabetically for deterministic column order. Fields containing
+/// commas, double quotes, or line breaks are quoted, with embedded quotes doubled.
+/// String values are rendered without their JSON quotes; other values serialize
+/// as JSON.
+fn format_csv(claims: &Map<String, Value>) -> String {
     // Some values might need to be escaped for CSV
     let escape = |s: &str| {
         if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
@@ -56,11 +65,8 @@ pub fn print_token_csv(claims: &Map<String, Value>) {
     // Sort keys for deterministic column order
     keys.sort();
 
-    // Printing the headers
     let header = keys.iter().map(|k| escape(k)).collect::<Vec<_>>().join(",");
-    println!("{}", header);
 
-    // Printing the values/rows
     let row = keys
         .iter()
         .map(|k| {
@@ -74,7 +80,8 @@ pub fn print_token_csv(claims: &Map<String, Value>) {
         })
         .collect::<Vec<_>>()
         .join(",");
-    println!("{}", row);
+
+    format!("{}\n{}", header, row)
 }
 
 /// Prints JWT claims as formatted JSON.
@@ -93,36 +100,51 @@ pub fn print_token_json(claims: &Map<String, Value>) {
 
 /// Copies specific claim value to clipboard.
 ///
-/// Searches for claim key in token and copies its string value.
-/// Exits with error if claim not found or clipboard operation fails.
+/// Resolves the claim through [`resolve_claim_value`] and copies the result.
+/// Reports on stderr when the claim is not found; exits with error if the
+/// clipboard operation fails.
 pub fn copy_claim_to_clipboard(argument_to_copy: String, claims: &Map<String, Value>) {
-    let mut value: &Value = &Value::Null;
-
-    for (key, claim_value) in claims {
-        if key.to_lowercase() != argument_to_copy.to_lowercase().trim() {
-            continue;
-        }
-        value = claim_value;
-    }
-
-    if value == &Value::Null {
+    let Some(text_to_copy) = resolve_claim_value(&argument_to_copy, claims) else {
         eprintln!("Claim not found: {}", argument_to_copy);
         return;
-    }
-
-    let text_to_copy: Cow<'_, str> = match value {
-        // Added this treatment to avoid strings being copied to the clipboard with quotes.
-        Value::String(s) => Cow::Borrowed(s.as_str()),
-        _ => Cow::Owned(value.to_string()),
     };
 
-    match copy_to_clipboard(text_to_copy.as_ref()) {
+    match copy_to_clipboard(&text_to_copy) {
         Ok(_) => {}
         Err(e) => {
             error!("Error copying to clipboard: {}", e);
             exit_error();
         }
     };
+}
+
+/// Resolves the text a claim would place on the clipboard.
+///
+/// Matches the claim name case-insensitively, ignoring surrounding whitespace
+/// in the requested name. String values are returned without their JSON quotes;
+/// other values serialize as JSON. Returns None when the claim is missing or
+/// its value is JSON null.
+fn resolve_claim_value(claim_name: &str, claims: &Map<String, Value>) -> Option<String> {
+    let wanted = claim_name.to_lowercase();
+    let wanted = wanted.trim();
+
+    let mut value: &Value = &Value::Null;
+
+    for (key, claim_value) in claims {
+        if key.to_lowercase() != wanted {
+            continue;
+        }
+        value = claim_value;
+    }
+
+    if value == &Value::Null {
+        return None;
+    }
+
+    Some(match value {
+        Value::String(s) => s.clone(),
+        _ => value.to_string(),
+    })
 }
 
 /// Prints JWT claims in human-readable format.
@@ -204,5 +226,117 @@ mod tests {
     #[test]
     fn format_claim_value_array_mixes_strings_and_scalars() {
         assert_eq!(format_claim_value(&json!(["a", 1, false])), "a,1,false");
+    }
+
+    fn claims_from(pairs: &[(&str, Value)]) -> Map<String, Value> {
+        pairs
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn format_csv_sorts_keys_alphabetically() {
+        let claims = claims_from(&[
+            ("sub", json!("1234567890")),
+            ("aud", json!("app")),
+            ("iat", json!(1516239022)),
+        ]);
+
+        assert_eq!(
+            format_csv(&claims),
+            "aud,iat,sub\napp,1516239022,1234567890"
+        );
+    }
+
+    #[test]
+    fn format_csv_quotes_values_containing_commas() {
+        let claims = claims_from(&[("scope", json!("read,write"))]);
+
+        assert_eq!(format_csv(&claims), "scope\n\"read,write\"");
+    }
+
+    #[test]
+    fn format_csv_doubles_embedded_double_quotes() {
+        let claims = claims_from(&[("note", json!("say \"hi\""))]);
+
+        assert_eq!(format_csv(&claims), "note\n\"say \"\"hi\"\"\"");
+    }
+
+    #[test]
+    fn format_csv_quotes_values_containing_newlines() {
+        let claims = claims_from(&[("text", json!("line1\nline2"))]);
+
+        assert_eq!(format_csv(&claims), "text\n\"line1\nline2\"");
+    }
+
+    #[test]
+    fn resolve_claim_value_matches_case_insensitively() {
+        let claims = claims_from(&[("Sub", json!("1234567890"))]);
+
+        assert_eq!(
+            resolve_claim_value("SUB", &claims),
+            Some("1234567890".to_string())
+        );
+        assert_eq!(
+            resolve_claim_value("sub", &claims),
+            Some("1234567890".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_claim_value_trims_the_requested_name() {
+        let claims = claims_from(&[("sub", json!("1234567890"))]);
+
+        assert_eq!(
+            resolve_claim_value(" Sub ", &claims),
+            Some("1234567890".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_claim_value_returns_strings_without_json_quotes() {
+        let claims = claims_from(&[("name", json!("John Doe"))]);
+
+        assert_eq!(
+            resolve_claim_value("name", &claims),
+            Some("John Doe".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_claim_value_serializes_non_strings_as_json() {
+        let claims = claims_from(&[
+            ("iat", json!(1516239022)),
+            ("roles", json!(["admin", "user"])),
+            ("nested", json!({"a": 1})),
+        ]);
+
+        assert_eq!(
+            resolve_claim_value("iat", &claims),
+            Some("1516239022".to_string())
+        );
+        assert_eq!(
+            resolve_claim_value("roles", &claims),
+            Some("[\"admin\",\"user\"]".to_string())
+        );
+        assert_eq!(
+            resolve_claim_value("nested", &claims),
+            Some("{\"a\":1}".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_claim_value_returns_none_when_claim_missing() {
+        let claims = claims_from(&[("sub", json!("1234567890"))]);
+
+        assert_eq!(resolve_claim_value("aud", &claims), None);
+    }
+
+    #[test]
+    fn resolve_claim_value_treats_null_claim_as_missing() {
+        let claims = claims_from(&[("nickname", Value::Null)]);
+
+        assert_eq!(resolve_claim_value("nickname", &claims), None);
     }
 }

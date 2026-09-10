@@ -24,10 +24,31 @@ jwt "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6Ik
 ```
 **Output:**
 ```
-🚀 JWT v1.0
----------------------------
-📏 Token length: 181
-✨  Print format: Pretty
+No expiration claim
+----Claims:------------
+sub: 1234567890
+name: John Doe
+iat: 1516239022
+```
+
+### Show the Tool Header
+The header block only prints when `--app-header` is passed:
+```bash
+jwt --app-header "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+```
+**Output:**
+```
+jwt (2.0.2)
+---------------------------------------------------
+- Basic Runtime Config
+  - Verbose mode: <unused>
+  - Log level: Warning
+  - Log to stdout: false
+  - Log to file: false
+  - Rotate log file by day: false
+- Tool Runtime Config
+  - Token length: 155
+  - Print format: Pretty
 
 No expiration claim
 ----Claims:------------
@@ -53,9 +74,9 @@ jwt -p json "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibm
 **Output:**
 ```json
 {
-  "iat": 1516239022,
+  "sub": "1234567890",
   "name": "John Doe",
-  "sub": "1234567890"
+  "iat": 1516239022
 }
 ```
 
