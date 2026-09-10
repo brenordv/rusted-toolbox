@@ -192,4 +192,15 @@ mod tests {
             InputSource::File(file_path.clone())
         );
     }
+
+    #[test]
+    fn from_args_positional_existing_directory_is_text() {
+        let dir = tempdir().unwrap();
+        let arg = dir.path().to_str().unwrap();
+
+        assert_eq!(
+            parse(&["b64", arg]).input,
+            InputSource::Text(arg.to_string())
+        );
+    }
 }

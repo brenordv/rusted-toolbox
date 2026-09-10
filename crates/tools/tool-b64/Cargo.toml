@@ -1,6 +1,6 @@
 [package]
 name = "b64"
-version = "2.0.0"
+version = "2.0.1"
 description = "Encodes/Decodes text and files to base 64 format"
 edition.workspace = true
 authors.workspace = true
@@ -11,6 +11,7 @@ license.workspace = true
 # Internal
 common-cli = { workspace = true }
 common-utils = { workspace = true }
+
 # External
 base64 = { workspace = true }
 clap = { workspace = true }

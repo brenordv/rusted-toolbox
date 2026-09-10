@@ -625,4 +625,103 @@ mod tests {
         assert_eq!(err.exit_code, 1);
         assert!(err.message.contains("cannot open"));
     }
+
+    #[test]
+    fn wrap_writer_inserts_newline_at_each_wrap_boundary() {
+        let mut out: Vec<u8> = Vec::new();
+        let mut writer = WrapWriter::new(&mut out, NonZeroUsize::new(4));
+        writer.write_all(b"abcdefghij").unwrap();
+        writer.finish().unwrap();
+
+        assert_eq!(out, b"abcd\nefgh\nij\n");
+    }
+
+    #[test]
+    fn wrap_writer_defers_trailing_newline_until_finish() {
+        let mut out: Vec<u8> = Vec::new();
+        let mut writer = WrapWriter::new(&mut out, NonZeroUsize::new(4));
+        writer.write_all(b"abcdef").unwrap();
+
+        assert_eq!(out, b"abcd\nef");
+    }
+
+    #[test]
+    fn wrap_writer_finish_adds_nothing_at_exact_boundary() {
+        let mut out: Vec<u8> = Vec::new();
+        let mut writer = WrapWriter::new(&mut out, NonZeroUsize::new(4));
+        writer.write_all(b"abcdefgh").unwrap();
+        writer.finish().unwrap();
+
+        assert_eq!(out, b"abcd\nefgh\n");
+    }
+
+    #[test]
+    fn wrap_writer_finish_emits_nothing_without_writes() {
+        let mut out: Vec<u8> = Vec::new();
+        let mut writer = WrapWriter::new(&mut out, NonZeroUsize::new(4));
+        writer.finish().unwrap();
+
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn wrap_writer_without_wrap_passes_bytes_through_unchanged() {
+        let mut out: Vec<u8> = Vec::new();
+        let mut writer = WrapWriter::new(&mut out, None);
+        writer.write_all(b"abcdefghij").unwrap();
+        writer.finish().unwrap();
+
+        assert_eq!(out, b"abcdefghij");
+    }
+
+    #[test]
+    fn encode_empty_input_with_wrap_produces_empty_output() {
+        let dir = tempdir().unwrap();
+        let input_path = dir.path().join("input.bin");
+        let output_path = dir.path().join("output.b64");
+        fs::write(&input_path, b"").unwrap();
+
+        let cfg = config(B64Mode::Encode, InputSource::File(input_path), &output_path);
+        run(&cfg).unwrap();
+
+        assert!(fs::read(&output_path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn decode_ignore_garbage_whitespace_only_input_yields_empty_output() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("output.bin");
+
+        let cfg = B64Config {
+            ignore_garbage: true,
+            ..config(
+                B64Mode::Decode,
+                InputSource::Text(" \t\r\n ".to_string()),
+                &output_path,
+            )
+        };
+        run(&cfg).unwrap();
+
+        assert!(fs::read(&output_path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn decode_ignore_garbage_padding_only_input_reports_invalid_length() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("output.bin");
+
+        let cfg = B64Config {
+            ignore_garbage: true,
+            ..config(
+                B64Mode::Decode,
+                InputSource::Text(" == \n".to_string()),
+                &output_path,
+            )
+        };
+
+        let err = run(&cfg).err().unwrap();
+        assert_eq!(err.exit_code, 2);
+        assert!(err.message.contains("invalid Base64 length"));
+        assert!(fs::read(&output_path).unwrap().is_empty());
+    }
 }
