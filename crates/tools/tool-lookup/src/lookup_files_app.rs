@@ -233,3 +233,85 @@ fn brief_walkdir_error(e: &walkdir::Error) -> String {
     // Walkdir's error Display is already brief; keep it simple.
     e.to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn matcher(patterns: &[&str], mode: PatternMode, case_sensitive: bool) -> Matcher {
+        let patterns: Vec<String> = patterns.iter().map(|p| p.to_string()).collect();
+        build_matcher(&patterns, &mode, case_sensitive).unwrap()
+    }
+
+    #[test]
+    fn wildcard_matcher_is_case_insensitive_by_default() {
+        let m = matcher(&["*.rs"], PatternMode::Wildcard, false);
+
+        assert!(is_match(&m, "main.rs"));
+        assert!(is_match(&m, "MAIN.RS"));
+        assert!(!is_match(&m, "main.py"));
+    }
+
+    #[test]
+    fn wildcard_matcher_honors_case_sensitivity() {
+        let m = matcher(&["*.RS"], PatternMode::Wildcard, true);
+
+        assert!(is_match(&m, "MAIN.RS"));
+        assert!(!is_match(&m, "main.rs"));
+    }
+
+    #[test]
+    fn wildcard_matcher_accepts_multiple_patterns() {
+        let m = matcher(&["README.*", "LICENSE*"], PatternMode::Wildcard, false);
+
+        assert!(is_match(&m, "readme.md"));
+        assert!(is_match(&m, "license"));
+        assert!(!is_match(&m, "changelog.md"));
+    }
+
+    #[test]
+    fn regex_matcher_is_case_insensitive_by_default() {
+        let m = matcher(&[r"^mydoc\.(pdf|epub)$"], PatternMode::Regex, false);
+
+        assert!(matches!(m, Matcher::RegexSet(_)));
+        assert!(is_match(&m, "mydoc.pdf"));
+        assert!(is_match(&m, "MYDOC.EPUB"));
+        assert!(!is_match(&m, "mydoc.txt"));
+    }
+
+    #[test]
+    fn regex_matcher_honors_case_sensitivity() {
+        let m = matcher(&[r"^readme\.md$"], PatternMode::Regex, true);
+
+        assert!(is_match(&m, "readme.md"));
+        assert!(!is_match(&m, "README.MD"));
+    }
+
+    #[test]
+    fn regex_matcher_rejects_invalid_patterns() {
+        let patterns = vec!["[unclosed".to_string()];
+
+        assert!(build_matcher(&patterns, &PatternMode::Regex, false).is_err());
+    }
+
+    #[test]
+    fn regex_list_fallback_matches_like_the_set() {
+        // Exercises the Matcher::RegexList arm that build_regexset falls back to
+        // when the combined RegexSet cannot be built.
+        let list = vec![
+            RegexBuilder::new(r"^a\.txt$")
+                .case_insensitive(true)
+                .build()
+                .unwrap(),
+            RegexBuilder::new(r"^b\.txt$")
+                .case_insensitive(true)
+                .build()
+                .unwrap(),
+        ];
+        let m = Matcher::RegexList(list);
+
+        assert!(is_match(&m, "a.txt"));
+        assert!(is_match(&m, "B.TXT"));
+        assert!(!is_match(&m, "c.txt"));
+    }
+}

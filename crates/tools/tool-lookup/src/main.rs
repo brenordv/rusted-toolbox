@@ -12,7 +12,9 @@ mod models;
 
 fn main() -> Result<()> {
     match initialize()? {
-        LookupCommand::Text(cfg) => run_text_lookup(&cfg)?,
+        LookupCommand::Text(cfg) => {
+            run_text_lookup(&cfg)?;
+        }
         LookupCommand::Files(cfg) => run_files_lookup(&cfg)?,
     }
 

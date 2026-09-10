@@ -1,13 +1,26 @@
-use crate::lookup_shared::{list_files, normalize_extensions, path_matches_allowed};
+use crate::lookup_shared::{
+    is_probably_binary, list_files, normalize_extensions, path_matches_allowed,
+};
 use crate::models::TextLookupConfig;
 use anyhow::{anyhow, Result};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::time::Instant;
-use tracing::error;
+use tracing::{debug, error};
 
-pub fn run_text_lookup(config: &TextLookupConfig) -> Result<()> {
+/// Counters accumulated by [`run_text_lookup`]; they feed the summary line and
+/// let tests assert the outcome of a search.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct TextLookupCounts {
+    pub files_read: u64,
+    pub files_skipped_binary: u64,
+    pub lines_scanned: u64,
+    pub lines_skipped_invalid_utf8: u64,
+    pub matches: u64,
+}
+
+pub fn run_text_lookup(config: &TextLookupConfig) -> Result<TextLookupCounts> {
     let start = Instant::now();
 
     let base_path = PathBuf::from(&config.path);
@@ -21,12 +34,16 @@ pub fn run_text_lookup(config: &TextLookupConfig) -> Result<()> {
     let needle = config.text.to_ascii_lowercase();
 
     let files_iter = list_files(&base_path, config.current_only)?;
-    let mut files_read: u64 = 0;
-    let mut total_lines: u64 = 0;
-    let mut matches_found: u64 = 0;
+    let mut counts = TextLookupCounts::default();
 
     for file_path in files_iter {
         if !path_matches_allowed(&file_path, &normalized_extensions) {
+            continue;
+        }
+
+        if is_probably_binary(&file_path) {
+            counts.files_skipped_binary += 1;
+            debug!(file = %file_path.display(), "skipping binary file");
             continue;
         }
 
@@ -37,18 +54,23 @@ pub fn run_text_lookup(config: &TextLookupConfig) -> Result<()> {
                 continue;
             }
         };
-        files_read += 1;
+        counts.files_read += 1;
 
         let reader = BufReader::new(file);
         for (idx, line_res) in reader.lines().enumerate() {
             let line = match line_res {
                 Ok(l) => l,
-                Err(_) => continue, // Skip problematic lines
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::InvalidData {
+                        counts.lines_skipped_invalid_utf8 += 1;
+                    }
+                    continue;
+                }
             };
-            total_lines += 1;
+            counts.lines_scanned += 1;
 
             if line.to_ascii_lowercase().contains(&needle) {
-                matches_found += 1;
+                counts.matches += 1;
                 if config.line_only {
                     println!("{}", line);
                 } else {
@@ -61,10 +83,86 @@ pub fn run_text_lookup(config: &TextLookupConfig) -> Result<()> {
     if !config.no_summary {
         let elapsed = start.elapsed();
         eprintln!(
-            "Searched in {} files, {} lines, {} matches. Took {:?}.",
-            files_read, total_lines, matches_found, elapsed
+            "Searched in {} files, {} lines, {} matches. Skipped {} binary files, {} invalid UTF-8 lines. Took {:?}.",
+            counts.files_read,
+            counts.lines_scanned,
+            counts.matches,
+            counts.files_skipped_binary,
+            counts.lines_skipped_invalid_utf8,
+            elapsed
         );
     }
 
-    Ok(())
+    Ok(counts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn quiet_config(path: PathBuf, text: &str) -> TextLookupConfig {
+        TextLookupConfig::new(path, text.to_string(), vec![], false, true, true)
+    }
+
+    #[test]
+    fn run_text_lookup_skips_binary_files_and_reports_counts() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("plain.txt"),
+            "hello needle world\nsecond line\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("data.bin"),
+            b"hello needle world\x00\nsecond line\n",
+        )
+        .unwrap();
+
+        let config = quiet_config(dir.path().to_path_buf(), "needle");
+
+        let counts = run_text_lookup(&config).unwrap();
+
+        assert_eq!(
+            counts,
+            TextLookupCounts {
+                files_read: 1,
+                files_skipped_binary: 1,
+                lines_scanned: 2,
+                lines_skipped_invalid_utf8: 0,
+                matches: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn run_text_lookup_counts_invalid_utf8_lines() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("mixed.txt"),
+            b"good needle line\n\xFF\xFE broken line\n",
+        )
+        .unwrap();
+
+        let config = quiet_config(dir.path().to_path_buf(), "needle");
+
+        let counts = run_text_lookup(&config).unwrap();
+
+        assert_eq!(counts.files_read, 1);
+        assert_eq!(counts.files_skipped_binary, 0);
+        assert_eq!(counts.lines_scanned, 1);
+        assert_eq!(counts.lines_skipped_invalid_utf8, 1);
+        assert_eq!(counts.matches, 1);
+    }
+
+    #[test]
+    fn run_text_lookup_errors_on_missing_path() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("missing");
+
+        let config = quiet_config(missing, "needle");
+
+        assert!(run_text_lookup(&config).is_err());
+    }
 }

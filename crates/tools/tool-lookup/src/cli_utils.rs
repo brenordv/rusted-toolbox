@@ -2,8 +2,8 @@ use crate::models::{FilesLookupConfig, LookupCommand, PatternMode, TextLookupCon
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use common_cli::common_tool_args::CommonToolArgs;
+use common_cli::header_format::format_config_item;
 use common_cli::tool_exit_helpers::exit_error;
-use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
 use std::path::PathBuf;
 use tracing::error;
 
@@ -25,13 +25,8 @@ pub struct CliArgs {
 #[derive(Args, Debug)]
 struct TextArgs {
     /// Text to search for
-    #[arg(
-        id = "TEXT",
-        value_name = "TEXT",
-        required_unless_present = "text",
-        group = "text_input"
-    )]
-    pub text_positional: Option<String>,
+    #[arg(value_name = "TEXT")]
+    pub text_positional: String,
 
     /// Where to look for the text.
     #[arg(short = 'p', long = "path", required = false, default_value = ".")]
@@ -95,16 +90,21 @@ struct FilesArgs {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    //TODO: Bring the examples from the readme file to the after_help
     /// Search for text (case-insensitive) inside a file
-    #[command(after_help = "Examples:\n  lookup text \"todo\" --current-only -e rs -e .md")]
+    #[command(after_help = "Examples:\n  \
+        lookup text \"error\" -e log\n  \
+        lookup text \"todo\" --current-only -e rs -e .md\n  \
+        lookup text \"version\" --path Cargo.toml --line-only\n  \
+        lookup text \"fixme\" --path src --no-summary")]
     Text(TextArgs),
 
-    //TODO: Bring the examples from the readme file to the after_help
     /// Search for files by name (case-insensitive by default)
-    #[command(
-        after_help = "Examples:\n  lookup files \"*.rs\"\n  lookup files --regex \"^mydoc\\.(pdf|epub|mobi)$\""
-    )]
+    #[command(after_help = "Examples:\n  \
+        lookup files \"*.rs\"\n  \
+        lookup files \"README.*\" \"LICENSE*\" -p .. --no-progress\n  \
+        lookup files -s regex \"^mydoc\\.(pdf|epub|mobi)$\"\n  \
+        lookup files -s regex --case-sensitive \"^[A-Z].*\\.MD$\"\n  \
+        lookup files \"*.log\" --no-recursive --no-errors --no-summary")]
     Files(FilesArgs),
 }
 
@@ -114,7 +114,7 @@ pub fn initialize() -> Result<LookupCommand> {
     let command_config = match args.command {
         Commands::Text(txt_cmd_args) => {
             let path = txt_cmd_args.path;
-            let text = txt_cmd_args.text_positional.unwrap_or_default();
+            let text = txt_cmd_args.text_positional;
             let file_extensions = txt_cmd_args.file_extensions;
             let current_only = txt_cmd_args.current_only;
             let line_only = txt_cmd_args.line_only;
@@ -201,35 +201,57 @@ pub fn initialize() -> Result<LookupCommand> {
 }
 
 pub fn print_txt_header(args: &TextLookupConfig) {
-    println!("{} Text: {}", CONFIG_UL_ITEM_LEVEL_2, args.text);
-    println!("{} Path: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.path);
+    println!("{}", format_config_item("Text", &args.text));
+    println!("{}", format_config_item("Path", format!("{:?}", args.path)));
     println!(
-        "{} File extensions: {:?}",
-        CONFIG_UL_ITEM_LEVEL_2, args.file_extensions
+        "{}",
+        format_config_item("File extensions", format!("{:?}", args.file_extensions))
     );
     if args.current_only {
         println!(
-            "{} Search Mode: Current folder only",
-            CONFIG_UL_ITEM_LEVEL_2
-        )
+            "{}",
+            format_config_item("Search Mode", "Current folder only")
+        );
     } else {
-        println!("{} Search Mode: Recursive", CONFIG_UL_ITEM_LEVEL_2)
+        println!("{}", format_config_item("Search Mode", "Recursive"));
     }
-    println!("Print Line data only: {}", args.line_only);
+    println!(
+        "{}",
+        format_config_item("Print Line data only", args.line_only)
+    );
 }
 
 pub fn print_files_header(args: &FilesLookupConfig) {
-    println!("{} Mode: files (by filename)", CONFIG_UL_ITEM_LEVEL_2);
-    println!("{} Path: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.path);
-    println!("{} Patterns: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.patterns);
+    println!("{}", format_config_item("Mode", "files (by filename)"));
+    println!("{}", format_config_item("Path", format!("{:?}", args.path)));
     println!(
-        "{} Pattern type: {} | Case-sensitive: {} | Current folder only: {}",
-        CONFIG_UL_ITEM_LEVEL_2,
-        match args.pattern_mode {
-            PatternMode::Wildcard => "wildcard",
-            PatternMode::Regex => "regex",
-        },
-        args.case_sensitive,
-        args.no_recursive
+        "{}",
+        format_config_item("Patterns", format!("{:?}", args.patterns))
     );
+    println!(
+        "{}",
+        format_config_item(
+            "Pattern type",
+            format!(
+                "{} | Case-sensitive: {} | Current folder only: {}",
+                match args.pattern_mode {
+                    PatternMode::Wildcard => "wildcard",
+                    PatternMode::Regex => "regex",
+                },
+                args.case_sensitive,
+                args.no_recursive
+            )
+        )
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_passes_clap_debug_assertions() {
+        CliArgs::command().debug_assert();
+    }
 }
