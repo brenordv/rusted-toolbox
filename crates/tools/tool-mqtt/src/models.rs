@@ -46,6 +46,11 @@ mod tests {
     }
 
     #[test]
+    fn is_anonymous_false_when_password_present() {
+        assert!(!args_with_credentials(None, Some("pass")).is_anonymous());
+    }
+
+    #[test]
     fn is_anonymous_false_when_both_present() {
         assert!(!args_with_credentials(Some("user"), Some("pass")).is_anonymous());
     }

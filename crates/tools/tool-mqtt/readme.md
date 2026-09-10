@@ -1,16 +1,16 @@
-# MQTT CLI Tool
-## What It Does
+# MQTT CLI tool
+## What it does
 
 The MQTT CLI tool is a fast and intuitive command-line utility for publishing messages to and subscribing to MQTT 
 topics. It provides a simple interface for interacting with MQTT brokers, making it very convenient for IoT testing, 
 debugging message flows, or quickly sending/receiving messages during development.
 
-**Key Features:**
-- **Publish & Subscribe**: Send messages to topics or listen for incoming messages
-- **Authentication Support**: Connect anonymously or with username/password credentials
-- **Real-time Messaging**: Async implementation for high-performance message handling
+**Key features:**
+- **Publish & subscribe**: Send messages to topics or listen for incoming messages
+- **Authentication support**: Connect anonymously or with username/password credentials
+- **Real-time messaging**: Async implementation for high-performance message handling
 
-## Command-Line Options
+## Command-line options
 - `command`: Operation to perform - `read`/`reads` (subscribe) or `post`/`send` (publish)
 - `-o, --host`: MQTT broker host to connect to (required)
 - `-p, --port`: MQTT broker port (default: 1883)
@@ -21,126 +21,106 @@ debugging message flows, or quickly sending/receiving messages during developmen
 
 **Note**: When using authentication, both username and password must be provided together.
 
+### Shared runtime options
+- `--app-header`: Print the tool name, version, and runtime configuration
+- `--log-level <LEVEL>`: Log level: trace | debug | info | warn | error | disabled (case insensitive; default: warn)
+- `--log-to-console`: Log to stdout instead of the default stderr
+- `--log-to-file`: Also write logs to a file
+- `--rotate-log-file-by-day`: Rotate the log file by day
+
 ## Examples
-### Subscribe to Topic (Anonymous)
+### Subscribe to a topic (anonymous)
 **Command:**
 ```bash
 mqtt read --host broker.hivemq.com --topic sensors/temperature
 ```
-**Output:**
-```
-✉️ MQTT v1.0.0
----------------------------
-Host: broker.hivemq.com:1883
-Connection type: Anonymous
-Topic: sensors/temperature
-Command: Read
-```
-**Behavior:** Continuously listens for messages on the `sensors/temperature` topic and displays them as they arrive.
+**Behavior:** Continuously listens for messages on the `sensors/temperature` topic and prints each payload to
+stdout as it arrives, one line per message, with control characters escaped. Logs stay on stderr, so stdout can be
+piped: a single-line JSON payload works with `mqtt read ... | jq .` as is, while a multi-line payload arrives
+escaped onto one line. Avoid `--log-to-console` when piping: it routes logs to stdout and they interleave
+with the payloads.
 
-### Subscribe to Topic (Authenticated)
+### Subscribe with the runtime header (authenticated)
 **Command:**
 ```bash
-mqtt read --host my-broker.com --port 8883 --topic private/data --username myuser --password mypass
+mqtt read --host my-broker.com --port 8883 --topic private/data --username myuser --password mypass --app-header
 ```
 **Output:**
 ```
-✉️ MQTT v1.0.0
----------------------------
-Host: my-broker.com:8883
-Connection type: Authenticated
-Topic: private/data
-Command: Read
+mqtt (2.2.0)
+---------------------------------------------------
+- Basic Runtime Config
+  - Verbose mode: <unused>
+  - Log level: Warning
+  - Log to stdout: false
+  - Log to file: false
+  - Rotate log file by day: false
+- Tool Runtime Config
+  - Host: my-broker.com:8883
+  - Connection type: Authenticated
+  - Topic: private/data
+  - Command: Read
 ```
+The header block is printed only when `--app-header` is passed.
 
-### Publish Message (Anonymous)
+### Publish a message (anonymous)
 **Command:**
 ```bash
 mqtt post --host broker.hivemq.com --topic sensors/temperature --message "22.5"
 ```
-**Output:**
-```
-✉️ MQTT v1.0.0
----------------------------
-Host: broker.hivemq.com:1883
-Connection type: Anonymous
-Topic: sensors/temperature
-Command: Post
-Message: 22.5
-```
-**Behavior:** Publishes the message "22.5" to the `sensors/temperature` topic and waits for acknowledgment.
+**Behavior:** Publishes the message "22.5" to the `sensors/temperature` topic and waits for the broker's
+acknowledgment before exiting.
 
-### Publish to Custom Port
+### Publish to a custom port with the send alias
 **Command:**
 ```bash
 mqtt send --host localhost --port 1884 --topic test/message --message "Hello MQTT!"
 ```
-**Output:**
+**Behavior:** Same as `post`; `send` is a visible alias. For a post command, the `--app-header` block also shows
+the message under the command line:
 ```
-✉️ MQTT v1.0.0
----------------------------
-Host: localhost:1884
-Connection type: Anonymous
-Topic: test/message
-Command: Post
-Message: Hello MQTT!
+  - Command: Post
+    - Message: Hello MQTT!
 ```
 
-### Authenticated Message Publishing
+### Authenticated message publishing
 **Command:**
 ```bash
 mqtt post --host secure-broker.com --topic alerts/system --message "System online" --username admin --password secret123
 ```
-**Output:**
-```
-✉️ MQTT v1.0.0
----------------------------
-Host: secure-broker.com:1883
-Connection type: Authenticated
-Topic: alerts/system
-Command: Post
-Message: System online
-```
+**Behavior:** Connects with the given credentials and publishes the message.
 
-### Real-time Message Monitoring
+### Real-time message monitoring
 **Command:**
 ```bash
-mqtt read --host test.mosquitto.org --topic home/+/temperature
+mqtt reads --host test.mosquitto.org --topic home/+/temperature
 ```
 **Input:** Multiple devices publishing to topics like `home/kitchen/temperature`, `home/bedroom/temperature`
-**Output:** 
+**Output:** One line per message on stdout, payload only:
 ```
-✉️ MQTT v1.0.0
----------------------------
-Host: test.mosquitto.org:1883
-Connection type: Anonymous
-Topic: home/+/temperature
-Command: Read
-
-Message received: "21.3"
-Message received: "19.8"
-Message received: "23.1"
+21.3
+19.8
+23.1
 ...
 ```
 
-## Technical Details
-### MQTT Protocol Support
-- **Protocol Version**: MQTT 3.1.1 via rumqttc library
+## Technical details
+### MQTT protocol support
+- **Protocol version**: MQTT 3.1.1 via rumqttc library
 - **Transport**: TCP connections to MQTT brokers
-- **QoS Levels**: 
+- **QoS levels**: 
   - AtMostOnce (QoS 0) for subscription
   - AtLeastOnce (QoS 1) for publishing with acknowledgment
-- **Keep-Alive**: 5-second interval for connection maintenance
+- **Keep-alive**: 5-second interval for connection maintenance
 
-## Command Aliases
+## Command aliases
 The tool supports multiple command aliases for convenience:
 - **Read/Subscribe**: `read`, `reads`
 - **Publish**: `post`, `send`
 
-## Known Issues
-1. **Message Size**: No explicit message size limits, but very large messages may impact performance
-2. **Topic Wildcards**: Wildcard subscriptions (`+`, `#`) are supported by the broker but the tool treats them as literal topic names in validation
+## Known issues
+1. **Message size**: No explicit message size limits, but very large messages may impact performance
+2. **Topic wildcards**: Wildcard subscriptions (`+`, `#`) are supported by the broker but the tool treats them as literal topic names in validation
 3. **SSL/TLS**: Currently only supports unencrypted TCP connections; secure connections are not implemented
-4. **Persistent Sessions**: Does not support persistent MQTT sessions; each connection is clean session
-5. **Binary Messages**: Binary payloads are converted to UTF-8 strings, which may not display correctly for non-text data
-
+4. **Persistent sessions**: Does not support persistent MQTT sessions; each connection is clean session
+5. **Binary messages**: Binary payloads are lossy-converted to UTF-8 for display (invalid bytes become the U+FFFD replacement character, with a warning) and printed with control characters escaped; the raw bytes are not shown

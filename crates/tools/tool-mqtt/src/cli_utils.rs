@@ -3,7 +3,7 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 
 use common_cli::common_tool_args::CommonToolArgs;
-use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
+use common_cli::header_format::{format_config_item, format_config_item_level3};
 
 /// Cli tool to perform quickly post to or read from a MQTT broker.
 ///
@@ -59,21 +59,29 @@ struct CommonArgs {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    //TODO: Bring the examples from the readme file to the after_help
     /// Read messages from a MQTT broker.
-    #[command(after_help = "Examples:<ADD EXAMPLE>")]
+    #[command(
+        visible_alias = "reads",
+        after_help = "Examples:\n  \
+            mqtt read --host broker.hivemq.com --topic sensors/temperature\n  \
+            mqtt reads --host my-broker.com --port 8883 --topic private/data --username myuser --password mypass"
+    )]
     Read(ReadArgs),
 
-    //TODO: Bring the examples from the readme file to the after_help
     /// Post a message to a MQTT broker.
-    #[command(after_help = "Examples:<ADD EXAMPLE>")]
+    #[command(
+        visible_alias = "send",
+        after_help = "Examples:\n  \
+            mqtt post --host broker.hivemq.com --topic sensors/temperature --message \"22.5\"\n  \
+            mqtt send --host localhost --port 1884 --topic test/message --message \"Hello MQTT!\" --username myuser --password mypass"
+    )]
     Post(PostArgs),
 }
 
 fn print_runtime_info(args: &MqttConfig) {
     println!(
-        "{} Host: {}:{}",
-        CONFIG_UL_ITEM_LEVEL_2, args.host, args.port
+        "{}",
+        format_config_item("Host", format!("{}:{}", args.host, args.port))
     );
 
     let connection_type = if args.is_anonymous() {
@@ -82,20 +90,17 @@ fn print_runtime_info(args: &MqttConfig) {
         "Authenticated"
     };
 
-    println!(
-        "{} Connection type: {}",
-        CONFIG_UL_ITEM_LEVEL_2, connection_type
-    );
-    println!("{} Topic: {}", CONFIG_UL_ITEM_LEVEL_2, args.topic);
+    println!("{}", format_config_item("Connection type", connection_type));
+    println!("{}", format_config_item("Topic", &args.topic));
 
     match args.command {
         MqttCommand::Read => {
-            println!("{} Command: Read", CONFIG_UL_ITEM_LEVEL_2);
+            println!("{}", format_config_item("Command", "Read"));
         }
         MqttCommand::Post => {
-            println!("{} Command: Post", CONFIG_UL_ITEM_LEVEL_2);
+            println!("{}", format_config_item("Command", "Post"));
             if let Some(msg) = &args.message {
-                println!("{} Message: {}", CONFIG_UL_ITEM_LEVEL_3, msg);
+                println!("{}", format_config_item_level3("Message", msg));
             }
         }
     }
@@ -191,4 +196,105 @@ fn validate_user_and_password(username: &Option<String>, password: &Option<Strin
     };
 
     anyhow::bail!("Username and password are required together.");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_is_consistent() {
+        CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn subcommand_aliases_parse_to_the_right_variants() {
+        let read_args = CliArgs::try_parse_from([
+            "mqtt",
+            "reads",
+            "--host",
+            "localhost",
+            "--topic",
+            "sensors/temp",
+        ])
+        .expect("the reads alias should parse");
+        assert!(matches!(read_args.command, Commands::Read(_)));
+
+        let post_args = CliArgs::try_parse_from([
+            "mqtt",
+            "send",
+            "--host",
+            "localhost",
+            "--topic",
+            "sensors/temp",
+            "--message",
+            "22.5",
+        ])
+        .expect("the send alias should parse");
+        assert!(matches!(post_args.command, Commands::Post(_)));
+    }
+
+    #[test]
+    fn validate_message_rejects_missing_message() {
+        assert!(validate_message(&None).is_err());
+    }
+
+    #[test]
+    fn validate_message_rejects_empty_message() {
+        assert!(validate_message(&Some(String::new())).is_err());
+    }
+
+    #[test]
+    fn validate_message_accepts_non_empty_message() {
+        assert!(validate_message(&Some("22.5".to_string())).is_ok());
+    }
+
+    #[test]
+    fn validate_host_and_port_rejects_empty_host() {
+        assert!(validate_host_and_port("", 1883).is_err());
+    }
+
+    #[test]
+    fn validate_host_and_port_rejects_port_zero() {
+        assert!(validate_host_and_port("localhost", 0).is_err());
+    }
+
+    #[test]
+    fn validate_host_and_port_accepts_host_with_port() {
+        assert!(validate_host_and_port("localhost", 1883).is_ok());
+    }
+
+    #[test]
+    fn validate_topic_rejects_empty_topic() {
+        assert!(validate_topic("").is_err());
+    }
+
+    #[test]
+    fn validate_topic_accepts_non_empty_topic() {
+        assert!(validate_topic("sensors/temp").is_ok());
+    }
+
+    #[test]
+    fn validate_user_and_password_accepts_neither() {
+        assert!(validate_user_and_password(&None, &None).is_ok());
+    }
+
+    #[test]
+    fn validate_user_and_password_accepts_both() {
+        assert!(
+            validate_user_and_password(&Some("user".to_string()), &Some("pass".to_string()))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_user_and_password_rejects_username_only() {
+        assert!(validate_user_and_password(&Some("user".to_string()), &None).is_err());
+    }
+
+    #[test]
+    fn validate_user_and_password_rejects_password_only() {
+        assert!(validate_user_and_password(&None, &Some("pass".to_string())).is_err());
+    }
 }
