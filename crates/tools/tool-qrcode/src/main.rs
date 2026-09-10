@@ -11,7 +11,9 @@ fn main() {
     let config = match initialize() {
         Ok(c) => c,
         Err(e) => {
-            error!("Failed to parse arguments: {}", e);
+            // Validation runs before the logging subscriber is installed, so
+            // this error goes straight to stderr.
+            eprintln!("Failed to parse arguments: {}", e);
             exit_error();
         }
     };

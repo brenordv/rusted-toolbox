@@ -2,7 +2,11 @@ use crate::models::{HowMode, QrCodeConfig, QrCodePayload};
 use anyhow::Result;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
-use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
+use common_cli::header_format::{format_config_item, format_config_item_level3};
+
+/// Wi-Fi authentication types accepted by the `WIFI:` payload spec, in their
+/// canonical spelling.
+const WIFI_AUTH_TYPES: [&str; 3] = ["WPA", "WEP", "nopass"];
 
 /// Generate QR codes for text or Wi-Fi payloads.
 ///
@@ -23,7 +27,7 @@ struct CliArgs {
     #[arg(short = 'p', long = "wifi-password", value_name = "PASSWORD")]
     pub wifi_password: Option<String>,
 
-    /// Authentication type for a wifi payload (default: WPA)
+    /// Authentication type for a wifi payload: WPA | WEP | nopass (case insensitive; default: WPA)
     #[arg(short = 'a', long = "wifi-auth", value_name = "AUTH")]
     pub wifi_auth: Option<String>,
 
@@ -81,7 +85,10 @@ fn build_config(args: &CliArgs) -> Result<QrCodeConfig> {
         }
     }
 
-    let wifi_auth = args.wifi_auth.clone().unwrap_or_else(|| "WPA".to_string());
+    let wifi_auth = match &args.wifi_auth {
+        Some(value) => normalize_wifi_auth(value)?,
+        None => "WPA".to_string(),
+    };
 
     Ok(QrCodeConfig::new(
         QrCodePayload::new(
@@ -96,18 +103,34 @@ fn build_config(args: &CliArgs) -> Result<QrCodeConfig> {
     ))
 }
 
-/// Prints the tool's runtime configuration, shown under `--app-header`.
+/// Maps a user-provided wifi auth type to its canonical spelling, rejecting
+/// values outside the `WIFI:` payload allowlist.
+fn normalize_wifi_auth(value: &str) -> Result<String> {
+    WIFI_AUTH_TYPES
+        .iter()
+        .find(|auth| auth.eq_ignore_ascii_case(value))
+        .map(|auth| auth.to_string())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid wifi auth type '{}' (--wifi-auth). Supported types: WPA, WEP, nopass.",
+                value
+            )
+        })
+}
+
+/// Prints the tool's runtime configuration, shown under `--app-header`. The
+/// wifi password is masked so the header never displays it.
 fn print_header(config: &QrCodeConfig) {
     match config.get_payload() {
         HowMode::TextPayload(text_payload) => {
-            println!("{} Payload: text", CONFIG_UL_ITEM_LEVEL_2);
-            println!("{} Text: {}", CONFIG_UL_ITEM_LEVEL_3, text_payload);
+            println!("{}", format_config_item("Payload", "text"));
+            println!("{}", format_config_item_level3("Text", text_payload));
         }
-        HowMode::WifiPayload(wifi_ssid, wifi_pass, wifi_auth) => {
-            println!("{} Payload: wifi", CONFIG_UL_ITEM_LEVEL_2);
-            println!("{} SSID: {}", CONFIG_UL_ITEM_LEVEL_3, wifi_ssid);
-            println!("{} Password: {}", CONFIG_UL_ITEM_LEVEL_3, wifi_pass);
-            println!("{} Auth: {}", CONFIG_UL_ITEM_LEVEL_3, wifi_auth);
+        HowMode::WifiPayload(wifi_ssid, _, wifi_auth) => {
+            println!("{}", format_config_item("Payload", "wifi"));
+            println!("{}", format_config_item_level3("SSID", wifi_ssid));
+            println!("{}", format_config_item_level3("Password", "(set)"));
+            println!("{}", format_config_item_level3("Auth", wifi_auth));
         }
     }
 }
@@ -143,6 +166,43 @@ mod tests {
             HowMode::WifiPayload(ssid, password, auth)
                 if ssid == "net" && password == "secret" && auth == "WPA"
         ));
+    }
+
+    #[test]
+    fn wifi_auth_accepts_allowlist_case_insensitively() {
+        for (input, expected) in [("wpa", "WPA"), ("WEP", "WEP"), ("NoPass", "nopass")] {
+            let args = CliArgs::try_parse_from([
+                "qrcode",
+                "--wifi-ssid",
+                "net",
+                "--wifi-password",
+                "secret",
+                "--wifi-auth",
+                input,
+            ])
+            .unwrap();
+            let config = build_config(&args).unwrap();
+            assert!(matches!(
+                config.get_payload(),
+                HowMode::WifiPayload(_, _, auth) if auth == expected
+            ));
+        }
+    }
+
+    #[test]
+    fn wifi_auth_rejects_unknown_type() {
+        let args = CliArgs::try_parse_from([
+            "qrcode",
+            "--wifi-ssid",
+            "net",
+            "--wifi-password",
+            "secret",
+            "--wifi-auth",
+            "wpa3",
+        ])
+        .unwrap();
+
+        assert!(build_config(&args).is_err());
     }
 
     #[test]

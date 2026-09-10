@@ -6,21 +6,28 @@ use image::{ImageBuffer, Luma};
 use qrcodegen::{QrCode, QrCodeEcc};
 use std::fs::File;
 use std::io::Write;
-use tracing::{debug, info};
+use std::path::Path;
+use tracing::{debug, info, warn};
 
 pub fn generate_qrcode(args: &QrCodeConfig) -> Result<()> {
     info!("Preparing QR code data...");
 
-    let data = match args.get_payload() {
-        HowMode::TextPayload(text) => text,
-        HowMode::WifiPayload(ssid, password, auth) => {
-            format!("WIFI:T:{};S:{};P:{};;", auth, ssid, password)
+    // For wifi payloads, `log_data` carries a masked password so debug logging
+    // never exposes the real one.
+    let (data, log_data) = match args.get_payload() {
+        HowMode::TextPayload(text) => {
+            let log_data = text.clone();
+            (text, log_data)
         }
+        HowMode::WifiPayload(ssid, password, auth) => (
+            build_wifi_payload(&ssid, &password, &auth),
+            build_wifi_payload(&ssid, "********", &auth),
+        ),
     };
 
     let data_size = data.len();
 
-    debug!("Data [{}]: {}", data_size, data);
+    debug!(size = log_data.len(), data = %log_data, "prepared QR payload");
     info!("Generating QR code...");
 
     let qr_code_ecc = choose_ecc(data_size);
@@ -39,6 +46,17 @@ pub fn generate_qrcode(args: &QrCodeConfig) -> Result<()> {
         .output_format
         .clone()
         .unwrap_or_else(|| "png".to_string());
+
+    if let Some(output_file) = &args.output_file {
+        if let Some(ext) = mismatched_output_extension(output_file, &filename_ext) {
+            warn!(
+                extension = %ext,
+                format = %filename_ext,
+                output_file = %output_file,
+                "output file extension does not match the output format; the format extension will be appended"
+            );
+        }
+    }
 
     let mut filename = args.output_file.clone().unwrap_or_else(|| {
         format!(
@@ -66,6 +84,45 @@ pub fn generate_qrcode(args: &QrCodeConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Builds the `WIFI:T:{auth};S:{ssid};P:{password};;` payload, escaping the
+/// SSID and password fields per the zxing barcode-contents spec.
+fn build_wifi_payload(ssid: &str, password: &str, auth: &str) -> String {
+    format!(
+        "WIFI:T:{};S:{};P:{};;",
+        auth,
+        escape_wifi_field(ssid),
+        escape_wifi_field(password)
+    )
+}
+
+/// Backslash-escapes the characters the wifi payload spec reserves in field
+/// values: backslash, semicolon, comma, colon, and double quote.
+fn escape_wifi_field(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for c in value.chars() {
+        if matches!(c, '\\' | ';' | ',' | ':' | '"') {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
+/// Returns the extension of `output_file` when the saved file will end up as
+/// `{output_file}.{format}`, carrying an extension that contradicts the
+/// effective output format. Returns `None` when the filename already ends with
+/// the format or has no extension.
+fn mismatched_output_extension(output_file: &str, format: &str) -> Option<String> {
+    if output_file.ends_with(&format!(".{}", format)) {
+        return None;
+    }
+
+    Path::new(output_file)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_string())
 }
 
 fn save_qr_to_image(qr: &QrCode, scale: u32, path: &str) -> Result<()> {
@@ -171,10 +228,51 @@ mod tests {
     }
 
     #[test]
+    fn build_wifi_payload_escapes_reserved_characters() {
+        let payload = build_wifi_payload(r#"my;net:work"#, r#"pa\ss,wo"rd"#, "WPA");
+
+        assert_eq!(payload, r#"WIFI:T:WPA;S:my\;net\:work;P:pa\\ss\,wo\"rd;;"#);
+    }
+
+    #[test]
+    fn build_wifi_payload_leaves_plain_fields_untouched() {
+        assert_eq!(
+            build_wifi_payload("net", "secret", "nopass"),
+            "WIFI:T:nopass;S:net;P:secret;;"
+        );
+    }
+
+    #[test]
+    fn mismatched_output_extension_flags_contradicting_extension() {
+        assert_eq!(
+            mismatched_output_extension("x.svg", "png"),
+            Some("svg".to_string())
+        );
+    }
+
+    #[test]
+    fn mismatched_output_extension_accepts_matching_or_missing_extension() {
+        assert_eq!(mismatched_output_extension("x.png", "png"), None);
+        assert_eq!(mismatched_output_extension("x", "png"), None);
+    }
+
+    #[test]
     fn generate_qrcode_without_output_returns_ok() {
         let cfg = text_config(None, None);
 
         assert!(generate_qrcode(&cfg).is_ok());
+    }
+
+    #[test]
+    fn generate_qrcode_rejects_oversized_text() {
+        let cfg = QrCodeConfig::new(
+            QrCodePayload::new(Some("a".repeat(5000)), None, None, None),
+            true,
+            None,
+            None,
+        );
+
+        assert!(generate_qrcode(&cfg).is_err());
     }
 
     #[test]

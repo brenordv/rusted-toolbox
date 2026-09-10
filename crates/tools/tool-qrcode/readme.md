@@ -18,16 +18,16 @@ quick sharing of information, WiFi credentials, URLs, or any text data that need
 - `-t, --text <TEXT>`: Text payload for QR code (URLs, messages, data, etc.)
 - `-s, --wifi-ssid <SSID>`: WiFi network name for WiFi credential QR codes
 - `-p, --wifi-password <PASSWORD>`: WiFi network password 
-- `-a, --wifi-auth <AUTH>`: WiFi authentication type (default: WPA)
+- `-a, --wifi-auth <AUTH>`: WiFi authentication type: WPA | WEP | nopass (case insensitive, normalized to the canonical spelling; default: WPA). Other values are rejected.
 
 ### Output Options
 - `-o, --output-file <FILENAME>`: Custom output filename (auto-generates if not specified)
-- `-f, --output-format <FORMAT>`: Output file format (png, svg)
+- `-f, --output-format <FORMAT>`: Output file format (png, svg). The format decides the saved extension regardless of the `-o` filename; when the `-o` extension contradicts the effective format (e.g. `-o x.svg` with the default png), the tool warns and saves `x.svg.png`.
 - `-x, --dont-print`: Skip printing QR code to console
 
 ### Shared Runtime Options
 - `--app-header`: Print the tool name, version, and runtime configuration
-- `-L, --log-level <LEVEL>`: Log level: trace | debug | info | warn | error | disabled (case insensitive; default: warn)
+- `--log-level <LEVEL>`: Log level: trace | debug | info | warn | error | disabled (case insensitive; default: warn)
 - `--log-to-console`: Log to stdout instead of the default stderr
 - `--log-to-file`: Also write logs to a file
 - `--rotate-log-file-by-day`: Rotate the log file by day
@@ -78,13 +78,13 @@ qrcode --text "https://github.com/brenordv/rusted-toolbox" --output-format png
 ### WiFi Credential QR Code
 **Command:**
 ```bash
-qrcode --wifi-ssid "MyNetwork" --wifi-password "SecurePass123" --wifi-auth WPA2
+qrcode --wifi-ssid "MyNetwork" --wifi-password "SecurePass123" --wifi-auth WPA
 ```
 **Output:**
 ```
 [Console QR Code Display]
 ```
-With `--app-header`, the tool also prints the payload type, SSID, password, and auth before the code.
+With `--app-header`, the tool also prints the payload type, SSID, and auth before the code; the password is shown masked as `(set)`.
 
 ### SVG Output with Custom Filename
 **Command:**
@@ -114,11 +114,16 @@ The tool generates WiFi QR codes following the standard format:
 WIFI:T:<auth_type>;S:<ssid>;P:<password>;;
 ```
 
+The reserved characters `\`, `;`, `,`, `:`, and `"` are backslash-escaped in the SSID and password
+fields, per the payload spec.
+
 **Supported Authentication Types:**
-- `WPA` - WPA Personal (default)
-- `WPA2` - WPA2 Personal  
+- `WPA` - WPA/WPA2 Personal (default)
 - `WEP` - WEP (not recommended)
 - `nopass` - Open network (no password)
+
+Values are matched case insensitively and normalized to the canonical spelling shown above; any
+other value is rejected at validation time.
 
 ## Output Formats
 
