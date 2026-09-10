@@ -11,11 +11,11 @@ line templates.
 
 ## Features
 - IPv4/IPv6 auto-detection or explicit selection
-- Adjustable packet count, interval, payload size, TTL, per-reply timeout, and overall deadline
+- Adjustable packet count, interval, payload size, per-reply timeout, and overall deadline
 - Output modes: default (human), CSV, JSON (aggregated), or a custom template with tags
 - Optional timestamp prefix on every line
 - Periodic statistics printing (e.g., every N seconds)
-- Quiet mode (summary only), compact header, and "no header" mode
+- Quiet mode (summary only)
 - Optional beep on packet loss
 - Reverse DNS lookup (disable with --numeric)
 
@@ -41,12 +41,10 @@ pingx <target> [OPTIONS]
 - -o, --output <MODE|TEMPLATE>   Output mode: default | csv | json | or a custom template string
 - -e, --stats-every <SECS>       Print stats every N seconds
 - -b, --beep                     Beep on packet loss
-- -m, --compact-header           Print a compact header (one-line, ping-like)
-- -p, --no-header                Do not print the initial header
 
 Shared runtime options (from the common tooling):
 - --app-header                   Print the tool name, version, and runtime config header
-- -L, --log-level <LEVEL>        Log level: trace | debug | info | warn | error | disabled (case insensitive; default: warn)
+- --log-level <LEVEL>            Log level: trace | debug | info | warn | error | disabled (long-only, case insensitive; default: warn)
 - --log-to-console               Log to stdout instead of the default stderr
 - --log-to-file                  Also write logs to a file
 - --rotate-log-file-by-day       Rotate the log file by day
@@ -85,14 +83,11 @@ pingx google.com --count 3
 ```
 Sample output:
 ```
-XPing v1.0.0
----------------------------
-- Host: google.com
-- IP: 142.250.72.14
-- Reverse DNS: lhr25s10-in-f14.1e100.net
-- Packet Size: 56 (with headers: 84)
-- Count: 3
-
+  - Resolved Target
+    - Host: google.com
+    - IP: 142.250.72.14
+    - Reverse DNS: lhr25s10-in-f14.1e100.net
+    - Payload size: 56 (with IP+ICMP headers: 84)
 64 bytes from lhr25s10-in-f14.1e100.net (142.250.72.14): icmp_seq=1 time=12.34 ms
 64 bytes from lhr25s10-in-f14.1e100.net (142.250.72.14): icmp_seq=2 time=12.29 ms
 64 bytes from lhr25s10-in-f14.1e100.net (142.250.72.14): icmp_seq=3 time=12.20 ms
@@ -100,6 +95,8 @@ XPing v1.0.0
 --- statistics ---
 3 packets transmitted, 3 received, 0.0% packet loss
 ```
+Pass `--app-header` to also print the tool header before the output above: a `pingx (2.0.2)`
+title line followed by the standard runtime-config block and the tool's own config section.
 
 ### Force IPv4 and set interval
 ```bash
@@ -113,8 +110,8 @@ pingx example.com -c 2 -D -o csv
 Sample output:
 ```
 timestamp,host,ip,reverse_dns,size,icmp_seq,time
-2025-10-29T20:07:00Z,example.com,93.184.216.34, ,64,1,23.15
-2025-10-29T20:07:01Z,example.com,93.184.216.34, ,64,2,22.98
+2025-10-29T20:07:00Z,example.com,93.184.216.34,,64,1,23.15
+2025-10-29T20:07:01Z,example.com,93.184.216.34,,64,2,22.98
 stats,2,2,0.0
 ```
 
@@ -157,15 +154,6 @@ Sample output:
 ```
 --- statistics ---
 2 packets transmitted, 2 received, 0.0% packet loss
-```
-
-### Compact header
-```bash
-pingx example.com -c 1 -m
-```
-Sample header format:
-```
-PING example.com (93.184.216.34) 56(84) bytes of data.
 ```
 
 ### Periodic statistics

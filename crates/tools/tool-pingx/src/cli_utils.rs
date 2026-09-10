@@ -2,7 +2,8 @@ use crate::models::{IpMode, OutputMode, PingxArgs, ResolvedTargetInfo};
 use anyhow::Result;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
-use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
+use common_cli::header_format::{format_config_item, format_config_item_level3};
+use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
 
 /// Cross-platform CLI tool to ping other hosts.
 ///
@@ -152,17 +153,22 @@ fn build_config(args: &CliArgs) -> Result<PingxArgs> {
 pub fn print_supplemental_header(args: &PingxArgs, resolved_target_info: &ResolvedTargetInfo) {
     println!("{} Resolved Target", CONFIG_UL_ITEM_LEVEL_2);
     println!(
-        "{} Host: {}",
-        CONFIG_UL_ITEM_LEVEL_3, resolved_target_info.host
+        "{}",
+        format_config_item_level3("Host", &resolved_target_info.host)
     );
-    println!("{} IP: {}", CONFIG_UL_ITEM_LEVEL_3, resolved_target_info.ip);
     println!(
-        "{} Reverse DNS: {}",
-        CONFIG_UL_ITEM_LEVEL_3,
-        resolved_target_info
-            .reverse_dns
-            .as_deref()
-            .unwrap_or("(disabled)")
+        "{}",
+        format_config_item_level3("IP", resolved_target_info.ip)
+    );
+    println!(
+        "{}",
+        format_config_item_level3(
+            "Reverse DNS",
+            resolved_target_info
+                .reverse_dns
+                .as_deref()
+                .unwrap_or("(disabled)")
+        )
     );
 
     let header_size = if resolved_target_info.ip.is_ipv4() {
@@ -172,42 +178,50 @@ pub fn print_supplemental_header(args: &PingxArgs, resolved_target_info: &Resolv
     };
 
     println!(
-        "{} Packet Size: {} (with headers: {})",
-        CONFIG_UL_ITEM_LEVEL_3,
-        args.payload_size_bytes,
-        args.payload_size_bytes + header_size
+        "{}",
+        format_config_item_level3(
+            "Payload size",
+            format!(
+                "{} (with IP+ICMP headers: {})",
+                args.payload_size_bytes,
+                args.payload_size_bytes + header_size
+            )
+        )
     );
 }
 
 fn print_header(args: &PingxArgs) {
-    println!("{} Host: {}", CONFIG_UL_ITEM_LEVEL_2, args.target);
+    println!("{}", format_config_item("Host", &args.target));
 
     if args.is_infinite() {
         println!("{} Continuous mode", CONFIG_UL_ITEM_LEVEL_2);
     } else {
-        println!("{} Count: {}", CONFIG_UL_ITEM_LEVEL_2, args.count);
+        println!("{}", format_config_item("Count", args.count));
     }
 
     println!(
-        "{} Interval: {} seconds",
-        CONFIG_UL_ITEM_LEVEL_2, args.interval_secs
+        "{}",
+        format_config_item("Interval", format!("{} seconds", args.interval_secs))
     );
 
     println!(
-        "{} Timeout: {} seconds",
-        CONFIG_UL_ITEM_LEVEL_2, args.per_reply_timeout_secs
+        "{}",
+        format_config_item(
+            "Timeout",
+            format!("{} seconds", args.per_reply_timeout_secs)
+        )
     );
 
     if let Some(deadline) = args.overall_deadline_secs {
         println!(
-            "{} Stop after total elapsed: {} seconds",
-            CONFIG_UL_ITEM_LEVEL_2, deadline
+            "{}",
+            format_config_item("Stop after total elapsed", format!("{} seconds", deadline))
         );
     }
 
     println!(
-        "{} Stop on error: {}",
-        CONFIG_UL_ITEM_LEVEL_2, args.stop_on_error
+        "{}",
+        format_config_item("Stop on error", args.stop_on_error)
     );
 
     let output_mode = match &args.output {
@@ -217,7 +231,7 @@ fn print_header(args: &PingxArgs) {
         OutputMode::Template(template) => format!("template: {}", template),
     };
 
-    println!("{} Output: {}", CONFIG_UL_ITEM_LEVEL_2, output_mode);
+    println!("{}", format_config_item("Output", output_mode));
 }
 
 fn template_has_any_tag(template: &str) -> bool {
@@ -248,8 +262,9 @@ mod tests {
 
     #[test]
     fn ipv4_and_ipv6_are_mutually_exclusive() {
-        let args = CliArgs::try_parse_from(["pingx", "host", "-4", "-6"]).unwrap();
-        assert!(build_config(&args).is_err());
+        // clap rejects the combination at parse time via `conflicts_with`;
+        // build_config keeps its own guard for the same pair.
+        assert!(CliArgs::try_parse_from(["pingx", "host", "-4", "-6"]).is_err());
     }
 
     #[test]
@@ -286,5 +301,22 @@ mod tests {
         let good = CliArgs::try_parse_from(["pingx", "host", "-o", "%host% %time%"]).unwrap();
         let config = build_config(&good).unwrap();
         assert!(matches!(config.output, OutputMode::Template(_)));
+    }
+
+    #[test]
+    fn template_has_any_tag_detects_known_tags() {
+        assert!(template_has_any_tag("ping %host% now"));
+        assert!(template_has_any_tag("%error%"));
+    }
+
+    #[test]
+    fn template_has_any_tag_rejects_untagged_text() {
+        assert!(!template_has_any_tag("no tags here"));
+        assert!(!template_has_any_tag("%unknown%"));
+    }
+
+    #[test]
+    fn template_has_any_tag_is_case_insensitive() {
+        assert!(template_has_any_tag("%HOST% and %Time%"));
     }
 }

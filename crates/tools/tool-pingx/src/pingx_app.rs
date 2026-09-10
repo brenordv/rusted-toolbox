@@ -5,9 +5,10 @@ use chrono::Timelike;
 use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use dns_lookup::lookup_addr;
 use serde::Serialize;
-use std::net::{IpAddr, ToSocketAddrs};
+use std::net::IpAddr;
 use surge_ping::{Client, ConfigBuilder, IcmpPacket, PingIdentifier, PingSequence, ICMP};
 use tokio::time::{sleep, Duration, Instant};
+use tracing::debug;
 
 #[derive(Serialize)]
 struct JsonOutput<'a> {
@@ -23,18 +24,18 @@ struct JsonOutput<'a> {
 
 #[derive(Serialize)]
 struct PacketLine {
-    icmp_seq: u64,
+    icmp_seq: u16,
     time: f64,
 }
 
-pub fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
+pub async fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
     let host = args.target.clone();
 
     let ip: IpAddr = loop {
         let mut addrs: Vec<IpAddr> = Vec::new();
         let mut last_err: Option<String> = None;
 
-        match (host.as_str(), 0).to_socket_addrs() {
+        match tokio::net::lookup_host((host.as_str(), 0)).await {
             Ok(iter) => {
                 for s in iter {
                     let ip = s.ip();
@@ -91,14 +92,24 @@ pub fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
                 }
             }
             // simple retry delay
-            std::thread::sleep(Duration::from_secs(1));
+            sleep(Duration::from_secs(1)).await;
         }
     };
 
+    // lookup_addr wraps the synchronous getnameinfo call, so it runs on
+    // tokio's blocking pool instead of stalling the async runtime.
     let reverse_dns = if args.numeric {
         None
     } else {
-        lookup_addr(&ip).ok()
+        match tokio::task::spawn_blocking(move || lookup_addr(&ip).ok()).await {
+            Ok(name) => name.map(|n| sanitize_display(&n)),
+            Err(e) => {
+                // An ordinary lookup failure stays silent (None), but a
+                // panicked lookup task is a defect signal worth a trace.
+                debug!(error = %e, "reverse-DNS lookup task failed");
+                None
+            }
+        }
     };
 
     Ok(ResolvedTargetInfo {
@@ -108,8 +119,28 @@ pub fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
     })
 }
 
+/// Escapes control characters (C0, DEL, C1) and Unicode bidirectional-control
+/// characters in a resolved reverse-DNS name. PTR records are
+/// attacker-controlled and the name flows into terminal output, CSV, and
+/// templates; every other character passes through unchanged.
+fn sanitize_display(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        let is_bidi_control = matches!(
+            c,
+            '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}' | '\u{061C}'
+        );
+        if c.is_control() || is_bidi_control {
+            out.extend(c.escape_debug());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 pub async fn run_ping(args: &PingxArgs) -> Result<()> {
-    let resolved = resolve_target(args)?;
+    let resolved = resolve_target(args).await?;
     print_supplemental_header(args, &resolved);
 
     // Verbose info
@@ -179,6 +210,9 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
 
         sequence += 1;
         sent += 1;
+        // The ICMP sequence field is 16 bits; every output reports this wrapped
+        // value so displayed and on-wire sequences stay identical past 65535.
+        let wire_seq = sequence as u16;
 
         let timeout = Duration::from_secs_f64(args.per_reply_timeout_secs);
 
@@ -188,19 +222,19 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
 
         let payload = vec![0u8; args.payload_size_bytes];
         let mut had_error = false;
-        match pinger.ping(PingSequence(sequence as u16), &payload).await {
+        match pinger.ping(PingSequence(wire_seq), &payload).await {
             Ok((IcmpPacket::V4(_packet), dur)) => {
                 received += 1;
                 let time_ms = dur.as_secs_f64() * 1000.0;
                 let packet_res = PacketResult {
-                    icmp_seq: sequence,
+                    icmp_seq: wire_seq,
                     time_ms,
                     error: None,
                 };
                 print_packet_line(args, &resolved, &packet_res);
                 if matches!(args.output, OutputMode::Json) {
                     lines_for_json.push(PacketLine {
-                        icmp_seq: sequence,
+                        icmp_seq: wire_seq,
                         time: time_ms,
                     });
                 }
@@ -209,14 +243,14 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
                 received += 1;
                 let time_ms = dur.as_secs_f64() * 1000.0;
                 let packet_res = PacketResult {
-                    icmp_seq: sequence,
+                    icmp_seq: wire_seq,
                     time_ms,
                     error: None,
                 };
                 print_packet_line(args, &resolved, &packet_res);
                 if matches!(args.output, OutputMode::Json) {
                     lines_for_json.push(PacketLine {
-                        icmp_seq: sequence,
+                        icmp_seq: wire_seq,
                         time: time_ms,
                     });
                 }
@@ -224,7 +258,7 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
             Err(e) => {
                 had_error = true;
                 let packet_res = PacketResult {
-                    icmp_seq: sequence,
+                    icmp_seq: wire_seq,
                     time_ms: 0.0,
                     error: Some(e.to_string()),
                 };
@@ -256,11 +290,7 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     }
 
     if matches!(args.output, OutputMode::Json) {
-        let loss = if sent == 0 {
-            0.0
-        } else {
-            ((sent - received) as f64) * 100.0 / (sent as f64)
-        };
+        let loss = loss_percent(sent, received);
         let json = JsonOutput {
             host: &resolved.host,
             ip: resolved.ip.to_string(),
@@ -277,7 +307,21 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     Ok(())
 }
 
+/// Packet-loss percentage; 0 sent counts as 0% loss (never NaN).
+fn loss_percent(sent: u64, received: u64) -> f64 {
+    if sent == 0 {
+        return 0.0;
+    }
+    ((sent - received) as f64) * 100.0 / (sent as f64)
+}
+
+/// Replaces every case-insensitive, non-overlapping occurrence of
+/// `needle_lower` (already lowercase) left to right. An empty needle returns
+/// the input unchanged.
 fn replace_ci(s: String, needle_lower: &str, replacement: &str) -> String {
+    if needle_lower.is_empty() {
+        return s;
+    }
     let mut out = String::with_capacity(s.len());
     let mut i = 0usize;
     let lower = s.to_ascii_lowercase();
@@ -291,14 +335,58 @@ fn replace_ci(s: String, needle_lower: &str, replacement: &str) -> String {
     out
 }
 
+/// Renders one packet line from a custom template: substitutes every known tag
+/// case-insensitively and, when `timestamp_prefix` is set, prepends `timestamp`
+/// unless the template already contains a %timestamp% tag. Unknown tags pass
+/// through unchanged.
+fn render_template_line(
+    template: &str,
+    resolved: &ResolvedTargetInfo,
+    res: &PacketResult,
+    payload_size_bytes: usize,
+    timestamp_prefix: bool,
+    timestamp: &str,
+) -> String {
+    let prefix_with_timestamp =
+        timestamp_prefix && !template.to_ascii_lowercase().contains("%timestamp%");
+    let ip_str = resolved.ip.to_string();
+    let header_size = if resolved.ip.is_ipv4() {
+        20 + 8
+    } else {
+        40 + 8
+    };
+    let mut out = template.to_string();
+    let kv = [
+        ("%host%", resolved.host.as_str()),
+        ("%ip%", ip_str.as_str()),
+        (
+            "%reverse_dns%",
+            resolved.reverse_dns.as_deref().unwrap_or(""),
+        ),
+        ("%icmp_seq%", &res.icmp_seq.to_string()),
+        ("%time%", &format!("{:.2}", res.time_ms)),
+        ("%timestamp%", timestamp),
+        ("%size%", &(payload_size_bytes + header_size).to_string()),
+        ("%size_no_headers%", &payload_size_bytes.to_string()),
+        ("%error%", res.error.as_deref().unwrap_or("")),
+    ];
+    for (tag, val) in kv.iter() {
+        out = replace_ci(out, tag.to_ascii_lowercase().as_str(), val);
+    }
+    if prefix_with_timestamp {
+        format!("{} {}", timestamp, out)
+    } else {
+        out
+    }
+}
+
 fn print_packet_line(args: &PingxArgs, resolved: &ResolvedTargetInfo, res: &PacketResult) {
     if args.quiet {
         return;
     }
     let ip_str = resolved.ip.to_string();
-    let mut ts_prefix = args.timestamp_prefix;
     let ts_val = chrono::Utc::now().to_rfc3339();
-    let ts = if ts_prefix {
+    let ts = if args.timestamp_prefix {
         format!("{} ", ts_val)
     } else {
         String::new()
@@ -352,53 +440,23 @@ fn print_packet_line(args: &PingxArgs, resolved: &ResolvedTargetInfo, res: &Pack
         }
         OutputMode::Json => { /* aggregated at end */ }
         OutputMode::Template(tpl) => {
-            // Avoid double timestamp prefix if template contains %timestamp%
-            let tpl_lower = tpl.to_ascii_lowercase();
-            if tpl_lower.contains("%timestamp%") {
-                ts_prefix = false;
-            }
-            let mut out = tpl.clone();
-            let header_size = if resolved.ip.is_ipv4() {
-                20 + 8
-            } else {
-                40 + 8
-            };
-            let kv = [
-                ("%host%", resolved.host.as_str()),
-                ("%ip%", ip_str.as_str()),
-                (
-                    "%reverse_dns%",
-                    resolved.reverse_dns.as_deref().unwrap_or(""),
-                ),
-                ("%icmp_seq%", &res.icmp_seq.to_string()),
-                ("%time%", &format!("{:.2}", res.time_ms)),
-                ("%timestamp%", &ts_val),
-                (
-                    "%size%",
-                    &(args.payload_size_bytes + header_size).to_string(),
-                ),
-                ("%size_no_headers%", &args.payload_size_bytes.to_string()),
-                ("%error%", res.error.as_deref().unwrap_or("")),
-            ];
-            for (tag, val) in kv.iter() {
-                out = replace_ci(out, tag.to_ascii_lowercase().as_str(), val);
-            }
-            let ts2 = if ts_prefix {
-                format!("{} ", ts_val)
-            } else {
-                String::new()
-            };
-            println!("{}{}", ts2, out);
+            println!(
+                "{}",
+                render_template_line(
+                    tpl,
+                    resolved,
+                    res,
+                    args.payload_size_bytes,
+                    args.timestamp_prefix,
+                    &ts_val,
+                )
+            );
         }
     }
 }
 
 fn print_stats(args: &PingxArgs, sent: u64, received: u64) {
-    let loss = if sent == 0 {
-        0.0
-    } else {
-        ((sent - received) as f64) * 100.0 / (sent as f64)
-    };
+    let loss = loss_percent(sent, received);
     match &args.output {
         OutputMode::Default => {
             println!("\n--- statistics ---");
@@ -421,4 +479,144 @@ fn print_stats(args: &PingxArgs, sent: u64, received: u64) {
 fn rand_identifier() -> u16 {
     // Simple deterministic-ish identifier
     (std::process::id() as u16) ^ ((chrono::Utc::now().nanosecond() & 0xFFFF) as u16)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    fn resolved(ip: IpAddr, reverse_dns: Option<&str>) -> ResolvedTargetInfo {
+        ResolvedTargetInfo {
+            host: "example.com".to_string(),
+            ip,
+            reverse_dns: reverse_dns.map(str::to_string),
+        }
+    }
+
+    fn packet(icmp_seq: u16, time_ms: f64, error: Option<&str>) -> PacketResult {
+        PacketResult {
+            icmp_seq,
+            time_ms,
+            error: error.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn sanitize_display_passes_ordinary_hostnames_through() {
+        assert_eq!(sanitize_display("host-1.example.com"), "host-1.example.com");
+    }
+
+    #[test]
+    fn sanitize_display_escapes_control_and_bidi_characters() {
+        assert_eq!(
+            sanitize_display("evil\u{1b}[2J\u{202E}name"),
+            "evil\\u{1b}[2J\\u{202e}name"
+        );
+    }
+
+    #[test]
+    fn loss_percent_with_zero_sent_is_zero() {
+        assert_eq!(loss_percent(0, 0), 0.0);
+    }
+
+    #[test]
+    fn loss_percent_with_no_replies_is_one_hundred() {
+        assert_eq!(loss_percent(5, 0), 100.0);
+    }
+
+    #[test]
+    fn loss_percent_with_partial_replies() {
+        assert_eq!(loss_percent(4, 3), 25.0);
+    }
+
+    #[test]
+    fn replace_ci_replaces_case_insensitively_and_keeps_surroundings() {
+        assert_eq!(
+            replace_ci("Host=%HOST% host=%Host%".to_string(), "%host%", "a"),
+            "Host=a host=a"
+        );
+    }
+
+    #[test]
+    fn replace_ci_consumes_matches_left_to_right_without_overlap() {
+        assert_eq!(replace_ci("aaa".to_string(), "aa", "b"), "ba");
+    }
+
+    #[test]
+    fn replace_ci_with_empty_needle_returns_input_unchanged() {
+        assert_eq!(replace_ci("abc".to_string(), "", "x"), "abc");
+    }
+
+    #[test]
+    fn render_template_line_substitutes_every_tag() {
+        let info = resolved(IpAddr::V4(Ipv4Addr::LOCALHOST), Some("localhost"));
+        let res = packet(7, 1.234, Some("boom"));
+        let line = render_template_line(
+            "%host% %ip% %reverse_dns% %icmp_seq% %time% %timestamp% %size% %size_no_headers% %error%",
+            &info,
+            &res,
+            56,
+            false,
+            "2026-01-01T00:00:00Z",
+        );
+        assert_eq!(
+            line,
+            "example.com 127.0.0.1 localhost 7 1.23 2026-01-01T00:00:00Z 84 56 boom"
+        );
+    }
+
+    #[test]
+    fn render_template_line_uses_ipv6_header_sizes() {
+        let info = resolved(IpAddr::V6(Ipv6Addr::LOCALHOST), None);
+        let res = packet(1, 0.0, None);
+        let line = render_template_line("%size%/%size_no_headers%", &info, &res, 56, false, "ts");
+        assert_eq!(line, "104/56");
+    }
+
+    #[test]
+    fn render_template_line_matches_tags_case_insensitively() {
+        let info = resolved(IpAddr::V4(Ipv4Addr::LOCALHOST), None);
+        let res = packet(3, 2.0, None);
+        let line = render_template_line("%HOST% seq=%Icmp_Seq%", &info, &res, 56, false, "ts");
+        assert_eq!(line, "example.com seq=3");
+    }
+
+    #[test]
+    fn render_template_line_prefixes_timestamp_when_template_lacks_the_tag() {
+        let info = resolved(IpAddr::V4(Ipv4Addr::LOCALHOST), None);
+        let res = packet(3, 2.0, None);
+        let line = render_template_line(
+            "seq=%icmp_seq%",
+            &info,
+            &res,
+            56,
+            true,
+            "2026-01-01T00:00:00Z",
+        );
+        assert_eq!(line, "2026-01-01T00:00:00Z seq=3");
+    }
+
+    #[test]
+    fn render_template_line_skips_prefix_when_template_has_timestamp_tag() {
+        let info = resolved(IpAddr::V4(Ipv4Addr::LOCALHOST), None);
+        let res = packet(3, 2.0, None);
+        let line = render_template_line(
+            "%TimeStamp% seq=%icmp_seq%",
+            &info,
+            &res,
+            56,
+            true,
+            "2026-01-01T00:00:00Z",
+        );
+        assert_eq!(line, "2026-01-01T00:00:00Z seq=3");
+    }
+
+    #[test]
+    fn render_template_line_passes_unknown_tags_through() {
+        let info = resolved(IpAddr::V4(Ipv4Addr::LOCALHOST), None);
+        let res = packet(3, 2.0, None);
+        let line = render_template_line("%host% %bogus%", &info, &res, 56, false, "ts");
+        assert_eq!(line, "example.com %bogus%");
+    }
 }

@@ -50,7 +50,49 @@ pub struct ResolvedTargetInfo {
 
 #[derive(Clone, Debug)]
 pub struct PacketResult {
-    pub icmp_seq: u64,
+    /// The wrapped 16-bit value that also goes on the wire.
+    pub icmp_seq: u16,
     pub time_ms: f64,
     pub error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(count: i64, continuous: bool) -> PingxArgs {
+        PingxArgs {
+            target: "example.com".to_string(),
+            count,
+            interval_secs: 1.0,
+            payload_size_bytes: 56,
+            per_reply_timeout_secs: 2.0,
+            overall_deadline_secs: None,
+            continuous,
+            ip_mode: IpMode::Auto,
+            timestamp_prefix: false,
+            quiet: false,
+            verbose: false,
+            numeric: false,
+            output: OutputMode::Default,
+            stats_every_secs: None,
+            beep_on_loss: false,
+            stop_on_error: true,
+        }
+    }
+
+    #[test]
+    fn negative_count_is_infinite() {
+        assert!(args(-1, false).is_infinite());
+    }
+
+    #[test]
+    fn continuous_flag_is_infinite() {
+        assert!(args(3, true).is_infinite());
+    }
+
+    #[test]
+    fn positive_count_without_continuous_is_finite() {
+        assert!(!args(3, false).is_infinite());
+    }
 }
