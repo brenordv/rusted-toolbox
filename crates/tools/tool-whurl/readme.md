@@ -22,18 +22,20 @@ It's not perfect, but it's a good start, and helps me solve this problem.
 
 ## What It Does
 - Discovers APIs and Hurl files under a `requests/<api>/` hierarchy (or a custom `WHURL_REQUEST_HOME`).
-- Resolves `# @include ...` directives before execution, including `quiet` and `silent` modifiers.
-  - Modifiers can be added with the following syntax: `# @include:[modifier1, modifier2,...modifierN]  <file>` 
+- Resolves `# @include ...` directives before execution, including `quiet`, `silent`, and `env=NAME` options.
+  - Options can be added with the following syntax: `# @include:[option1, option2,...optionN]  <file>` 
 - Provides commands to list collections, preview the merged document, and execute through Hurl.
 - Surfaces rich reporting: optional JSON artifacts, test-friendly summaries, and source remapping.
 
 ## Features
 - Automatic `requests/` root detection (crate-relative, binary-relative, or `WHURL_REQUEST_HOME` override).
 - Include graph cycle detection plus optional boundary markers for readability.
+- Per-include environment overrides (`env=NAME`) and inline variable feeds (`-> { k=v }`) on `@include`.
 - Source-to-merged line mapping so failures are reported against original files.
 - Variable layering from `HURL_*` environment variables, shared `_global.hurlvars`, named env files, arbitrary files, and `--var`.
 - Dynamic variables via `_vars/*.dvars` files and `# @vars` directives, including generators like `$uuid`, `$date[+2]`, `$random["a", "b"]`, and guarded `$shell(...)` execution.
 - Secret-aware variable injection (keys containing `token`, `secret`, etc. stay hidden in logs).
+- Per-entry elapsed-time display with a running total and repeat-hit deltas (within one run).
 - Embedded Hurl runner with controllable verbosity (`-v` / `-vv`) and context-aware file resolution.
 
 ### WHURL_REQUEST_HOME
@@ -57,6 +59,58 @@ nested includes (including a file that contains another include).
 
 Whurl will do all that in memory, keeping the original files untouched.
 
+#### Include options
+Options ride the bracket block: `# @include:[option1, option2] path`.
+
+- `quiet`: skip response-body logging for that file's entries.
+- `silent`: suppress all whurl log lines for that file's entries (implies `quiet`).
+- `env=NAME`: run the included file's API against environment `NAME` instead of the run's `--env`. The override
+  inherits down that include's subtree (an include's own `env=` beats an inherited one) and applies even when no
+  `--env` was passed. Environments resolve per API while variables merge globally, so the override redirects the env
+  layer of the whole API the included file belongs to; two includes of the same API with different `env=` values
+  collide, and the first one encountered wins with a warning. A missing environment fails before any request runs,
+  citing the directive that set it. Since the override selects which `NAME.hurlvars`/`NAME.dvars` files load, with the
+  shell gate enabled it also selects which `.dvars` code runs; the trust notes under "Fetching secrets with $shell"
+  apply.
+
+For example, a request that always authenticates through the `auth` API's `production` environment, while the
+including file's own API keeps following the run's `--env`:
+
+```hurl
+# @include:[env=production] auth/login
+
+GET https://httpbin.org/anything
+```
+
+Here `login` (and anything it includes) loads the `auth` API's variable files from `production`, even when the run
+was started with `--env dev` or no `--env` at all.
+
+Options inherit down the include subtree. An unknown `key=value` option logs a warning (a typo like `evn=dev` would
+otherwise silently run the default environment); unknown bare words are ignored as before.
+
+#### Feeding variables to an include
+`# @include path -> { key=value, ... }` hands variables to the run when that include is pulled in (the arrow clause is
+called a variable feed):
+
+```hurl
+# @include my-get-request -> { queryStringType="question", correctAnswer=42, extra={{user}} }
+```
+
+- A value is a bare word (`42`), a double-quoted literal (`"question"`; commas allowed inside, no escape sequences), or
+  a `{{reference}}` to another variable. A reference must exist or the run fails before any request executes, citing
+  the file and line.
+- Precedence: feeds apply after every file-based layer (`_global`, env files, `@vars`) and lose only to `--vars-file`
+  and `--var`. A `{{reference}}` sees the variable's final value when it comes from `--var`, `--vars-file`, or any file
+  layer; a key set only by a later feed is not visible to an earlier one.
+- Variables merge globally: a fed variable is visible to every entry in the merged run, not only the included file's
+  entries. Colliding sources log the usual collision warning; feed origins name the include and the feeding line,
+  never the value.
+- An include expands once per run, but every occurrence's feed applies, in order; when two feeds set the same key, the
+  later one wins. On a repeated include the feed still applies even though a conflicting `env=` on that repeat is
+  dropped with a warning (environments are one per API; feeds are cumulative inserts).
+- Nothing may follow the closing brace, and paths containing a literal `->` are not supported; both fail as a parse
+  error with the file and line (`dry-run` included).
+
 ### #@vars
 Top-of-file `# @vars <name>` directives load `_vars/<name>.hurlvars` first (when present) followed by `_vars/<name>.dvars` (extensions optional and case-insensitive).
 The `.hurlvars` files provide static `KEY=VALUE` entries while `.dvars` files use generator expressions evaluated at runtime.
@@ -77,7 +131,13 @@ On Windows, Whurl uses `cmd /C` for `$shell(...)` commands. On Linux and macOS i
 
 > **Note:** When you pass `--env NAME`, every API involved (the main request and any included APIs) must provide either `NAME.hurlvars` or `NAME.dvars`. Whurl raises an error if both files are missing so you can catch incomplete environment definitions early.
 
-When not running in silent mode Whurl logs the generated values so you can see the resolved dynamic environment.
+When not running in silent mode Whurl logs each generated variable's name and source file; the values stay out of the logs since they routinely hold secrets.
+
+`$shell` results are cached for the run: a byte-identical `$shell(...)` expression executes once per run, and every
+later occurrence, in any file or API, reuses the first result (the assignment log marks these with `cached=true`).
+Distinct expressions always execute. Two consequences: a token fetched at run start lives for the whole run, and a
+non-deterministic command (a timestamp, a one-time-code fetcher) duplicated across files now produces one shared value
+instead of several. Only successful results are cached; other generators (`$uuid`, `$int`, ...) never are.
 
 ### Hurl files
 This app still relies on [Hurl files](https://hurl.dev/docs/hurl-file.html), and its syntax.
@@ -127,50 +187,58 @@ everything in the `basic` will be done first, and will be available to the secon
 You can add as many includes as you need. Just add one line after the other.
 
 ### Runtime example
-If you run the provided example `requests/httpbin/extended.hurl` file, you'll get the following result:
+If you run the provided example `requests/httpbin/extended.hurl` file with `--app-header`, you'll get the following
+result (without the flag, only the log lines print):
 ```text
-WHURL v1.0.0
+whurl (3.1.0)
 ---------------------------------------------------
-- API: httpbin
-- Request: httpbin\extended.hurl
----------------------------------------------------
+- Basic Runtime Config
+  - Verbose mode: 0
+  - Log level: Info
+  - Log to stdout: false
+  - Log to file: false
+  - Rotate log file by day: false
+- Tool Runtime Config
+  - API: httpbin
+  - Request: extended
 
-2025-11-09T21:07:28.513993Z  INFO whurl: Entry #1 Call #1 → GET https://httpbin.org/get
-2025-11-09T21:07:28.514117Z  INFO whurl: Status: 200 (Http11)
-2025-11-09T21:07:28.514245Z  INFO whurl: Response Body:
+ INFO whurl::vars::dynamic: dynamic variable assigned variable=call_id file=<requests-root>/httpbin/_vars/session.dvars line=1
+ INFO whurl::vars::dynamic: dynamic variable assigned variable=first_name file=<requests-root>/httpbin/_vars/session.dvars line=3
+ WARN whurl::models: Environment variable collision; newer source overrides previous value key=call_id new_source=dynamic vars file `httpbin/_vars/session.dvars` previous_source=# @vars `session` hurlvars `httpbin/_vars/session.hurlvars`
+ INFO whurl::whurl_app: Entry #1 Call #1 → GET https://httpbin.org/get
+ INFO whurl::whurl_app: Status: 200 (Http2)
+ INFO whurl::whurl_app: Response Body:
 {
   "args": {},
   "headers": {
     "Accept": "*/*",
     "Host": "httpbin.org",
-    "User-Agent": "hurl/7.0.0",
+    "User-Agent": "hurl/8.0.1",
     "X-Amzn-Trace-Id": "<redacted>"
   },
   "origin": "<redacted>",
   "url": "https://httpbin.org/get"
 }
-2025-11-09T21:07:28.514358Z  INFO whurl: Entry #2 Call #1 → GET https://httpbin.org/anything?source=https://httpbin.org/get
-2025-11-09T21:07:28.514455Z  INFO whurl: Status: 200 (Http11)
-2025-11-09T21:07:28.514576Z  INFO whurl: Response Body:
+ INFO whurl::whurl_app: [Elapsed: 308 ms | Total: 308 ms]
+ INFO whurl::whurl_app: Entry #2 Call #1 → GET https://httpbin.org/anything?source=https%3A%2F%2Fhttpbin.org%2Fget&call_id=<redacted>&first_name=Larue&food=apple&score=834
+ INFO whurl::whurl_app: Status: 200 (Http2)
+ INFO whurl::whurl_app: Response Body:
 {
   "args": {
+    "call_id": "<redacted>",
+    "first_name": "Larue",
+    "food": "apple",
+    "score": "834",
     "source": "https://httpbin.org/get"
   },
-  "data": "",
-  "files": {},
-  "form": {},
-  "headers": {
-    "Accept": "*/*",
-    "Host": "httpbin.org",
-    "User-Agent": "hurl/7.0.0",
-    "X-Amzn-Trace-Id": "<redacted>"
-  },
-  "json": null,
   "method": "GET",
   "origin": "<redacted>",
-  "url": "https://httpbin.org/anything?source=https:%2F%2Fhttpbin.org%2Fget"
+  "url": "https://httpbin.org/anything?source=https:%2F%2Fhttpbin.org%2Fget&call_id=<redacted>&first_name=Larue&food=apple&score=834"
 }
+ INFO whurl::whurl_app: [Elapsed: 27 ms | Total: 335 ms]
 ```
+(Some dynamic-variable lines and response fields are trimmed for brevity. Logs go to stderr; the header goes to
+stdout.)
 
 ## Requests Layout
 Organize your collections like this:
@@ -198,16 +266,22 @@ Runs the selected request after all includes are expanded.
 ```
 whurl run <API> <FILE> [OPTIONS]
 ```
-- `--env NAME`: load `_vars/NAME.hurlvars` (or `<API>/NAME.hurlvars`).
+- `--env NAME`: load `<API>/NAME.hurlvars` first, falling back to `_vars/NAME.hurlvars`; a `NAME.dvars` file (same lookup order) is also accepted.
 - `--vars-file PATH`: merge variables from an arbitrary file.
 - `--var KEY=VALUE`: inline variable overrides (repeatable, highest precedence).
 - `--file-root PATH`: adjust the base directory for response/file assertions (relative values are resolved against the API directory; this does **not** change where Whurl discovers request files).
 - `--json PATH`: emit the Hurl JSON report alongside console output.
 - `--print-only-full-response`: suppress header/logs and stream the JSON report to stdout.
 - `--print-only-response-body`: suppress header/logs and print only the last response body.
-- `--silent`: suppress runtime header/log info (includes marked `[quiet]` / `[silent]` also hush logs).
+- `--silent`: suppress whurl's runtime output (includes marked `[quiet]` / `[silent]` also hush logs).
 - `--test`: print a concise summary with failure snippets after execution.
-- `-v` / `-vv`: increase embedded Hurl verbosity (request/response debug logs).
+- `-v` / `-vv`: increase embedded Hurl verbosity (request/response debug logs). This never changes whurl's own log level.
+- `--app-header`: print the standard runtime header (tool name, version, logging config, and the run's inputs) before execution. Suppressed by `--silent` and the `--print-only-*` modes, which promise header-free output.
+- `--log-level LEVEL`: set whurl's tracing level explicitly. When omitted, whurl derives it: Error under `--silent`/`--print-only-*`, Info otherwise. An explicit value beats the derivation; `RUST_LOG` beats both when set, and only `disabled` silences everything including `RUST_LOG`.
+- `--log-to-console`: send logs to stdout instead of the default stderr. Leave this off with `--print-only-*` in pipelines, or logs interleave with the machine-readable stdout payload.
+- `--log-to-file` / `--rotate-log-file-by-day`: append logs to the tool's logs folder under your home directory. Execution logs include response bodies, so the file can end up holding whatever your APIs return.
+
+`dry-run` accepts the same shared flags.
 
 #### About `--file-root`
 Whurl resolves relative paths in the `.hurl` file against the API directory.
@@ -258,8 +332,43 @@ means that when Whurl hands variables to the embedded Hurl engine, it checks eac
 secret, password, or authorization, it marks those as sensitive. The Hurl runner then keeps the value out of verbose
 logs so you don’t leak credentials.
 
+### Fetching secrets with $shell
+`$shell(...)` in a `.dvars` file can pull a secret from a vault at run start, so API keys never sit in your request
+files. Example with Azure Key Vault, in `_vars/session.dvars`:
+
+```
+api_token=$shell(az keyvault secret show --vault-name my-vault --name api-key --query value -o tsv)
+```
+
+Enable the gate per invocation instead of exporting it globally:
+
+```bash
+WHURL_ALLOW_DYN_SHELL_VARS=true whurl run my-api login --env dev
+```
+
+Three things to know before relying on this:
+
+- Masking is keyed on the variable name, nothing else. Keys containing `token`, `secret`, `password`, or
+  `authorization` reach the Hurl engine as secrets and stay out of its verbose output. A name like `api_key` matches
+  none of those needles and is not masked, which is why the example uses `api_token`. Whurl's own logs never carry
+  variable values either way (the assignment log records name, file, and line only), but engine-side redaction depends
+  on the key name.
+- The command text and its stderr can surface in error output. A denylist rejection echoes the full command, and a
+  non-zero exit echoes trimmed stderr. Never inline secret material in the command itself (a `--client-secret abc`
+  flag, say); fetch by name, and prefer quiet output flags like `-o tsv` so a failing command doesn't spill values.
+- While the gate is set, `.dvars` files are executable code. The destructive-command denylist is a courtesy guard, not
+  a security boundary: wrappers, scripts, and command substitution get around it. Treat a `.dvars` file with the same
+  trust as a shell script you'd run, and do not run collections from untrusted sources with the gate enabled.
+
 ## Logging & Reports
-- Default runs print a header with API/request context plus info-level per-entry logs.
+- Default runs print info-level per-entry logs to stderr; the runtime header is opt-in via `--app-header`.
+- Each entry logs `[Elapsed: 121 ms | Total: 147 ms]` after its calls: elapsed is that entry's transfer time, total is
+  the running sum across all entries so far (entries hidden by `silent` includes still count toward the total). A
+  repeat hit of the same method + URL (+ environment) within one run adds a delta against the previous attempt, e.g.
+  `[Elapsed: 25 ms (-96 ms) | Total: 147 ms]`; nothing persists across runs. Durations print as whole milliseconds
+  under one second and one-decimal seconds from there up.
+- The `--test` summary shows each entry's elapsed time in the same format; the column prints whenever the summary
+  prints (`--test` output is not suppressed by `--silent`).
 - Includes tagged `quiet` skip response body logging; `silent` suppresses logs entirely for that file.
 - `--test` mode summarizes pass/fail counts and annotates failures with source file/line snippets.
 - `--json PATH` writes the canonical Hurl JSON report; combine with `--print-only-full-response` for pipelines.
@@ -280,7 +389,7 @@ logs so you don’t leak credentials.
   ```
 - Read payload fixtures outside the API directory by setting a file root:
   ```bash
-  whurl run httpbin send-json --file-root Z:\dev\projects\rust\rusted-toolbox\payloads
+  whurl run httpbin send-json --file-root /path/to/payloads
   ```
 - Export only the execution result (no logs):
   ```bash
@@ -290,6 +399,14 @@ logs so you don’t leak credentials.
   ```bash
   whurl run httpbin basic --print-only-response-body
   ```
+- Run with a concise pass/fail summary (failures are annotated with source file/line snippets):
+  ```bash
+  whurl run httpbin extended --test
+  ```
+
+The `requests/httpbin/` folder in this crate ships runnable samples: `quiet-import` and `silent-import` for the
+include options, `nested-extend` for nested includes, `extended cross-api` for cross-API includes, and `env-demo`
+plus `env-demo-basic` for environment layering.
 
 # Build
 ## Linux
@@ -352,8 +469,8 @@ Installing **LLVM** and pointing `LIBCLANG_PATH` to its `bin` folder solves this
 In `Cargo.toml`:
 
 ```toml
-hurl = { git = "https://github.com/Orange-OpenSource/hurl", tag = "7.0.0" }
-hurl_core = { git = "https://github.com/Orange-OpenSource/hurl", tag = "7.0.0" }
+hurl = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
+hurl_core = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
 ```
 
 > This avoids the `RC2135 : file not found: ../../bin/windows/logo.ico` error during the `hurl` build on Windows.

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt;
 use thiserror::Error;
 
 use crate::vars::VariableMap;
@@ -33,6 +32,13 @@ pub struct RunArgs {
     pub silent: bool,
 }
 
+impl RunArgs {
+    /// True when any of the output-suppressing modes is active.
+    pub fn silent_mode(&self) -> bool {
+        self.silent || self.print_only_full_response || self.print_only_response_body
+    }
+}
+
 #[derive(Debug)]
 pub struct DryRunArgs {
     pub exec: ExecutionArgs,
@@ -50,16 +56,12 @@ pub struct ExecutionArgs {
     pub verbosity: u8,
 }
 
+// Deliberately no Display impl: a `key=value` rendering is exactly what leaks
+// values into log origins; consumers format the key alone.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KeyValue {
     pub key: String,
     pub value: String,
-}
-
-impl fmt::Display for KeyValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}={}", self.key, self.value)
-    }
 }
 
 pub type ToolResult<T> = Result<T, ToolError>;
@@ -153,6 +155,12 @@ impl VariableAccumulator {
 
         self.values.insert(key.clone(), value);
         self.origins.insert(key, origin_desc);
+    }
+
+    /// The current value for a key, when some layer has already set it.
+    /// Case-sensitive, like the map itself.
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.values.get(key).map(String::as_str)
     }
 
     pub fn finish(self) -> VariableMap {

@@ -285,3 +285,86 @@ fn ensure_extension_with(path: &mut Utf8PathBuf, extension: &str) {
 fn is_within_root(root: &Utf8Path, candidate: &Utf8Path) -> bool {
     candidate.starts_with(root)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn setup() -> (tempfile::TempDir, FileResolver, Utf8PathBuf) {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("requests");
+        fs::create_dir_all(root.join("api")).expect("api dir");
+        let root_utf8 = Utf8PathBuf::from_path_buf(root).expect("utf8 root");
+        let current = root_utf8.join("api").join("a.hurl");
+        fs::write(current.as_std_path(), "GET https://example.com\n").expect("write current");
+        (temp, FileResolver::new(root_utf8), current)
+    }
+
+    #[test]
+    fn include_specs_with_parent_dir_are_rejected() {
+        let (_temp, resolver, current) = setup();
+        let err = resolver
+            .resolve_include(current.as_path(), "../outside")
+            .expect_err("parent dir must be rejected");
+        assert!(matches!(err, ResolveError::InvalidComponent { .. }));
+    }
+
+    #[test]
+    fn absolute_include_specs_are_rejected() {
+        let (_temp, resolver, current) = setup();
+        let err = resolver
+            .resolve_include(current.as_path(), "/etc/hosts")
+            .expect_err("absolute path must be rejected");
+        assert!(matches!(err, ResolveError::InvalidComponent { .. }));
+    }
+
+    #[test]
+    fn nul_bytes_in_include_specs_are_rejected() {
+        let (_temp, resolver, current) = setup();
+        let err = resolver
+            .resolve_include(current.as_path(), "bad\0name")
+            .expect_err("NUL must be rejected");
+        assert!(matches!(err, ResolveError::InvalidComponent { .. }));
+    }
+
+    #[test]
+    fn backslash_include_specs_are_rejected() {
+        let (_temp, resolver, current) = setup();
+        let err = resolver
+            .resolve_include(current.as_path(), "bad\\name")
+            .expect_err("backslash must be rejected");
+        // On Windows the backslash acts as a separator, so the spec splits into
+        // valid components and fails lookup instead of validation.
+        #[cfg(windows)]
+        assert!(matches!(err, ResolveError::FileNotFound { .. }));
+        #[cfg(not(windows))]
+        assert!(matches!(err, ResolveError::InvalidComponent { .. }));
+    }
+
+    #[test]
+    fn includes_from_files_outside_the_root_yield_outside_requests_root() {
+        let (temp, resolver, _current) = setup();
+        let outside =
+            Utf8PathBuf::from_path_buf(temp.path().join("elsewhere.hurl")).expect("utf8 path");
+        fs::write(outside.as_std_path(), "GET https://example.com\n").expect("write outside");
+
+        let err = resolver
+            .resolve_include(outside.as_path(), "a")
+            .expect_err("outside file must be rejected");
+        assert!(matches!(err, ResolveError::OutsideRequestsRoot { .. }));
+    }
+
+    #[test]
+    fn sibling_includes_resolve_within_the_api() {
+        let (_temp, resolver, current) = setup();
+        let target = current.parent().expect("api dir").join("b.hurl");
+        fs::write(target.as_std_path(), "GET https://example.com/b\n").expect("write include");
+
+        let resolved = resolver
+            .resolve_include(current.as_path(), "b")
+            .expect("resolve include");
+        assert_eq!(resolved.path, target);
+    }
+}

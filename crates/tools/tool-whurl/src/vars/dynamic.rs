@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::process::Command;
 
 use camino::Utf8Path;
@@ -9,6 +10,27 @@ use tracing::info;
 use common_utils_ext::new_guid::new_guid;
 
 use super::{VariableError, VariableMap};
+
+/// Evaluation context threaded through dynamic-variable parsing: the shell
+/// gate, the assignment-log toggle, and the per-run cache of `$shell` results.
+/// One context lives for a whole `build_variables` pass, so a `$shell`
+/// expression duplicated across layers executes once per run.
+#[derive(Debug, Default)]
+pub struct DynamicEvalContext {
+    pub allow_shell: bool,
+    pub log_assignments: bool,
+    shell_cache: HashMap<String, String>,
+}
+
+impl DynamicEvalContext {
+    pub fn new(allow_shell: bool, log_assignments: bool) -> Self {
+        Self {
+            allow_shell,
+            log_assignments,
+            shell_cache: HashMap::new(),
+        }
+    }
+}
 
 const DEFAULT_INT_MAX: i64 = i32::MAX as i64;
 const LOCAL_DATE_FORMAT: &str = "%Y-%m-%d";
@@ -138,22 +160,20 @@ const DESTRUCTIVE_COMMANDS: &[&str] = &[
 
 pub fn parse_dynamic_variables_file(
     path: &Utf8Path,
-    allow_shell: bool,
-    log_assignments: bool,
+    ctx: &mut DynamicEvalContext,
 ) -> Result<VariableMap, VariableError> {
     let contents = std::fs::read_to_string(path).map_err(|source| VariableError::Io {
         path: path.to_path_buf(),
         source,
     })?;
 
-    parse_dynamic_variables_from_str(path, &contents, allow_shell, log_assignments)
+    parse_dynamic_variables_from_str(path, &contents, ctx)
 }
 
 pub fn parse_dynamic_variables_from_str(
     path: &Utf8Path,
     contents: &str,
-    allow_shell: bool,
-    log_assignments: bool,
+    ctx: &mut DynamicEvalContext,
 ) -> Result<VariableMap, VariableError> {
     let mut variables = VariableMap::new();
 
@@ -199,20 +219,22 @@ pub fn parse_dynamic_variables_from_str(
             });
         }
 
-        let value = evaluate_expression(expression, allow_shell).map_err(|message| {
-            VariableError::Parse {
+        let (value, from_cache) =
+            evaluate_expression(expression, ctx).map_err(|message| VariableError::Parse {
                 path: path.to_path_buf(),
                 line: line_number,
                 message,
-            }
-        })?;
+            })?;
 
-        if log_assignments {
+        // The value (and the expression, which is command text) is
+        // deliberately absent from this event: dynamic variables routinely
+        // carry secrets, and the tracing stream can reach a log file.
+        if ctx.log_assignments {
             info!(
                 variable = %key,
-                value = %value,
                 file = %path,
                 line = line_number,
+                cached = from_cache,
                 "dynamic variable assigned"
             );
         }
@@ -223,7 +245,30 @@ pub fn parse_dynamic_variables_from_str(
     Ok(variables)
 }
 
-fn evaluate_expression(expression: &str, allow_shell: bool) -> Result<String, String> {
+/// Evaluates one generator expression. The returned flag says whether the
+/// value came from the per-run `$shell` cache.
+fn evaluate_expression(
+    expression: &str,
+    ctx: &mut DynamicEvalContext,
+) -> Result<(String, bool), String> {
+    // Only $shell results are cached, keyed by the byte-identical expression:
+    // caching $uuid or $int by expression would pin every occurrence to a
+    // single value. Failures are never stored.
+    if let Some(command) = parse_shell_command(expression)? {
+        if let Some(cached) = ctx.shell_cache.get(expression) {
+            return Ok((cached.clone(), true));
+        }
+
+        let value = execute_shell_command(&command, ctx.allow_shell)?;
+        ctx.shell_cache
+            .insert(expression.to_string(), value.clone());
+        return Ok((value, false));
+    }
+
+    evaluate_generator(expression).map(|value| (value, false))
+}
+
+fn evaluate_generator(expression: &str) -> Result<String, String> {
     match expression {
         "$now" => Ok(Local::now().to_rfc3339()),
         "$utcnow" => Ok(Utc::now().to_rfc3339()),
@@ -235,11 +280,11 @@ fn evaluate_expression(expression: &str, allow_shell: bool) -> Result<String, St
         "$int" => Ok(rand::rng().random_range(0..=DEFAULT_INT_MAX).to_string()),
         "$float" => Ok(rand::rng().random_range(0.0..=1.0).to_string()),
         "$random[]" => Err("random generator requires at least one option".to_string()),
-        _ => evaluate_complex_expression(expression, allow_shell),
+        _ => evaluate_complex_expression(expression),
     }
 }
 
-fn evaluate_complex_expression(expression: &str, allow_shell: bool) -> Result<String, String> {
+fn evaluate_complex_expression(expression: &str) -> Result<String, String> {
     if let Some(offset) = parse_offset(expression, "$date")? {
         return Ok((Local::now() + Duration::days(offset))
             .date_naive()
@@ -282,10 +327,6 @@ fn evaluate_complex_expression(expression: &str, allow_shell: bool) -> Result<St
         }
         let index = rand::rng().random_range(0..options.len());
         return Ok(options[index].trim().to_string());
-    }
-
-    if let Some(command) = parse_shell_command(expression)? {
-        return execute_shell_command(&command, allow_shell);
     }
 
     Err(format!("unsupported dynamic expression `{expression}`"))
@@ -542,7 +583,8 @@ TOKEN=$uuid
 DATE=$date
         "#;
 
-        let vars = parse_dynamic_variables_from_str(path().as_path(), data, false, false)
+        let mut ctx = DynamicEvalContext::default();
+        let vars = parse_dynamic_variables_from_str(path().as_path(), data, &mut ctx)
             .expect("parse dynamic vars");
 
         assert!(vars.contains_key("TOKEN"));
@@ -552,8 +594,8 @@ DATE=$date
     #[test]
     fn rejects_invalid_range() {
         let data = "BAD=$int[5, 2]";
-        let err =
-            parse_dynamic_variables_from_str(path().as_path(), data, false, false).unwrap_err();
+        let mut ctx = DynamicEvalContext::default();
+        let err = parse_dynamic_variables_from_str(path().as_path(), data, &mut ctx).unwrap_err();
         assert!(matches!(err, VariableError::Parse { .. }));
     }
 
@@ -567,7 +609,7 @@ DATE=$date
 
     #[test]
     fn date_offset_applies() {
-        let value = evaluate_expression("$date[+1]", false).expect("evaluate date");
+        let value = evaluate_generator("$date[+1]").expect("evaluate date");
         let parsed =
             chrono::NaiveDate::parse_from_str(&value, LOCAL_DATE_FORMAT).expect("parse date");
         let expected = (Local::now() + Duration::days(1)).date_naive();
@@ -577,7 +619,7 @@ DATE=$date
     #[test]
     fn int_range_is_respected() {
         for _ in 0..10 {
-            let value = evaluate_expression("$int[-5, 5]", false)
+            let value = evaluate_generator("$int[-5, 5]")
                 .expect("evaluate int")
                 .parse::<i64>()
                 .expect("parse int");
@@ -587,8 +629,70 @@ DATE=$date
 
     #[test]
     fn shell_command_requires_permission() {
-        let err = evaluate_expression("$shell(echo hello)", false).expect_err("shell disabled");
+        let mut ctx = DynamicEvalContext::default();
+        let err = evaluate_expression("$shell(echo hello)", &mut ctx).expect_err("shell disabled");
         assert!(err.contains("shell dynamic variables are disabled"));
+    }
+
+    #[test]
+    fn shell_expressions_evaluate_once_per_run_across_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let counter = temp.path().join("count.txt");
+        let command = format!(
+            "$shell(echo x >> \"{}\" && echo token-1)",
+            counter.display()
+        );
+
+        let layer_one = format!("token_a={command}");
+        let layer_two = format!("token_b={command}");
+
+        let mut ctx = DynamicEvalContext::new(true, false);
+        let one = parse_dynamic_variables_from_str(
+            Utf8PathBuf::from("one.dvars").as_path(),
+            &layer_one,
+            &mut ctx,
+        )
+        .expect("layer one");
+        let two = parse_dynamic_variables_from_str(
+            Utf8PathBuf::from("two.dvars").as_path(),
+            &layer_two,
+            &mut ctx,
+        )
+        .expect("layer two");
+
+        assert_eq!(one.get("token_a"), two.get("token_b"));
+        let executions = std::fs::read_to_string(&counter)
+            .expect("counter file")
+            .lines()
+            .count();
+        assert_eq!(executions, 1, "the shared expression must run exactly once");
+    }
+
+    #[test]
+    fn distinct_shell_expressions_each_execute() {
+        let mut ctx = DynamicEvalContext::new(true, false);
+        let (a, from_cache_a) = evaluate_expression("$shell(echo a)", &mut ctx).expect("echo a");
+        let (b, from_cache_b) = evaluate_expression("$shell(echo b)", &mut ctx).expect("echo b");
+
+        assert_eq!(a, "a");
+        assert_eq!(b, "b");
+        assert!(!from_cache_a);
+        assert!(!from_cache_b);
+
+        let (again, from_cache) =
+            evaluate_expression("$shell(echo a)", &mut ctx).expect("echo a again");
+        assert_eq!(again, "a");
+        assert!(from_cache);
+    }
+
+    #[test]
+    fn non_shell_generators_are_not_cached() {
+        let data = "ID1=$uuid\nID2=$uuid\n";
+        let mut ctx = DynamicEvalContext::default();
+        let vars = parse_dynamic_variables_from_str(path().as_path(), data, &mut ctx)
+            .expect("parse dynamic vars");
+
+        assert_ne!(vars.get("ID1"), vars.get("ID2"));
     }
 
     #[test]

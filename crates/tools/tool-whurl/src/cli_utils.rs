@@ -1,8 +1,9 @@
-use crate::files::ResolvedRunContext;
 use crate::models::{Cli, Command, DryRunArgs, ExecutionArgs, KeyValue, ListArgs, RunArgs};
 use camino::Utf8PathBuf;
 use clap::{Args, Parser, Subcommand};
-use common_utils::constants::DASH_LINE;
+use common_cli::common_tool_args::CommonToolArgsNoVerbose;
+use common_cli::header_format::format_config_item;
+use common_cli::tool_log_level::ToolLogLevel;
 
 /// Wrapper for Hurl with a few additional features.
 ///
@@ -58,6 +59,9 @@ struct ExecutionCliArgs {
     /// Increase output verbosity. Pass twice for extra detail.
     #[arg(long = "verbose", short = 'v', action = clap::ArgAction::Count)]
     verbose: u8,
+
+    #[command(flatten)]
+    common: CommonToolArgsNoVerbose,
 }
 
 #[derive(Args, Debug)]
@@ -86,6 +90,13 @@ struct RunCliArgs {
     silent: bool,
 }
 
+impl RunCliArgs {
+    /// True when any of the output-suppressing modes is active.
+    fn silent_mode(&self) -> bool {
+        self.silent || self.print_only_full_response || self.print_only_response_body
+    }
+}
+
 #[derive(Args, Debug)]
 struct DryRunCliArgs {
     #[command(flatten)]
@@ -103,11 +114,144 @@ struct DryRunCliArgs {
     show_boundaries: bool,
 }
 
-/// Parses command-line arguments and returns the runtime configuration.
+/// Parses command-line arguments, boots logging and the optional `--app-header`
+/// block, and returns the runtime configuration.
 pub fn initialize() -> Cli {
     let args = CliArgs::parse();
 
+    boot(&args);
+
     to_cli(args)
+}
+
+/// Initializes logging and prints the `--app-header` block for the parsed
+/// command, before any command work runs, so every later tracing call has a
+/// subscriber. In the silent modes the header stays suppressed even when
+/// `--app-header` is set: those flags promise header-free output.
+fn boot(args: &CliArgs) {
+    match &args.command {
+        CliCommand::List { .. } => {
+            // `list` exposes no logging flags; the all-off defaults still log
+            // at Info to stderr through the same boot path.
+            CommonToolArgsNoVerbose::default().app_boot_up_with_level(
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                ToolLogLevel::Info,
+                0,
+                false,
+                None::<fn()>,
+            );
+        }
+        CliCommand::Run(run) => boot_exec(
+            &run.exec,
+            resolve_log_level(&args.command),
+            run_header_visible(run),
+            run_header_lines(run),
+        ),
+        CliCommand::DryRun(dry_run) => boot_exec(
+            &dry_run.exec,
+            resolve_log_level(&args.command),
+            dry_run.exec.common.app_header,
+            dry_run_header_lines(dry_run),
+        ),
+    }
+}
+
+fn boot_exec(
+    exec: &ExecutionCliArgs,
+    derived_level: ToolLogLevel,
+    show_header: bool,
+    header_lines: Vec<String>,
+) {
+    let mut common = exec.common.clone();
+    common.app_header = show_header;
+
+    common.app_boot_up_with_level(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        derived_level,
+        exec.verbose,
+        false,
+        Some(move || {
+            for line in &header_lines {
+                println!("{line}");
+            }
+        }),
+    );
+}
+
+/// The tracing level whurl derives when `--log-level` is not passed: Error in
+/// the run silent modes so only failures surface, Info everywhere else. An
+/// explicit `--log-level` overrides the derivation (resolved inside the boot).
+fn resolve_log_level(command: &CliCommand) -> ToolLogLevel {
+    match command {
+        CliCommand::Run(run) if run.silent_mode() => ToolLogLevel::Error,
+        _ => ToolLogLevel::Info,
+    }
+}
+
+/// Whether the run header may print: `--app-header` opts in, and any silent
+/// mode suppresses it.
+fn run_header_visible(run: &RunCliArgs) -> bool {
+    run.exec.common.app_header && !run.silent_mode()
+}
+
+/// The header lines shared by `run` and `dry-run`: the two positional
+/// arguments as given (path resolution has not happened at boot time), then
+/// each optional input that was set. Inline variables list their keys only;
+/// values never reach the header.
+fn exec_header_lines(exec: &ExecutionCliArgs) -> Vec<String> {
+    let mut lines = vec![
+        format_config_item("API", &exec.api),
+        format_config_item("Request", &exec.file),
+    ];
+
+    if let Some(env) = exec.env.as_ref() {
+        lines.push(format_config_item("Environment", env));
+    }
+
+    if let Some(vars_file) = exec.vars_file.as_ref() {
+        lines.push(format_config_item("Vars File", vars_file));
+    }
+
+    if !exec.var.is_empty() {
+        let listed = exec
+            .var
+            .iter()
+            .map(|kv| kv.key.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format_config_item("Inline Vars", listed));
+    }
+
+    if let Some(file_root) = exec.file_root.as_ref() {
+        lines.push(format_config_item("File Root", file_root));
+    }
+
+    lines
+}
+
+fn run_header_lines(run: &RunCliArgs) -> Vec<String> {
+    let mut lines = exec_header_lines(&run.exec);
+
+    if let Some(json_output) = run.json.as_ref() {
+        lines.push(format_config_item("JSON Output", json_output));
+    }
+
+    if run.test {
+        lines.push(format_config_item("Test Mode", "enabled"));
+    }
+
+    lines
+}
+
+fn dry_run_header_lines(dry_run: &DryRunCliArgs) -> Vec<String> {
+    let mut lines = exec_header_lines(&dry_run.exec);
+    lines.push(format_config_item(
+        "Show Boundaries",
+        dry_run.show_boundaries,
+    ));
+    lines
 }
 
 /// Maps the parsed derive-based arguments onto the tool's runtime model.
@@ -141,51 +285,6 @@ fn to_execution_args(exec: ExecutionCliArgs) -> ExecutionArgs {
         file_root: exec.file_root,
         verbosity: exec.verbose,
     }
-}
-
-pub fn print_runtime_info(context: &ResolvedRunContext, args: &RunArgs) {
-    println!(
-        "{} v{}",
-        env!("CARGO_PKG_NAME").to_uppercase(),
-        env!("CARGO_PKG_VERSION")
-    );
-    println!("{DASH_LINE}");
-    println!("- API: {}", context.resolution.api);
-    println!("- Request: {}", context.display_path);
-
-    if let Some(env_name) = args.exec.env.as_ref() {
-        println!("- Environment: {env_name}");
-    }
-
-    if let Some(vars_file) = args.exec.vars_file.as_ref() {
-        println!("- Vars File: {}", vars_file);
-    }
-
-    if !args.exec.inline_vars.is_empty() {
-        let listed = args
-            .exec
-            .inline_vars
-            .iter()
-            .map(|kv| kv.key.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        println!("- Inline Vars: {listed}");
-    }
-
-    if let Some(file_root) = args.exec.file_root.as_ref() {
-        println!("- File Root: {}", file_root);
-    }
-
-    if let Some(json_output) = args.json_output.as_ref() {
-        println!("- JSON Output: {}", json_output);
-    }
-
-    if args.test_mode {
-        println!("- Test Mode: enabled");
-    }
-
-    println!("{DASH_LINE}");
-    println!();
 }
 
 fn parse_key_value(raw: &str) -> Result<KeyValue, String> {
@@ -259,5 +358,137 @@ mod tests {
     #[test]
     fn inline_var_rejects_missing_equals() {
         assert!(CliArgs::try_parse_from(["whurl", "run", "api", "file", "--var", "bad"]).is_err());
+    }
+
+    fn parse_run(argv: &[&str]) -> RunCliArgs {
+        let args = CliArgs::try_parse_from(argv).unwrap();
+        match args.command {
+            CliCommand::Run(run) => run,
+            other => panic!("expected run command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_parses_common_flags_alongside_owned_verbose_count() {
+        let run = parse_run(&[
+            "whurl",
+            "run",
+            "api",
+            "file",
+            "-vv",
+            "--log-level",
+            "debug",
+            "--app-header",
+        ]);
+
+        assert_eq!(run.exec.verbose, 2);
+        assert_eq!(run.exec.common.log_level, Some(ToolLogLevel::Debug));
+        assert!(run.exec.common.app_header);
+    }
+
+    #[test]
+    fn resolve_log_level_derives_error_only_in_run_silent_modes() {
+        let level = |argv: &[&str]| {
+            let args = CliArgs::try_parse_from(argv).unwrap();
+            resolve_log_level(&args.command)
+        };
+
+        assert_eq!(level(&["whurl", "run", "a", "f"]), ToolLogLevel::Info);
+        assert_eq!(
+            level(&["whurl", "run", "a", "f", "--silent"]),
+            ToolLogLevel::Error
+        );
+        assert_eq!(
+            level(&["whurl", "run", "a", "f", "--print-only-full-response"]),
+            ToolLogLevel::Error
+        );
+        assert_eq!(
+            level(&["whurl", "run", "a", "f", "--print-only-response-body"]),
+            ToolLogLevel::Error
+        );
+        assert_eq!(level(&["whurl", "dry-run", "a", "f"]), ToolLogLevel::Info);
+        assert_eq!(level(&["whurl", "list"]), ToolLogLevel::Info);
+    }
+
+    #[test]
+    fn explicit_log_level_overrides_the_derived_error() {
+        let run = parse_run(&["whurl", "run", "a", "f", "--silent", "--log-level", "info"]);
+
+        let derived = ToolLogLevel::Error;
+        assert_eq!(run.exec.common.resolved_level(derived), ToolLogLevel::Info);
+    }
+
+    #[test]
+    fn header_suppressed_in_silent_modes_even_with_app_header() {
+        for silent_flag in [
+            "--silent",
+            "--print-only-full-response",
+            "--print-only-response-body",
+        ] {
+            let run = parse_run(&["whurl", "run", "a", "f", "--app-header", silent_flag]);
+            assert!(
+                !run_header_visible(&run),
+                "header must stay hidden under {silent_flag}"
+            );
+        }
+
+        let plain = parse_run(&["whurl", "run", "a", "f", "--app-header"]);
+        assert!(run_header_visible(&plain));
+
+        let opted_out = parse_run(&["whurl", "run", "a", "f"]);
+        assert!(!run_header_visible(&opted_out));
+    }
+
+    #[test]
+    fn run_header_lines_include_only_set_items() {
+        let minimal = run_header_lines(&parse_run(&["whurl", "run", "api", "file"]));
+        assert_eq!(
+            minimal,
+            vec![
+                format_config_item("API", "api"),
+                format_config_item("Request", "file"),
+            ]
+        );
+
+        let full = run_header_lines(&parse_run(&[
+            "whurl",
+            "run",
+            "api",
+            "file",
+            "--env",
+            "staging",
+            "--vars-file",
+            "extra.vars",
+            "--var",
+            "token=abc",
+            "--file-root",
+            "root",
+            "--json",
+            "out.json",
+            "--test",
+        ]));
+
+        assert!(full.contains(&format_config_item("Environment", "staging")));
+        assert!(full.contains(&format_config_item("Vars File", "extra.vars")));
+        assert!(full.contains(&format_config_item("Inline Vars", "token")));
+        assert!(full.contains(&format_config_item("File Root", "root")));
+        assert!(full.contains(&format_config_item("JSON Output", "out.json")));
+        assert!(full.contains(&format_config_item("Test Mode", "enabled")));
+        assert!(
+            full.iter().all(|line| !line.contains("abc")),
+            "inline variable values must never reach the header"
+        );
+    }
+
+    #[test]
+    fn dry_run_header_lines_always_include_show_boundaries() {
+        let args = CliArgs::try_parse_from(["whurl", "dry-run", "api", "file"]).unwrap();
+        let dry_run = match args.command {
+            CliCommand::DryRun(dry_run) => dry_run,
+            other => panic!("expected dry-run command, got {other:?}"),
+        };
+
+        let lines = dry_run_header_lines(&dry_run);
+        assert!(lines.contains(&format_config_item("Show Boundaries", true)));
     }
 }

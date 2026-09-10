@@ -2,7 +2,9 @@ use std::{env, fs, io, path::PathBuf};
 
 use crate::files::{FileResolver, ResolveError, ResolvedRunContext};
 use crate::models::ToolResult;
-use crate::vars::{parse_dynamic_variables_file, parse_variables_file, VariableMap};
+use crate::vars::{
+    parse_dynamic_variables_file, parse_variables_file, DynamicEvalContext, VariableMap,
+};
 use camino::{Utf8Path, Utf8PathBuf};
 use thiserror::Error;
 
@@ -168,12 +170,11 @@ pub fn load_dynamic_vars_file(
     api: &str,
     vars_name: &str,
     required: bool,
-    allow_shell: bool,
-    log_assignments: bool,
+    ctx: &mut DynamicEvalContext,
 ) -> ToolResult<Option<(Utf8PathBuf, VariableMap)>> {
     match resolver.resolve_dynamic_vars_file(api, vars_name) {
         Ok(path) => {
-            let vars = parse_dynamic_variables_file(path.as_path(), allow_shell, log_assignments)?;
+            let vars = parse_dynamic_variables_file(path.as_path(), ctx)?;
             Ok(Some((path, vars)))
         }
         Err(ResolveError::FileNotFound { .. }) if !required => Ok(None),

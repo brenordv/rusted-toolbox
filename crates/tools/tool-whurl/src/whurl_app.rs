@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::cli_utils::print_runtime_info;
 use crate::engine::run_hurl;
 use crate::files::discover::{
     load_dynamic_vars_file, load_env_file, resolve_file_root, resolve_vars_file_path,
@@ -10,33 +9,25 @@ use crate::files::{
 };
 use crate::includer;
 use crate::includer::Includer;
+use crate::includer::{FeedValue, IncludeFeed};
 use crate::models::{
-    Cli, Command, DryRunArgs, ListArgs, RunArgs, ToolError, ToolResult, VariableAccumulator,
+    Cli, Command, DryRunArgs, KeyValue, ListArgs, RunArgs, ToolError, ToolResult,
+    VariableAccumulator,
 };
 use crate::output::{print_test_summary, write_json_report};
-use crate::vars::{gather_process_env_variables, parse_variables_file, VariableMap};
-use crate::whurl_utils::display_relative_path;
+use crate::vars::{
+    gather_process_env_variables, parse_variables_file, DynamicEvalContext, VariableMap,
+};
+use crate::whurl_utils::{display_relative_path, format_elapsed_line, ElapsedTracker};
 use anyhow::anyhow;
-use camino::Utf8PathBuf;
-use common_cli::tool_log_level::ToolLogLevel;
-use tracing::info;
+use camino::{Utf8Path, Utf8PathBuf};
+use tracing::{info, warn};
 
 pub fn execute(cli: Cli) -> ToolResult<()> {
     match cli.command {
         Command::List(args) => handle_list(args),
         Command::DryRun(args) => handle_dry_run(args),
         Command::Run(args) => handle_run(args),
-    }
-}
-
-pub fn resolve_log_level(cli: &Cli) -> ToolLogLevel {
-    match &cli.command {
-        Command::Run(args)
-            if args.print_only_full_response || args.print_only_response_body || args.silent =>
-        {
-            ToolLogLevel::Error
-        }
-        _ => ToolLogLevel::Info,
     }
 }
 
@@ -100,17 +91,21 @@ fn handle_run(args: RunArgs) -> ToolResult<()> {
     let requests_root = locate_requests_root()?;
     let resolver = FileResolver::new(requests_root.clone());
 
-    let silent_mode = args.silent || args.print_only_full_response || args.print_only_response_body;
+    let silent_mode = args.silent_mode();
 
     let context = resolver.resolve_run_context(&args.exec.api, &args.exec.file)?;
     let include_result =
         Includer::new(resolver.clone()).merge(context.resolution.file_path.as_path())?;
 
-    if !silent_mode {
-        print_runtime_info(&context, &args);
-    }
-
-    let variables = build_variables(&resolver, &context, &include_result, &args, silent_mode)?;
+    let api_env_overrides = reduce_env_overrides(&resolver, &include_result);
+    let variables = build_variables(
+        &resolver,
+        &context,
+        &include_result,
+        &api_env_overrides,
+        &args,
+        silent_mode,
+    )?;
     let file_root = resolve_file_root(&context, args.exec.file_root.as_ref());
 
     let result = run_hurl(
@@ -140,7 +135,13 @@ fn handle_run(args: RunArgs) -> ToolResult<()> {
         print_only_response_body(&result);
     } else {
         if !silent_mode {
-            log_execution_details(&result, &include_result);
+            log_execution_details(
+                &result,
+                &include_result,
+                resolver.requests_root(),
+                &api_env_overrides,
+                args.exec.env.as_deref(),
+            );
         }
 
         if args.test_mode {
@@ -162,10 +163,41 @@ fn handle_run(args: RunArgs) -> ToolResult<()> {
     Ok(())
 }
 
-fn log_execution_details(result: &hurl::runner::HurlResult, includes: &includer::IncludeResult) {
+fn log_execution_details(
+    result: &hurl::runner::HurlResult,
+    includes: &includer::IncludeResult,
+    requests_root: &Utf8Path,
+    env_overrides: &BTreeMap<String, includer::EnvOverride>,
+    default_env: Option<&str>,
+) {
+    let mut elapsed_tracker = ElapsedTracker::default();
+
     for entry in &result.entries {
-        let entry_behavior = includes
-            .map_source(&entry.source_info)
+        let mapping = includes.map_source(&entry.source_info);
+
+        // The entry's effective environment: its source API's override when
+        // one exists, the run's --env otherwise.
+        let entry_env = mapping
+            .and_then(|mapping| api_of(requests_root, mapping.source.as_path()))
+            .and_then(|api| env_overrides.get(&api))
+            .map(|env_override| env_override.name.clone())
+            .or_else(|| default_env.map(str::to_string));
+
+        // The history key is the entry's first call (the request as written);
+        // redirects keep the entry under the same key.
+        let history_key = entry.calls.first().map(|call| {
+            format!(
+                "{} {}|{}",
+                call.request.method,
+                call.request.url,
+                entry_env.as_deref().unwrap_or("-")
+            )
+        });
+        // Observed before any display suppression, so the running total covers
+        // every entry, silent includes included.
+        let elapsed = elapsed_tracker.observe(history_key, entry.transfer_duration);
+
+        let entry_behavior = mapping
             .map(|mapping| includes.behavior_for(mapping.source.as_path()))
             .unwrap_or_default();
 
@@ -198,6 +230,8 @@ fn log_execution_details(result: &hurl::runner::HurlResult, includes: &includer:
                 }
             }
         }
+
+        info!("{}", format_elapsed_line(&elapsed));
     }
 }
 
@@ -315,10 +349,52 @@ fn format_response_body(call: &hurl::http::Call) -> Option<String> {
     }
 }
 
+/// The API an absolute path under the requests root belongs to (its first
+/// path component), when it has one.
+fn api_of(requests_root: &Utf8Path, path: &Utf8Path) -> Option<String> {
+    let relative = path.strip_prefix(requests_root).ok()?;
+    let first = relative.components().next()?;
+    Some(first.as_str().to_string())
+}
+
+/// Reduces the per-include-path environment overrides to one effective
+/// override per API: env layers load per API, so the first override
+/// registered for an API wins and later differing ones warn.
+fn reduce_env_overrides(
+    resolver: &FileResolver,
+    include_result: &includer::IncludeResult,
+) -> BTreeMap<String, includer::EnvOverride> {
+    let mut by_api: BTreeMap<String, includer::EnvOverride> = BTreeMap::new();
+
+    for (path, env_override) in &include_result.env_overrides {
+        let Some(api) = api_of(resolver.requests_root(), path.as_path()) else {
+            continue;
+        };
+
+        match by_api.get(&api) {
+            Some(existing) if existing.name != env_override.name => {
+                warn!(
+                    api = %api,
+                    kept = %existing.name,
+                    ignored = %env_override.name,
+                    "conflicting include environment overrides for one API; the first wins"
+                );
+            }
+            Some(_) => {}
+            None => {
+                by_api.insert(api, env_override.clone());
+            }
+        }
+    }
+
+    by_api
+}
+
 fn build_variables(
     resolver: &FileResolver,
     context: &ResolvedRunContext,
     include_result: &includer::IncludeResult,
+    env_overrides: &BTreeMap<String, includer::EnvOverride>,
     args: &RunArgs,
     silent_mode: bool,
 ) -> ToolResult<VariableMap> {
@@ -333,22 +409,20 @@ fn build_variables(
                 .map(|value| value.eq_ignore_ascii_case("true"))
                 .unwrap_or(false)
         });
-    let log_dynamic = !silent_mode;
+    // One context for the whole pass, so a $shell expression duplicated across
+    // layers or APIs executes once per run.
+    let mut dyn_ctx = DynamicEvalContext::new(allow_shell, !silent_mode);
 
     let primary_api = context.resolution.api.clone();
     let mut additional_apis = BTreeSet::new();
     let requests_root = resolver.requests_root();
 
     for path in include_result.behaviors.keys() {
-        if let Ok(relative) = path.strip_prefix(requests_root) {
-            let mut components = relative.components();
-            let Some(first) = components.next() else {
-                continue;
-            };
-            let api_name = first.as_str();
-            if api_name != primary_api {
-                additional_apis.insert(api_name.to_string());
-            }
+        let Some(api_name) = api_of(requests_root, path.as_path()) else {
+            continue;
+        };
+        if api_name != primary_api {
+            additional_apis.insert(api_name);
         }
     }
 
@@ -363,12 +437,7 @@ fn build_variables(
             continue;
         }
 
-        if let Ok(relative) = path.strip_prefix(requests_root) {
-            let mut components = relative.components();
-            let Some(first) = components.next() else {
-                continue;
-            };
-            let api_name = first.as_str().to_string();
+        if let Some(api_name) = api_of(requests_root, path.as_path()) {
             let entry = included_vars_by_api.entry(api_name).or_default();
             for directive in directives {
                 push_unique_case_insensitive(entry, &directive.name);
@@ -399,21 +468,18 @@ fn build_variables(
             api,
             "_global",
             false,
-            allow_shell,
-            log_dynamic,
+            &mut dyn_ctx,
         )?;
 
-        if let Some(env_name) = args.exec.env.as_ref() {
-            merge_env_layers(
-                &mut merger,
-                resolver,
-                &mut loaded_dynamic,
-                api,
-                env_name,
-                allow_shell,
-                log_dynamic,
-            )?;
-        }
+        merge_effective_env_layers(
+            &mut merger,
+            resolver,
+            &mut loaded_dynamic,
+            api,
+            env_overrides,
+            args.exec.env.as_deref(),
+            &mut dyn_ctx,
+        )?;
     }
 
     // Imported dynamic vars from included files (any API).
@@ -428,8 +494,7 @@ fn build_variables(
                 &mut loaded_dynamic,
                 &api,
                 &name,
-                allow_shell,
-                log_dynamic,
+                &mut dyn_ctx,
             )?;
         }
     }
@@ -450,21 +515,18 @@ fn build_variables(
         &primary_api,
         "_global",
         false,
-        allow_shell,
-        log_dynamic,
+        &mut dyn_ctx,
     )?;
 
-    if let Some(env_name) = args.exec.env.as_ref() {
-        merge_env_layers(
-            &mut merger,
-            resolver,
-            &mut loaded_dynamic,
-            &primary_api,
-            env_name,
-            allow_shell,
-            log_dynamic,
-        )?;
-    }
+    merge_effective_env_layers(
+        &mut merger,
+        resolver,
+        &mut loaded_dynamic,
+        &primary_api,
+        env_overrides,
+        args.exec.env.as_deref(),
+        &mut dyn_ctx,
+    )?;
 
     for name in current_file_vars {
         merge_directive_vars(
@@ -474,14 +536,65 @@ fn build_variables(
             &mut loaded_dynamic,
             &primary_api,
             &name,
-            allow_shell,
-            log_dynamic,
+            &mut dyn_ctx,
         )?;
+    }
+
+    // Include feeds apply after every file-based layer and before the CLI
+    // layers, so a feed beats the files and loses only to --vars-file/--var.
+    // References resolve to the variable's final value for CLI-supplied names
+    // (those layers apply later but their values are known up front); the
+    // vars file is parsed early only when a reference exists, so feed-free
+    // runs keep their error ordering.
+    let hoisted_vars_file = if feeds_have_references(&include_result.feeds) {
+        match args.exec.vars_file.as_ref() {
+            Some(vars_file) => {
+                let resolved = resolve_vars_file_path(&context.resolution.api_root, vars_file);
+                Some(parse_variables_file(resolved.as_path())?)
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
+
+    for feed in &include_result.feeds {
+        let origin = format!(
+            "include feed for `{}` at `{}:{}`",
+            display_relative_path(resolver, feed.include_path.as_path()),
+            display_relative_path(resolver, feed.from_file.as_path()),
+            feed.line
+        );
+
+        for assignment in &feed.assignments {
+            let value = match &assignment.value {
+                FeedValue::Literal(value) => value.clone(),
+                FeedValue::Reference(name) => resolve_feed_reference(
+                    name,
+                    &args.exec.inline_vars,
+                    hoisted_vars_file.as_ref(),
+                    &merger,
+                )
+                .ok_or_else(|| {
+                    ToolError::Other(anyhow!(
+                        "include feed at `{}:{}` references unknown variable `{}`",
+                        display_relative_path(resolver, feed.from_file.as_path()),
+                        feed.line,
+                        name
+                    ))
+                })?,
+            };
+
+            merger.insert(assignment.key.clone(), value, origin.clone());
+        }
     }
 
     if let Some(vars_file) = args.exec.vars_file.as_ref() {
         let resolved = resolve_vars_file_path(&context.resolution.api_root, vars_file);
-        let parsed = parse_variables_file(resolved.as_path())?;
+        let parsed = match hoisted_vars_file {
+            Some(parsed) => parsed,
+            None => parse_variables_file(resolved.as_path())?,
+        };
         let origin = format!(
             "vars file `{}`",
             display_relative_path(resolver, resolved.as_path())
@@ -490,17 +603,47 @@ fn build_variables(
     }
 
     for kv in &args.exec.inline_vars {
+        // The origin names the key only; origins reach collision warnings and
+        // the tracing stream can end up in a log file.
         merger.insert(
             kv.key.clone(),
             kv.value.clone(),
-            format!("inline argument `{}`", kv),
+            format!("inline argument `--var {}`", kv.key),
         );
     }
 
     Ok(merger.finish())
 }
 
-#[allow(clippy::too_many_arguments)]
+fn feeds_have_references(feeds: &[IncludeFeed]) -> bool {
+    feeds.iter().any(|feed| {
+        feed.assignments
+            .iter()
+            .any(|assignment| matches!(assignment.value, FeedValue::Reference(_)))
+    })
+}
+
+/// Resolves a feed `{{name}}` against the variable's eventual final value:
+/// `--var` first (last occurrence wins, matching apply order), the
+/// `--vars-file` map next, then everything merged so far (file layers and
+/// earlier feeds).
+fn resolve_feed_reference(
+    name: &str,
+    inline_vars: &[KeyValue],
+    vars_file: Option<&VariableMap>,
+    merger: &VariableAccumulator,
+) -> Option<String> {
+    if let Some(kv) = inline_vars.iter().rev().find(|kv| kv.key == name) {
+        return Some(kv.value.clone());
+    }
+
+    if let Some(value) = vars_file.and_then(|map| map.get(name)) {
+        return Some(value.clone());
+    }
+
+    merger.get(name).map(str::to_string)
+}
+
 fn merge_dynamic_vars(
     merger: &mut VariableAccumulator,
     resolver: &FileResolver,
@@ -508,17 +651,14 @@ fn merge_dynamic_vars(
     api: &str,
     name: &str,
     required: bool,
-    allow_shell: bool,
-    log_dynamic: bool,
+    ctx: &mut DynamicEvalContext,
 ) -> ToolResult<bool> {
     let key = (api.to_ascii_lowercase(), name.to_ascii_lowercase());
     if loaded_dynamic.contains(&key) {
         return Ok(true);
     }
 
-    if let Some((path, vars)) =
-        load_dynamic_vars_file(resolver, api, name, required, allow_shell, log_dynamic)?
-    {
+    if let Some((path, vars)) = load_dynamic_vars_file(resolver, api, name, required, ctx)? {
         let origin = format!(
             "dynamic vars file `{}`",
             display_relative_path(resolver, path.as_path())
@@ -531,14 +671,59 @@ fn merge_dynamic_vars(
     Ok(false)
 }
 
+/// Applies the env layers for one API using its effective environment: the
+/// include override when one exists (it applies even when `--env` was not
+/// passed), the run's `--env` otherwise, nothing when neither is set.
+fn merge_effective_env_layers(
+    merger: &mut VariableAccumulator,
+    resolver: &FileResolver,
+    loaded_dynamic: &mut BTreeSet<(String, String)>,
+    api: &str,
+    env_overrides: &BTreeMap<String, includer::EnvOverride>,
+    default_env: Option<&str>,
+    ctx: &mut DynamicEvalContext,
+) -> ToolResult<()> {
+    let override_source = env_overrides.get(api);
+    let env_name = match override_source {
+        Some(env_override) => {
+            info!(
+                api = %api,
+                env = %env_override.name,
+                replaces = default_env.unwrap_or("<none>"),
+                directive = %format!(
+                    "{}:{}",
+                    display_relative_path(resolver, env_override.from_file.as_path()),
+                    env_override.line
+                ),
+                "include environment override applied"
+            );
+            env_override.name.as_str()
+        }
+        None => match default_env {
+            Some(env_name) => env_name,
+            None => return Ok(()),
+        },
+    };
+
+    merge_env_layers(
+        merger,
+        resolver,
+        loaded_dynamic,
+        api,
+        env_name,
+        override_source,
+        ctx,
+    )
+}
+
 fn merge_env_layers(
     merger: &mut VariableAccumulator,
     resolver: &FileResolver,
     loaded_dynamic: &mut BTreeSet<(String, String)>,
     api: &str,
     env_name: &str,
-    allow_shell: bool,
-    log_dynamic: bool,
+    override_source: Option<&includer::EnvOverride>,
+    ctx: &mut DynamicEvalContext,
 ) -> ToolResult<()> {
     let mut env_present = false;
     if let Some((path, vars)) = load_env_file(resolver, api, env_name, false)? {
@@ -550,33 +735,34 @@ fn merge_env_layers(
         env_present = true;
     }
 
-    let dyn_present = merge_dynamic_vars(
-        merger,
-        resolver,
-        loaded_dynamic,
-        api,
-        env_name,
-        false,
-        allow_shell,
-        log_dynamic,
-    )?;
+    let dyn_present =
+        merge_dynamic_vars(merger, resolver, loaded_dynamic, api, env_name, false, ctx)?;
 
     if dyn_present {
         env_present = true;
     }
 
     if !env_present {
+        let citation = override_source
+            .map(|env_override| {
+                format!(
+                    " (set via `# @include:[env=...]` at {}:{})",
+                    display_relative_path(resolver, env_override.from_file.as_path()),
+                    env_override.line
+                )
+            })
+            .unwrap_or_default();
         return Err(ToolError::Other(anyhow!(
-            "environment `{}` not found for api `{}`",
+            "environment `{}` not found for api `{}`{}",
             env_name,
-            api
+            api,
+            citation
         )));
     }
 
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn merge_directive_vars(
     merger: &mut VariableAccumulator,
     resolver: &FileResolver,
@@ -584,20 +770,11 @@ fn merge_directive_vars(
     loaded_dynamic: &mut BTreeSet<(String, String)>,
     api: &str,
     name: &str,
-    allow_shell: bool,
-    log_dynamic: bool,
+    ctx: &mut DynamicEvalContext,
 ) -> ToolResult<()> {
     let static_present = merge_static_vars(merger, resolver, loaded_static, api, name)?;
-    let dynamic_present = merge_dynamic_vars(
-        merger,
-        resolver,
-        loaded_dynamic,
-        api,
-        name,
-        false,
-        allow_shell,
-        log_dynamic,
-    )?;
+    let dynamic_present =
+        merge_dynamic_vars(merger, resolver, loaded_dynamic, api, name, false, ctx)?;
 
     if !static_present && !dynamic_present {
         return Err(ToolError::Other(anyhow!(
@@ -652,6 +829,7 @@ fn push_unique_case_insensitive(vec: &mut Vec<String>, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{ExecutionArgs, KeyValue};
     use camino::Utf8PathBuf;
     use std::fs;
     use tempfile::tempdir;
@@ -663,6 +841,52 @@ mod tests {
         let root_utf8 = Utf8PathBuf::from_path_buf(root_path).expect("utf8 path");
         let resolver = FileResolver::new(root_utf8);
         (temp, resolver)
+    }
+
+    fn run_args(api: &str, file: &str, env: Option<&str>) -> RunArgs {
+        RunArgs {
+            exec: ExecutionArgs {
+                api: api.to_string(),
+                file: file.to_string(),
+                env: env.map(str::to_string),
+                vars_file: None,
+                inline_vars: Vec::new(),
+                file_root: None,
+                verbosity: 0,
+            },
+            json_output: None,
+            test_mode: false,
+            print_only_full_response: false,
+            print_only_response_body: false,
+            silent: true,
+        }
+    }
+
+    fn build_vars_with(resolver: &FileResolver, args: RunArgs) -> ToolResult<VariableMap> {
+        let context = resolver
+            .resolve_run_context(&args.exec.api, &args.exec.file)
+            .expect("run context");
+        let include_result = Includer::new(resolver.clone())
+            .merge(context.resolution.file_path.as_path())
+            .expect("merge");
+        let env_overrides = reduce_env_overrides(resolver, &include_result);
+        build_variables(
+            resolver,
+            &context,
+            &include_result,
+            &env_overrides,
+            &args,
+            true,
+        )
+    }
+
+    fn build_vars_for(
+        resolver: &FileResolver,
+        api: &str,
+        file: &str,
+        env: Option<&str>,
+    ) -> ToolResult<VariableMap> {
+        build_vars_with(resolver, run_args(api, file, env))
     }
 
     #[test]
@@ -679,6 +903,7 @@ mod tests {
         let mut merger = VariableAccumulator::new(false);
         let mut loaded_static = BTreeSet::new();
         let mut loaded_dynamic = BTreeSet::new();
+        let mut ctx = DynamicEvalContext::default();
 
         merge_directive_vars(
             &mut merger,
@@ -687,8 +912,7 @@ mod tests {
             &mut loaded_dynamic,
             "api",
             "session",
-            false,
-            false,
+            &mut ctx,
         )
         .expect("merge directive vars");
 
@@ -702,6 +926,7 @@ mod tests {
         let mut merger = VariableAccumulator::new(false);
         let mut loaded_static = BTreeSet::new();
         let mut loaded_dynamic = BTreeSet::new();
+        let mut ctx = DynamicEvalContext::default();
 
         let err = merge_directive_vars(
             &mut merger,
@@ -710,8 +935,7 @@ mod tests {
             &mut loaded_dynamic,
             "api",
             "missing",
-            false,
-            false,
+            &mut ctx,
         )
         .expect_err("missing vars should fail");
 
@@ -719,5 +943,306 @@ mod tests {
         assert!(err
             .to_string()
             .contains("vars directive `missing` not found for api `api`"));
+    }
+
+    #[test]
+    fn include_feed_beats_file_layers_and_loses_to_cli() {
+        let (temp, resolver) = create_resolver();
+        fs::create_dir_all(temp.path().join("requests/other/_vars")).expect("other dirs");
+        fs::write(
+            temp.path().join("requests/other/_vars/_global.hurlvars"),
+            "fed=global\ncli=global\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/other/req.hurl"),
+            "GET https://example.com/other\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/request.hurl"),
+            "# @include other/req -> { fed=feed, cli=feed }\nGET https://example.com\n",
+        )
+        .unwrap();
+
+        let mut args = run_args("api", "request", None);
+        args.exec.inline_vars = vec![KeyValue {
+            key: "cli".to_string(),
+            value: "cli".to_string(),
+        }];
+
+        let vars = build_vars_with(&resolver, args).expect("build variables");
+        assert_eq!(vars.get("fed").map(String::as_str), Some("feed"));
+        assert_eq!(vars.get("cli").map(String::as_str), Some("cli"));
+    }
+
+    #[test]
+    fn later_feed_wins_when_two_feeds_set_the_same_key() {
+        let (temp, resolver) = create_resolver();
+        fs::create_dir_all(temp.path().join("requests/other")).expect("other dir");
+        fs::write(
+            temp.path().join("requests/other/req.hurl"),
+            "GET https://example.com/other\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/other/req2.hurl"),
+            "GET https://example.com/other2\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/request.hurl"),
+            "# @include other/req -> { shared=first }\n# @include other/req2 -> { shared=second }\nGET https://example.com\n",
+        )
+        .unwrap();
+
+        let vars = build_vars_for(&resolver, "api", "request", None).expect("build variables");
+        assert_eq!(vars.get("shared").map(String::as_str), Some("second"));
+    }
+
+    #[test]
+    fn feed_references_resolve_from_var_vars_file_and_file_layers() {
+        let (temp, resolver) = create_resolver();
+        fs::create_dir_all(temp.path().join("requests/other")).expect("other dir");
+        fs::write(
+            temp.path().join("requests/api/_vars/_global.hurlvars"),
+            "from_global=v3\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/extra.vars"),
+            "from_file=v2\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/other/req.hurl"),
+            "GET https://example.com/other\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/request.hurl"),
+            "# @include other/req -> { a={{from_var}}, b={{from_file}}, c={{from_global}} }\nGET https://example.com\n",
+        )
+        .unwrap();
+
+        let mut args = run_args("api", "request", None);
+        args.exec.vars_file = Some(Utf8PathBuf::from("extra.vars"));
+        args.exec.inline_vars = vec![KeyValue {
+            key: "from_var".to_string(),
+            value: "v1".to_string(),
+        }];
+
+        let vars = build_vars_with(&resolver, args).expect("build variables");
+        assert_eq!(vars.get("a").map(String::as_str), Some("v1"));
+        assert_eq!(vars.get("b").map(String::as_str), Some("v2"));
+        assert_eq!(vars.get("c").map(String::as_str), Some("v3"));
+    }
+
+    #[test]
+    fn unknown_feed_reference_errors_with_the_directive_location() {
+        let (temp, resolver) = create_resolver();
+        fs::create_dir_all(temp.path().join("requests/other")).expect("other dir");
+        fs::write(
+            temp.path().join("requests/other/req.hurl"),
+            "GET https://example.com/other\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/request.hurl"),
+            "# @include other/req -> { x={{ghost}} }\nGET https://example.com\n",
+        )
+        .unwrap();
+
+        let err = build_vars_for(&resolver, "api", "request", None)
+            .expect_err("unknown reference must fail");
+        let message = err.to_string();
+        assert!(
+            message.contains(
+                "include feed at `api/request.hurl:1` references unknown variable `ghost`"
+            ),
+            "unexpected message: {message}"
+        );
+    }
+
+    #[test]
+    fn include_env_override_loads_env_layers_without_cli_env() {
+        let (temp, resolver) = create_resolver();
+        fs::create_dir_all(temp.path().join("requests/other/_vars")).expect("other dirs");
+        fs::write(
+            temp.path().join("requests/other/_vars/dev.hurlvars"),
+            "from_dev=yes\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/other/req.hurl"),
+            "GET https://example.com/other\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/request.hurl"),
+            "# @include:[env=dev] other/req\nGET https://example.com\n",
+        )
+        .unwrap();
+
+        let vars = build_vars_for(&resolver, "api", "request", None).expect("build variables");
+        assert_eq!(vars.get("from_dev").map(String::as_str), Some("yes"));
+    }
+
+    #[test]
+    fn include_env_override_beats_the_cli_env_for_that_api_only() {
+        let (temp, resolver) = create_resolver();
+        fs::create_dir_all(temp.path().join("requests/other/_vars")).expect("other dirs");
+        fs::write(
+            temp.path().join("requests/other/_vars/dev.hurlvars"),
+            "other_env=dev\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/other/_vars/local.hurlvars"),
+            "other_env=local\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/_vars/local.hurlvars"),
+            "primary_env=local\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/other/req.hurl"),
+            "GET https://example.com/other\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/request.hurl"),
+            "# @include:[env=dev] other/req\nGET https://example.com\n",
+        )
+        .unwrap();
+
+        let vars =
+            build_vars_for(&resolver, "api", "request", Some("local")).expect("build variables");
+        assert_eq!(vars.get("other_env").map(String::as_str), Some("dev"));
+        assert_eq!(vars.get("primary_env").map(String::as_str), Some("local"));
+    }
+
+    #[test]
+    fn missing_override_env_error_cites_the_directive() {
+        let (temp, resolver) = create_resolver();
+        fs::create_dir_all(temp.path().join("requests/other")).expect("other dir");
+        fs::write(
+            temp.path().join("requests/other/req.hurl"),
+            "GET https://example.com/other\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/request.hurl"),
+            "# @include:[env=ghost] other/req\nGET https://example.com\n",
+        )
+        .unwrap();
+
+        let err = build_vars_for(&resolver, "api", "request", None)
+            .expect_err("missing override env must fail");
+        let message = err.to_string();
+        assert!(message.contains("environment `ghost` not found for api `other`"));
+        assert!(message.contains("set via `# @include:[env=...]` at api/request.hurl:1"));
+    }
+
+    #[test]
+    fn primary_api_include_override_redirects_the_primary_env_layer() {
+        let (temp, resolver) = create_resolver();
+        fs::write(
+            temp.path().join("requests/api/_vars/dev.hurlvars"),
+            "from_dev=yes\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/helper.hurl"),
+            "GET https://example.com/helper\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("requests/api/request.hurl"),
+            "# @include:[env=dev] helper\nGET https://example.com\n",
+        )
+        .unwrap();
+
+        let vars = build_vars_for(&resolver, "api", "request", None).expect("build variables");
+        assert_eq!(vars.get("from_dev").map(String::as_str), Some("yes"));
+    }
+
+    #[test]
+    fn build_variables_layers_inline_over_vars_file_over_file_vars_over_global() {
+        let (temp, resolver) = create_resolver();
+        let api_root =
+            Utf8PathBuf::from_path_buf(temp.path().join("requests/api")).expect("utf8 api root");
+        let vars_dir = api_root.join("_vars");
+
+        fs::write(
+            vars_dir.join("_global.hurlvars").as_std_path(),
+            "layer_global=global\nlayer_file=global\nlayer_varsfile=global\nlayer_inline=global\n",
+        )
+        .unwrap();
+        fs::write(
+            vars_dir.join("session.hurlvars").as_std_path(),
+            "layer_file=session\nlayer_varsfile=session\nlayer_inline=session\n",
+        )
+        .unwrap();
+        fs::write(
+            api_root.join("extra.vars").as_std_path(),
+            "layer_varsfile=varsfile\nlayer_inline=varsfile\n",
+        )
+        .unwrap();
+        fs::write(
+            api_root.join("request.hurl").as_std_path(),
+            "# @vars session\nGET https://example.com\n",
+        )
+        .unwrap();
+
+        let context = resolver
+            .resolve_run_context("api", "request")
+            .expect("run context");
+        let include_result = Includer::new(resolver.clone())
+            .merge(context.resolution.file_path.as_path())
+            .expect("merge");
+
+        let args = RunArgs {
+            exec: ExecutionArgs {
+                api: "api".to_string(),
+                file: "request".to_string(),
+                env: None,
+                vars_file: Some(Utf8PathBuf::from("extra.vars")),
+                inline_vars: vec![KeyValue {
+                    key: "layer_inline".to_string(),
+                    value: "inline".to_string(),
+                }],
+                file_root: None,
+                verbosity: 0,
+            },
+            json_output: None,
+            test_mode: false,
+            print_only_full_response: false,
+            print_only_response_body: false,
+            silent: true,
+        };
+
+        let env_overrides = reduce_env_overrides(&resolver, &include_result);
+        let vars = build_variables(
+            &resolver,
+            &context,
+            &include_result,
+            &env_overrides,
+            &args,
+            true,
+        )
+        .expect("build variables");
+
+        // The HURL_* process-env layer is not asserted here; doing so would
+        // require mutating the process environment.
+        assert_eq!(vars.get("layer_global").map(String::as_str), Some("global"));
+        assert_eq!(vars.get("layer_file").map(String::as_str), Some("session"));
+        assert_eq!(
+            vars.get("layer_varsfile").map(String::as_str),
+            Some("varsfile")
+        );
+        assert_eq!(vars.get("layer_inline").map(String::as_str), Some("inline"));
     }
 }

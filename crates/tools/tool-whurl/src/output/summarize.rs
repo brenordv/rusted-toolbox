@@ -6,6 +6,7 @@ use hurl::runner::HurlResult;
 use hurl_core::error::DisplaySourceError;
 
 use crate::includer::IncludeResult;
+use crate::whurl_utils::format_duration;
 
 use super::OutputError;
 
@@ -41,9 +42,10 @@ pub fn print_test_summary<W: Write>(
         if entry.errors.is_empty() {
             writeln!(
                 writer,
-                "  ✓ Entry #{:>3} ({} requests)",
+                "  ✓ Entry #{:>3} ({} requests) [{}]",
                 entry.entry_index,
-                entry.calls.len()
+                entry.calls.len(),
+                format_duration(entry.transfer_duration)
             )
             .map_err(|source| OutputError::StreamWrite {
                 target: "-".to_string(),
@@ -54,10 +56,11 @@ pub fn print_test_summary<W: Write>(
 
         writeln!(
             writer,
-            "  ✗ Entry #{:>3} ({} error{})",
+            "  ✗ Entry #{:>3} ({} error{}) [{}]",
             entry.entry_index,
             entry.errors.len(),
-            if entry.errors.len() == 1 { "" } else { "s" }
+            if entry.errors.len() == 1 { "" } else { "s" },
+            format_duration(entry.transfer_duration)
         )
         .map_err(|source| OutputError::StreamWrite {
             target: "-".to_string(),
