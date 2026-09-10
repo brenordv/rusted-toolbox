@@ -12,7 +12,7 @@
 # 2. Clone/update the repository in $CLONE_BASE
 # 3. Build the project for macOS
 # 4. Install tools from target/release to $INSTALL_DIR and update PATH
-# 5. Exclude 'cat' and 'touch' tools to avoid conflicts with macOS built-ins
+# 5. Exclude the ported Unix tools (cat, head, tail, touch) to avoid shadowing macOS built-ins
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -146,7 +146,8 @@ install_tools() {
   
   print_status "Installing tools from $release_dir to $INSTALL_DIR"
   
-  # Install every built binary except 'cat' and 'touch' (provided by macOS built-ins).
+  # Install every built binary except the ported Unix tools (cat, head, tail, touch), which
+  # macOS already provides. The same ported list lives in build.sh and release.yml.
   # Binaries are the extension-less files at the top of target/release; .d files are build metadata.
   local installed=0
   for tool_path in "$release_dir"/*; do
@@ -154,7 +155,7 @@ install_tools() {
     local tool
     tool="$(basename "$tool_path")"
     case "$tool" in
-      *.d | cat | touch) continue ;;
+      *.d | cat | head | tail | touch) continue ;;
     esac
     [ -x "$tool_path" ] || continue
     cp "$tool_path" "$INSTALL_DIR/"

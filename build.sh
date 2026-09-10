@@ -21,9 +21,10 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Copy every built binary except touch and cat, which the system already provides.
+# Copy every built binary except touch, cat, head, and tail, which the system already provides.
 # Binaries are the extension-less files at the top of target/release; .d files are build metadata.
 find ./target/release -maxdepth 1 -type f ! -name "*.d" ! -name "touch" ! -name "cat" \
+   ! -name "head" ! -name "tail" \
    -exec cp {} dist/ \;
 
 echo "Build completed successfully for native system."

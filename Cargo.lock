@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "b64"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "cat"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -747,7 +747,7 @@ checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
 name = "cli-signal-monitor"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "common-cli",
@@ -806,17 +806,18 @@ dependencies = [
 
 [[package]]
 name = "common-cli"
-version = "1.2.0"
+version = "1.5.0"
 dependencies = [
  "anyhow",
  "clap",
  "common-utils",
+ "tempfile",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "common-cli-env"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "dotenvy",
@@ -825,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "common-file-utils"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "tempfile",
  "walkdir",
@@ -833,7 +834,7 @@ dependencies = [
 
 [[package]]
 name = "common-serialization-utils"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -844,7 +845,7 @@ dependencies = [
 
 [[package]]
 name = "common-utils"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -854,7 +855,7 @@ dependencies = [
 
 [[package]]
 name = "common-utils-ext"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1156,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "csvn"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1166,6 +1167,7 @@ dependencies = [
  "common-utils",
  "common-utils-ext",
  "csv",
+ "rstest",
  "tempfile",
  "tracing",
 ]
@@ -2022,7 +2024,7 @@ dependencies = [
 
 [[package]]
 name = "get-lines"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2106,7 +2108,7 @@ dependencies = [
 
 [[package]]
 name = "gitignore"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2140,7 +2142,7 @@ dependencies = [
 
 [[package]]
 name = "guid"
-version = "1.0.2"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2148,6 +2150,7 @@ dependencies = [
  "common-utils",
  "common-utils-ext",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -2208,6 +2211,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32069d97bb81e38fa67eab65e3393bf804bb85969f2bc06bf13f64aef5aba248"
 dependencies = [
  "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "head"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
+ "rstest",
+ "shared-head-tail",
+ "tempfile",
 ]
 
 [[package]]
@@ -2329,13 +2346,11 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "https"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "clap",
  "common-cli",
- "common-utils",
- "common-utils-ext",
  "mime_guess",
  "percent-encoding",
  "tempfile",
@@ -2666,7 +2681,7 @@ checksum = "89194689a993ab15268672e99e7b0e19da2da3268ac682e8f02d29d4d1434cd7"
 
 [[package]]
 name = "imgx"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2931,7 +2946,7 @@ dependencies = [
 
 [[package]]
 name = "jwt"
-version = "2.0.0"
+version = "2.0.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3120,7 +3135,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "logging-otel"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "common-cli",
  "raccoon-otel",
@@ -3128,13 +3143,12 @@ dependencies = [
 
 [[package]]
 name = "lookup"
-version = "3.0.0"
+version = "3.1.0"
 dependencies = [
  "anyhow",
  "clap",
  "common-cli",
  "common-file-utils",
- "common-utils",
  "globset",
  "regex",
  "tempfile",
@@ -3268,7 +3282,7 @@ dependencies = [
 
 [[package]]
 name = "mock"
-version = "1.1.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3279,12 +3293,13 @@ dependencies = [
 
 [[package]]
 name = "mock-data-utils"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "chrono",
  "fake",
  "rand 0.10.2",
+ "rstest",
 ]
 
 [[package]]
@@ -3299,12 +3314,11 @@ dependencies = [
 
 [[package]]
 name = "mqtt"
-version = "2.0.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "clap",
  "common-cli",
- "common-utils",
  "common-utils-ext",
  "rumqttc",
  "tokio",
@@ -3330,7 +3344,7 @@ dependencies = [
 
 [[package]]
 name = "netquality"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "cfspeedtest",
@@ -3345,6 +3359,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]
@@ -4004,7 +4019,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pingx"
-version = "2.0.0"
+version = "2.0.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4237,7 +4252,7 @@ dependencies = [
 
 [[package]]
 name = "qrcode"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4711,7 +4726,7 @@ checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
 name = "remove-zw"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5060,6 +5075,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
+name = "rxget"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
+ "globset",
+ "regex",
+ "rstest",
+ "tempfile",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5319,11 +5351,24 @@ dependencies = [
  "common-cli",
  "common-serialization-utils",
  "common-utils",
+ "raccoon-otel",
  "rstest",
  "serde",
  "tracing-log",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "shared-head-tail"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
+ "common-cli",
+ "common-utils",
+ "rstest",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -5495,7 +5540,7 @@ dependencies = [
 
 [[package]]
 name = "split"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5658,6 +5703,21 @@ checksum = "8e1d1b10ced5ca923a1fcb8d03e96b8d3268065d724548c0211415ff6ac6bac4"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "tail"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
+ "rstest",
+ "shared-head-tail",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -6008,7 +6068,7 @@ dependencies = [
 
 [[package]]
 name = "touch"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6160,7 +6220,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "ts"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6595,7 +6655,7 @@ dependencies = [
 
 [[package]]
 name = "whisper"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -6611,7 +6671,7 @@ dependencies = [
 
 [[package]]
 name = "whurl"
-version = "2.0.0"
+version = "3.1.0"
 dependencies = [
  "anyhow",
  "camino",

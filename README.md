@@ -3,7 +3,7 @@ This is a collection of free command-line tools I made in an attempt to learn Ru
 
 We currently have the following tools:
 1. A tool to read the [public info on JWT tokens](crates/tools/tool-jwt/readme.md);
-2. A high-performance tool to [read messages from EventHub](crates/tools/tool-eventhub-read/readme.md), 
+2. A high-performance tool to [read messages from EventHub](crates/tools/tool-eventhub-read/readme.md),
 3. and another is to [export the messages](crates/tools/tool-eventhub-export/readme.md);
 4. A [CSV data normalizer](crates/tools/tool-csvn/readme.md) tool;
 5. A tool that [splits large files](crates/tools/tool-split/readme.md) (including CSV) into smaller ones;
@@ -14,21 +14,20 @@ We currently have the following tools:
 10. A tool that [converts unix timestamp](crates/tools/tool-timestamp/readme.md) to readable format and vice versa;
 11. A lightweight [HTTP server](crates/tools/tool-http-server/readme.md) for serving static files during development;
 12. A [mock data generator](crates/tools/tool-mock/readme.md) for creating test data with various types of realistic information;
-13. An [AI-powered chatbot](crates/tools/ai-tool-chatbot/readme.md) agent for local or cloud LLMs;
-14. A CLI tool called [HOW](crates/tools/ai-tool-how/readme.md) that fixes broken commands and suggests commands from natural language;
-15. A bare-bones, fully private, encrypted P2P chat tool called [Whisper](crates/tools/tool-whisper/readme.md); 
-16. A tool called [Gitignore](crates/tools/tool-gitignore/readme.md) that generates/updates the `.gitignore` file of your project automatically; 
-17. An image editor called [IMGx](crates/tools/tool-image/readme.md) that allows do quickly do common operations like resizing, converting to another format, and to greyscale;
-18. An [MQTT cli tool](crates/tools/tool-mqtt/readme.md) that can be used to quickly send or receive messages from a specific topic.
-19. A tool called [aiignore](crates/tools/tool-aiignore/readme.md) that, similarly to gitignore, generates/updates known ai-ignore files for your project automatically;
-20. A tool to generate [QRCodes](crates/tools/tool-qrcode/readme.md) that, as the name suggests, can be used to generate QRCodes to file or just printing them to the terminal.
-21. A tool to [lookup](crates/tools/tool-lookup/readme.md) that can either find text in multiple files or find files where the filename contains a specific text/pattern/regex.
-22. A tool that is like ping, but with extra features. It is called [pingx](crates/tools/tool-pingx/readme.md).
-23. A wrapper tool called [Whurl](crates/tools/tool-whurl/readme.md), that allows referencing one hurl file in another.
-24. A drop-in replacement for base64 called [b64](crates/tools/tool-b64/readme.md) that comes with a few extra features.
-25. A network quality monitor called [netquality](crates/tools/tool-netquality/readme.md) that checks connectivity and speed, and reports when things are not as expected.
-26. A tool called [remove-zw](crates/tools/tool-remove-zw/readme.md) that removes zero-width Unicode format characters and a leading byte-order mark (BOM) from text, with a `--dry-run` preview.
-27. A distro command converter called [distro-cc](crates/tools/tool-distro-cc/readme.md) that translates package manager commands between distros.
+13. A bare-bones, fully private, encrypted P2P chat tool called [Whisper](crates/tools/tool-whisper/readme.md);
+14. A tool called [Gitignore](crates/tools/tool-gitignore/readme.md) that generates/updates the `.gitignore` file of your project automatically;
+15. An image editor called [IMGx](crates/tools/tool-image/readme.md) that allows you to quickly do common operations like resizing, converting to another format, and to greyscale;
+16. An [MQTT cli tool](crates/tools/tool-mqtt/readme.md) that can be used to quickly send or receive messages from a specific topic;
+17. A tool to generate [QRCodes](crates/tools/tool-qrcode/readme.md) that, as the name suggests, can be used to generate QRCodes to file or just print them to the terminal;
+18. A [lookup](crates/tools/tool-lookup/readme.md) tool that can either find text in multiple files or find files where the filename contains a specific text/pattern/regex;
+19. A tool that is like ping, but with extra features. It is called [pingx](crates/tools/tool-pingx/readme.md);
+20. A wrapper tool called [Whurl](crates/tools/tool-whurl/readme.md), that allows referencing one hurl file in another;
+21. A drop-in replacement for base64 called [b64](crates/tools/tool-b64/readme.md) that comes with a few extra features;
+22. A network quality monitor called [netquality](crates/tools/tool-netquality/readme.md) that checks connectivity and speed, and reports when things are not as expected;
+23. A tool called [remove-zw](crates/tools/tool-remove-zw/readme.md) that removes zero-width Unicode format characters and a leading byte-order mark (BOM) from text, with a `--dry-run` preview and a `--check` mode for pipelines;
+24. A tool that mimics the [head](crates/tools/tool-head/readme.md) command from Unix (also useful on Windows);
+25. A tool that mimics the [tail](crates/tools/tool-tail/readme.md) command from Unix, including follow mode (also useful on Windows);
+26. A regex value extractor called [rxget](crates/tools/tool-rxget/readme.md) that pulls matched values out of text files, with per-file or per-run uniqueness and optional filename prefixes.
 
 ## Ok, but why?
 Well, three main reasons:
@@ -48,18 +47,12 @@ machines. So I also ported the [JWT decoder tool](https://github.com/brenordv/py
 that I created using Python, and the Split tool is an evolution of a powershell script I wrote a long time ago in a blog
 post.
 
-- **3rd**: Nice to have all the tools in a single repository, and being to generate a cross-platform executable, which
+- **3rd**: Nice to have all the tools in a single repository, and being able to generate a cross-platform executable, which
 helps a lot when you have to use Linux, MacOS, and Windows machines frequently.
 
 ## Demos
-### AI Chatbot
-![AI Chatbot Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/ai-chat-bot-demo-0001.mp4)
-
 ### Whisper
 ![Whisper Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/whisper-demo-0001.mp4)
-
-### How
-![How Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/how-demo-0001.mp4)
 
 ### HTTP Server
 ![HTTP Server Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/http-server-demo-0001.mp4)

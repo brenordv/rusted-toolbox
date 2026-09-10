@@ -1,7 +1,3 @@
-**/crates/tools/tool-whurl/requests/media-api
-**/crates/tools/tool-whurl/requests/sweet-spot
-**/config.json
-**/ookla-speedtest
 !.env.example
 !.yarn/patches
 !.yarn/plugins
@@ -11,7 +7,11 @@
 **/*.rs.bk
 **/.vitepress/cache
 **/.vitepress/dist
+**/config.json
+**/crates/tools/tool-whurl/requests/media-api
+**/crates/tools/tool-whurl/requests/sweet-spot
 **/mutants.out*/
+**/ookla-speedtest
 *-journal
 *-shm
 *-wal
@@ -39,9 +39,32 @@
 *.test
 *.tgz
 *.tsbuildinfo
+.AppleDB
+.AppleDesktop
+.AppleDouble
+.DS_Store
+.DocumentRevisions-V100
+.FBCIndex
+.FBCLockFolder
+.FBCSemaphoreFile
+.HFS+ Private Directory Data[]
+.LSOverride
+.MobileBackups
+.MobileBackups.trash
+.PKInstallSandboxManager
+.PKInstallSandboxManager-SystemSoftware
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+._*
+.apdisk
 .cache
 .cache/
+.com.apple.timemachine.donotpresent
+.com.apple.timemachine.supported
 .data/
+.disk_label*
 .docusaurus
 .dynamodb/
 .eh-export-data/
@@ -49,9 +72,12 @@
 .env
 .env.*
 .eslintcache
+.file
 .firebase/
+.fseventsd
 .fusebox/
 .grunt
+.hotfiles.btree
 .idea/
 .idea/**/aws.xml
 .idea/**/contentModel.xml
@@ -78,6 +104,7 @@
 .idea/sonarlint.xml # see https://community.sonarsource.com/t/is-the-file-idea-idea-idea-sonarlint-xml-intended-to-be-under-source-control/121119
 .idea/sonarlint/
 .idea_modules/
+.localized
 .lock-wscript
 .next
 .node_repl_history
@@ -87,6 +114,11 @@
 .output
 .parcel-cache
 .pnp.*
+.pnpm-store
+.quota.group
+.quota.ops.group
+.quota.ops.user
+.quota.user
 .serverless/
 .stylelintcache
 .svelte-kit/
@@ -95,11 +127,23 @@
 .tern-port
 .test-files/*
 .vite/
+.vol
 .vscode-test
 .vuepress/dist
 .yarn-integrity
 .yarn/*
 /target
+Backups.backupdb
+Desktop DB
+Desktop DF
+Icon[
+]
+MobileBackups.trash
+Network Trash Folder
+Temporary Items
+TheFindByContentFolder
+TheVolumeSettingsFolder
+__MACOSX/
 atlassian-ide-plugin.xml
 bower_components
 build/Release
@@ -122,6 +166,7 @@ lerna-debug.log*
 lib-cov
 logs
 logs/
+lost+found
 node_modules/
 npm-debug.log*
 out
@@ -130,8 +175,10 @@ own_Luna.txt
 pids
 profile.cov
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+rustc-ice-*.txt
 target
 target/
+tmbootpicker.efi
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 web_modules/
