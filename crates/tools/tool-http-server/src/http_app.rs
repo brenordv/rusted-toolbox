@@ -1,10 +1,24 @@
 use crate::models::{DirEntry, FileEntry, ServerConfig};
-use percent_encoding::percent_decode_str;
+use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use tracing::info;
+use tracing::{error, info};
 use warp::{Filter, Reply};
+
+/// Characters percent-encoded inside href path segments: everything that would
+/// terminate the path early (`?`, `#`), break out of a quoted attribute
+/// (`"`, `'`, `<`, `>`, backtick), or corrupt decoding (`%`, space).
+const HREF_SEGMENT_ENCODE: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'\'')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`')
+    .add(b'#')
+    .add(b'?')
+    .add(b'%');
 
 pub async fn start_server(config: ServerConfig) {
     let root_path = config.root_path.clone();
@@ -28,7 +42,19 @@ pub async fn start_server(config: ServerConfig) {
 
     println!("Server running at http://{}", addr);
 
-    warp::serve(routes).run(addr).await;
+    warp::serve(routes)
+        .bind(addr)
+        .await
+        .graceful(async {
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => info!("Shutdown signal received, stopping server"),
+                Err(e) => {
+                    error!(error = %e, "shutdown signal listener failed; stopping the server")
+                }
+            }
+        })
+        .run()
+        .await;
 }
 
 async fn handle_request(
@@ -121,10 +147,30 @@ async fn serve_file(file_path: &Path) -> Result<warp::reply::Response, warp::Rej
     Ok(warp::reply::with_header(contents, "content-type", mime_type).into_response())
 }
 
+/// Escapes the five HTML-special characters so untrusted names and paths are
+/// inert in both element and attribute contexts. `&` is replaced first so the
+/// entities produced by the other replacements are not escaped again.
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+/// Percent-encodes one path segment for use inside an href attribute, so file
+/// names containing `#`, `?`, quotes, or spaces produce working links.
+fn encode_href_segment(segment: &str) -> String {
+    utf8_percent_encode(segment, HREF_SEGMENT_ENCODE).to_string()
+}
+
 /// Collects directory entries, optionally including hidden files/directories.
 ///
 /// Returns `(directories, files)` where directories are `(name, relative_path)` tuples
 /// and files are `(name, relative_path, size)` tuples, both sorted alphabetically by name.
+/// The name is the raw file name; the relative path appends the name to the request
+/// path as a percent-encoded href segment.
 fn collect_directory_entries(
     dir_path: &Path,
     request_path: &str,
@@ -144,6 +190,7 @@ fn collect_directory_entries(
             continue;
         }
 
+        let encoded_name = encode_href_segment(&file_name);
         let relative_path = if request_path.ends_with('/') || request_path.is_empty() {
             format!(
                 "{}{}",
@@ -152,10 +199,10 @@ fn collect_directory_entries(
                 } else {
                     request_path
                 },
-                file_name
+                encoded_name
             )
         } else {
-            format!("{}/{}", request_path, file_name)
+            format!("{}/{}", request_path, encoded_name)
         };
 
         if path.is_dir() {
@@ -181,11 +228,23 @@ async fn serve_directory_listing(
     let (directories, files) = collect_directory_entries(dir_path, request_path, serve_hidden)
         .map_err(|_| warp::reject::not_found())?;
 
-    // Generate HTML
+    let html = render_directory_listing(request_path, &directories, &files);
+
+    Ok(warp::reply::with_header(html, "content-type", "text/html; charset=utf-8").into_response())
+}
+
+/// Renders the directory-listing page. Every untrusted value (the request path
+/// in the title and heading, entry names, and every href) is HTML-escaped
+/// before interpolation.
+fn render_directory_listing(
+    request_path: &str,
+    directories: &[DirEntry],
+    files: &[FileEntry],
+) -> String {
     let title = if request_path == "/" || request_path.is_empty() {
         "Index of /".to_string()
     } else {
-        format!("Index of {}", request_path)
+        format!("Index of {}", html_escape(request_path))
     };
 
     let mut html = format!(
@@ -278,11 +337,11 @@ async fn serve_directory_listing(
 
         html.push_str(&format!(
             r#"<tr>
-                <td><a href="{}" class="directory">📁 ..</a></td>
+                <td><a href="{}" class="directory">[DIR] ..</a></td>
                 <td>Directory</td>
                 <td>-</td>
             </tr>"#,
-            parent_path
+            html_escape(&parent_path)
         ));
     }
 
@@ -290,24 +349,27 @@ async fn serve_directory_listing(
     for (name, path) in directories {
         html.push_str(&format!(
             r#"<tr>
-                <td><a href="{}" class="directory">📁 {}</a></td>
+                <td><a href="{}" class="directory">[DIR] {}</a></td>
                 <td>Directory</td>
                 <td>-</td>
             </tr>"#,
-            path, name
+            html_escape(path),
+            html_escape(name)
         ));
     }
 
     // Add files
     for (name, path, size) in files {
-        let size_str = format_file_size(size);
+        let size_str = format_file_size(*size);
         html.push_str(&format!(
             r#"<tr>
-                <td><a href="{}" class="file">📄 {}</a></td>
+                <td><a href="{}" class="file">[FILE] {}</a></td>
                 <td>File</td>
                 <td class="size">{}</td>
             </tr>"#,
-            path, name, size_str
+            html_escape(path),
+            html_escape(name),
+            size_str
         ));
     }
 
@@ -319,7 +381,7 @@ async fn serve_directory_listing(
 </html>"#,
     );
 
-    Ok(warp::reply::with_header(html, "content-type", "text/html; charset=utf-8").into_response())
+    html
 }
 
 /// Returns `true` if any segment of the given relative path starts with a dot,
@@ -561,5 +623,139 @@ mod tests {
         assert_eq!(dirs[1].0, "beta");
         assert_eq!(files[0].0, "apple.txt");
         assert_eq!(files[1].0, "zebra.txt");
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_rejects_path_traversal() {
+        let parent = tempdir().unwrap();
+        let root = parent.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(parent.path().join("outside.txt"), "outside").unwrap();
+
+        let result = handle_request(root, "/../outside.txt", warp::http::Method::GET, false).await;
+
+        assert!(
+            result.is_err(),
+            "traversal outside the root must be blocked"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_serves_index_html_for_directory() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("index.html"), "<h1>home</h1>").unwrap();
+        fs::write(dir.path().join("other.txt"), "x").unwrap();
+
+        let response = handle_request(
+            dir.path().to_path_buf(),
+            "/",
+            warp::http::Method::GET,
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.status(), 200);
+        // serve_file sets the bare mime-guessed type; a generated directory
+        // listing would carry the "; charset=utf-8" suffix instead.
+        assert_eq!(response.headers().get("content-type").unwrap(), "text/html");
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_serves_file_with_hash_via_encoded_href() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a#b.txt"), "x").unwrap();
+
+        let result = handle_request(
+            dir.path().to_path_buf(),
+            "/a%23b.txt",
+            warp::http::Method::GET,
+            false,
+        )
+        .await;
+
+        assert!(result.is_ok(), "encoded hash link should resolve the file");
+    }
+
+    #[test]
+    fn test_collect_entries_percent_encodes_href_segments() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a#b.txt"), "x").unwrap();
+
+        let (_, files) = collect_directory_entries(dir.path(), "/", false).unwrap();
+
+        assert_eq!(files[0].0, "a#b.txt");
+        assert_eq!(files[0].1, "a%23b.txt");
+    }
+
+    #[test]
+    fn test_encode_href_segment_encodes_hash_and_question_mark() {
+        assert_eq!(encode_href_segment("a#b.txt"), "a%23b.txt");
+        assert_eq!(encode_href_segment("a?b.txt"), "a%3Fb.txt");
+    }
+
+    #[test]
+    fn test_encode_href_segment_encodes_quotes_space_and_percent() {
+        assert_eq!(encode_href_segment(r#"a"b"#), "a%22b");
+        assert_eq!(encode_href_segment("a'b c"), "a%27b%20c");
+        assert_eq!(encode_href_segment("100%.txt"), "100%25.txt");
+    }
+
+    #[test]
+    fn test_render_listing_escapes_element_context() {
+        let files = vec![(
+            "<script>alert(1)</script>.txt".to_string(),
+            "/%3Cscript%3Ealert(1)%3C/script%3E.txt".to_string(),
+            3,
+        )];
+
+        let html = render_directory_listing("/", &[], &files);
+
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;.txt"));
+        assert!(!html.contains("<script>"));
+    }
+
+    #[test]
+    fn test_render_listing_escapes_attribute_context() {
+        let name = r#"x" onmouseover="x"#;
+        let files = vec![(name.to_string(), format!("/{}", name), 1)];
+
+        let html = render_directory_listing("/", &[], &files);
+
+        assert!(html.contains("x&quot; onmouseover=&quot;x"));
+        assert!(!html.contains(r#"" onmouseover=""#));
+    }
+
+    #[test]
+    fn test_render_listing_escapes_title_and_heading() {
+        let html = render_directory_listing("/<script>x</script>", &[], &[]);
+
+        assert!(html.contains("Index of /&lt;script&gt;x&lt;/script&gt;"));
+        assert!(!html.contains("<script>x</script>"));
+    }
+
+    #[test]
+    fn test_render_listing_escapes_parent_href() {
+        let html = render_directory_listing(r#"/a"b/c"#, &[], &[]);
+
+        assert!(html.contains(r#"href="/a&quot;b""#));
+        assert!(!html.contains(r#"href="/a"b""#));
+    }
+
+    #[test]
+    fn test_render_listing_uses_plain_text_markers() {
+        let dirs = vec![("sub".to_string(), "/sub".to_string())];
+        let files = vec![("f.txt".to_string(), "/f.txt".to_string(), 1)];
+
+        let root_html = render_directory_listing("/", &dirs, &files);
+        assert!(root_html.contains("[DIR] sub"));
+        assert!(root_html.contains("[FILE] f.txt"));
+        assert!(
+            !root_html.contains("[DIR] .."),
+            "the root has no parent link"
+        );
+
+        let nested_html = render_directory_listing("/sub", &[], &[]);
+        assert!(nested_html.contains("[DIR] .."));
     }
 }
