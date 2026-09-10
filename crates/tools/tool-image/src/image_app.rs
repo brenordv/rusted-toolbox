@@ -25,10 +25,10 @@ pub fn run_image_edit_commands(args: &ImageConfig) -> Result<()> {
                 let result = process_edit_job(job, &pb);
 
                 if result.is_ok() {
-                    pb.finish_with_message("✓ Completed");
+                    pb.finish_with_message("Completed");
                     stats.increment_success();
                 } else {
-                    pb.finish_with_message("✗ Failed");
+                    pb.finish_with_message("Failed");
                     stats.increment_error();
                 }
 
@@ -75,6 +75,8 @@ fn build_jobs(input_files: &[PathBuf], args: &ImageConfig) -> Result<Vec<EditJob
             resize: args.resize.clone(),
             grayscale: args.grayscale,
             convert: args.convert,
+            quality: args.quality,
+            filter: args.filter,
         })
     }
 

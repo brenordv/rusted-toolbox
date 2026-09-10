@@ -7,10 +7,10 @@ quality through advanced encoding algorithms.
 **Key Features:**
 - **Parallel Processing**: Multi-threaded image processing using all available CPU cores
 - **Batch Operations**: Process multiple files or entire directories recursively  
-- **Format Support**: Handles PNG, JPEG, GIF, WebP, AVIF, TIFF, BMP and more
-- **Metadata Preservation**: Maintains ICC color profiles and EXIF orientation data
+- **Format Support**: Reads JPEG, PNG, GIF, WebP, AVIF, TIFF, and BMP inputs; `--convert` can also write a few extra output formats (`ico`, `tga`, `qoi`, ...)
+- **Metadata Handling**: EXIF orientation is baked into the pixels, then the EXIF data is dropped (EXIF is not preserved); ICC color profiles are re-embedded for JPEG, PNG, and AVIF outputs only
 - **Progress Tracking**: Real-time progress bars for each file being processed
-- **Quality Optimization**: Uses high-quality encoding algorithms (Lanczos3 for resizing, lossless WebP, etc.)
+- **Quality Optimization**: High-quality Lanczos3 resizing and per-format encoding tuned for minimal loss (see Quality Behavior)
 - **Smart Output Naming**: Automatically generates descriptive filenames based on operations performed
 
 ## Command-Line Options
@@ -20,7 +20,21 @@ quality through advanced encoding algorithms.
   - Exact size: `640,480`, `640.5,480.25`
   - Note: when using exact size, the tool warns if width/height ratios differ from the original image
 - `-g, --grayscale`: Convert images to grayscale
-- `-c, --convert <FORMAT>`: Convert images to specified format (png, jpg, webp, avif, gif, bmp, tiff, etc.)
+- `-c, --convert <FORMAT>`: Convert images to specified format (png, jpg, webp, avif, gif, bmp, tiff, etc.); an unknown format is rejected before any file is processed
+- `-q, --quality <1-100>`: Encoding quality for JPEG and AVIF output (100 is best). Defaults: JPEG 100, AVIF 95. Other output formats ignore it and a warning names the format
+- `-f, --filter <FILTER>`: Resize filter: `nearest`, `triangle`, `catmullrom`, `gaussian`, or `lanczos3` (default). Only valid together with `--resize`
+
+Shared flags from the common CLI: `--app-header` (print the runtime header block), `--verbose`,
+`--log-level <level>` (case-insensitive), `--log-to-console`, `--log-to-file`,
+`--rotate-log-file-by-day`.
+
+## Quality Behavior
+What each output format does to the pixels:
+- **PNG, WebP, BMP**: Lossless; round-trips are pixel-identical
+- **TIFF**: Lossless, encoded through the image library's fallback encoder
+- **AVIF**: High quality but lossy; encodes at quality 95 of 100 (speed 4 of 10) unless `--quality` says otherwise
+- **JPEG**: Encodes at quality 100 unless `--quality` says otherwise, but JPEG is inherently lossy
+- **GIF**: Quantized to 256 colors by nature of the format
 
 ## Examples
 ### Basic Image Resizing
@@ -30,8 +44,8 @@ imgx image1.jpg image2.png --resize 50
 ```
 **Input**: `image1.jpg` (1920x1080), `image2.png` (1024x768)  
 **Output**: 
-- `image1-resized50.jpg` (960x540)
-- `image2-resized50.png` (512x384)
+- `image1-resized50pct.jpg` (960x540)
+- `image2-resized50pct.png` (512x384)
 
 ### Resize With Decimals
 **Command:**
@@ -66,13 +80,29 @@ imgx *.png --convert webp
 **Input**: All PNG files in current directory  
 **Output**: WebP files with `-convertWebP` suffix, preserving original quality
 
+### Convert to JPEG at a Chosen Quality
+**Command:**
+```bash
+imgx photo.png --convert jpg --quality 80
+```
+**Input**: `photo.png`  
+**Output**: `photo-convertJpeg.jpg` encoded at JPEG quality 80
+
+### Resize With a Faster Filter
+**Command:**
+```bash
+imgx photo.png --resize 25 --filter nearest
+```
+**Input**: `photo.png`  
+**Output**: `photo-resized25pct.png` downscaled with nearest-neighbor resampling (fastest, lowest quality; the default `lanczos3` is the slowest and highest quality)
+
 ### Complex Operation - Resize, Grayscale, and Convert
 **Command:**
 ```bash
 imgx vacation_photos/ --resize 75 --grayscale --convert jpg
 ```
 **Input**: All supported images in `vacation_photos/` directory (recursive)  
-**Output**: JPEG files at 75% size in grayscale with descriptive filenames like `photo001-resized75-grayscale-convertJpeg.jpg`
+**Output**: JPEG files at 75% size in grayscale with descriptive filenames like `photo001-resized75pct-grayscale-convertJpeg.jpg`
 
 ### Process Entire Directory Structure
 **Command:**

@@ -33,7 +33,7 @@ pub fn process_edit_job(job: EditJob, progress_bar: &ProgressBar) -> Result<()> 
         info!("Resizing image to {}", resize);
         progress_bar.set_message(format!("Resizing image to {}...", resize));
         progress_bar.inc(inc_step);
-        img_info.dynamic_image = apply_resize(img_info.dynamic_image, resize)?;
+        img_info.dynamic_image = apply_resize(img_info.dynamic_image, resize, job.filter)?;
         debug!("Image resized...");
     }
 
@@ -62,6 +62,7 @@ pub fn process_edit_job(job: EditJob, progress_bar: &ProgressBar) -> Result<()> 
         &output_path,
         output_format,
         &img_info.image_meta,
+        job.quality,
     )?;
     progress_bar.inc(inc_step);
 
@@ -88,23 +89,57 @@ fn encode_image(
     output_path: &PathBuf,
     output_format: ImageFormat,
     metadata: &ImageMeta,
+    quality: Option<u8>,
 ) -> Result<()> {
+    if let Some(quality) = quality {
+        if !matches!(output_format, ImageFormat::Jpeg | ImageFormat::Avif) {
+            warn!(
+                format = ?output_format,
+                quality,
+                "--quality only affects JPEG and AVIF output; ignored for this format"
+            );
+        }
+    }
+
     match output_format {
         ImageFormat::Png => encode_png(output_path, image, metadata),
-        ImageFormat::Jpeg => encode_jpeg(output_path, image, metadata),
+        ImageFormat::Jpeg => encode_jpeg(output_path, image, metadata, quality),
         ImageFormat::Gif => encode_gif(output_path, image),
         ImageFormat::WebP => encode_webp(output_path, image),
         ImageFormat::Bmp => encode_bmp(output_path, image),
-        ImageFormat::Avif => encode_avif(output_path, image, metadata),
+        ImageFormat::Avif => encode_avif(output_path, image, metadata, quality),
         _ => {
-            warn!(
-                "Unsupported output format: {:?}, quality may degrade.",
-                output_format
-            );
+            if fallback_format_is_lossless(output_format) {
+                info!(
+                    format = ?output_format,
+                    "No dedicated encoder; using the image library's lossless encoder."
+                );
+            } else {
+                warn!(
+                    format = ?output_format,
+                    "No dedicated encoder; the image library's encoder for this format is lossy, quality may degrade."
+                );
+            }
             image.save_with_format(output_path, output_format)?;
             Ok(())
         }
     }
+}
+
+/// Reports whether a format without a dedicated encoder in this tool still
+/// encodes losslessly through the image library's default encoder. Formats
+/// outside this list are either lossy (for example HDR's shared-exponent
+/// encoding) or unsupported for writing, so the fallback warns about them.
+fn fallback_format_is_lossless(format: ImageFormat) -> bool {
+    matches!(
+        format,
+        ImageFormat::Tiff
+            | ImageFormat::Pnm
+            | ImageFormat::Tga
+            | ImageFormat::Qoi
+            | ImageFormat::Farbfeld
+            | ImageFormat::Ico
+    )
 }
 
 fn get_progress_step(job: &EditJob) -> u64 {
@@ -161,7 +196,15 @@ fn determine_output_plan(job: &EditJob, metadata: &ImageMeta) -> Result<(ImageFo
         format!("{}-{}.{}", stem, suffix, extension)
     };
 
-    let output_path = job.input_file.parent().unwrap().join(filename);
+    // A bare filename like "img.png" has an empty parent, and joining onto it
+    // keeps the output path relative. Only root paths have no parent at all.
+    let output_path = match job.input_file.parent() {
+        Some(parent) => parent.join(filename),
+        None => anyhow::bail!(
+            "Cannot determine an output directory for '{}': the path has no parent.",
+            job.input_file.display()
+        ),
+    };
 
     Ok((output_format, output_path))
 }
@@ -215,7 +258,11 @@ fn decode_image(image_path: &PathBuf) -> Result<DecodedImage> {
     })
 }
 
-fn apply_resize(image: DynamicImage, resize: &ResizeSpec) -> Result<DynamicImage> {
+fn apply_resize(
+    image: DynamicImage,
+    resize: &ResizeSpec,
+    filter: FilterType,
+) -> Result<DynamicImage> {
     match resize {
         ResizeSpec::Percent(percent) => {
             let new_width = (image.width() as f64 * (*percent / 100.0)).round() as u32;
@@ -233,7 +280,7 @@ fn apply_resize(image: DynamicImage, resize: &ResizeSpec) -> Result<DynamicImage
                 new_height
             );
 
-            Ok(image.resize(new_width, new_height, FilterType::Lanczos3))
+            Ok(image.resize(new_width, new_height, filter))
         }
         ResizeSpec::Dimensions { width, height } => {
             warn_if_ratio_differs(image.width(), image.height(), *width, *height);
@@ -253,7 +300,7 @@ fn apply_resize(image: DynamicImage, resize: &ResizeSpec) -> Result<DynamicImage
                 new_height
             );
 
-            Ok(image.resize_exact(new_width, new_height, FilterType::Lanczos3))
+            Ok(image.resize_exact(new_width, new_height, filter))
         }
     }
 }
@@ -282,6 +329,8 @@ mod tests {
             resize: None,
             grayscale: false,
             convert: None,
+            quality: None,
+            filter: FilterType::Lanczos3,
         }
     }
 
@@ -343,9 +392,28 @@ mod tests {
     }
 
     #[test]
+    fn output_plan_keeps_a_bare_filename_relative() {
+        let (_, path) = determine_output_plan(&job("img.png"), &meta(ImageFormat::Png)).unwrap();
+        assert_eq!(path, PathBuf::from("img.png"));
+    }
+
+    #[test]
+    fn output_plan_errors_for_a_parentless_root_path() {
+        let result = determine_output_plan(&job("/"), &meta(ImageFormat::Png));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn fallback_classifies_lossless_and_lossy_formats() {
+        assert!(fallback_format_is_lossless(ImageFormat::Tiff));
+        assert!(!fallback_format_is_lossless(ImageFormat::Hdr));
+    }
+
+    #[test]
     fn apply_resize_percent_scales_dimensions() {
         let image = DynamicImage::new_rgb8(100, 100);
-        let resized = apply_resize(image, &ResizeSpec::Percent(50.0)).unwrap();
+        let resized =
+            apply_resize(image, &ResizeSpec::Percent(50.0), FilterType::Lanczos3).unwrap();
         assert_eq!(resized.width(), 50);
         assert_eq!(resized.height(), 50);
     }
@@ -359,6 +427,7 @@ mod tests {
                 width: 20.0,
                 height: 10.0,
             },
+            FilterType::Lanczos3,
         )
         .unwrap();
         assert_eq!(resized.width(), 20);
@@ -368,6 +437,28 @@ mod tests {
     #[test]
     fn apply_resize_rejects_zero_dimension() {
         let image = DynamicImage::new_rgb8(100, 100);
-        assert!(apply_resize(image, &ResizeSpec::Percent(0.4)).is_err());
+        assert!(apply_resize(image, &ResizeSpec::Percent(0.4), FilterType::Lanczos3).is_err());
+    }
+
+    /// Builds a small gradient so different resize filters produce different
+    /// pixels on a downscale.
+    fn gradient_image() -> DynamicImage {
+        let mut img = image::RgbImage::new(16, 16);
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            *pixel = image::Rgb([(x * 16) as u8, (y * 16) as u8, ((x + y) * 8) as u8]);
+        }
+        DynamicImage::ImageRgb8(img)
+    }
+
+    #[test]
+    fn apply_resize_filter_choice_changes_resampling() {
+        let spec = ResizeSpec::Percent(50.0);
+
+        let nearest = apply_resize(gradient_image(), &spec, FilterType::Nearest).unwrap();
+        let gaussian = apply_resize(gradient_image(), &spec, FilterType::Gaussian).unwrap();
+
+        assert_eq!(nearest.width(), gaussian.width());
+        assert_eq!(nearest.height(), gaussian.height());
+        assert_ne!(nearest.to_rgb8().as_raw(), gaussian.to_rgb8().as_raw());
     }
 }

@@ -1,11 +1,13 @@
-use crate::models::{ImageConfig, ResizeSpec};
-use crate::string_traits::StringExt;
+use crate::models::{ImageConfig, ResizeFilter, ResizeSpec};
+use crate::string_traits::{StringExt, SUPPORTED_FORMAT_NAMES};
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
+use common_cli::header_format::format_config_item;
 use common_cli::tool_exit_helpers::exit_error;
 use common_file_utils::file_system::list_all_files_recursively;
 use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
+use image::imageops::FilterType;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tracing::{debug, error, info};
@@ -30,13 +32,41 @@ pub struct CliArgs {
     pub grayscale: bool,
 
     /// Convert the image to the specified format.
-    #[arg(short = 'c', long = "convert", required = false)]
+    #[arg(short = 'c', long = "convert", required = false, value_parser = parse_convert_format)]
     pub convert: Option<String>,
+
+    /// Encoding quality for JPEG and AVIF output (1-100, 100 is best). Other formats ignore it.
+    #[arg(short = 'q', long = "quality", value_parser = clap::value_parser!(u8).range(1..=100))]
+    pub quality: Option<u8>,
+
+    /// Resize filter to use with --resize. (Default: lanczos3)
+    #[arg(short = 'f', long = "filter", value_enum, requires = "resize")]
+    pub filter: Option<ResizeFilter>,
 
     #[command(flatten)]
     pub common: CommonToolArgs,
 }
 
+/// Validates a `--convert` value against the supported format names,
+/// case-insensitively, so an unknown format is a clap parse error. Returns the
+/// value as typed; `to_image_format` lowercases it when mapping.
+fn parse_convert_format(value: &str) -> Result<String, String> {
+    if SUPPORTED_FORMAT_NAMES.contains(&value.to_lowercase().as_str()) {
+        Ok(value.to_string())
+    } else {
+        Err(format!(
+            "unsupported image format '{}' (supported: {})",
+            value,
+            SUPPORTED_FORMAT_NAMES.join(", ")
+        ))
+    }
+}
+
+/// Prints the tool's runtime configuration, shown under `--app-header`.
+///
+/// `label: value` lines render through the shared `format_config_item`; the
+/// `Files` group line and its nested file bullets have no `label: value`
+/// shape, so they print from the `CONFIG_UL_*` constants.
 fn print_runtime_info(args: &CliArgs) {
     println!("{} Files", CONFIG_UL_ITEM_LEVEL_2);
     for file in args.input_files.iter() {
@@ -44,15 +74,29 @@ fn print_runtime_info(args: &CliArgs) {
     }
 
     if let Some(resize) = &args.resize {
-        println!("{} Resize: {}", CONFIG_UL_ITEM_LEVEL_2, resize);
+        println!("{}", format_config_item("Resize", resize));
     }
 
     if args.grayscale {
-        println!("{} Grayscale: true", CONFIG_UL_ITEM_LEVEL_2);
+        println!("{}", format_config_item("Grayscale", "true"));
     }
 
     if let Some(convert) = &args.convert {
-        println!("{} Convert: {:?}", CONFIG_UL_ITEM_LEVEL_2, convert);
+        println!(
+            "{}",
+            format_config_item("Convert", format!("{:?}", convert))
+        );
+    }
+
+    if let Some(quality) = args.quality {
+        println!("{}", format_config_item("Quality", quality));
+    }
+
+    if let Some(filter) = args.filter {
+        println!(
+            "{}",
+            format_config_item("Resize filter", format!("{:?}", filter))
+        );
     }
 }
 
@@ -84,6 +128,11 @@ pub fn initialize() -> ImageConfig {
         resize: args.resize,
         grayscale: args.grayscale,
         convert,
+        quality: args.quality,
+        filter: args
+            .filter
+            .map(ResizeFilter::to_filter_type)
+            .unwrap_or(FilterType::Lanczos3),
     }
 }
 
@@ -246,13 +295,53 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn edit_args(input_files: Vec<PathBuf>) -> ImageConfig {
-        ImageConfig {
-            input_files,
-            resize: None,
-            grayscale: false,
-            convert: None,
-        }
+    #[test]
+    fn convert_rejects_unknown_format_at_parse() {
+        let result = CliArgs::try_parse_from(["imgx", "--convert", "bogus", "img.png"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn convert_accepts_supported_format_case_insensitively() {
+        let args = CliArgs::try_parse_from(["imgx", "--convert", "PNG", "img.png"]).unwrap();
+        assert_eq!(args.convert.as_deref(), Some("PNG"));
+    }
+
+    #[test]
+    fn cli_definition_is_consistent() {
+        use clap::CommandFactory;
+        CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn quality_accepts_bounds_and_rejects_outside() {
+        assert!(CliArgs::try_parse_from(["imgx", "--quality", "1", "img.png"]).is_ok());
+        assert!(CliArgs::try_parse_from(["imgx", "--quality", "100", "img.png"]).is_ok());
+        assert!(CliArgs::try_parse_from(["imgx", "--quality", "0", "img.png"]).is_err());
+        assert!(CliArgs::try_parse_from(["imgx", "--quality", "101", "img.png"]).is_err());
+        assert!(CliArgs::try_parse_from(["imgx", "--quality", "9.5", "img.png"]).is_err());
+    }
+
+    #[test]
+    fn filter_rejects_unknown_value() {
+        let result = CliArgs::try_parse_from(["imgx", "-r", "50", "--filter", "bogus", "img.png"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn filter_requires_resize() {
+        assert!(CliArgs::try_parse_from(["imgx", "--filter", "nearest", "img.png"]).is_err());
+    }
+
+    #[test]
+    fn filter_parses_the_documented_names() {
+        let args =
+            CliArgs::try_parse_from(["imgx", "-r", "50", "-f", "catmullrom", "img.png"]).unwrap();
+        assert_eq!(args.filter, Some(ResizeFilter::Catmullrom));
+
+        let args =
+            CliArgs::try_parse_from(["imgx", "-r", "50", "-f", "nearest", "img.png"]).unwrap();
+        assert_eq!(args.filter, Some(ResizeFilter::Nearest));
     }
 
     #[test]

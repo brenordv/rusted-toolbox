@@ -1,22 +1,16 @@
 use clap::ValueEnum;
+use image::imageops::FilterType;
 use image::{DynamicImage, ImageFormat};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-#[derive(ValueEnum, Clone, Debug)]
-pub enum FilterType {
-    Nearest,
-    Triangle,
-    CatmullRom,
-    Gaussian,
-    Lanczos3,
-}
 
 pub struct ImageConfig {
     pub input_files: Vec<PathBuf>,
     pub resize: Option<ResizeSpec>,
     pub grayscale: bool,
     pub convert: Option<ImageFormat>,
+    pub quality: Option<u8>,
+    pub filter: FilterType,
 }
 
 pub struct EditJob {
@@ -24,6 +18,31 @@ pub struct EditJob {
     pub resize: Option<ResizeSpec>,
     pub grayscale: bool,
     pub convert: Option<ImageFormat>,
+    pub quality: Option<u8>,
+    pub filter: FilterType,
+}
+
+/// Resize filters exposed on the CLI, one per `image::imageops::FilterType`
+/// variant.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResizeFilter {
+    Nearest,
+    Triangle,
+    Catmullrom,
+    Gaussian,
+    Lanczos3,
+}
+
+impl ResizeFilter {
+    pub fn to_filter_type(self) -> FilterType {
+        match self {
+            ResizeFilter::Nearest => FilterType::Nearest,
+            ResizeFilter::Triangle => FilterType::Triangle,
+            ResizeFilter::Catmullrom => FilterType::CatmullRom,
+            ResizeFilter::Gaussian => FilterType::Gaussian,
+            ResizeFilter::Lanczos3 => FilterType::Lanczos3,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
