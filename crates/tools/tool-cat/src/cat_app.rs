@@ -462,6 +462,8 @@ fn flush_out<W: Write>(out: &mut W) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli_utils::CliArgs;
+    use clap::Parser;
     use rstest::*;
     use tempfile::tempdir;
 
@@ -761,6 +763,75 @@ mod tests {
         let out = cook(b"\r\n", &o, 1);
 
         assert_eq!(out, b"     1\t\r\n");
+    }
+
+    #[test]
+    fn parse_to_run_with_number_nonblank_flag() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("in.txt");
+        std::fs::write(&path, b"a\n\nb\n").unwrap();
+        let args = CliArgs::try_parse_from(["cat", "-b", path.to_str().unwrap()]).unwrap();
+        let config = CatConfig::from_args(&args);
+        let mut out = Vec::new();
+
+        let ok = run(&config, &mut out);
+
+        assert!(ok);
+        assert_eq!(out, b"     1\ta\n\n     2\tb\n");
+    }
+
+    #[test]
+    fn parse_to_run_with_show_all_flag() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("in.txt");
+        std::fs::write(&path, b"a\tb\r\n").unwrap();
+        let args = CliArgs::try_parse_from(["cat", "-A", path.to_str().unwrap()]).unwrap();
+        let config = CatConfig::from_args(&args);
+        let mut out = Vec::new();
+
+        let ok = run(&config, &mut out);
+
+        assert!(ok);
+        assert_eq!(out, b"a^Ib^M$\n");
+    }
+
+    #[test]
+    fn run_with_number_and_squeeze_numbers_the_kept_blank_line() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("in.txt");
+        std::fs::write(&path, b"a\n\n\n\nb\n").unwrap();
+        let mut o = opts();
+        o.number = true;
+        o.squeeze_blank = true;
+        o.files = vec![path.to_str().unwrap().to_string()];
+        let mut out = Vec::new();
+
+        let ok = run(&o, &mut out);
+
+        assert!(ok);
+        assert_eq!(out, b"     1\ta\n     2\t\n     3\tb\n");
+    }
+
+    #[test]
+    fn run_with_number_and_show_ends_across_two_files() {
+        let dir = tempdir().unwrap();
+        let first = dir.path().join("first.txt");
+        let second = dir.path().join("second.txt");
+        std::fs::write(&first, b"a\n").unwrap();
+        std::fs::write(&second, b"b\n").unwrap();
+        let mut o = opts();
+        o.number = true;
+        o.show_ends = true;
+        o.files = vec![
+            first.to_str().unwrap().to_string(),
+            second.to_str().unwrap().to_string(),
+        ];
+        let mut out = Vec::new();
+
+        let ok = run(&o, &mut out);
+
+        assert!(ok);
+        assert_eq!(out, b"     1\ta$\n     2\tb$\n");
     }
 
     #[test]

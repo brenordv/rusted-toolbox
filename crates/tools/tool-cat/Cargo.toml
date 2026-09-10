@@ -1,6 +1,6 @@
 [package]
 name = "cat"
-version = "2.0.0"
+version = "2.0.1"
 description = "Port of the Unix cat command."
 edition.workspace = true
 authors.workspace = true

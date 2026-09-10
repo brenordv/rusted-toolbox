@@ -1,3 +1,7 @@
+# 2.0.1
+- Added tests for `CatConfig::from_args` flag expansion (`-A`, `-e`, `-t`, and `-b` with `-n`), the `needs_line_processing` truth table, parse-to-run coverage for `-b` and `-A`, and combined `-n -s` and `-n -E` runs.
+- Readme: corrected the `-L disabled` claim to the actual `--log-level disabled` flag (there is no `-L` short form) and added a command-line options section covering the tool flags, the shared flags, and the accepted no-op `-u`.
+
 # 2.0.0
 - Refactored to fit the new tooling
 - Rewrote the formatting path as a byte-oriented chunk scanner: it handles non-UTF-8 input, preserves carriage returns, and runs in bounded memory regardless of line length.
