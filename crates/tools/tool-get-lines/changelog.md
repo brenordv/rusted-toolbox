@@ -1,4 +1,14 @@
-# 2.0.0
+# Changelog
+
+## 2.0.1
+- Runtime info lines in the `--app-header` block are now rendered through the shared
+  `common-cli` header formatting. The printed bytes are unchanged.
+- Added a matcher test pinning that a single non-ASCII term routes all matching through the
+  Unicode engine while the ASCII terms in the same set still match.
+- Documented the ASCII fast-path caveat (an input character whose Unicode lowercase folds into
+  ASCII does not match when every term is ASCII) in the readme's search-terms note.
+
+## 2.0.0
 - Refactored to fit the new tooling.
 - Replaced the async worker pipeline with a single-pass sequential engine. Output is now 
   written in input order.
@@ -21,11 +31,11 @@
   characters keep the previous Unicode-aware matching. One accepted edge: with ASCII-only terms,
   a character whose Unicode lowercase folds into ASCII (such as 'İ') no longer matches.
 
-# 1.0.2
+## 1.0.2
 - Updated dependencies.
 
-# 1.0.1
+## 1.0.1
 - Removed emojis. They don't render properly on every terminal.
 
-# 1.0.0
+## 1.0.0
 - Initial release.

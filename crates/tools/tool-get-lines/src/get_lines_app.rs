@@ -433,6 +433,21 @@ mod tests {
         assert_eq!(hits_of(&matcher, "a CAFÉ open".as_bytes()), vec![0]);
     }
 
+    #[test]
+    fn mixed_term_set_routes_all_matching_through_unicode_engine() {
+        // A single non-ASCII term disables the ASCII fast path for the whole set.
+        let matcher = Matcher::build(&terms(&["error", "café"])).unwrap();
+        assert!(matches!(matcher, Matcher::Unicode(_)));
+
+        // The ASCII term still matches, case-insensitively, through the Unicode engine.
+        assert_eq!(hits_of(&matcher, b"an ERROR happened"), vec![0]);
+        assert_eq!(hits_of(&matcher, "the CAFÉ closed".as_bytes()), vec![1]);
+        assert_eq!(
+            hits_of(&matcher, "ERROR at the CAFÉ".as_bytes()),
+            vec![0, 1]
+        );
+    }
+
     // --- Filename map ----------------------------------------------------
 
     #[test]

@@ -35,7 +35,10 @@ It can output results either to the console or to a separate file per search ter
   rather than buffering the whole input into memory.
 - **Search terms:** terms are trimmed, lowercased, and deduplicated. Terms containing only
   filesystem-unsafe characters, or that collide after sanitizing, are given a distinct output
-  filename so no term overwrites another's file.
+  filename, so no term overwrites another's file. When every term is pure ASCII, matching uses a
+  case-insensitive ASCII fast path, so an input character whose Unicode lowercase folds into ASCII
+  (such as the Turkish dotted 'İ') does not match in that mode. A single non-ASCII term switches
+  all terms to Unicode-aware matching.
 
 ## Examples
 

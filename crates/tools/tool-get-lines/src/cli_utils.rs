@@ -1,8 +1,8 @@
 use crate::models::GetLinesConfig;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
+use common_cli::header_format::format_config_item;
 use common_cli::tool_exit_helpers::exit_error;
-use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -52,18 +52,24 @@ pub fn normalize_search_terms(raw: &str) -> Vec<String> {
 ///
 /// Shows the input file, the output destination, and the search terms.
 pub fn print_runtime_info(args: &GetLinesConfig) {
-    println!("{} Input File: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.file);
+    println!(
+        "{}",
+        format_config_item("Input File", format!("{:?}", args.file))
+    );
 
     if let Some(output_folder) = args.output.as_deref() {
         println!(
-            "{} Output Folder: {:?}",
-            CONFIG_UL_ITEM_LEVEL_2, output_folder
+            "{}",
+            format_config_item("Output Folder", format!("{:?}", output_folder))
         );
     } else {
-        println!("{} Output: Console", CONFIG_UL_ITEM_LEVEL_2);
+        println!("{}", format_config_item("Output", "Console"));
     };
 
-    println!("{} Search: {:?}", CONFIG_UL_ITEM_LEVEL_2, args.search);
+    println!(
+        "{}",
+        format_config_item("Search", format!("{:?}", args.search))
+    );
 
     println!();
 }
