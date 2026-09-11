@@ -1,6 +1,6 @@
 [package]
 name = "rxget"
-version = "1.0.0"
+version = "1.0.1"
 description = "Extracts regex-matched values from text files"
 edition.workspace = true
 authors.workspace = true

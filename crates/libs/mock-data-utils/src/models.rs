@@ -11,9 +11,12 @@ pub struct MockOptions {
     /// generators such as `commerce.product-description`. Zero is honored
     /// literally and yields an empty string.
     pub length: Option<usize>,
-    /// Number of decimal places; honored by `random.float`.
+    /// Number of decimal places; honored by `random.float`. Values above
+    /// `MAX_PRECISION` (100) are rejected by validation.
     pub precision: Option<u32>,
-    /// Target age in years; honored by `person.birthday`.
+    /// Target age in years; honored by `person.birthday`. Values above
+    /// `MAX_YEAR_OFFSET` (100,000) are rejected by validation to keep the
+    /// derived birth year representable.
     pub age: Option<u32>,
     /// Restrict output to the past; honored by `random.date`, `random.time`,
     /// `random.datetime`, and `random.timestamp`. When both `past` and `future`
@@ -24,7 +27,9 @@ pub struct MockOptions {
     /// are set, `past` wins.
     pub future: bool,
     /// Half-width in years of the sampling window; honored by `random.date`,
-    /// `random.datetime`, and `random.timestamp`. Must be at least 1.
+    /// `random.datetime`, and `random.timestamp`. Must be at least 1 and at
+    /// most `MAX_YEAR_OFFSET` (100,000), so the sampled offset stays
+    /// representable.
     pub range: Option<u32>,
 }
 

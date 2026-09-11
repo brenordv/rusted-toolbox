@@ -1,6 +1,6 @@
 [package]
 name = "remove-zw"
-version = "2.1.0"
+version = "2.2.0"
 description = "Removes zero-width Unicode format characters from text"
 edition.workspace = true
 authors.workspace = true

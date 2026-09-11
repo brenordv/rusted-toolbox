@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.1.1
+- `--print-only-full-response` builds its JSON report in memory (hurl's buffered terminal)
+  instead of writing a temp file, reading it back, and deleting it. Output is unchanged; the
+  "failed to read temporary JSON report" failure mode is gone along with the temp file.
+- Windows: `$shell(...)` commands containing quotes (paths with spaces included) now reach
+  cmd.exe verbatim. std's argument quoting escaped quotes MSVCRT-style, which cmd does not
+  parse, so any quoted segment failed with "The filename, directory name, or volume label
+  syntax is incorrect".
+- Windows: two tests asserted forward-slash relative paths in error-message citations; they
+  now build the expectation with the platform separator. The messages themselves are
+  unchanged (native separators, as before).
+
 ## 3.1.0
 - Elapsed-time display (issue 38): each entry logs `[Elapsed: 121 ms | Total: 147 ms]` after its calls, and a repeat hit of the same method + URL (+ effective environment) within one run adds a signed delta, e.g. `[Elapsed: 25 ms (-96 ms) | Total: 147 ms]`. The `--test` summary gained a per-entry elapsed column. Durations print as whole milliseconds under one second and one-decimal seconds above; totals include entries hidden by `silent` includes; the summary column prints whenever the summary prints. The JSON report is unchanged.
 - Per-include environment override (issue 39): `# @include:[env=NAME] path` runs the included file's API against `NAME` instead of the run's `--env`, inherits down that include's subtree (an include's own `env=` beats an inherited one), and applies even when no `--env` was passed. Environments resolve per API; conflicting overrides for one API keep the first and warn. Applying an override logs an info event citing the directive, and a missing environment now cites the directive that selected it. Unknown `key=value` include options log a warning instead of being silently ignored.

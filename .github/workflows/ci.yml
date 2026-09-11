@@ -5,6 +5,9 @@ on:
     branches: [ master ]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -14,7 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - run: rustup component add rustfmt
+      # rust-toolchain.toml pins the toolchain and declares the rustfmt and
+      # clippy components; rustup installs them on the first cargo invocation.
       - run: cargo fmt --all -- --check
 
   clippy:
@@ -22,9 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - run: rustup component add clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
     name: build & test (${{ matrix.os }})
@@ -36,5 +39,6 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo build --workspace --verbose
-      - run: cargo test --workspace --verbose
+      # --locked matches release.yml, so lockfile drift fails here instead of
+      # at tag time. cargo test builds the workspace; no separate build step.
+      - run: cargo test --workspace --locked

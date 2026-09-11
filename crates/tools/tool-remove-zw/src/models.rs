@@ -23,6 +23,7 @@ pub struct RemoveZwArgs {
     pub verbose: bool,
     pub dry_run: bool,
     pub check: bool,
+    pub fail_on_skip: bool,
     pub keep_bom: bool,
 }
 

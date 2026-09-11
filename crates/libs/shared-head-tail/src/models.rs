@@ -91,8 +91,10 @@ impl RunResult {
     }
 }
 
-/// Resolves the last-wins `-n`/`-c` pair into a unit and count, falling back
-/// to the GNU default of 10 lines with the tool's default prefix.
+/// Resolves the `-n`/`-c` pair into a unit and count, falling back to the
+/// GNU default of 10 lines with the tool's default prefix. Bytes win when
+/// both are set; last-wins ordering is the caller's job (head and tail get
+/// it from clap's mutual `overrides_with_all`, so at most one arrives here).
 pub fn resolve_count(
     lines: Option<Count>,
     bytes: Option<Count>,

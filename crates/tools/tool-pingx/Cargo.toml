@@ -1,6 +1,6 @@
 [package]
 name = "pingx"
-version = "2.0.2"
+version = "2.0.3"
 description = "Cross platform CLI tool to ping other hosts."
 edition.workspace = true
 authors.workspace = true

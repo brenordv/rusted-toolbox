@@ -1,6 +1,6 @@
 [package]
 name = "mqtt"
-version = "2.2.0"
+version = "2.3.0"
 description = "Tool for quickly post to or read from a MQTT topic."
 edition.workspace = true
 authors.workspace = true
@@ -9,7 +9,9 @@ license.workspace = true
 
 [dependencies]
 # Internal
+cli-signal-monitor = { workspace = true }
 common-cli = { workspace = true }
+common-utils = { workspace = true }
 common-utils-ext = { workspace = true }
 
 # External

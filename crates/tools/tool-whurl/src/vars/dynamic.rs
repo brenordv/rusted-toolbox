@@ -511,7 +511,13 @@ fn execute_shell_command(command: &str, allow_shell: bool) -> Result<String, Str
 fn spawn_shell(command: &str) -> std::io::Result<std::process::Output> {
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd").arg("/C").arg(command).output()
+        use std::os::windows::process::CommandExt;
+
+        // cmd.exe parses its own command line and does not understand the
+        // MSVCRT-style quote escaping std applies to regular args, so the
+        // command must go through verbatim after /C or any quoted segment
+        // (paths with spaces included) breaks.
+        Command::new("cmd").raw_arg("/C").raw_arg(command).output()
     }
 
     #[cfg(not(target_os = "windows"))]

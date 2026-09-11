@@ -100,7 +100,7 @@ Mouse,,5
 product,price,quantity
 Laptop,999.99,1
 Mouse,0.00,5
-Unknown,25.50,1
+,25.50,1
 ```
 
 ### With String Cleaning

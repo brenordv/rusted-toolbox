@@ -21,8 +21,8 @@ quick sharing of information, WiFi credentials, URLs, or any text data that need
 - `-a, --wifi-auth <AUTH>`: WiFi authentication type: WPA | WEP | nopass (case insensitive, normalized to the canonical spelling; default: WPA). Other values are rejected.
 
 ### Output Options
-- `-o, --output-file <FILENAME>`: Custom output filename (auto-generates if not specified)
-- `-f, --output-format <FORMAT>`: Output file format (png, svg). The format decides the saved extension regardless of the `-o` filename; when the `-o` extension contradicts the effective format (e.g. `-o x.svg` with the default png), the tool warns and saves `x.svg.png`.
+- `-o, --output-file <FILENAME>`: Custom output filename (auto-generates if not specified). Without `-f`, an inferable extension picks the format (svg, png, jpg/jpeg, bmp, tif/tiff, tga), so `-o x.svg` saves an SVG and `-o x.jpg` a JPEG; any other extension falls back to png with the mismatch warning.
+- `-f, --output-format <FORMAT>`: Output file format (svg, png, jpg/jpeg, bmp, tif/tiff, tga). An explicit `-f` wins over the `-o` extension and decides the saved extension; when the `-o` extension contradicts it (e.g. `-f png -o x.svg`), the tool warns and saves `x.svg.png`.
 - `-x, --dont-print`: Skip printing QR code to console
 
 ### Shared Runtime Options

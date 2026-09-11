@@ -95,7 +95,7 @@ Sample output:
 --- statistics ---
 3 packets transmitted, 3 received, 0.0% packet loss
 ```
-Pass `--app-header` to also print the tool header before the output above: a `pingx (2.0.2)`
+Pass `--app-header` to also print the tool header before the output above: a `pingx (2.0.3)`
 title line followed by the standard runtime-config block and the tool's own config section.
 
 ### Force IPv4 and set interval

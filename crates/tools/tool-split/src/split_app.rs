@@ -1,6 +1,7 @@
 use crate::models::SplitArgs;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
 use common_utils::constants::{SIZE_128KB, SIZE_64KB};
 use common_utils::datetime_utc_utils::DateTimeUtcUtils;
 use common_utils::string_utils::{format_bytes_to_string, format_duration_to_string};
@@ -9,7 +10,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 /// How a split run ended: the whole input was processed, or the user
 /// interrupted it after some parts were already written.
@@ -170,7 +171,11 @@ pub fn process_input_file(
                 &output_filename,
                 total_data_read,
             ) {
-                warn!("Progress feedback disabled: cannot write to stdout: {}", e);
+                if e.is::<BrokenPipe>() {
+                    debug!("Progress feedback disabled: stdout closed by the consumer");
+                } else {
+                    warn!("Progress feedback disabled: cannot write to stdout: {}", e);
+                }
                 feedback_enabled = false;
             }
         }
@@ -194,7 +199,11 @@ pub fn process_input_file(
             &output_filename,
             total_data_read,
         ) {
-            warn!("Progress feedback disabled: cannot write to stdout: {}", e);
+            if e.is::<BrokenPipe>() {
+                debug!("Final progress feedback skipped: stdout closed by the consumer");
+            } else {
+                warn!("Progress feedback disabled: cannot write to stdout: {}", e);
+            }
         }
     }
 
@@ -211,21 +220,23 @@ pub fn process_input_file(
 /// file info) to `output`, overwriting the current console line.
 ///
 /// # Errors
-/// Returns the write or flush error so the caller can stop further feedback.
+/// Returns the write or flush error, with a closed pipe mapped to the shared
+/// `BrokenPipe` marker, so the caller can stop further feedback and stay
+/// quiet when the consumer simply went away.
 fn update_progress_feedback(
-    output: &mut dyn Write,
+    output: &mut impl Write,
     start_time: &DateTime<Utc>,
     current_file_number: i32,
     current_line_count: usize,
     total_lines_processed: u64,
     current_output_file: &str,
     total_bytes_read: u64,
-) -> std::io::Result<()> {
+) -> Result<()> {
     let elapsed = start_time.get_elapsed_time();
     let lines_per_second = total_lines_processed as f64 / elapsed.as_seconds_f64();
 
     let msg = format!(
-        "[L/s:{:.2}][Total Lines:{} Data:{} Files:{}][Cur. File:{} - {}]                        ",
+        "\r[L/s:{:.2}][Total Lines:{} Data:{} Files:{}][Cur. File:{} - {}]                        ",
         lines_per_second,
         total_lines_processed,
         format_bytes_to_string(total_bytes_read),
@@ -234,8 +245,8 @@ fn update_progress_feedback(
         current_output_file
     );
 
-    write!(output, "\r{}", msg)?;
-    output.flush()
+    write_out(output, msg.as_bytes())?;
+    flush_out(output)
 }
 
 /// Creates output file path with prefix, input name, and file number.

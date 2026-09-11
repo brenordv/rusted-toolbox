@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0
+- Add `--fail-on-skip` (valid only with `--check`): exits 1 when any input was skipped
+  (binary, UTF-16/32, extension filter), so a gate cannot report a clean tree it never
+  actually verified. Without the flag, skips stay neutral as before.
+- The `Inputs:`/`Output:` header group lines render through
+  `common_cli::header_format::format_config_label`; output bytes are unchanged.
+
 ## 2.1.0
 - Add `--check`: scans like `--dry-run` (writes nothing, same report lines, a `Check:` summary) and exits 0 when nothing would change, 1 when at least one input would be modified, and 2 when the run fails, so the tool works as a pipeline quality gate. Conflicts with `--in-place`, `--output`, and `--dry-run`.
 - Add `--keep-bom`: keeps a leading UTF-8 BOM instead of stripping it; a kept BOM does not count as a change, so a file whose only issue is the BOM is reported clean. Mid-stream U+FEFF characters are still removed.

@@ -2,8 +2,8 @@ use crate::models::{InputSource, OutputTarget, RemoveZwArgs};
 use anyhow::{anyhow, Result};
 use clap::{builder::NonEmptyStringValueParser, Parser};
 use common_cli::common_tool_args::CommonToolArgs;
-use common_cli::header_format::format_config_item;
-use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
+use common_cli::header_format::{format_config_item, format_config_label};
+use common_utils::constants::CONFIG_UL_ITEM_LEVEL_3;
 use std::fs;
 use std::path::PathBuf;
 
@@ -43,6 +43,10 @@ struct CliArgs {
     /// Report like --dry-run and exit 0 (nothing to change), 1 (changes needed), or 2 (error)
     #[arg(long = "check", conflicts_with_all = ["in_place", "output", "dry_run"])]
     pub check: bool,
+
+    /// With --check, exit 1 when any file was skipped (binary, UTF-16/32, extension filter)
+    #[arg(long = "fail-on-skip", requires = "check")]
+    pub fail_on_skip: bool,
 
     /// Keep a leading UTF-8 byte-order mark instead of stripping it
     #[arg(long = "keep-bom")]
@@ -115,17 +119,19 @@ fn build_args(args: &CliArgs) -> RemoveZwArgs {
         verbose: args.common.verbose,
         dry_run: args.dry_run,
         check: args.check,
+        fail_on_skip: args.fail_on_skip,
         keep_bom: args.keep_bom,
     }
 }
 
 /// Prints the tool's runtime configuration, shown under `--app-header`.
 ///
-/// `label: value` lines are rendered through the shared `format_config_item`;
-/// the `Inputs:`/`Output:` group lines and their nested value bullets have no
-/// `label: value` shape, so they print from the `CONFIG_UL_*` constants.
+/// `label: value` lines are rendered through the shared `format_config_item`
+/// and the `Inputs:`/`Output:` group lines through `format_config_label`; the
+/// nested value bullets have no `label: value` shape, so they print from the
+/// `CONFIG_UL_ITEM_LEVEL_3` constant.
 fn print_header(args: &RemoveZwArgs) {
-    println!("{} Inputs:", CONFIG_UL_ITEM_LEVEL_2);
+    println!("{}", format_config_label("Inputs:"));
     for input in &args.inputs {
         match input {
             InputSource::Stdin => {
@@ -138,11 +144,15 @@ fn print_header(args: &RemoveZwArgs) {
         }
     }
 
-    println!("{} Output:", CONFIG_UL_ITEM_LEVEL_2);
+    println!("{}", format_config_label("Output:"));
     if args.dry_run {
         println!("{} Dry run (nothing written)", CONFIG_UL_ITEM_LEVEL_3);
     } else if args.check {
-        println!("{} Check (report only)", CONFIG_UL_ITEM_LEVEL_3);
+        if args.fail_on_skip {
+            println!("{} Check (report only; skips fail)", CONFIG_UL_ITEM_LEVEL_3);
+        } else {
+            println!("{} Check (report only)", CONFIG_UL_ITEM_LEVEL_3);
+        }
     } else if args.in_place {
         println!("{} In place", CONFIG_UL_ITEM_LEVEL_3);
     } else if let Some(output) = &args.output {
@@ -274,6 +284,7 @@ mod tests {
             verbose: false,
             dry_run: false,
             check: false,
+            fail_on_skip: false,
             keep_bom: false,
         }
     }
@@ -297,6 +308,17 @@ mod tests {
             );
         }
         assert!(CliArgs::try_parse_from(["remove-zw", "--check", "--output", "x"]).is_err());
+    }
+
+    #[test]
+    fn fail_on_skip_requires_check() {
+        assert!(CliArgs::try_parse_from(["remove-zw", "--fail-on-skip", "in.txt"]).is_err());
+
+        let args = CliArgs::try_parse_from(["remove-zw", "--check", "--fail-on-skip", "in.txt"])
+            .expect("valid combination");
+        let config = build_args(&args);
+        assert!(config.check);
+        assert!(config.fail_on_skip);
     }
 
     #[test]

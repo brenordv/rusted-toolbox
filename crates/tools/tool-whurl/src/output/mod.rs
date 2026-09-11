@@ -1,7 +1,7 @@
 mod json;
 mod summarize;
 
-pub use json::write_json_report;
+pub use json::{render_json_report, write_json_report};
 pub use summarize::print_test_summary;
 
 use std::io;

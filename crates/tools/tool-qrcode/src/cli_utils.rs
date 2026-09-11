@@ -39,7 +39,7 @@ struct CliArgs {
     #[arg(short = 'f', long = "output-format", value_name = "FORMAT")]
     pub output_format: Option<String>,
 
-    /// Output file name. If not specified, a random one is generated
+    /// Output file name; a recognized extension picks the format unless -f is given. If not specified, a random one is generated
     #[arg(short = 'o', long = "output-file", value_name = "FILENAME")]
     pub output_file: Option<String>,
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0
+- Without `-f`, the output format is now inferred from the `-o` extension: `-o x.svg` saves an
+  SVG and `-o x.jpg` a JPEG instead of warning and saving `x.svg.png`. Inference covers `svg`,
+  `png`, `jpg`/`jpeg`, `bmp`, `tif`/`tiff`, and `tga`, each pinned by a test that writes the
+  file; extensions the grayscale QR buffer cannot encode (`ico`, `webp`, `gif`, and the like)
+  keep the png fallback with the old warning-and-append behavior, as does anything
+  unrecognized. An explicit `-f` wins over the extension, unchanged.
+
 ## 2.0.1
 - Wifi payloads now backslash-escape the reserved characters `\`, `;`, `,`, `:`, and `"` in the
   SSID and password fields, so credentials containing them scan correctly. Previously the raw

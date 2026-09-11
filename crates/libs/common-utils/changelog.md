@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.1.0
+- Added `string_utils::escape_for_terminal_display`: escapes control characters (C0, DEL, C1) and Unicode bidirectional-control characters for safe terminal output. Extracted from the identical hand-rolled escaping in tool-mqtt and tool-pingx, which now use it.
+
 ## 2.0.1
 - Documented the remaining undocumented public items: `get_current_dir`, the `constants` values, `sanitize_string_for_filename` (stating the substitution-only guarantee and its limits), and the two datetime traits.
 - Regrouped the string-formatting example tests with rstest and added cases pinning negative-duration magnitude and TB as the largest byte unit.

@@ -1,6 +1,5 @@
 use crate::models::{DirEntry, FileEntry, ServerConfig};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
-use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use tracing::{error, info};
@@ -135,7 +134,7 @@ async fn handle_request(
 }
 
 async fn serve_file(file_path: &Path) -> Result<warp::reply::Response, warp::Rejection> {
-    let contents = match fs::read(file_path) {
+    let contents = match tokio::fs::read(file_path).await {
         Ok(contents) => contents,
         Err(_) => return Err(warp::reject::not_found()),
     };
@@ -171,17 +170,20 @@ fn encode_href_segment(segment: &str) -> String {
 /// and files are `(name, relative_path, size)` tuples, both sorted alphabetically by name.
 /// The name is the raw file name; the relative path appends the name to the request
 /// path as a percent-encoded href segment.
-fn collect_directory_entries(
+async fn collect_directory_entries(
     dir_path: &Path,
     request_path: &str,
     serve_hidden: bool,
 ) -> std::io::Result<(Vec<DirEntry>, Vec<FileEntry>)> {
-    let entries = fs::read_dir(dir_path)?;
+    let mut entries = tokio::fs::read_dir(dir_path).await?;
 
     let mut files = Vec::new();
     let mut directories = Vec::new();
 
-    for entry in entries.flatten() {
+    // An entry that fails mid-walk ends the walk with what was collected, so
+    // one bad entry renders a partial listing rather than a 404 for the
+    // whole directory. Only a directory that cannot be opened at all errors.
+    while let Some(entry) = entries.next_entry().await.unwrap_or(None) {
         let path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
 
@@ -205,11 +207,13 @@ fn collect_directory_entries(
             format!("{}/{}", request_path, encoded_name)
         };
 
-        if path.is_dir() {
-            directories.push((file_name, relative_path));
-        } else {
-            let size = path.metadata().map(|m| m.len()).unwrap_or(0);
-            files.push((file_name, relative_path, size));
+        // tokio::fs::metadata follows symlinks, so a link to a directory
+        // lists as a directory; an unreadable entry is listed as a
+        // zero-sized file rather than dropped.
+        match tokio::fs::metadata(&path).await {
+            Ok(metadata) if metadata.is_dir() => directories.push((file_name, relative_path)),
+            Ok(metadata) => files.push((file_name, relative_path, metadata.len())),
+            Err(_) => files.push((file_name, relative_path, 0)),
         }
     }
 
@@ -226,6 +230,7 @@ async fn serve_directory_listing(
     serve_hidden: bool,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let (directories, files) = collect_directory_entries(dir_path, request_path, serve_hidden)
+        .await
         .map_err(|_| warp::reject::not_found())?;
 
     let html = render_directory_listing(request_path, &directories, &files);
@@ -321,18 +326,14 @@ fn render_directory_listing(
         title, title
     );
 
-    // Add a parent directory link if not at the root
+    // Add a parent directory link if not at the root. The trailing slash a
+    // browser normalizes onto directory URLs ("/sub/") is stripped first, so
+    // the parent link goes up one level instead of back to the same page.
     if request_path != "/" && !request_path.is_empty() {
-        let parent_path = if request_path.contains('/') {
-            let mut parts: Vec<&str> = request_path.split('/').collect();
-            parts.pop();
-            if parts.len() <= 1 {
-                "/".to_string()
-            } else {
-                parts.join("/")
-            }
-        } else {
-            "/".to_string()
+        let trimmed = request_path.trim_end_matches('/');
+        let parent_path = match trimmed.rfind('/') {
+            Some(0) | None => "/".to_string(),
+            Some(idx) => trimmed[..idx].to_string(),
         };
 
         html.push_str(&format!(
@@ -385,9 +386,11 @@ fn render_directory_listing(
 }
 
 /// Returns `true` if any segment of the given relative path starts with a dot,
-/// indicating a hidden file or directory.
+/// indicating a hidden file or directory. Segments split on both separators:
+/// `PathBuf::join` honors `\` on Windows, so an encoded backslash in the URL
+/// must not slip a dotted segment past this check.
 fn contains_hidden_segment(path: &str) -> bool {
-    path.split('/').any(|s| s.starts_with('.'))
+    path.split(['/', '\\']).any(|s| s.starts_with('.'))
 }
 
 fn format_file_size(size: u64) -> String {
@@ -571,15 +574,17 @@ mod tests {
         assert_eq!(response.status(), 405);
     }
 
-    #[test]
-    fn test_collect_entries_hides_dotfiles_by_default() {
+    #[tokio::test]
+    async fn test_collect_entries_hides_dotfiles_by_default() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("visible.txt"), "hi").unwrap();
         fs::write(dir.path().join(".hidden"), "secret").unwrap();
         fs::create_dir(dir.path().join(".secret_dir")).unwrap();
         fs::create_dir(dir.path().join("public_dir")).unwrap();
 
-        let (dirs, files) = collect_directory_entries(dir.path(), "/", false).unwrap();
+        let (dirs, files) = collect_directory_entries(dir.path(), "/", false)
+            .await
+            .unwrap();
 
         let file_names: Vec<&str> = files.iter().map(|f| f.0.as_str()).collect();
         let dir_names: Vec<&str> = dirs.iter().map(|d| d.0.as_str()).collect();
@@ -590,15 +595,17 @@ mod tests {
         assert!(!dir_names.contains(&".secret_dir"));
     }
 
-    #[test]
-    fn test_collect_entries_shows_dotfiles_when_enabled() {
+    #[tokio::test]
+    async fn test_collect_entries_shows_dotfiles_when_enabled() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("visible.txt"), "hi").unwrap();
         fs::write(dir.path().join(".hidden"), "secret").unwrap();
         fs::create_dir(dir.path().join(".secret_dir")).unwrap();
         fs::create_dir(dir.path().join("public_dir")).unwrap();
 
-        let (dirs, files) = collect_directory_entries(dir.path(), "/", true).unwrap();
+        let (dirs, files) = collect_directory_entries(dir.path(), "/", true)
+            .await
+            .unwrap();
 
         let file_names: Vec<&str> = files.iter().map(|f| f.0.as_str()).collect();
         let dir_names: Vec<&str> = dirs.iter().map(|d| d.0.as_str()).collect();
@@ -609,15 +616,17 @@ mod tests {
         assert!(dir_names.contains(&".secret_dir"));
     }
 
-    #[test]
-    fn test_collect_entries_sorted_alphabetically() {
+    #[tokio::test]
+    async fn test_collect_entries_sorted_alphabetically() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("zebra.txt"), "z").unwrap();
         fs::write(dir.path().join("apple.txt"), "a").unwrap();
         fs::create_dir(dir.path().join("beta")).unwrap();
         fs::create_dir(dir.path().join("alpha")).unwrap();
 
-        let (dirs, files) = collect_directory_entries(dir.path(), "/", false).unwrap();
+        let (dirs, files) = collect_directory_entries(dir.path(), "/", false)
+            .await
+            .unwrap();
 
         assert_eq!(dirs[0].0, "alpha");
         assert_eq!(dirs[1].0, "beta");
@@ -677,15 +686,61 @@ mod tests {
         assert!(result.is_ok(), "encoded hash link should resolve the file");
     }
 
-    #[test]
-    fn test_collect_entries_percent_encodes_href_segments() {
+    #[tokio::test]
+    async fn test_collect_entries_percent_encodes_href_segments() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("a#b.txt"), "x").unwrap();
 
-        let (_, files) = collect_directory_entries(dir.path(), "/", false).unwrap();
+        let (_, files) = collect_directory_entries(dir.path(), "/", false)
+            .await
+            .unwrap();
 
         assert_eq!(files[0].0, "a#b.txt");
         assert_eq!(files[0].1, "a%23b.txt");
+    }
+
+    #[test]
+    fn hidden_segment_detected_across_both_separators() {
+        assert!(contains_hidden_segment(".secret/data.txt"));
+        assert!(contains_hidden_segment("sub/.secret/data.txt"));
+        assert!(contains_hidden_segment("sub\\.secret\\data.txt"));
+        assert!(!contains_hidden_segment("sub/visible.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_blocks_hidden_file_via_backslash_segments() {
+        let dir = tempdir().unwrap();
+        let hidden_dir = dir.path().join(".secret");
+        fs::create_dir(&hidden_dir).unwrap();
+        fs::write(hidden_dir.join("data.txt"), "secret").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+
+        let result = handle_request(
+            dir.path().to_path_buf(),
+            "/sub\\..\\.secret\\data.txt",
+            warp::http::Method::GET,
+            false,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "backslash segments must not reach the hidden file"
+        );
+    }
+
+    #[test]
+    fn parent_link_goes_up_one_level_despite_trailing_slash() {
+        let html = render_directory_listing("/sub/", &[], &[]);
+
+        assert!(html.contains(r#"<a href="/" class="directory">[DIR] ..</a>"#));
+    }
+
+    #[test]
+    fn parent_link_from_nested_path_points_to_parent() {
+        let html = render_directory_listing("/a/b", &[], &[]);
+
+        assert!(html.contains(r#"<a href="/a" class="directory">[DIR] ..</a>"#));
     }
 
     #[test]

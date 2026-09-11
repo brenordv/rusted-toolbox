@@ -1,6 +1,6 @@
 [package]
 name = "whurl"
-version = "3.1.0"
+version = "3.1.1"
 description = "Wrapper for Hurl with a few additional features."
 edition.workspace = true
 authors.workspace = true

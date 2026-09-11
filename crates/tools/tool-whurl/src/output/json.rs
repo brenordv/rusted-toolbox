@@ -6,6 +6,27 @@ use hurl_core::input::Input;
 
 use super::OutputError;
 
+/// Renders the JSON report to a string through hurl's buffered terminal,
+/// without touching the filesystem.
+///
+/// # Errors
+/// Fails as `StreamWrite` when hurl cannot serialize the report.
+pub fn render_json_report(
+    result: &HurlResult,
+    merged: &str,
+    display_path: &str,
+) -> Result<String, OutputError> {
+    let input = Input::new(display_path);
+    let mut stdout = Stdout::new(WriteMode::Buffered);
+    output::write_json(result, merged, &input, None, &mut stdout, false).map_err(|source| {
+        OutputError::StreamWrite {
+            target: "in-memory buffer".to_string(),
+            source,
+        }
+    })?;
+    Ok(String::from_utf8_lossy(stdout.buffer()).into_owned())
+}
+
 pub fn write_json_report(
     result: &HurlResult,
     merged: &str,

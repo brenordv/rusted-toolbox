@@ -1,26 +1,12 @@
 use crate::models::CatConfig;
 
 use anyhow::{Context, Result};
+use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
 use common_utils::constants::SIZE_128KB;
 use tracing::{debug, error};
 
 use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
-
-/// Marks an output write that failed because the reading side of the pipe closed.
-///
-/// The run loop treats this as a normal end of consumption rather than a failure,
-/// matching how `cat big | head` should behave.
-#[derive(Debug)]
-struct BrokenPipe;
-
-impl std::fmt::Display for BrokenPipe {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "output pipe closed by the consumer")
-    }
-}
-
-impl std::error::Error for BrokenPipe {}
 
 /// Width of the decimal line-number buffer; a `u64` never exceeds twenty digits.
 const LINE_NUMBER_DIGITS: usize = 20;
@@ -438,24 +424,6 @@ fn finish_trailing_cr(options: &CatConfig, state: &mut CatState, cooked: &mut Ve
     if state.pending_cr {
         state.pending_cr = false;
         render_content_byte(b'\r', options, cooked);
-    }
-}
-
-/// Writes all bytes, turning a closed pipe into the `BrokenPipe` marker.
-fn write_out<W: Write>(out: &mut W, bytes: &[u8]) -> Result<()> {
-    match out.write_all(bytes) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => Err(anyhow::Error::new(BrokenPipe)),
-        Err(e) => Err(e).context("failed to write output"),
-    }
-}
-
-/// Flushes the writer, turning a closed pipe into the `BrokenPipe` marker.
-fn flush_out<W: Write>(out: &mut W) -> Result<()> {
-    match out.flush() {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => Err(anyhow::Error::new(BrokenPipe)),
-        Err(e) => Err(e).context("failed to flush output"),
     }
 }
 

@@ -14,13 +14,13 @@ use crate::models::{
     Cli, Command, DryRunArgs, KeyValue, ListArgs, RunArgs, ToolError, ToolResult,
     VariableAccumulator,
 };
-use crate::output::{print_test_summary, write_json_report};
+use crate::output::{print_test_summary, render_json_report, write_json_report};
 use crate::vars::{
     gather_process_env_variables, parse_variables_file, DynamicEvalContext, VariableMap,
 };
 use crate::whurl_utils::{display_relative_path, format_elapsed_line, ElapsedTracker};
 use anyhow::anyhow;
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 use tracing::{info, warn};
 
 pub fn execute(cli: Cli) -> ToolResult<()> {
@@ -274,31 +274,7 @@ fn print_full_response_pretty(
     merged: &str,
     display_path: &str,
 ) -> ToolResult<()> {
-    let identifier = format!(
-        "whurl-full-response-{}-{}.json",
-        std::process::id(),
-        rand::random::<u64>()
-    );
-    let temp_dir = std::env::temp_dir();
-    let std_path = temp_dir.join(&identifier);
-    let utf8_path = Utf8PathBuf::from_path_buf(std_path.clone())
-        .unwrap_or_else(|_| Utf8PathBuf::from(identifier.clone()));
-
-    write_json_report(result, merged, display_path, utf8_path.as_path())?;
-
-    let contents = match std::fs::read_to_string(utf8_path.as_std_path()) {
-        Ok(data) => {
-            let _ = std::fs::remove_file(utf8_path.as_std_path());
-            data
-        }
-        Err(source) => {
-            let _ = std::fs::remove_file(utf8_path.as_std_path());
-            return Err(ToolError::Other(anyhow!(
-                "failed to read temporary JSON report `{}`: {source}",
-                utf8_path
-            )));
-        }
-    };
+    let contents = render_json_report(result, merged, display_path)?;
 
     if contents.trim().is_empty() {
         println!();
@@ -1056,10 +1032,11 @@ mod tests {
         let err = build_vars_for(&resolver, "api", "request", None)
             .expect_err("unknown reference must fail");
         let message = err.to_string();
+        let cited = format!("api{}request.hurl", std::path::MAIN_SEPARATOR);
         assert!(
-            message.contains(
-                "include feed at `api/request.hurl:1` references unknown variable `ghost`"
-            ),
+            message.contains(&format!(
+                "include feed at `{cited}:1` references unknown variable `ghost`"
+            )),
             "unexpected message: {message}"
         );
     }
@@ -1143,7 +1120,8 @@ mod tests {
             .expect_err("missing override env must fail");
         let message = err.to_string();
         assert!(message.contains("environment `ghost` not found for api `other`"));
-        assert!(message.contains("set via `# @include:[env=...]` at api/request.hurl:1"));
+        let cited = format!("api{}request.hurl", std::path::MAIN_SEPARATOR);
+        assert!(message.contains(&format!("set via `# @include:[env=...]` at {cited}:1")));
     }
 
     #[test]

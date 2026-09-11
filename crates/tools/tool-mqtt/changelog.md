@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.3.0
+- Ctrl+C now stops both modes cleanly through the shared cli-signal-monitor flag instead of
+  requiring a kill. The subscriber exits 0 (interrupting a subscription is its normal ending);
+  the publisher exits with an error when interrupted before the broker acknowledged the
+  publication, so a script can tell an unconfirmed publish from a confirmed one. During a
+  backoff wait the flag is checked every 200ms.
+- A dead broker no longer emits an identical `error!` line every ~200ms forever. Failed polls
+  retry with exponential backoff (500ms doubling to a 30s cap, reset on recovery), the first
+  occurrence of an error logs at error level, identical repeats drop to debug, and a recovery
+  logs one info line.
+- The flat per-event sleep is gone from both loops (200ms in the subscriber, 100ms in the
+  publisher). It capped the subscriber at roughly five events per second on a busy topic;
+  `EventLoop::poll` already blocks until the next event, so the loops now keep up with the
+  broker and only the error path waits (with the backoff above).
+- Payload escaping moved to `common_utils::string_utils::escape_for_terminal_display` (shared
+  with pingx); rendered bytes are unchanged.
+
 ## 2.2.0
 - Received messages now print to stdout, one line per message, instead of being reported through
   the logger at info level. A subscriber shows messages at the default warn log level, and stdout

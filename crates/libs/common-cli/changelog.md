@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.0
+- Added `header_format::format_config_label`: the label-only level-2 line renderer for group or
+  mode lines that carry no value (`Inputs:`, `Resolved Target`). pingx and remove-zw adopted it
+  in place of hand-assembled `CONFIG_UL_ITEM_LEVEL_2` prints; output bytes are unchanged.
+
 ## 1.5.0
 - Added the `broken_pipe` module: a `BrokenPipe` marker type plus `write_out`/`flush_out` wrappers
   that map a closed-pipe write failure into the marker inside the `anyhow` chain, so a streaming

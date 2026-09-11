@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.3
+- Internal dedup, output bytes unchanged: reverse-DNS display escaping now comes from
+  `common_utils::string_utils::escape_for_terminal_display` (the local `sanitize_display` copy is
+  gone), and the `Resolved Target` / `Continuous mode` header lines render through
+  `common_cli::header_format::format_config_label` instead of hand-assembled constants.
+
 ## 2.0.2
 - The reverse-DNS lookup (`dns_lookup::lookup_addr`, a synchronous `getnameinfo` wrapper) now runs
   on tokio's blocking pool via `tokio::task::spawn_blocking` instead of stalling the async runtime.

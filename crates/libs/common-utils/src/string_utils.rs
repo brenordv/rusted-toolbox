@@ -27,6 +27,33 @@ pub fn sanitize_string_for_filename(input: &str) -> String {
         .to_string()
 }
 
+/// Escapes `input` for terminal display: control characters (C0, DEL, C1) and
+/// Unicode bidirectional-control characters render as `escape_debug` sequences
+/// so untrusted text cannot inject terminal escape sequences or visually
+/// reorder output. Every other character passes through unchanged, so plain
+/// text and JSON stay byte-identical for piping.
+pub fn escape_for_terminal_display(input: &str) -> String {
+    let mut escaped = String::with_capacity(input.len());
+    for c in input.chars() {
+        if c.is_control() || is_bidi_control(c) {
+            escaped.extend(c.escape_debug());
+        } else {
+            escaped.push(c);
+        }
+    }
+    escaped
+}
+
+/// Unicode bidirectional-control characters (the embedding/override set, the
+/// isolate set, and the implicit marks LRM/RLM/ALM) can visually reorder
+/// terminal output, so display escaping treats them like control characters.
+fn is_bidi_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}' | '\u{061C}'
+    )
+}
+
 /// Converts a `Duration` object into a formatted time string representation in the format `HH:MM:SS.mmm`.
 ///
 /// This function processes an ` Duration ` and formats its total time components into a human-readable string.
@@ -123,6 +150,19 @@ mod tests {
     #[case::empty_stays_empty("", "")]
     fn sanitize_filename_cases(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(sanitize_string_for_filename(input), expected);
+    }
+
+    #[rstest]
+    #[case::plain_text_passes_through("host-1.example.com", "host-1.example.com")]
+    #[case::json_stays_byte_identical(r#"{"a":1,"b":"x y"}"#, r#"{"a":1,"b":"x y"}"#)]
+    #[case::c0_escape_byte("evil\u{1b}[2Jname", "evil\\u{1b}[2Jname")]
+    #[case::c1_csi("\u{9b}x", "\\u{9b}x")]
+    #[case::bidi_override("a\u{202E}b", "a\\u{202e}b")]
+    #[case::implicit_bidi_marks("a\u{200E}b\u{200F}c\u{061C}d", "a\\u{200e}b\\u{200f}c\\u{61c}d")]
+    #[case::newline_escaped_to_one_line("line1\nline2", "line1\\nline2")]
+    #[case::empty_stays_empty("", "")]
+    fn escape_for_terminal_display_cases(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(escape_for_terminal_display(input), expected);
     }
 
     #[rstest]

@@ -16,7 +16,8 @@ pub struct Expansion {
 /// Resolves each target argument in order: an existing file is included
 /// as-is, a directory is an error, anything else with glob metacharacters is
 /// expanded (sorted within its argument), and a missing literal is an error.
-/// The final list is deduplicated by path string, first occurrence kept.
+/// The final list is deduplicated lexically by parsed path components, first
+/// occurrence kept.
 pub fn expand_targets(args: &[String]) -> Expansion {
     let mut failed = false;
     let mut collected: Vec<PathBuf> = Vec::new();
@@ -28,10 +29,22 @@ pub fn expand_targets(args: &[String]) -> Expansion {
     let mut seen: HashSet<OsString> = HashSet::new();
     let targets = collected
         .into_iter()
-        .filter(|path| seen.insert(path.as_os_str().to_os_string()))
+        .filter(|path| seen.insert(dedup_key(path)))
         .collect();
 
     Expansion { targets, failed }
+}
+
+/// Dedup key built from the path's parsed components, so one file reached
+/// with different separators (`dir\a.txt` vs `dir/a.txt` on Windows) or
+/// redundant `.` segments (a leading `./` included, which `components()`
+/// alone would keep) counts once. Purely lexical: spellings that differ
+/// through symlinks or `..` traversal still count separately.
+fn dedup_key(path: &Path) -> OsString {
+    path.components()
+        .filter(|component| !matches!(component, std::path::Component::CurDir))
+        .collect::<PathBuf>()
+        .into_os_string()
 }
 
 fn expand_one(arg: &str, results: &mut Vec<PathBuf>, failed: &mut bool) {
@@ -417,6 +430,14 @@ mod tests {
         let (prefix, rest) = split_literal_prefix("*.txt");
         assert_eq!(prefix, PathBuf::from("."));
         assert_eq!(rest, "*.txt");
+    }
+
+    #[test]
+    fn dedup_key_normalizes_curdir_prefix_to_the_plain_spelling() {
+        assert_eq!(
+            dedup_key(Path::new("./logs/a.txt")),
+            dedup_key(Path::new("logs/a.txt"))
+        );
     }
 
     #[test]

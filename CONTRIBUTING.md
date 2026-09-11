@@ -18,7 +18,7 @@ The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
      - `<tool_name>_app.rs` (the actual tool logic);
      - `readme.md` (manual for the tool);
      - `changelog.md` (per-tool changelog);
-     - `improvements.md` (running list of planned and deferred improvements; the on-hold EventHub tools don't have one);
+     - `improvements.md` (running list of planned and deferred improvements, where one exists; tools with nothing recorded don't carry an empty file);
      - `Cargo.toml` (tool-specific metadata; dependencies are inherited from the workspace, see below);
      - Additional files as needed to keep things tidy, scoped to the tool.
 2. **Library crates: `crates/libs/*`**
@@ -52,9 +52,11 @@ Dependency versions live in one place: the root `Cargo.toml`.
 3. Add the tool to `README.md`.
 
 ## Continuous integration
-- `.github/workflows/ci.yml` runs on every push to `master` and every PR: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo build` + `cargo test` on Windows, Linux, and macOS.
+- `.github/workflows/ci.yml` runs on every push to `master` and every PR: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets --locked -- -D warnings` on Linux, plus `cargo test --workspace --locked` on Windows, Linux, and macOS.
+- `.github/workflows/deps-audit.yml` runs `cargo deny check advisories` (RustSec database, config in `deny.toml`) weekly and whenever a PR or push touches a manifest, `Cargo.lock`, `deny.toml`, or the workflow itself.
+- `.github/dependabot.yml` keeps the SHA-pinned actions in the workflows fresh with weekly PRs.
 - `.github/workflows/release.yml` runs on `v*` tags: it builds release binaries on each OS and attaches archives to a GitHub Release.
-- `rust-toolchain.toml` pins the toolchain (stable) and ensures `rustfmt` and `clippy` are available.
+- `rust-toolchain.toml` pins the toolchain to a specific version (currently 1.98, bumped deliberately alongside a clippy/fmt pass) and ensures `rustfmt` and `clippy` are available.
 
 ## Tool structure
 1. Tools can print/log information, trace, and warnings, but not errors;

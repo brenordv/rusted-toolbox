@@ -3,6 +3,7 @@ use crate::models::{IpMode, OutputMode, PacketResult, PingxArgs, ResolvedTargetI
 use anyhow::Result;
 use chrono::Timelike;
 use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
+use common_utils::string_utils::escape_for_terminal_display;
 use dns_lookup::lookup_addr;
 use serde::Serialize;
 use std::net::IpAddr;
@@ -97,12 +98,15 @@ pub async fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
     };
 
     // lookup_addr wraps the synchronous getnameinfo call, so it runs on
-    // tokio's blocking pool instead of stalling the async runtime.
+    // tokio's blocking pool instead of stalling the async runtime. PTR
+    // records are attacker-controlled and the name flows into terminal
+    // output, CSV, and templates, so control and bidi-control characters
+    // are escaped.
     let reverse_dns = if args.numeric {
         None
     } else {
         match tokio::task::spawn_blocking(move || lookup_addr(&ip).ok()).await {
-            Ok(name) => name.map(|n| sanitize_display(&n)),
+            Ok(name) => name.map(|n| escape_for_terminal_display(&n)),
             Err(e) => {
                 // An ordinary lookup failure stays silent (None), but a
                 // panicked lookup task is a defect signal worth a trace.
@@ -117,26 +121,6 @@ pub async fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
         ip,
         reverse_dns,
     })
-}
-
-/// Escapes control characters (C0, DEL, C1) and Unicode bidirectional-control
-/// characters in a resolved reverse-DNS name. PTR records are
-/// attacker-controlled and the name flows into terminal output, CSV, and
-/// templates; every other character passes through unchanged.
-fn sanitize_display(name: &str) -> String {
-    let mut out = String::with_capacity(name.len());
-    for c in name.chars() {
-        let is_bidi_control = matches!(
-            c,
-            '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}' | '\u{061C}'
-        );
-        if c.is_control() || is_bidi_control {
-            out.extend(c.escape_debug());
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }
 
 pub async fn run_ping(args: &PingxArgs) -> Result<()> {
@@ -500,19 +484,6 @@ mod tests {
             time_ms,
             error: error.map(str::to_string),
         }
-    }
-
-    #[test]
-    fn sanitize_display_passes_ordinary_hostnames_through() {
-        assert_eq!(sanitize_display("host-1.example.com"), "host-1.example.com");
-    }
-
-    #[test]
-    fn sanitize_display_escapes_control_and_bidi_characters() {
-        assert_eq!(
-            sanitize_display("evil\u{1b}[2J\u{202E}name"),
-            "evil\\u{1b}[2J\\u{202e}name"
-        );
     }
 
     #[test]

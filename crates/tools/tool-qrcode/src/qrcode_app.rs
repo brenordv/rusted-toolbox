@@ -42,10 +42,15 @@ pub fn generate_qrcode(args: &QrCodeConfig) -> Result<()> {
         return Ok(());
     }
 
-    let filename_ext = args
-        .output_format
-        .clone()
-        .unwrap_or_else(|| "png".to_string());
+    // Explicit -f wins; without it, a recognized -o extension picks the
+    // format, and only an unrecognized or missing extension falls back to png.
+    let filename_ext = match (&args.output_format, &args.output_file) {
+        (Some(format), _) => format.clone(),
+        (None, Some(output_file)) => {
+            inferred_output_format(output_file).unwrap_or_else(|| "png".to_string())
+        }
+        (None, None) => "png".to_string(),
+    };
 
     if let Some(output_file) = &args.output_file {
         if let Some(ext) = mismatched_output_extension(output_file, &filename_ext) {
@@ -108,6 +113,32 @@ fn escape_wifi_field(value: &str) -> String {
         escaped.push(c);
     }
     escaped
+}
+
+/// Extensions eligible for `-o` format inference: the raster formats the
+/// grayscale (Luma8) QR buffer encodes through `image::save` at this image
+/// size; the test suite writes each one. Recognized-but-unencodable
+/// extensions (ico's 256px cap, webp/gif rejecting L8, avif behind a
+/// non-default feature, dds with no encoder) stay out so inference can never
+/// turn into a hard save failure.
+const INFERABLE_RASTER_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "bmp", "tif", "tiff", "tga"];
+
+/// Infers the output format from the output file's extension: `svg` plus the
+/// [`INFERABLE_RASTER_EXTENSIONS`] qualify, kept in the extension's original
+/// casing so the filename is used as given. Returns `None` for a missing or
+/// non-inferable extension; the caller then falls back to the png default,
+/// where the mismatch warning and appended extension still apply.
+fn inferred_output_format(output_file: &str) -> Option<String> {
+    let ext = Path::new(output_file).extension()?.to_str()?;
+    if ext.eq_ignore_ascii_case("svg")
+        || INFERABLE_RASTER_EXTENSIONS
+            .iter()
+            .any(|known| ext.eq_ignore_ascii_case(known))
+    {
+        Some(ext.to_string())
+    } else {
+        None
+    }
 }
 
 /// Returns the extension of `output_file` when the saved file will end up as
@@ -240,6 +271,54 @@ mod tests {
             build_wifi_payload("net", "secret", "nopass"),
             "WIFI:T:nopass;S:net;P:secret;;"
         );
+    }
+
+    #[test]
+    fn inferred_output_format_recognizes_svg_and_raster_extensions() {
+        assert_eq!(inferred_output_format("x.svg"), Some("svg".to_string()));
+        assert_eq!(inferred_output_format("x.SVG"), Some("SVG".to_string()));
+        assert_eq!(inferred_output_format("x.jpg"), Some("jpg".to_string()));
+    }
+
+    #[test]
+    fn inferred_output_format_rejects_unknown_or_missing_extension() {
+        assert_eq!(inferred_output_format("x.txt"), None);
+        assert_eq!(inferred_output_format("x"), None);
+    }
+
+    #[test]
+    fn inferred_output_format_rejects_recognized_but_unencodable_extensions() {
+        assert_eq!(inferred_output_format("x.ico"), None);
+        assert_eq!(inferred_output_format("x.webp"), None);
+        assert_eq!(inferred_output_format("x.gif"), None);
+    }
+
+    #[test]
+    fn generate_qrcode_writes_every_inferable_raster_extension() {
+        let dir = tempdir().unwrap();
+        for ext in INFERABLE_RASTER_EXTENSIONS {
+            let path = dir.path().join(format!("code.{ext}"));
+            let cfg = text_config(None, Some(path.to_string_lossy().to_string()));
+
+            generate_qrcode(&cfg).unwrap_or_else(|e| panic!("saving .{ext} failed: {e}"));
+
+            assert!(
+                std::fs::metadata(&path).unwrap().len() > 0,
+                ".{ext} file is empty"
+            );
+        }
+    }
+
+    #[test]
+    fn generate_qrcode_infers_svg_from_output_extension() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("code.svg");
+        let cfg = text_config(None, Some(path.to_string_lossy().to_string()));
+
+        generate_qrcode(&cfg).unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("<svg"));
     }
 
     #[test]

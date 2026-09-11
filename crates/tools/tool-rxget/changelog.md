@@ -1,3 +1,9 @@
+# 1.0.1
+- Target dedup keys on parsed path components instead of the raw path string, so a file named
+  both literally and via a glob counts once on Windows too (the glob expansion spells the
+  separator as `/` while the literal uses `\`, which the old string compare treated as two
+  files). Dedup stays lexical: symlinked or `..`-relative spellings still count separately.
+
 # 1.0.0
 - Initial release.
 - Extracts regex-matched values from text files, one per line: group 1 when the pattern has

@@ -1,6 +1,6 @@
 [package]
 name = "qrcode"
-version = "2.0.1"
+version = "2.1.0"
 description = "Tool to quickly generate QR Codes"
 edition.workspace = true
 authors.workspace = true

@@ -2,8 +2,9 @@ use crate::models::{IpMode, OutputMode, PingxArgs, ResolvedTargetInfo};
 use anyhow::Result;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
-use common_cli::header_format::{format_config_item, format_config_item_level3};
-use common_utils::constants::CONFIG_UL_ITEM_LEVEL_2;
+use common_cli::header_format::{
+    format_config_item, format_config_item_level3, format_config_label,
+};
 
 /// Cross-platform CLI tool to ping other hosts.
 ///
@@ -151,7 +152,7 @@ fn build_config(args: &CliArgs) -> Result<PingxArgs> {
 }
 
 pub fn print_supplemental_header(args: &PingxArgs, resolved_target_info: &ResolvedTargetInfo) {
-    println!("{} Resolved Target", CONFIG_UL_ITEM_LEVEL_2);
+    println!("{}", format_config_label("Resolved Target"));
     println!(
         "{}",
         format_config_item_level3("Host", &resolved_target_info.host)
@@ -194,7 +195,7 @@ fn print_header(args: &PingxArgs) {
     println!("{}", format_config_item("Host", &args.target));
 
     if args.is_infinite() {
-        println!("{} Continuous mode", CONFIG_UL_ITEM_LEVEL_2);
+        println!("{}", format_config_label("Continuous mode"));
     } else {
         println!("{}", format_config_item("Count", args.count));
     }

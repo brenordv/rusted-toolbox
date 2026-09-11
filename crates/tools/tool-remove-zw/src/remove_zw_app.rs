@@ -612,6 +612,7 @@ mod tests {
             verbose: false,
             dry_run: false,
             check: false,
+            fail_on_skip: false,
             keep_bom: false,
         }
     }

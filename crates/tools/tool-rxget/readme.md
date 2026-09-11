@@ -62,8 +62,9 @@ Regex case sensitivity is the pattern's business: use `(?i)` for case-insensitiv
 - Symlinks to files match like shell globs; symlinked directories are not walked during
   expansion.
 - Glob expansion matches dotfiles: `*.log` also matches `.secret.log`, unlike Unix shells.
-- The same file named two different ways (for example via two patterns) is processed twice;
-  deduplication of targets is by path string.
+- Deduplication of targets is lexical, by parsed path components, first occurrence kept:
+  spellings that differ only in separators or a leading `./` count once, while the same file
+  reached through a symlink or `..` traversal is processed twice.
 - Unique modes hold every distinct value in memory; a run over unbounded distinct values grows
   accordingly.
 - Values and `-H` path prefixes print as raw bytes. Content or names containing terminal escape

@@ -1,0 +1,11 @@
+# Watches the SHA-pinned actions in .github/workflows and opens PRs when they
+# age. Crate dependencies are deliberately not listed: advisory detection runs
+# in deps-audit.yml, and fix PRs for vulnerable crates come from Dependabot
+# security updates (driven by the repo's dependency graph + alerts settings,
+# not by this file).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

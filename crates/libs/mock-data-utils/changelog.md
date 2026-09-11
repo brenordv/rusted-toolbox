@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.2
+- Validation now bounds the year-offset options and float precision, closing panic paths that
+  were reachable through `generate_mock_data`: `person.birthday` with an `age` past chrono's
+  representable years panicked on the fallback date, and `random.date`/`random.datetime`/
+  `random.timestamp` with a large `range` panicked inside chrono's date arithmetic. `age` and
+  `range` now reject values above 100,000 (`MAX_YEAR_OFFSET`), `precision` above 100
+  (`MAX_PRECISION`), each with a clear error.
+- `generate_birthday`'s fallback date is built without `expect`; an unrepresentable birth year
+  reports an error instead of panicking (defense in depth behind the new validation).
+
 ## 1.1.1
 - `commerce.product-description` no longer returns an empty string when
   `length` is smaller than one sentence: the first sentence is now cut at the

@@ -105,6 +105,27 @@ fn check_bom_only_file_respects_keep_bom() {
 }
 
 #[test]
+fn check_skipped_binary_passes_without_fail_on_skip_and_fails_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let binary = fixture(&dir, "blob.bin", &[0x00, 0x01, 0x02]);
+    let path = binary.to_str().unwrap();
+
+    let without = run_tool(&["--check", path]);
+    assert_eq!(without.status.code(), Some(0));
+
+    let with = run_tool(&["--check", "--fail-on-skip", path]);
+    assert_eq!(with.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&with.stdout);
+    assert!(stdout.contains("1 skipped"), "stdout: {stdout}");
+}
+
+#[test]
+fn fail_on_skip_without_check_is_a_usage_error() {
+    let output = run_tool(&["--fail-on-skip", "whatever.txt"]);
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
 fn check_dirty_stdin_reports_instead_of_cleaning() {
     let output = run_tool_with_stdin(&["--check"], "he\u{200B}llo".as_bytes());
     assert_eq!(output.status.code(), Some(1));

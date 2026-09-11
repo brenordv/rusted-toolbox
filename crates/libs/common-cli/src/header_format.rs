@@ -15,6 +15,13 @@ pub fn format_config_section(title: &str) -> String {
     format!("{CONFIG_UL_ITEM_LEVEL_1} {title}")
 }
 
+/// Renders one label-only level-2 line of the runtime-config block, e.g.
+/// `  - Resolved Target`. For group or mode lines that carry no value; any
+/// trailing punctuation (`Inputs:`) belongs to the caller's `label`.
+pub fn format_config_label(label: &str) -> String {
+    format!("{CONFIG_UL_ITEM_LEVEL_2} {label}")
+}
+
 /// Renders one level-2 item line of the runtime-config block, e.g.
 /// `  - Log level: Debug`.
 pub fn format_config_item(label: &str, value: impl Display) -> String {
@@ -61,6 +68,14 @@ mod tests {
         assert_eq!(
             format_config_section("Tool Runtime Config"),
             "- Tool Runtime Config"
+        );
+    }
+
+    #[test]
+    fn format_config_label_uses_level_2_prefix_without_value() {
+        assert_eq!(
+            format_config_label("Resolved Target"),
+            "  - Resolved Target"
         );
     }
 

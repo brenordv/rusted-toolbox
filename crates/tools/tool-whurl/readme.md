@@ -190,7 +190,7 @@ You can add as many includes as you need. Just add one line after the other.
 If you run the provided example `requests/httpbin/extended.hurl` file with `--app-header`, you'll get the following
 result (without the flag, only the log lines print):
 ```text
-whurl (3.1.0)
+whurl (3.1.1)
 ---------------------------------------------------
 - Basic Runtime Config
   - Verbose mode: 0

@@ -85,7 +85,7 @@ pub fn print_runtime_info(args: &CsvNConfig) {
 
 /// Splits a comma-separated header string into trimmed header names.
 ///
-/// Empty segments are kept as empty strings, so `"a,,b"` yields three headers, 
+/// Empty segments are kept as empty strings, so `"a,,b"` yields three headers,
 /// and an empty input yields a single empty header.
 pub fn parse_headers(headers_arg: &str) -> Vec<String> {
     headers_arg

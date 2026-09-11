@@ -47,7 +47,7 @@ mqtt read --host my-broker.com --port 8883 --topic private/data --username myuse
 ```
 **Output:**
 ```
-mqtt (2.2.0)
+mqtt (2.3.0)
 ---------------------------------------------------
 - Basic Runtime Config
   - Verbose mode: <unused>

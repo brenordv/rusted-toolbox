@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.2
+- Progress feedback goes through `common_cli::broken_pipe` now: when stdout is closed by the
+  consumer, feedback stops with a debug note instead of the warning reserved for real write
+  failures. Chunk writes still go to files only; the split itself is unaffected either way.
+
 ## 2.0.1
 - BREAKING: a read error mid-split (for example non-UTF-8 input) now stops the
   run with exit code 1. It logged the error, stopped reading, and exited 0, so

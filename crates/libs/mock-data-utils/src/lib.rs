@@ -3,7 +3,8 @@
 //! [`generate_mock_data`] dispatches a [`models::MockOptions`] to one of the
 //! generators grouped under [`generators`] (personal, internet, random,
 //! commerce). Input is validated first, so an out-of-range option (`min > max`,
-//! `range == 0`) returns an error instead of panicking on an empty random range.
+//! `range == 0`, a year offset or precision past the caps below) returns an
+//! error instead of panicking on an empty or unrepresentable random range.
 
 use crate::generators::*;
 use crate::models::{DataType, MockOptions};
@@ -12,12 +13,24 @@ use anyhow::Result;
 pub mod generators;
 pub mod models;
 
+/// Upper bound accepted for the year-offset options (`age`, `range`). Keeps
+/// the derived date arithmetic well inside chrono's representable calendar
+/// (roughly year -262,144 to 262,142) and the `TimeDelta` seconds bound, so
+/// the generators cannot panic on an overflowing offset.
+pub const MAX_YEAR_OFFSET: u32 = 100_000;
+
+/// Upper bound accepted for `precision`. Far more decimals than an `f64`
+/// carries, while keeping the formatted output small.
+pub const MAX_PRECISION: u32 = 100;
+
 /// Generate mock data based on the specified data type and options.
 ///
 /// # Errors
 /// Returns an error when the options are invalid for the requested type: `min`
-/// greater than `max` for integers and floats, or a `range` of zero for the
-/// date, datetime, and timestamp types.
+/// greater than `max` for integers and floats, a `range` of zero or above
+/// [`MAX_YEAR_OFFSET`] for the date, datetime, and timestamp types, an `age`
+/// above [`MAX_YEAR_OFFSET`] for birthdays, or a float `precision` above
+/// [`MAX_PRECISION`].
 pub fn generate_mock_data(options: &MockOptions) -> Result<String> {
     validate(options, &options.data_type)?;
 
@@ -64,9 +77,10 @@ pub fn generate_mock_data(options: &MockOptions) -> Result<String> {
     }
 }
 
-/// Rejects option values that would otherwise reach an empty random range and
-/// panic: `min > max` for numeric types, and a zero `range` for the date-based
-/// types that offset by it.
+/// Rejects option values that would otherwise reach an empty or
+/// unrepresentable random range and panic: `min > max` for numeric types, a
+/// zero or over-cap `range` for the date-based types that offset by it, an
+/// over-cap `age` for birthdays, and an over-cap float `precision`.
 fn validate(options: &MockOptions, data_type: &DataType) -> Result<()> {
     match data_type {
         DataType::Integer | DataType::Float => {
@@ -75,10 +89,26 @@ fn validate(options: &MockOptions, data_type: &DataType) -> Result<()> {
             if min > max {
                 anyhow::bail!("min ({min}) must be <= max ({max})");
             }
+            if let Some(precision) = options.precision {
+                if precision > MAX_PRECISION {
+                    anyhow::bail!("precision ({precision}) must be <= {MAX_PRECISION}");
+                }
+            }
         }
-        DataType::Date | DataType::DateTime | DataType::Timestamp if options.range == Some(0) => {
-            anyhow::bail!("range must be >= 1");
+        DataType::Birthday => {
+            if let Some(age) = options.age {
+                if age > MAX_YEAR_OFFSET {
+                    anyhow::bail!("age ({age}) must be <= {MAX_YEAR_OFFSET}");
+                }
+            }
         }
+        DataType::Date | DataType::DateTime | DataType::Timestamp => match options.range {
+            Some(0) => anyhow::bail!("range must be >= 1"),
+            Some(range) if range > MAX_YEAR_OFFSET => {
+                anyhow::bail!("range ({range}) must be <= {MAX_YEAR_OFFSET}");
+            }
+            _ => {}
+        },
         _ => {}
     }
 
@@ -208,6 +238,56 @@ mod tests {
         let error = generate_mock_data(&opts).unwrap_err();
 
         assert!(format!("{error:#}").contains("range"));
+    }
+
+    #[test]
+    fn validate_birthday_age_over_cap_errors() {
+        let mut opts = options_for(DataType::Birthday);
+        opts.age = Some(MAX_YEAR_OFFSET + 1);
+
+        let error = generate_mock_data(&opts).unwrap_err();
+
+        assert!(format!("{error:#}").contains("age"));
+    }
+
+    #[test]
+    fn validate_birthday_age_at_cap_generates() {
+        let mut opts = options_for(DataType::Birthday);
+        opts.age = Some(MAX_YEAR_OFFSET);
+
+        assert!(generate_mock_data(&opts).is_ok());
+    }
+
+    #[test]
+    fn validate_date_types_range_over_cap_errors() {
+        for data_type in [DataType::Date, DataType::DateTime, DataType::Timestamp] {
+            let mut opts = options_for(data_type);
+            opts.range = Some(MAX_YEAR_OFFSET + 1);
+
+            let error = generate_mock_data(&opts).unwrap_err();
+
+            assert!(format!("{error:#}").contains("range"));
+        }
+    }
+
+    #[test]
+    fn validate_date_types_range_at_cap_generates() {
+        for data_type in [DataType::Date, DataType::DateTime, DataType::Timestamp] {
+            let mut opts = options_for(data_type);
+            opts.range = Some(MAX_YEAR_OFFSET);
+
+            assert!(generate_mock_data(&opts).is_ok(), "{:?}", opts.data_type);
+        }
+    }
+
+    #[test]
+    fn validate_float_precision_over_cap_errors() {
+        let mut opts = options_for(DataType::Float);
+        opts.precision = Some(MAX_PRECISION + 1);
+
+        let error = generate_mock_data(&opts).unwrap_err();
+
+        assert!(format!("{error:#}").contains("precision"));
     }
 
     #[test]

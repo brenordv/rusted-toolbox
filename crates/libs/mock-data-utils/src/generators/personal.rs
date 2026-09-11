@@ -108,10 +108,11 @@ pub fn generate_birthday(options: &MockOptions) -> Result<String> {
         _ => rand::rng().random_range(1..=31),
     };
 
-    let birthday = NaiveDate::from_ymd_opt(birth_year, month, day).unwrap_or_else(|| {
-        NaiveDate::from_ymd_opt(birth_year, 1, 1)
-            .expect("January 1 of a computed valid year exists")
-    });
+    let birthday = NaiveDate::from_ymd_opt(birth_year, month, day)
+        .or_else(|| NaiveDate::from_ymd_opt(birth_year, 1, 1))
+        .ok_or_else(|| {
+            anyhow::anyhow!("birth year {birth_year} is outside the representable date range")
+        })?;
 
     Ok(birthday.format("%Y-%m-%d").to_string())
 }

@@ -72,7 +72,7 @@ Exit codes with `--check`:
 | Code | Meaning |
 |------|---------|
 | 0 | Run completed; nothing would be modified |
-| 1 | Run completed; at least one input would be modified |
+| 1 | Run completed; at least one input would be modified (or, with `--fail-on-skip`, at least one input was skipped) |
 | 2 | The run failed: unreadable input, invalid arguments, stdin not valid UTF-8 |
 
 Notes on the contract:
@@ -81,14 +81,17 @@ Notes on the contract:
   (for example `--check --in-place`) exit 2 in every mode.
 - Exits 0 and 1 always end with the `Check: ...` summary line; exit 2 never does, so a CI log
   can tell a gate verdict from a tool error at a glance.
-- Skipped files (binary, extension-filtered, UTF-16/32) are unverified and never make the
-  result dirty. Symlinks inside a scanned directory are not followed and not reported. A run
-  whose inputs are all skipped, or that matches zero files, exits 0. Gate authors should
-  sanity-check the summary counts.
+- Skipped files (binary, extension-filtered, UTF-16/32) are unverified and by default never
+  make the result dirty: a run whose inputs are all skipped, or that matches zero files,
+  exits 0. Pass `--fail-on-skip` (valid only with `--check`) to exit 1 when anything was
+  skipped, so a gate cannot report a clean tree it never actually verified. Symlinks inside a
+  scanned directory are not followed and not reported. Gate authors should sanity-check the
+  summary counts either way.
 - A gate meant to reject BOMs must not pass `--keep-bom`: with the flag, a file whose only
   issue is a leading BOM exits 0 while still carrying its BOM.
 - `--check` conflicts with `--in-place`, `--output`, and `--dry-run`. It works with stdin:
-  `cat file | remove-zw --check` reports instead of cleaning.
+  `cat file | remove-zw --check` reports instead of cleaning. `--fail-on-skip` without
+  `--check` is a usage error (exit 2).
 - The run aborts at the first I/O error (exit 2); inputs after the failing one are unscanned.
 
 ### Force stdout for file inputs
