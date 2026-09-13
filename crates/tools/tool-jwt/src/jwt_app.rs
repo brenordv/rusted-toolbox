@@ -1,12 +1,12 @@
 use crate::models::{Claims, ExpirationStatus, TokenInfo};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
-use common_cli::tool_exit_helpers::exit_error;
+use common_cli::broken_pipe::write_out;
 use common_utils_ext::copy_string_to_clipboard::copy_to_clipboard;
 use jsonwebtoken::dangerous::insecure_decode;
 use serde_json::{Map, Value};
-use std::process;
-use tracing::error;
+use std::io::Write;
+use tracing::warn;
 
 /// Decodes JWT token without signature verification.
 ///
@@ -29,18 +29,22 @@ pub fn decode_jwt_token(token: &str) -> Result<TokenInfo> {
     }
 }
 
-/// Prints JWT claims as CSV format.
+/// Writes JWT claims to `output` as CSV.
 ///
 /// Outputs headers and values as CSV rows with proper escaping.
-/// Prints "No claims found" when there are no claims.
-pub fn print_token_csv(claims: &Map<String, Value>) {
+/// Writes "No claims found" when there are no claims.
+///
+/// # Errors
+/// Fails with the [`common_cli::broken_pipe::BrokenPipe`] marker when the
+/// consumer closes the pipe, or with the underlying I/O error for any other
+/// write failure.
+pub fn print_token_csv(claims: &Map<String, Value>, output: &mut impl Write) -> Result<()> {
     // Exit early if there are no claims
     if claims.is_empty() {
-        println!("No claims found");
-        return;
+        return write_out(output, b"No claims found\n");
     }
 
-    println!("{}", format_csv(claims));
+    write_out(output, format!("{}\n", format_csv(claims)).as_bytes())
 }
 
 /// Formats JWT claims as a two-line CSV document: a header row and a value row.
@@ -84,38 +88,35 @@ fn format_csv(claims: &Map<String, Value>) -> String {
     format!("{}\n{}", header, row)
 }
 
-/// Prints JWT claims as formatted JSON.
+/// Writes JWT claims to `output` as pretty-printed JSON.
 ///
-/// Outputs pretty-printed JSON to stdout.
-/// Exits with code 1 if JSON serialization fails.
-pub fn print_token_json(claims: &Map<String, Value>) {
-    match serde_json::to_string_pretty(&claims) {
-        Ok(json_output) => println!("{}", json_output),
-        Err(e) => {
-            eprintln!("Error formatting JSON: {}", e);
-            process::exit(1);
-        }
-    }
+/// # Errors
+/// Fails when JSON serialization fails, with the
+/// [`common_cli::broken_pipe::BrokenPipe`] marker when the consumer closes the
+/// pipe, or with the underlying I/O error for any other write failure.
+pub fn print_token_json(claims: &Map<String, Value>, output: &mut impl Write) -> Result<()> {
+    let json_output = serde_json::to_string_pretty(&claims).context("Error formatting JSON")?;
+    write_out(output, format!("{}\n", json_output).as_bytes())
 }
 
 /// Copies specific claim value to clipboard.
 ///
 /// Resolves the claim through [`resolve_claim_value`] and copies the result.
-/// Reports on stderr when the claim is not found; exits with error if the
-/// clipboard operation fails.
-pub fn copy_claim_to_clipboard(argument_to_copy: String, claims: &Map<String, Value>) {
+/// A missing claim logs a warning and still returns Ok, keeping the
+/// documented exit 0 for that case.
+///
+/// # Errors
+/// Returns an error if the clipboard operation fails.
+pub fn copy_claim_to_clipboard(
+    argument_to_copy: String,
+    claims: &Map<String, Value>,
+) -> Result<()> {
     let Some(text_to_copy) = resolve_claim_value(&argument_to_copy, claims) else {
-        eprintln!("Claim not found: {}", argument_to_copy);
-        return;
+        warn!("Claim not found: {}", argument_to_copy);
+        return Ok(());
     };
 
-    match copy_to_clipboard(&text_to_copy) {
-        Ok(_) => {}
-        Err(e) => {
-            error!("Error copying to clipboard: {}", e);
-            exit_error();
-        }
-    };
+    copy_to_clipboard(&text_to_copy).context("Error copying to clipboard")
 }
 
 /// Resolves the text a claim would place on the clipboard.
@@ -147,16 +148,36 @@ fn resolve_claim_value(claim_name: &str, claims: &Map<String, Value>) -> Option<
     })
 }
 
-/// Prints JWT claims in human-readable format.
+/// Writes JWT claims to `output` in human-readable format.
 ///
 /// Shows expiration status with colors and lists all claims with formatted values.
-pub fn print_token_pretty(claims: &Map<String, Value>, expiration_status: &ExpirationStatus) {
-    println!("{}", expiration_status.format_colored());
-    println!("----{}Claims:{}------------", "".bold(), "".normal());
+///
+/// # Errors
+/// Fails with the [`common_cli::broken_pipe::BrokenPipe`] marker when the
+/// consumer closes the pipe, or with the underlying I/O error for any other
+/// write failure.
+pub fn print_token_pretty(
+    claims: &Map<String, Value>,
+    expiration_status: &ExpirationStatus,
+    output: &mut impl Write,
+) -> Result<()> {
+    write_out(
+        output,
+        format!("{}\n", expiration_status.format_colored()).as_bytes(),
+    )?;
+    write_out(
+        output,
+        format!("----{}Claims:{}------------\n", "".bold(), "".normal()).as_bytes(),
+    )?;
 
     for (key, value) in claims {
-        println!("{}: {}", key, format_claim_value(value));
+        write_out(
+            output,
+            format!("{}: {}\n", key, format_claim_value(value)).as_bytes(),
+        )?;
     }
+
+    Ok(())
 }
 
 /// Formats JSON value for display.
@@ -331,6 +352,91 @@ mod tests {
         let claims = claims_from(&[("sub", json!("1234567890"))]);
 
         assert_eq!(resolve_claim_value("aud", &claims), None);
+    }
+
+    #[test]
+    fn copy_claim_to_clipboard_missing_claim_is_ok() {
+        let claims = claims_from(&[("sub", json!("1234567890"))]);
+
+        assert!(copy_claim_to_clipboard("aud".to_string(), &claims).is_ok());
+    }
+
+    #[test]
+    fn print_token_json_writes_pretty_json_to_the_output() {
+        let claims = claims_from(&[("sub", json!("1234567890"))]);
+        let mut output = Vec::new();
+
+        print_token_json(&claims, &mut output).unwrap();
+
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("\"sub\": \"1234567890\""));
+    }
+
+    #[test]
+    fn print_token_csv_writes_header_and_row() {
+        let claims = claims_from(&[("sub", json!("1234567890")), ("aud", json!("app"))]);
+        let mut output = Vec::new();
+
+        print_token_csv(&claims, &mut output).unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "aud,sub\napp,1234567890\n"
+        );
+    }
+
+    #[test]
+    fn print_token_csv_reports_missing_claims() {
+        let mut output = Vec::new();
+
+        print_token_csv(&Map::new(), &mut output).unwrap();
+
+        assert_eq!(String::from_utf8(output).unwrap(), "No claims found\n");
+    }
+
+    #[test]
+    fn print_token_pretty_writes_status_and_claims() {
+        let claims = claims_from(&[("name", json!("John Doe"))]);
+        let mut output = Vec::new();
+
+        print_token_pretty(&claims, &ExpirationStatus::NoExpiration, &mut output).unwrap();
+
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("name: John Doe"));
+    }
+
+    /// A writer that always reports a closed pipe.
+    struct ClosedPipe;
+
+    impl std::io::Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+    }
+
+    #[test]
+    fn printers_map_closed_pipe_to_the_marker() {
+        use common_cli::broken_pipe::BrokenPipe;
+        let claims = claims_from(&[("sub", json!("1234567890"))]);
+
+        let err = print_token_csv(&claims, &mut ClosedPipe).unwrap_err();
+        assert!(err.is::<BrokenPipe>());
+
+        let err = print_token_json(&claims, &mut ClosedPipe).unwrap_err();
+        assert!(err.is::<BrokenPipe>());
+
+        let err = print_token_pretty(&claims, &ExpirationStatus::NoExpiration, &mut ClosedPipe)
+            .unwrap_err();
+        assert!(err.is::<BrokenPipe>());
     }
 
     #[test]

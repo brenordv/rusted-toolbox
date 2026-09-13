@@ -53,6 +53,14 @@ so `-c 5Z` means the whole input.
 Repeated `-n`/`-c` flags, or both together, are last-wins on the command line, matching GNU
 getopt; so are `-q` and `-v`/`--verbose` against each other.
 
+The obsolete GNU syntax is accepted when it is the first argument: `head -5` prints the first
+5 lines. Trailing letters follow GNU's grammar, processed left to right: `b`, `k`, `m` switch
+to bytes with a 512/1024/1048576 multiplier, `c` switches to bytes without one, `l` switches
+back to lines (keeping a multiplier, so `head -5kl` prints 5120 lines), and `q`, `v`, `z`
+apply the matching flags. Later modern flags still win: `head -5 -n 3` prints 3 lines. Any
+other trailing letter is an error naming the character; it exits 2 through the normal
+parse-error path where GNU exits 1.
+
 ### Shared flags
 These flags are common to every tool in this workspace and have no short form:
 
@@ -90,6 +98,5 @@ These flags are common to every tool in this workspace and have no short form:
   pipe paths do. Seekable files run in constant memory.
 - A regular file that reports size 0 but still yields content when read (Linux `/proc`-style
   virtual files) is handled through the streaming path, so the negative-count forms work on it.
-- Obsolete option syntax (`head -5`) is not accepted; use `-n 5`.
 - On non-Windows systems the build scripts do not copy this binary into `dist/`, since coreutils
   already provides `head`.

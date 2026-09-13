@@ -139,10 +139,8 @@ fn create_connection_options(
 
     mqtt_options.set_keep_alive(Duration::from_secs(5));
 
-    if !args.is_anonymous() {
-        let username = args.username.clone().unwrap();
-        let password = args.password.clone().unwrap();
-        mqtt_options.set_credentials(username, password);
+    if let Some(credentials) = &args.credentials {
+        mqtt_options.set_credentials(credentials.username.clone(), credentials.password.clone());
     }
 
     debug!("Creating connection");

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0
+- New `binary_sniff` module with `is_probably_binary`, promoted verbatim from tool-lookup's
+  3.1.0 sniff so other tools can use it: samples the first 8 KiB and reports binary when the
+  sample contains a NUL byte. Unreadable or unopenable files report as text, leaving the
+  caller's own error handling in charge; the docs flag the helper as a fail-open heuristic,
+  not a security control. Its tests moved over with it, plus a new one pinning the
+  nonexistent-path contract.
+
 ## 2.0.1
 - Created the readme: the helper, the silent-skip contract, file-path input
   behavior.

@@ -4,8 +4,14 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
-use tracing::{info, warn};
+use std::time::Duration;
+use tracing::{debug, info, warn};
 use walkdir::WalkDir;
+
+/// Total per-request deadline (connect through body) for template downloads;
+/// reqwest applies no timeout by default, and the templates are a few KB, so
+/// this only fires on a hung host.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Order-preserving line accumulator: keeps the first occurrence of each line
 /// in insertion order. gitignore semantics are last-match-wins, so preserving
@@ -63,9 +69,14 @@ pub async fn run_gitignore_maintainer(app_config: GitIgnoreConfig) -> Result<()>
     }
 
     info!("Fetching new .gitignore data...");
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .context("Failed to build the HTTP client")?;
     for url in &pending_urls {
-        get_gitignore_data(url, &client, &mut gitignore_data).await?;
+        get_gitignore_data(url, &client, &mut gitignore_data)
+            .await
+            .with_context(|| format!("Failed to fetch {url}"))?;
     }
 
     if gitignore_data.is_empty() {
@@ -84,9 +95,10 @@ pub async fn run_gitignore_maintainer(app_config: GitIgnoreConfig) -> Result<()>
 }
 
 /// Walks the target folder and collects the template URLs to download: one
-/// per detected footprint key, plus the AI artifacts template when
-/// `include_ai` is set. The set is sorted by URL so the download (and
-/// therefore merge) order is stable run to run.
+/// per detected footprint key, the resolved template(s) for a detected `.m`
+/// footprint, plus the AI artifacts template when `include_ai` is set. The
+/// set is sorted by URL so the download (and therefore merge) order is stable
+/// run to run.
 fn collect_pending_urls(
     folder: &Path,
     target_gitignore: &Path,
@@ -114,6 +126,8 @@ fn collect_pending_urls(
             new_keys_string
         );
     }
+
+    config.resolve_dot_m(&keys_found, &mut pending_urls);
 
     if include_ai {
         info!(url = %AI_ARTIFACTS_TEMPLATE_URL, "AI artifacts template queued by --ai");
@@ -178,11 +192,7 @@ async fn get_gitignore_data(
         .context("Failed to send HTTP request")?;
 
     if !response.status().is_success() {
-        anyhow::bail!(
-            "Error fetching gitignore data from {}. Status: {}",
-            url,
-            response.status()
-        );
+        anyhow::bail!("server returned status {}", response.status());
     }
 
     let text = response
@@ -209,18 +219,89 @@ async fn get_gitignore_data(
     Ok(())
 }
 
-fn list_files(base: &Path, target_gitignore: &Path) -> Vec<PathBuf> {
-    WalkDir::new(base)
-        .into_iter()
-        .filter_map(|entry| entry.ok()) // skip errors gracefully
-        .filter(|entry| !should_ignore(entry.path(), target_gitignore))
-        .map(|entry| entry.into_path())
-        .collect()
+/// Folder names whose contents never feed detection. The folders themselves
+/// still surface as footprints (`.vscode`, `.idea`, `.claude`, ... match
+/// template keys); the walk just never descends into them.
+const IGNORABLE_FOLDERS: &[&str] = &[
+    ".git",
+    "node_modules",
+    "venv",
+    ".venv",
+    "__pycache__",
+    "env",
+    "build",
+    "dist",
+    "target",
+    "bin",
+    ".idea",
+    ".vs",
+    ".vscode",
+    // AI agent state dirs: their contents must not feed detection (a
+    // .claude/hooks/foo.py is not a Python project), but the dirs
+    // themselves still match their footprint keys.
+    ".claude",
+    ".cursor",
+    ".windsurf",
+    ".gemini",
+    ".continue",
+    ".cline",
+    ".codex",
+    ".codeium",
+];
+
+fn is_ignorable_folder_name(name: &str) -> bool {
+    IGNORABLE_FOLDERS.contains(&name.to_lowercase().as_str())
 }
 
-fn should_ignore(path: &Path, target_gitignore: &Path) -> bool {
+/// Walks `base` and collects every path that feeds footprint detection. A
+/// directory named in [`IGNORABLE_FOLDERS`] is itself returned (its name is a
+/// footprint) but never descended into, so `target/` and `node_modules/`
+/// contents stay out of the walk entirely. The walk root (depth 0) is never
+/// pruned, so a project that itself lives in a directory named `target` or
+/// `build` still gets full detection.
+fn list_files(base: &Path, target_gitignore: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let mut walker = WalkDir::new(base).into_iter();
+
+    while let Some(entry) = walker.next() {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                debug!(error = %error, "Skipping unreadable walk entry");
+                continue;
+            }
+        };
+
+        let ignorable_dir = entry.depth() > 0
+            && entry.file_type().is_dir()
+            && entry
+                .path()
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(is_ignorable_folder_name);
+
+        if ignorable_dir {
+            debug!(dir = %entry.path().display(), "Pruning walk descent into ignorable folder");
+            walker.skip_current_dir();
+            // The folder itself stays in the output as a footprint; `.git` is
+            // the one name that never surfaces at all.
+            if !is_git_related(entry.path()) {
+                paths.push(entry.into_path());
+            }
+            continue;
+        }
+
+        if !should_ignore(entry.path(), base, target_gitignore) {
+            paths.push(entry.into_path());
+        }
+    }
+
+    paths
+}
+
+fn should_ignore(path: &Path, base: &Path, target_gitignore: &Path) -> bool {
     is_git_related(path) // Skipping git folders
-        || is_in_ignorable_file(path) // Skipping files that are not relevant
+        || is_in_ignorable_file(path, base) // Skipping files that are not relevant
         || is_gitignore_file(path) // Skipping other gitignore files
         || path == target_gitignore // Skipping the target gitignore file
 }
@@ -232,41 +313,19 @@ fn is_git_related(path: &Path) -> bool {
             .any(|p| p.file_name().and_then(|n| n.to_str()) == Some(".git"))
 }
 
-fn is_in_ignorable_file(path: &Path) -> bool {
-    const IGNORABLE_FOLDERS: &[&str] = &[
-        ".git",
-        "node_modules",
-        "venv",
-        ".venv",
-        "__pycache__",
-        "env",
-        "build",
-        "dist",
-        "bin",
-        ".idea",
-        ".vs",
-        ".vscode",
-        // AI agent state dirs: their contents must not feed detection (a
-        // .claude/hooks/foo.py is not a Python project), but the dirs
-        // themselves still match their footprint keys.
-        ".claude",
-        ".cursor",
-        ".windsurf",
-        ".gemini",
-        ".continue",
-        ".cline",
-        ".codex",
-        ".codeium",
-    ];
-
+fn is_in_ignorable_file(path: &Path, base: &Path) -> bool {
     if path.is_dir() {
         // We can keep the folders, since they may hint for things to ignore (like .vscode, .idea, etc.)
         return false;
     }
 
-    path.ancestors().any(|p| {
+    // Only components below the walk root count: a project living under a
+    // directory named `target` or `build` must still get full detection.
+    let below_root = path.strip_prefix(base).unwrap_or(path);
+
+    below_root.ancestors().any(|p| {
         if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-            IGNORABLE_FOLDERS.contains(&name.to_lowercase().as_str())
+            is_ignorable_folder_name(name)
         } else {
             false
         }
@@ -325,16 +384,100 @@ mod tests {
 
     #[test]
     fn is_in_ignorable_file_detects_ignorable_ancestor() {
-        assert!(is_in_ignorable_file(Path::new("node_modules/pkg/index.js")));
-        assert!(!is_in_ignorable_file(Path::new("src/main.rs")));
+        let base = Path::new("");
+
+        assert!(is_in_ignorable_file(
+            Path::new("node_modules/pkg/index.js"),
+            base
+        ));
+        assert!(!is_in_ignorable_file(Path::new("src/main.rs"), base));
+    }
+
+    #[test]
+    fn is_in_ignorable_file_ignores_components_above_the_walk_root() {
+        let base = Path::new("/home/user/target/proj");
+
+        assert!(!is_in_ignorable_file(
+            Path::new("/home/user/target/proj/src/main.rs"),
+            base
+        ));
+        assert!(is_in_ignorable_file(
+            Path::new("/home/user/target/proj/dist/bundle.js"),
+            base
+        ));
     }
 
     #[test]
     fn should_ignore_flags_gitignore_but_not_source_files() {
+        let base = Path::new("/project");
         let target = Path::new("/project/.gitignore");
 
-        assert!(should_ignore(Path::new("/project/.gitignore"), target));
-        assert!(!should_ignore(Path::new("/project/src/app.rs"), target));
+        assert!(should_ignore(
+            Path::new("/project/.gitignore"),
+            base,
+            target
+        ));
+        assert!(!should_ignore(
+            Path::new("/project/src/app.rs"),
+            base,
+            target
+        ));
+    }
+
+    #[test]
+    fn list_files_returns_pruned_dir_but_not_its_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let target_dir = dir.path().join("sub").join("target");
+        std::fs::create_dir_all(&target_dir).unwrap();
+        std::fs::write(target_dir.join("main.rs"), "fn main() {}").unwrap();
+        let target = dir.path().join(".gitignore");
+
+        let paths = list_files(dir.path(), &target);
+
+        assert!(paths.contains(&target_dir));
+        assert!(!paths.iter().any(|p| p.ends_with("main.rs")));
+    }
+
+    #[test]
+    fn list_files_prunes_git_dir_without_yielding_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let git_dir = dir.path().join(".git");
+        std::fs::create_dir(&git_dir).unwrap();
+        std::fs::write(git_dir.join("config"), "[core]").unwrap();
+        let target = dir.path().join(".gitignore");
+
+        let paths = list_files(dir.path(), &target);
+
+        assert!(!paths.contains(&git_dir));
+        assert!(!paths.iter().any(|p| p.ends_with("config")));
+    }
+
+    #[test]
+    fn collect_pending_urls_detects_project_under_dir_named_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("target").join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("main.py"), "print()").unwrap();
+        let target = project.join(".gitignore");
+        let config = Config::new();
+
+        let urls = collect_pending_urls(&project, &target, &config, false);
+
+        assert!(urls.iter().any(|u| u.contains("Python.gitignore")));
+    }
+
+    #[test]
+    fn collect_pending_urls_walks_a_root_itself_named_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("target");
+        std::fs::create_dir(&project).unwrap();
+        std::fs::write(project.join("main.py"), "print()").unwrap();
+        let target = project.join(".gitignore");
+        let config = Config::new();
+
+        let urls = collect_pending_urls(&project, &target, &config, false);
+
+        assert!(urls.iter().any(|u| u.contains("Python.gitignore")));
     }
 
     #[test]
@@ -351,6 +494,34 @@ mod tests {
             with_ai.into_iter().collect::<Vec<_>>(),
             vec![AI_ARTIFACTS_TEMPLATE_URL.to_string()]
         );
+    }
+
+    #[test]
+    fn collect_pending_urls_ignores_files_under_target_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let target_dir = dir.path().join("sub").join("target");
+        std::fs::create_dir_all(&target_dir).unwrap();
+        std::fs::write(target_dir.join("main.rs"), "fn main() {}").unwrap();
+        let target = dir.path().join(".gitignore");
+        let config = Config::new();
+
+        let urls = collect_pending_urls(dir.path(), &target, &config, false);
+
+        assert!(urls.is_empty());
+    }
+
+    #[test]
+    fn collect_pending_urls_queues_both_templates_for_a_lone_dot_m_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("analysis.m"), "disp('hi')").unwrap();
+        let target = dir.path().join(".gitignore");
+        let config = Config::new();
+
+        let urls = collect_pending_urls(dir.path(), &target, &config, false);
+
+        assert!(urls.contains(crate::config::OBJECTIVE_C_TEMPLATE_URL));
+        assert!(urls.contains(crate::config::MATLAB_TEMPLATE_URL));
+        assert_eq!(urls.len(), 2);
     }
 
     #[test]

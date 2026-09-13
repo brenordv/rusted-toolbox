@@ -20,7 +20,8 @@ various options.
 - `-c, --no-create`: Don't create files that don't exist  
 - `-d, --date <STRING>`: Parse date string and use as timestamp. Accepted forms: POSIX/ISO
   `YYYY-MM-DDThh:mm:SS[.frac][Z]` (`T` or a space; frac takes `.` or `,`; `Z` means UTC, otherwise
-  local), `YYYY-MM-DD [hh:mm[:ss]]`, US month-first `MM/DD/YYYY [hh:mm[:ss]]` (the GNU convention),
+  local), the ISO offset form `YYYY-MM-DDThh:mm:ss[.frac]+hh[:]mm` (`2024-01-15T10:30:45+0900`),
+  `YYYY-MM-DD [hh:mm[:ss]]`, US month-first `MM/DD/YYYY [hh:mm[:ss]]` (the GNU convention),
   `DD Mon YYYY [hh:mm[:ss]]`, RFC-2822 style with offset (`Mon, 15 Jan 2024 10:30:45 +0000`), and
   `now`. Date-only values resolve to local midnight. GNU relative items (`yesterday`, `2 days ago`)
   are not supported. tool-timestamp parses day-first; the difference is deliberate, touch follows

@@ -1,5 +1,42 @@
 # Changelog
 
+## 3.0.2
+- The startup config banner's own lines (the six items under "Tool Runtime Config") go
+  through `common_cli::broken_pipe` now: a consumer that closes stdout before they print
+  produces a debug note instead of a panic, and any other stdout failure a warning; the run
+  itself is never failed by the banner. The standard header block around those lines still
+  prints through common-cli's shared boot path, which is not yet broken-pipe safe; that gap
+  is recorded in the workspace backlog.
+
+## 3.0.1
+- A failed flush of an output part stops the run with exit code 1; it logged a warning
+  and exited 0, so an incomplete part file on disk looked like a success. The error names
+  the part file. This closes the known limit recorded under 3.0.0. The fix is about the
+  exit code, not durability: parts are flushed, not fsynced, same as the rest of the
+  fleet.
+- The remaining bare `println!` calls in the split loop go through
+  `common_cli::broken_pipe` now: the final elapsed-time pair, the Ctrl+C "saving
+  progress" notice, and the CSV-header notice. `csv-split -f big.csv | head -1` exits 0
+  instead of panicking with exit 101 after a successful split. The startup config banner
+  still prints directly; it runs before any long output, so a consumer closing the pipe
+  mid-run never reaches it.
+
+## 3.0.0
+- BREAKING: the tool is now `csv-split` (crate `csv-split`, directory
+  `crates/tools/tool-csv-split`). The old name shadowed coreutils `split` while doing a
+  different, CSV-focused job; the rename keeps the tool out of the Unix ported-tools
+  exclusion list by construction. Scripts calling `split` expecting this tool must switch
+  to `csv-split`.
+- Logging boots before validation, so a validation failure (missing input file, zero
+  `--lines-per-file`) is reported through the subscriber; main's failure arm uses `error!`
+  like the sibling tools instead of a pre-boot stderr print.
+- "CSV mode enabled but no header line found" logs at `warn!` (the run continues and
+  produces headerless parts); it was an `error!` with a "Warning:" prefix.
+- Flush failures are `warn!` events now (they went through bare `eprintln!`), so they reach
+  `--log-to-file` too, and the final-flush warning names the output file. Known limit,
+  recorded in next.md: a failed flush still exits 0 although the part file on disk may be
+  incomplete.
+
 ## 2.0.2
 - Progress feedback goes through `common_cli::broken_pipe` now: when stdout is closed by the
   consumer, feedback stops with a debug note instead of the warning reserved for real write

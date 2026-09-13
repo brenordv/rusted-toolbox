@@ -385,8 +385,9 @@ dependencies = [
 
 [[package]]
 name = "b64"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
+ "anyhow",
  "base64 0.23.1",
  "clap",
  "common-cli",
@@ -791,7 +792,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -816,17 +817,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "common-cli-env"
-version = "1.1.1"
-dependencies = [
- "anyhow",
- "dotenvy",
- "tempfile",
-]
-
-[[package]]
 name = "common-file-utils"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "tempfile",
  "walkdir",
@@ -1156,8 +1148,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "csv-split"
+version = "3.0.2"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-utils",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "csvn"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1210,7 +1216,7 @@ dependencies = [
  "openssl-sys",
  "pkg-config",
  "vcpkg",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -1414,12 +1420,6 @@ checksum = "95249b50c6c185bee49034bcb378a49dc2b5dff0be90ff6616d31d64febab05d"
 dependencies = [
  "litrs",
 ]
-
-[[package]]
-name = "dotenvy"
-version = "0.15.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "dummy"
@@ -1813,6 +1813,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a3d7db9596fecd151c5f638c0ee5d5bd487b6e0ea232e5dc96d5250f6f94b1d"
 dependencies = [
  "crc32fast",
+ "libz-rs-sys",
  "miniz_oxide",
 ]
 
@@ -2024,7 +2025,7 @@ dependencies = [
 
 [[package]]
 name = "get-lines"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2108,7 +2109,7 @@ dependencies = [
 
 [[package]]
 name = "gitignore"
-version = "2.1.0"
+version = "2.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2142,7 +2143,7 @@ dependencies = [
 
 [[package]]
 name = "guid"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2215,7 +2216,7 @@ dependencies = [
 
 [[package]]
 name = "head"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2346,17 +2347,23 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "https"
-version = "2.1.1"
+version = "2.4.0"
 dependencies = [
  "anyhow",
  "clap",
  "common-cli",
+ "futures-util",
+ "http-body-util",
+ "httpdate",
  "mime_guess",
  "percent-encoding",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
+ "walkdir",
  "warp",
+ "zip",
 ]
 
 [[package]]
@@ -2681,7 +2688,7 @@ checksum = "89194689a993ab15268672e99e7b0e19da2da3268ac682e8f02d29d4d1434cd7"
 
 [[package]]
 name = "imgx"
-version = "2.1.0"
+version = "2.1.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -2829,7 +2836,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -2946,7 +2953,7 @@ dependencies = [
 
 [[package]]
 name = "jwt"
-version = "2.0.2"
+version = "2.0.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3073,6 +3080,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "libz-rs-sys"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c10501e7805cee23da17c7790e59df2870c0d4043ec6d03f67d31e2b53e77415"
+dependencies = [
+ "zlib-rs",
+]
+
+[[package]]
 name = "libz-sys"
 version = "1.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3135,7 +3151,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "logging-otel"
-version = "1.1.1"
+version = "1.2.0"
 dependencies = [
  "common-cli",
  "raccoon-otel",
@@ -3143,7 +3159,7 @@ dependencies = [
 
 [[package]]
 name = "lookup"
-version = "3.1.0"
+version = "3.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3282,7 +3298,7 @@ dependencies = [
 
 [[package]]
 name = "mock"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3293,7 +3309,7 @@ dependencies = [
 
 [[package]]
 name = "mock-data-utils"
-version = "1.1.2"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3314,7 +3330,7 @@ dependencies = [
 
 [[package]]
 name = "mqtt"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3346,7 +3362,7 @@ dependencies = [
 
 [[package]]
 name = "netquality"
-version = "2.1.0"
+version = "2.1.3"
 dependencies = [
  "anyhow",
  "cfspeedtest",
@@ -4021,7 +4037,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pingx"
-version = "2.0.3"
+version = "2.0.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4254,7 +4270,7 @@ dependencies = [
 
 [[package]]
 name = "qrcode"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4991,7 +5007,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -5049,7 +5065,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -5518,7 +5534,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -5538,20 +5554,6 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
-]
-
-[[package]]
-name = "split"
-version = "2.0.2"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "cli-signal-monitor",
- "common-cli",
- "common-utils",
- "tempfile",
- "tracing",
 ]
 
 [[package]]
@@ -5709,7 +5711,7 @@ dependencies = [
 
 [[package]]
 name = "tail"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5732,7 +5734,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -5745,7 +5747,7 @@ dependencies = [
  "parking_lot 0.12.4",
  "rustix 1.1.4",
  "signal-hook",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -5755,7 +5757,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -6070,7 +6072,7 @@ dependencies = [
 
 [[package]]
 name = "touch"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6222,7 +6224,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "ts"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6251,6 +6253,12 @@ dependencies = [
  "url",
  "utf-8",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
 
 [[package]]
 name = "typenum"
@@ -6437,6 +6445,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0a808122a8a77eecdabaefd88ddb1913c4be5ea1465399f63ba64c7aa705fea"
 dependencies = [
  "bytes",
+ "futures-channel",
  "futures-util",
  "headers",
  "http",
@@ -6657,7 +6666,7 @@ dependencies = [
 
 [[package]]
 name = "whisper"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -7201,6 +7210,25 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "zip"
+version = "8.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "typed-path",
+]
+
+[[package]]
+name = "zlib-rs"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40990edd51aae2c2b6907af74ffb635029d5788228222c4bb811e9351c0caad3"
 
 [[package]]
 name = "zmij"

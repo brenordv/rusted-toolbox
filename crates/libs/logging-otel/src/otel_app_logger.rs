@@ -80,6 +80,17 @@ fn resolve_endpoint(param: Option<&str>) -> Option<String> {
     })
 }
 
+/// Reports whether an OTLP endpoint is configured: the explicit `otel_endpoint`
+/// value first, falling back to `OTEL_EXPORTER_OTLP_ENDPOINT`; a value that is
+/// empty after trimming counts as absent in either place, matching the rules
+/// [`OtelAppLogger::init_with_otel`] applies.
+///
+/// Only presence is reported. The endpoint value itself is never returned or
+/// logged: OTLP endpoints can carry userinfo or token query parameters.
+pub fn is_otel_endpoint_configured(otel_endpoint: Option<&str>) -> bool {
+    resolve_endpoint(otel_endpoint).is_some()
+}
+
 impl OtelAppLogger for AppLogger {
     fn init_with_otel(
         &self,
@@ -240,6 +251,9 @@ mod tests {
         assert_eq!(resolve_endpoint(Some("")), None);
         assert_eq!(resolve_endpoint(Some("   ")), None);
         assert_eq!(resolve_endpoint(None), None);
+        assert!(is_otel_endpoint_configured(Some("http://collector:4318")));
+        assert!(!is_otel_endpoint_configured(Some("   ")));
+        assert!(!is_otel_endpoint_configured(None));
 
         std::env::set_var(VAR, "http://from-env:4318");
         assert_eq!(
@@ -250,9 +264,11 @@ mod tests {
             resolve_endpoint(Some("http://param:4318")),
             Some("http://param:4318".to_string())
         );
+        assert!(is_otel_endpoint_configured(None));
 
         std::env::set_var(VAR, "   ");
         assert_eq!(resolve_endpoint(None), None);
+        assert!(!is_otel_endpoint_configured(None));
 
         match original {
             Some(value) => std::env::set_var(VAR, value),

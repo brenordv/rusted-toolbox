@@ -12,7 +12,7 @@ async fn main() {
     let args = match initialize() {
         Ok(a) => a,
         Err(e) => {
-            error!("Failed to parse arguments: {}", e);
+            error!("Invalid arguments: {:#}", e);
             exit_error();
         }
     };

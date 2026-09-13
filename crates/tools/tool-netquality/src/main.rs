@@ -8,31 +8,36 @@ mod runtime_state;
 
 use crate::cli_utils::initialize;
 use crate::netqualify_app::run_app;
-use anyhow::Result;
 use common_cli::tool_exit_helpers::{exit_error, exit_success};
 use tracing::error;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     let (config, otel_guard) = match initialize().await {
         Ok(initialized) => initialized,
         Err(error) => {
-            error!("Failed to initialize tool: {}", error);
+            error!("Failed to initialize tool: {:#}", error);
             exit_error();
         }
     };
 
-    let result = run_app(&config).await;
+    // A failed run is logged while the OTel guard is still alive, so the
+    // failure reaches the export pipeline before the guard's drop flushes and
+    // shuts it down. The exit helpers end the process without running Drop,
+    // which is why the guard is dropped explicitly before either is called.
+    let succeeded = match run_app(&config).await {
+        Ok(_) => true,
+        Err(error) => {
+            error!("{:#}", error);
+            false
+        }
+    };
 
-    // The exit helpers end the process without running Drop, so the OTel guard
-    // is dropped here to flush buffered telemetry before any of them is called.
     drop(otel_guard);
 
-    match result {
-        Ok(_) => exit_success(),
-        Err(error) => {
-            eprintln!("{error}");
-            exit_error();
-        }
-    };
+    if succeeded {
+        exit_success();
+    } else {
+        exit_error();
+    }
 }

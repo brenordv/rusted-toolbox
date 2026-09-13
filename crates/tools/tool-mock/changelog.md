@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0
+- `--locale`/`-l <CODE>` is back, now actually wired through to generation via
+  mock-data-utils 3.0.0. Codes are case-insensitive with `-` and `_` interchangeable
+  (`pt-br`, `PT_BR`); the default is `en` and the valid list is in `--help` under Locales.
+- The locale is honored by the fake-backed types: `person.*` except birthday,
+  `internet.username`, `commerce.company`, `commerce.job-title`, `commerce.industry`. Passing
+  a non-default locale for any other type logs a warning naming both, instead of silently
+  doing nothing (the defect that got the flag removed in 2.0.1).
+- `MockConfig::new` (9 positional arguments) replaced with struct-literal construction.
+
 ## 2.0.1
 - Fixed a duplicate clap short flag: `--age` and `--past` both claimed `-a`, which panicked clap's debug assertions on every debug-build invocation. `-a` stays on `--age`; `--past` is now long-only.
 - BREAKING: removed the `--locale`/`-l` flag. It was parsed but never carried into the generation options, so it silently did nothing. It can return once `mock-data-utils` supports locale-aware generation (tracked in that crate's improvements list).

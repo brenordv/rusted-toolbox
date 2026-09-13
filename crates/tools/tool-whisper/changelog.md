@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.2
+- A chat-loop error (a failed draw, for example) no longer leaves the terminal in
+  raw/alternate-screen mode: the terminal is restored before the error propagates, so the
+  report is readable and the shell stays usable.
+
 ## 2.0.1
 - The send and receive threads now report errors as `[system]` lines in the chat instead of dying silently. An oversized or failed outgoing message is dropped and the session keeps going, and the same holds for an incoming message that cannot be decrypted. A framing error on the incoming stream (an unreadable header or payload) is fatal for the receive side: the stream is desynchronized at that point, so the chat shows a `receiving stopped` notice and no further messages arrive.
 - Outgoing messages are checked against the PKCS#1 v1.5 size limit before encryption. The limit is derived from the peer's key at handshake time (key size in bytes minus 11, about 501 bytes for the 4096-bit keys the tool generates); an oversized message is not sent and the UI says so.

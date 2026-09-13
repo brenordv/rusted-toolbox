@@ -1,5 +1,35 @@
 # Changelog
 
+## 3.2.1
+- The binary sniff (`is_probably_binary`) moved to `common-file-utils` so other tools can use
+  it; the `text` search now calls it there. No behavior change: same 8 KiB NUL-byte sample,
+  same skip counting and debug logging.
+
+## 3.2.0
+- Both modes now write their summary line to stderr. `files` mode used to put it on stdout,
+  so `lookup files "*.log" | xargs ...` fed the summary into the consumer while `text` mode
+  kept it on stderr; stdout now carries only matches in both modes. A scripted consumer that
+  scraped the files-mode summary can recover the match count with `wc -l` on stdout.
+- The missing-path error in `text` mode is reported once: the app returns it and main logs
+  it, instead of both logging and returning it.
+
+## 3.1.1
+- Fixed `files` mode rejecting every invocation that relied on the default pattern mode:
+  clap renders the `--file-search-pattern` default through `PatternMode`'s Display, which
+  produced "Wildcard" while the accepted values are lowercase, so `lookup files "*.rs"`
+  failed to parse with "invalid value 'Wildcard'". Display now emits the kebab-case value
+  names; a test pins the defaulted parse.
+- `files` traversal errors no longer print to stdout: they are warn-level log events on stderr,
+  so `lookup files "*.log" | xargs ...` never feeds "Access is denied" lines into the consumer.
+  The lines are log-formatted (level prefix) rather than the old bare `error: path` text and
+  follow the shared log flags (`--log-level`, `--log-to-console`, `--log-to-file`); `--no-errors`
+  still suppresses them entirely.
+- Match output no longer aborts with exit 101 when the consumer closes the pipe:
+  `lookup text error -p logs | head -5` now ends the run quietly with exit 0 (via
+  `common-cli`'s broken-pipe handling, as in guid and get-lines). Both search modes and the
+  `files` summary line write through the same seam, so a closed pipe at any point exits clean
+  while other write failures still report and exit 1.
+
 ## 3.1.0
 - The `text` search now detects binary files (a NUL byte within the first 8 KiB) and skips them; each skip is counted and logged at debug level via the new `lookup_shared::is_probably_binary` helper.
 - The `text` search counts lines skipped for invalid UTF-8 instead of dropping them silently.

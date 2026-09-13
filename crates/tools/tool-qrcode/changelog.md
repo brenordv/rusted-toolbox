@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.1
+- The extension append and mismatch checks now compare case-insensitively, like the format
+  dispatch always did: `-f PNG -o x.png` writes `x.png` (it wrote `x.png.PNG` with a spurious
+  warning), and `-o x.SVG -f svg` writes `x.SVG` (it wrote `x.SVG.svg`). A dotfile output like
+  `-o .png` keeps its current behavior.
+
 ## 2.1.0
 - Without `-f`, the output format is now inferred from the `-o` extension: `-o x.svg` saves an
   SVG and `-o x.jpg` a JPEG instead of warning and saving `x.svg.png`. Inference covers `svg`,

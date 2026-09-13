@@ -12,6 +12,7 @@ quality through advanced encoding algorithms.
 - **Progress Tracking**: Real-time progress bars for each file being processed
 - **Quality Optimization**: High-quality Lanczos3 resizing and per-format encoding tuned for minimal loss (see Quality Behavior)
 - **Smart Output Naming**: Automatically generates descriptive filenames based on operations performed
+- **Safe Writes**: Output is encoded to a temporary file and renamed into place, so a failed encode never destroys an existing file, including in-place re-encodes where the output name equals the input
 
 ## Command-Line Options
 - **Input Files**: Specify files or directories to process (supports recursive directory scanning)

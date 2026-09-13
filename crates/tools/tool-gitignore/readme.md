@@ -29,6 +29,11 @@ The tool automatically detects and generates gitignore rules for:
 
 **Programming Languages**: Python, Java, JavaScript, TypeScript, Go, PHP, Ruby, Swift, Dart, Scala, C++, Kotlin, Rust, C#, Objective-C, Perl, Elixir, Haskell, R, Julia, MATLAB, TeX
 **Frameworks & Tools**: Node.js, React, Unity, .NET, Godot, Next.js, Hugo, Unreal Engine
+
+`.m` belongs to both Objective-C and MATLAB, so it is resolved from companion files: `.mm` files
+point it at the Objective-C template, `.mat` files at the MATLAB one, and with no companions (or
+both kinds) both templates are fetched.
+
 **Development Environments**: Visual Studio Code, Visual Studio, JetBrains IDEs, Emacs, Vim
 **AI Agents**: footprints of Claude Code, Cursor, Windsurf, Gemini, Aider, Continue, Cline, Codex, and Codeium queue a shared agents artifacts template (see below)
 **Operating Systems**: macOS, Windows
@@ -84,7 +89,7 @@ gitignore --app-header
 ```
 **Example Output**:
 ```
-gitignore (2.1.0)
+gitignore (2.1.2)
 ---------------------------------------------------
 - Basic Runtime Config
   - Verbose mode: <unused>
@@ -136,11 +141,18 @@ No new .gitignore data to download. Guess I won't touch the .gitignore...
 
 ## Smart Filtering
 
-The tool automatically excludes:
-- **Git directories**: `.git/` and its contents
+The scan never descends into:
+- **Git directories**: `.git/`
 - **Common build folders**: `node_modules/`, `target/`, `dist/`, `build/`
 - **Virtual environments**: `venv/`, `env/`
 - **IDE folders**: `.idea/`, `.vs/`, `.vscode/`
+- **AI agent state dirs**: `.claude/`, `.cursor/`, and friends
+
+The folders themselves still count as footprints (a `.vscode/` dir queues the VS Code template, a
+`.claude/` dir the agents template); only their contents stay out of detection, and the walk skips
+them entirely, so a huge `target/` or `node_modules/` costs nothing. The exclusion applies below
+the folder being scanned: a project that itself lives under a directory named `target` or `build`
+is detected normally.
 
 ## Data Sources
 

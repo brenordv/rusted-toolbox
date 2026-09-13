@@ -1,6 +1,7 @@
 use crate::models::GetLinesConfig;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use anyhow::{bail, Context, Result};
+use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
 use common_utils::constants::SIZE_128KB;
 use common_utils::string_utils::sanitize_string_for_filename;
 use std::collections::HashSet;
@@ -9,7 +10,7 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{debug, warn};
 
 /// A single line longer than this (with no newline) aborts the run: the input is not line-oriented.
 const MAX_LINE_BYTES: usize = 64 * 1024 * 1024;
@@ -21,7 +22,8 @@ const CONSOLE_FLUSH_INTERVAL: usize = 256;
 /// How the run ended.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RunOutcome {
-    /// The whole input was scanned.
+    /// The whole input was scanned, or the console consumer closed the pipe and
+    /// the run stopped cleanly.
     Completed,
     /// A Ctrl+C shutdown was observed mid-scan; output is partial.
     Interrupted,
@@ -131,7 +133,7 @@ impl Sinks {
                 }
                 Ok(())
             }
-            Sinks::Console(writer) => writer.write_all(bytes).context("failed writing to stdout"),
+            Sinks::Console(writer) => write_out(writer, bytes),
         }
     }
 
@@ -150,7 +152,7 @@ impl Sinks {
                 }
                 Ok(())
             }
-            Sinks::Console(writer) => writer.flush().context("failed flushing stdout"),
+            Sinks::Console(writer) => flush_out(writer),
         }
     }
 }
@@ -257,8 +259,9 @@ fn build_sinks(config: &GetLinesConfig) -> Result<Sinks> {
 
 /// Runs the search over `config.file`, writing matches to the configured sinks.
 ///
-/// Every write and flush error is propagated with the offending term and path; the sinks are
-/// always flushed before returning, whether the scan completed, was interrupted, or failed.
+/// Every file-sink write and flush error is propagated with the offending term and path; the
+/// sinks are always flushed before returning, whether the scan completed, was interrupted, or
+/// failed. In console mode a closed stdout pipe ends the run cleanly instead of failing.
 pub fn run(config: &GetLinesConfig, shutdown_signal: Arc<AtomicBool>) -> Result<RunOutcome> {
     run_with_cap(config, shutdown_signal, MAX_LINE_BYTES)
 }
@@ -286,9 +289,32 @@ fn run_with_cap(
     );
     let flush_result = sinks.flush_all();
 
-    match scan_result {
-        Ok(outcome) => flush_result.map(|()| outcome),
-        Err(error) => Err(error),
+    resolve_outcome(scan_result, flush_result)
+}
+
+/// Combines the scan and flush results into the run outcome.
+///
+/// A [`BrokenPipe`]-marked failure is a clean stop: the console consumer closed the pipe.
+/// When the scan itself hit the closed pipe the run counts as [`RunOutcome::Completed`];
+/// when only the final flush hit it, the scan's own outcome stands, so an interrupted
+/// run still reports [`RunOutcome::Interrupted`]. Any other failure is propagated, with
+/// a scan error taking precedence over a flush error.
+fn resolve_outcome(
+    scan_result: Result<RunOutcome>,
+    flush_result: Result<()>,
+) -> Result<RunOutcome> {
+    match (scan_result, flush_result) {
+        (Ok(outcome), Ok(())) => Ok(outcome),
+        (Ok(outcome), Err(error)) if error.is::<BrokenPipe>() => {
+            debug!("stopping early: output pipe closed by the consumer");
+            Ok(outcome)
+        }
+        (Ok(_), Err(error)) => Err(error),
+        (Err(error), _) if error.is::<BrokenPipe>() => {
+            debug!("stopping early: output pipe closed by the consumer");
+            Ok(RunOutcome::Completed)
+        }
+        (Err(error), _) => Err(error),
     }
 }
 
@@ -642,5 +668,77 @@ mod tests {
 
         let written = String::from_utf8(buffer.0.borrow().clone()).unwrap();
         assert_eq!(written, "2\ta single error here\n");
+    }
+
+    /// A writer that fails every operation with `ErrorKind::BrokenPipe`.
+    struct ClosedPipe;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+    }
+
+    #[test]
+    fn console_write_to_closed_pipe_yields_the_broken_pipe_marker() {
+        let writer: Box<dyn Write> = Box::new(ClosedPipe);
+        // Zero capacity forces the write straight through to the closed pipe.
+        let mut sinks = Sinks::Console(BufWriter::with_capacity(0, writer));
+
+        let error = sinks.write_match(&[0], b"1\tline\n").unwrap_err();
+
+        assert!(error.is::<BrokenPipe>());
+    }
+
+    #[test]
+    fn console_flush_to_closed_pipe_yields_the_broken_pipe_marker() {
+        let writer: Box<dyn Write> = Box::new(ClosedPipe);
+        let mut sinks = Sinks::Console(BufWriter::new(writer));
+
+        // The write lands in the buffer; the pipe is only hit on flush.
+        sinks.write_match(&[0], b"1\tline\n").unwrap();
+        let error = sinks.flush_all().unwrap_err();
+
+        assert!(error.is::<BrokenPipe>());
+    }
+
+    fn pipe_error() -> anyhow::Error {
+        anyhow::Error::new(BrokenPipe)
+    }
+
+    #[test]
+    fn resolve_outcome_maps_scan_pipe_error_to_completed() {
+        let outcome = resolve_outcome(Err(pipe_error()), Ok(())).unwrap();
+        assert_eq!(outcome, RunOutcome::Completed);
+
+        // A marker from the follow-up flush changes nothing.
+        let outcome = resolve_outcome(Err(pipe_error()), Err(pipe_error())).unwrap();
+        assert_eq!(outcome, RunOutcome::Completed);
+    }
+
+    #[test]
+    fn resolve_outcome_keeps_interrupted_when_only_the_flush_hits_the_closed_pipe() {
+        let outcome = resolve_outcome(Ok(RunOutcome::Interrupted), Err(pipe_error())).unwrap();
+        assert_eq!(outcome, RunOutcome::Interrupted);
+    }
+
+    #[test]
+    fn resolve_outcome_propagates_non_pipe_errors() {
+        let scan_error = resolve_outcome(Err(anyhow::anyhow!("scan failed")), Ok(()));
+        assert_eq!(format!("{:#}", scan_error.unwrap_err()), "scan failed");
+
+        let flush_error =
+            resolve_outcome(Ok(RunOutcome::Completed), Err(anyhow::anyhow!("disk full")));
+        assert_eq!(format!("{:#}", flush_error.unwrap_err()), "disk full");
     }
 }

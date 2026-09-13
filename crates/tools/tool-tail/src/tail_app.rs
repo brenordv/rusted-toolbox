@@ -391,6 +391,13 @@ fn poll_source<W: Write>(
     out: &mut W,
     buf: &mut [u8],
 ) -> Result<PollOutcome> {
+    // Name mode reopens per cycle, so no handle is held between cycles (the
+    // contract on `FollowSource::file`); this also releases the handle kept
+    // from the initial open.
+    if settings.mode == FollowMode::Name {
+        source.file = None;
+    }
+
     let mut cycle_handle: Option<File> = None;
 
     match settings.mode {
@@ -399,7 +406,6 @@ fn poll_source<W: Write>(
                 if source.readable {
                     warn!(path = %source.path.display(), "has become inaccessible: {error}");
                     source.readable = false;
-                    source.file = None;
                 }
                 return Ok(PollOutcome {
                     wrote: false,
@@ -452,10 +458,14 @@ fn poll_source<W: Write>(
         Ok(metadata) => metadata.len(),
         Err(error) => {
             if source.readable {
-                warn!(path = %source.path.display(), "cannot stat: {error}");
+                warn!(
+                    path = %source.path.display(),
+                    "cannot stat: {error}{}",
+                    abandon_suffix(settings.retry)
+                );
                 source.readable = false;
             }
-            return Ok(PollOutcome::idle());
+            return Ok(failed_source_outcome(settings.retry));
         }
     };
 
@@ -496,11 +506,35 @@ fn poll_source<W: Write>(
         Err(error) if error.is::<BrokenPipe>() || error.is::<Interrupted>() => Err(error),
         Err(error) => {
             if source.readable {
-                warn!(path = %source.path.display(), "read failed: {error:#}");
+                warn!(
+                    path = %source.path.display(),
+                    "read failed: {error:#}{}",
+                    abandon_suffix(settings.retry)
+                );
                 source.readable = false;
             }
-            Ok(PollOutcome::idle())
+            Ok(failed_source_outcome(settings.retry))
         }
+    }
+}
+
+/// Suffix for per-source failure warns, naming the consequence when the source
+/// is about to be abandoned because `--retry` is off.
+fn abandon_suffix(retry: bool) -> &'static str {
+    if retry {
+        ""
+    } else {
+        "; giving up on this file (use --retry to keep trying)"
+    }
+}
+
+/// Outcome for a source whose stat or read failed: the source is abandoned
+/// unless `--retry` asked to keep trying, mirroring the name-mode open-failure
+/// policy.
+fn failed_source_outcome(retry: bool) -> PollOutcome {
+    PollOutcome {
+        wrote: false,
+        drop_source: !retry,
     }
 }
 
@@ -1001,6 +1035,34 @@ mod tests {
         let report = fixture.cycle();
         assert!(report.dropped_any);
         assert!(fixture.sources.is_empty());
+    }
+
+    #[test]
+    fn name_mode_holds_no_file_handle_between_cycles() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("log.txt");
+        std::fs::write(&path, b"x\n").unwrap();
+
+        let mut fixture = FollowFixture::new(name_settings(true));
+        fixture.add_opened(0, path.clone());
+        assert!(fixture.sources[0].file.is_some());
+
+        fixture.cycle();
+
+        assert!(fixture.sources[0].file.is_none());
+    }
+
+    #[test]
+    fn failed_source_outcome_drops_only_without_retry() {
+        assert!(failed_source_outcome(false).drop_source);
+        assert!(!failed_source_outcome(true).drop_source);
+        assert!(!failed_source_outcome(false).wrote);
+    }
+
+    #[test]
+    fn abandon_suffix_names_the_consequence_only_without_retry() {
+        assert!(abandon_suffix(true).is_empty());
+        assert!(abandon_suffix(false).contains("--retry"));
     }
 
     #[test]

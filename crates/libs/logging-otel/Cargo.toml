@@ -1,6 +1,6 @@
 [package]
 name = "logging-otel"
-version = "1.1.1"
+version = "1.2.0"
 description = "Extension for the logging utilities (present in common-cli crate) that enable use of open telemetry."
 edition.workspace = true
 authors.workspace = true

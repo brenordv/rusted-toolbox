@@ -1,9 +1,12 @@
-# Split Tool
+# CSV-Split Tool
 
 ## Overview
 
-The Split tool divides large text or CSV files into smaller files based on line count. It preserves CSV headers across
-all output files when CSV mode is enabled, provides real-time progress feedback, and supports graceful shutdown.
+The csv-split tool divides large CSV or text files into smaller files based on line count. It preserves CSV headers
+across all output files when CSV mode is enabled, provides real-time progress feedback, and supports graceful shutdown.
+
+The binary was called `split` before 3.0.0; it was renamed because it shadowed the coreutils
+tool of that name while doing a different, CSV-focused job.
 
 Notes: 
 1. The input must be UTF-8. A byte sequence that is not valid UTF-8 stops the run with an error
@@ -24,7 +27,8 @@ Notes:
 Shared flags from the common CLI: `--app-header`, `--log-level <level>` (long form only),
 `--log-to-console`, `--log-to-file`, `--rotate-log-file-by-day`.
 
-Exit codes: 0 on success, 1 on failure (including non-UTF-8 input), 130 when interrupted with
+Exit codes: 0 on success, 1 on failure (including non-UTF-8 input and a failed part
+flush), 130 when interrupted with
 Ctrl+C. On interruption the line already read is written before stopping, so no consumed data is
 lost, and the partial output stays on disk.
 
@@ -33,16 +37,16 @@ lost, and the partial output stays on disk.
 ### Basic Usage
 ```bash
 # Split a file into chunks of 100 lines (default)
-split --file large_file.txt
+csv-split --file large_file.txt
 
 # Split with custom line count and prefix
-split --file data.csv --lines-per-file 1000 --file-prefix chunk
+csv-split --file data.csv --lines-per-file 1000 --file-prefix chunk
 
 # CSV mode with header preservation
-split --file data.csv --csv-mode --lines-per-file 500
+csv-split --file data.csv --csv-mode --lines-per-file 500
 
 # Custom output directory
-split --file input.txt --output-dir ./output --file-prefix part
+csv-split --file input.txt --output-dir ./output --file-prefix part
 ```
 
 ### Examples with Sample Input/Output
@@ -50,7 +54,7 @@ split --file input.txt --output-dir ./output --file-prefix part
 #### Example 1: Basic Text File Splitting
 **Input:** `sample.txt` (300 lines)
 ```
-split --file sample.txt --lines-per-file 100
+csv-split --file sample.txt --lines-per-file 100
 ```
 
 **Output:** Creates 3 files:
@@ -70,7 +74,7 @@ id,name,department,salary
 
 **Command:**
 ```bash
-split --file employees.csv --csv-mode --lines-per-file 2
+csv-split --file employees.csv --csv-mode --lines-per-file 2
 ```
 
 **Output:** Creates 2 files:
@@ -91,7 +95,7 @@ id,name,department,salary
 
 ## Comparison with Unix `split` Command
 
-The tool mimics the Unix `split` command but has some differences:
+The tool covers the same ground as the Unix `split` command but has some differences:
 
 ### Similarities
 - Splits files into smaller chunks

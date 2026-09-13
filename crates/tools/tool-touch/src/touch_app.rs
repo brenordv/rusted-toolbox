@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use common_utils::file_system::get_full_filepath_from_string;
 use filetime::{set_file_times, set_symlink_file_times, FileTime};
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Creates a file if it doesn't exist based on the no_create flag.
 ///
@@ -74,20 +74,10 @@ pub fn touch_file(file: &str, args: &TouchArgs) -> Result<()> {
     // This properly respects the --time option behavior
     let (update_access, update_modify) = determine_timestamps_to_update(args);
 
-    let current_times =
-        process_current_update_times(args, &file_obj, times, update_access, update_modify)
-            .context(format!(
-                "Failed to get current times for file: [{}]",
-                file_obj.display()
-            ))?;
-
-    let (final_atime, final_mtime) = get_times_to_use_when_updating_file(
-        args,
-        times,
-        update_access,
-        update_modify,
-        current_times,
-    );
+    let (final_atime, final_mtime) =
+        resolve_final_times(args, &file_obj, times, update_access, update_modify).with_context(
+            || format!("Failed to resolve times for file: [{}]", file_obj.display()),
+        )?;
 
     update_file_times(args, &file_obj, final_atime, final_mtime)?;
 
@@ -115,88 +105,76 @@ fn determine_timestamps_to_update(args: &TouchArgs) -> (bool, bool) {
     }
 }
 
-/// Retrieves current file timestamps when needed for partial updates.
+/// Reads the file's current access and modification times, honoring the
+/// no-dereference option (symlink metadata vs target metadata).
 ///
-/// Fetches access and modification times from file metadata when either:
-/// - No new times are provided, or
-/// - Partial update (only access or modify, not both)
-///
-/// # Parameters
-/// - `args`: Touch arguments containing dereference options
-/// - `file_obj`: Path to the target file
-/// - `times`: Optional new timestamps
-/// - `update_access`: Whether to update access time
-/// - `update_modify`: Whether to update modification time
-///
-/// # Returns
-/// - `Ok(Some((atime, mtime)))`: Current file timestamps
-/// - `Ok(None)`: Current times not needed
-/// - `Err`: Metadata access failed
-fn process_current_update_times(
-    args: &TouchArgs,
-    file_obj: &PathBuf,
-    times: Option<(FileTime, FileTime)>,
-    update_access: bool,
-    update_modify: bool,
-) -> Result<Option<(FileTime, FileTime)>> {
-    let current_times = if times.is_none() || (!update_access || !update_modify) {
-        let metadata = if args.no_dereference {
-            std::fs::symlink_metadata(file_obj)?
-        } else {
-            std::fs::metadata(file_obj)?
-        };
-        Some((
-            FileTime::from_last_access_time(&metadata),
-            FileTime::from_last_modification_time(&metadata),
-        ))
+/// # Errors
+/// Returns the metadata access failure.
+fn read_current_times(args: &TouchArgs, file_obj: &Path) -> Result<(FileTime, FileTime)> {
+    let metadata = if args.no_dereference {
+        std::fs::symlink_metadata(file_obj)?
     } else {
-        None
+        std::fs::metadata(file_obj)?
     };
-    Ok(current_times)
+    Ok((
+        FileTime::from_last_access_time(&metadata),
+        FileTime::from_last_modification_time(&metadata),
+    ))
 }
 
-/// Determines final access and modification times for file update.
+/// Combines the requested pair with the file's current pair: each timestamp
+/// takes the new value only when its update flag is set.
+fn combine_times(
+    new_times: (FileTime, FileTime),
+    current_times: (FileTime, FileTime),
+    update_access: bool,
+    update_modify: bool,
+) -> (FileTime, FileTime) {
+    (
+        if update_access {
+            new_times.0
+        } else {
+            current_times.0
+        },
+        if update_modify {
+            new_times.1
+        } else {
+            current_times.1
+        },
+    )
+}
+
+/// Resolves the final access/modification pair to set: the explicit source
+/// pair when one was given, the current time for both otherwise. The file's
+/// current times are read only for a partial update, where the untouched
+/// timestamp must keep its value.
 ///
-/// Calculates which timestamps to set based on user options, provided times,
-/// and current file times. Uses current system time when no specific time provided.
-///
-/// # Parameters
-/// - `args`: Touch arguments specifying which times to update
-/// - `times`: Optional new timestamps tuple (access, modify)
-/// - `update_access`: Whether to update access time
-/// - `update_modify`: Whether to update modification time
-/// - `current_times`: Current file timestamps for partial updates
-///
-/// # Returns
-/// Tuple of (access_time, modification_time) to apply to file
-fn get_times_to_use_when_updating_file(
-    _args: &TouchArgs,
+/// # Errors
+/// Returns the metadata access failure from a partial update's current-times
+/// read.
+fn resolve_final_times(
+    args: &TouchArgs,
+    file_obj: &Path,
     times: Option<(FileTime, FileTime)>,
     update_access: bool,
     update_modify: bool,
-    current_times: Option<(FileTime, FileTime)>,
-) -> (FileTime, FileTime) {
-    let (final_atime, final_mtime) = if let Some((new_atime, new_mtime)) = times {
-        let atime = if update_access {
-            new_atime
-        } else {
-            current_times.unwrap().0
-        };
-        let mtime = if update_modify {
-            new_mtime
-        } else {
-            current_times.unwrap().1
-        };
-        (atime, mtime)
-    } else {
-        // Use the current time
+) -> Result<(FileTime, FileTime)> {
+    let new_times = times.unwrap_or_else(|| {
         let now = FileTime::now();
-        let current = current_times.unwrap();
-        let atime = if update_access { now } else { current.0 };
-        let mtime = if update_modify { now } else { current.1 };
-        (atime, mtime)
-    };
-    (final_atime, final_mtime)
+        (now, now)
+    });
+
+    if update_access && update_modify {
+        return Ok(new_times);
+    }
+
+    let current_times = read_current_times(args, file_obj)?;
+    Ok(combine_times(
+        new_times,
+        current_times,
+        update_access,
+        update_modify,
+    ))
 }
 
 /// Applies new timestamps to file or symlink.
@@ -302,63 +280,87 @@ mod tests {
     }
 
     #[test]
-    fn test_get_times_to_use_when_updating_file_with_new_times_access_only() {
-        let args = create_test_touch_args();
+    fn combine_times_access_only_takes_new_access_and_keeps_modify() {
         let new_time = FileTime::from_unix_time(1000000000, 0);
         let current_time = FileTime::from_unix_time(500000000, 0);
-        let times = Some((new_time, new_time));
-        let current_times = Some((current_time, current_time));
 
-        let (final_atime, final_mtime) =
-            get_times_to_use_when_updating_file(&args, times, true, false, current_times);
+        let (final_atime, final_mtime) = combine_times(
+            (new_time, new_time),
+            (current_time, current_time),
+            true,
+            false,
+        );
 
         assert_eq!(final_atime, new_time);
         assert_eq!(final_mtime, current_time);
     }
 
     #[test]
-    fn test_get_times_to_use_when_updating_file_with_new_times_modify_only() {
-        let args = create_test_touch_args();
+    fn combine_times_modify_only_takes_new_modify_and_keeps_access() {
         let new_time = FileTime::from_unix_time(1000000000, 0);
         let current_time = FileTime::from_unix_time(500000000, 0);
-        let times = Some((new_time, new_time));
-        let current_times = Some((current_time, current_time));
 
-        let (final_atime, final_mtime) =
-            get_times_to_use_when_updating_file(&args, times, false, true, current_times);
+        let (final_atime, final_mtime) = combine_times(
+            (new_time, new_time),
+            (current_time, current_time),
+            false,
+            true,
+        );
 
         assert_eq!(final_atime, current_time);
         assert_eq!(final_mtime, new_time);
     }
 
     #[test]
-    fn test_get_times_to_use_when_updating_file_with_new_times_both() {
-        let args = create_test_touch_args();
+    fn combine_times_both_flags_take_both_new_values() {
         let new_time = FileTime::from_unix_time(1000000000, 0);
         let current_time = FileTime::from_unix_time(500000000, 0);
-        let times = Some((new_time, new_time));
-        let current_times = Some((current_time, current_time));
 
-        let (final_atime, final_mtime) =
-            get_times_to_use_when_updating_file(&args, times, true, true, current_times);
+        let (final_atime, final_mtime) = combine_times(
+            (new_time, new_time),
+            (current_time, current_time),
+            true,
+            true,
+        );
 
         assert_eq!(final_atime, new_time);
         assert_eq!(final_mtime, new_time);
     }
 
     #[test]
-    fn test_get_times_to_use_when_updating_file_no_new_times_access_only() {
+    fn resolve_final_times_full_update_needs_no_existing_file() {
+        // Both flags set with an explicit pair: the file's current times are
+        // irrelevant, so resolution succeeds even for a path with no metadata.
         let args = create_test_touch_args();
-        let current_time = FileTime::from_unix_time(500000000, 0);
-        let current_times = Some((current_time, current_time));
+        let new_time = FileTime::from_unix_time(1000000000, 0);
 
-        let (final_atime, final_mtime) =
-            get_times_to_use_when_updating_file(&args, None, true, false, current_times);
+        let (final_atime, final_mtime) = resolve_final_times(
+            &args,
+            Path::new("does-not-exist.txt"),
+            Some((new_time, new_time)),
+            true,
+            true,
+        )
+        .unwrap();
 
-        // Access time should be updated to "now" (we can't test exact time, but it should be recent)
-        // Modify time should remain the current time
-        assert_ne!(final_atime, current_time); // Should be updated
-        assert_eq!(final_mtime, current_time); // Should remain current
+        assert_eq!(final_atime, new_time);
+        assert_eq!(final_mtime, new_time);
+    }
+
+    #[test]
+    fn resolve_final_times_partial_update_errors_without_the_file() {
+        let args = create_test_touch_args();
+        let new_time = FileTime::from_unix_time(1000000000, 0);
+
+        let result = resolve_final_times(
+            &args,
+            Path::new("does-not-exist.txt"),
+            Some((new_time, new_time)),
+            true,
+            false,
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]

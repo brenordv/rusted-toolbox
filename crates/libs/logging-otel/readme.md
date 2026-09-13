@@ -21,6 +21,11 @@ trimming counts as absent in either place. The endpoint value is never logged,
 including on setup failure: OTLP endpoints can carry userinfo or token query
 parameters.
 
+`is_otel_endpoint_configured(Option<&str>) -> bool` exposes the same resolution
+as a presence check, for callers that only report whether export is configured
+(for example a runtime-info header line). It returns a bool and nothing else,
+so the never-log-the-endpoint contract holds by construction.
+
 ## Adoption recipe (a tool boots with OTel)
 
 ```rust,ignore

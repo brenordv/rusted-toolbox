@@ -254,4 +254,16 @@ mod tests {
     fn cli_definition_passes_clap_debug_assertions() {
         CliArgs::command().debug_assert();
     }
+
+    #[test]
+    fn files_subcommand_parses_with_the_default_pattern_mode() {
+        // The default renders through PatternMode's Display and is parsed
+        // back by the ValueEnum, so the two must agree on the value name.
+        let args = CliArgs::try_parse_from(["lookup", "files", "*.rs"]).unwrap();
+
+        let Commands::Files(files) = args.command else {
+            panic!("expected the files subcommand");
+        };
+        assert_eq!(files.file_search_pattern, PatternMode::Wildcard);
+    }
 }

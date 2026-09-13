@@ -1,16 +1,18 @@
-use common_cli::tool_exit_helpers::exit_error;
+use anyhow::{Context, Result};
+use common_cli::broken_pipe::write_out;
 use common_utils_ext::copy_string_to_clipboard::copy_to_clipboard;
 use common_utils_ext::new_guid::new_guid;
 use std::io::Write;
-use tracing::error;
 
 /// Writes `target_guid_count` freshly generated guids to `output`, one per line.
-pub fn generate_multiple_guid(
-    target_guid_count: usize,
-    output: &mut impl Write,
-) -> std::io::Result<()> {
+///
+/// # Errors
+/// Fails with the [`common_cli::broken_pipe::BrokenPipe`] marker when the
+/// consumer closes the pipe, or with the underlying I/O error for any other
+/// write failure.
+pub fn generate_multiple_guid(target_guid_count: usize, output: &mut impl Write) -> Result<()> {
     for _ in 0..target_guid_count {
-        writeln!(output, "{}", create_guid(false))?;
+        write_out(output, format!("{}\n", create_guid(false)).as_bytes())?;
     }
 
     Ok(())
@@ -25,20 +27,42 @@ pub fn create_guid(empty_guid: bool) -> String {
     new_guid()
 }
 
-/// Copies GUID to the system clipboard.
+/// Copies the guid to the system clipboard.
 ///
-/// Terminates the program with an error message if the clipboard operation fails.
-pub fn copy_guid_to_clipboard(guid: String) {
-    if let Err(e) = copy_to_clipboard(&guid) {
-        error!("Error copying to clipboard: {}", e);
-        exit_error();
-    }
+/// # Errors
+/// Fails when the clipboard is unavailable or rejects the write.
+pub fn copy_guid_to_clipboard(guid: &str) -> Result<()> {
+    copy_to_clipboard(guid).context("Error copying to clipboard")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::broken_pipe::BrokenPipe;
+    use std::io::ErrorKind;
     use uuid::Uuid;
+
+    struct ClosedPipe;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed"))
+        }
+    }
+
+    struct FailingDisk;
+
+    impl Write for FailingDisk {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(ErrorKind::StorageFull, "full"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(ErrorKind::StorageFull, "full"))
+        }
+    }
 
     #[test]
     fn create_guid_empty_returns_all_zeros() {
@@ -71,5 +95,19 @@ mod tests {
         for line in lines {
             assert!(Uuid::parse_str(line).is_ok());
         }
+    }
+
+    #[test]
+    fn generate_multiple_guid_maps_closed_pipe_to_the_marker() {
+        let err = generate_multiple_guid(1, &mut ClosedPipe).unwrap_err();
+
+        assert!(err.is::<BrokenPipe>());
+    }
+
+    #[test]
+    fn generate_multiple_guid_keeps_other_write_errors_ordinary() {
+        let err = generate_multiple_guid(1, &mut FailingDisk).unwrap_err();
+
+        assert!(!err.is::<BrokenPipe>());
     }
 }

@@ -34,7 +34,7 @@ fn main() {
             }
         }
         Err(e) => {
-            error!("{} failed to execute: {}", CSVN_APP_NAME, e);
+            error!("{} failed to execute: {:#}", CSVN_APP_NAME, e);
             exit_error();
         }
     }

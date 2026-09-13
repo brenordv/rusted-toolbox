@@ -1,11 +1,13 @@
 use crate::models::{FilesLookupConfig, PatternMode};
 use anyhow::{anyhow, Result};
+use common_cli::broken_pipe::write_out;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+use tracing::warn;
 use walkdir::WalkDir;
 
 const CLEAR_LINE: &str = "\r\x1b[2K";
@@ -33,7 +35,15 @@ fn clean_path_for_display(p: &Path) -> String {
     }
 }
 
-pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
+/// Walks the search path, writing each matched file's absolute path to
+/// `output` one per line; only matches touch `output`. The summary line goes
+/// to stderr unless suppressed, and traversal diagnostics go to the warn log.
+///
+/// # Errors
+/// Fails with the [`common_cli::broken_pipe::BrokenPipe`] marker when the
+/// consumer closes the pipe, with the underlying I/O error for any other
+/// write failure, and when a search pattern cannot be compiled.
+pub fn run_files_lookup(cfg: &FilesLookupConfig, output: &mut impl Write) -> Result<()> {
     let start = Instant::now();
 
     let base_path = PathBuf::from(&cfg.path);
@@ -65,7 +75,7 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
                     if !cfg.no_progress {
                         clear_progress_line();
                     }
-                    println!("{}: {}", e, base_path.display());
+                    warn!("{}: {}", e, base_path.display());
                 }
                 return Ok(());
             }
@@ -84,7 +94,7 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
                         clear_progress_line();
                     }
                     let abs = absolute_path_str(&path);
-                    println!("{}", abs);
+                    write_out(output, format!("{}\n", abs).as_bytes())?;
                 }
             }
         }
@@ -115,12 +125,12 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
                             clear_progress_line();
                         }
                         let abs = absolute_path_str(entry.path());
-                        println!("{}", abs);
+                        write_out(output, format!("{}\n", abs).as_bytes())?;
                     }
                 }
                 Err(e) => {
                     if !cfg.no_errors {
-                        // Clear the progress line before printing the error
+                        // Clear the progress line before logging the error
                         if !cfg.no_progress {
                             clear_progress_line();
                         }
@@ -128,7 +138,7 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
                             .path()
                             .map(|p| p.display().to_string())
                             .unwrap_or_else(|| "<unknown>".to_string());
-                        println!("{}: {}", brief_walkdir_error(&e), p);
+                        warn!("{}: {}", brief_walkdir_error(&e), p);
                     }
                     // keep going
                 }
@@ -143,7 +153,7 @@ pub fn run_files_lookup(cfg: &FilesLookupConfig) -> Result<()> {
 
     if !cfg.no_summary {
         let elapsed = start.elapsed();
-        println!(
+        eprintln!(
             "Summary: dirs={}, files={}, matches={}, elapsed={:?}",
             folders_count, files_count, matches_count, elapsed
         );
@@ -292,6 +302,79 @@ mod tests {
         let patterns = vec!["[unclosed".to_string()];
 
         assert!(build_matcher(&patterns, &PatternMode::Regex, false).is_err());
+    }
+
+    fn quiet_files_config(path: &Path, patterns: &[&str]) -> FilesLookupConfig {
+        FilesLookupConfig::new(
+            path.to_path_buf(),
+            patterns.iter().map(|p| p.to_string()).collect(),
+            PatternMode::Wildcard,
+            false,
+            false,
+            true,
+            false,
+            true,
+        )
+    }
+
+    #[test]
+    fn run_files_lookup_current_only_keeps_the_summary_off_the_output() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("hit.log"), "x").unwrap();
+        let mut cfg = quiet_files_config(dir.path(), &["*.log"]);
+        cfg.no_recursive = true;
+        cfg.no_summary = false;
+        let mut output = Vec::new();
+
+        run_files_lookup(&cfg, &mut output).unwrap();
+
+        // The summary goes to stderr; only matches belong to the output sink.
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("hit.log"));
+        assert!(!text.contains("Summary:"));
+    }
+
+    struct ClosedPipe;
+
+    impl std::io::Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+    }
+
+    #[test]
+    fn run_files_lookup_writes_matched_paths_to_the_output() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("hit.log"), "x").unwrap();
+        std::fs::write(dir.path().join("miss.txt"), "x").unwrap();
+        let cfg = quiet_files_config(dir.path(), &["*.log"]);
+        let mut output = Vec::new();
+
+        run_files_lookup(&cfg, &mut output).unwrap();
+
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("hit.log"));
+        assert!(!text.contains("miss.txt"));
+    }
+
+    #[test]
+    fn run_files_lookup_maps_closed_pipe_to_the_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("hit.log"), "x").unwrap();
+        let cfg = quiet_files_config(dir.path(), &["*.log"]);
+
+        let err = run_files_lookup(&cfg, &mut ClosedPipe).unwrap_err();
+
+        assert!(err.is::<common_cli::broken_pipe::BrokenPipe>());
     }
 
     #[test]

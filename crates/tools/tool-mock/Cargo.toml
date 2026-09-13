@@ -1,6 +1,6 @@
 [package]
 name = "mock"
-version = "2.0.1"
+version = "2.1.0"
 description = "Mock data generator CLI tool."
 edition.workspace = true
 authors.workspace = true

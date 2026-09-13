@@ -1,5 +1,63 @@
 # Changelog
 
+## 2.4.0
+- Conditional GET: a GET or HEAD whose `If-None-Match` or `If-Modified-Since` validator is
+  still current is answered with a bodyless 304 carrying the same `ETag` and `Last-Modified`
+  the 200 would have carried, so browser refreshes of large assets stop re-transferring them.
+  `If-None-Match` uses the weak entity-tag comparison over the whole listed set (a `W/`
+  prefix on a candidate is ignored), `*` counts only as the entire field value, and a present
+  `If-None-Match` makes `If-Modified-Since` ignored, per RFC 9110 §13. The conditionals are
+  evaluated before `Range`/`If-Range`, so a current validator answers 304 even on a ranged
+  request. An unparseable `If-Modified-Since` date is ignored and the full file is served.
+- A file whose modification time predates the Unix epoch now serves without validators
+  instead of hitting httpdate's formatter, which panics on such times; previously any GET of
+  such a file could kill the connection task.
+
+## 2.3.0
+- HEAD support: a HEAD runs the same path resolution and security checks as GET and answers
+  with GET's status and headers (Content-Length, Content-Type, Content-Range, validators) and
+  no body. Other methods still get a 405, which now carries `Allow: GET, HEAD` as RFC 9110
+  requires. HEAD on a directory `?download=zip` answers from the headers alone: no archive is
+  built and none of the 4 build slots is taken, so probes are free; the flip side is that a
+  HEAD says 200 even at the moment a GET would get the 503.
+- File responses carry `Last-Modified` and a strong `ETag` built from the file's modification
+  time and length (not a content hash), and `If-Range` is validated per RFC 9110 §13.1.5: a
+  weak, stale, or unparseable validator downgrades the ranged request to a full 200, so a file
+  replaced between range requests can no longer splice inconsistent bytes into a resumed
+  download. A date validator only matches while the modification time is at least one second
+  old, since a younger `Last-Modified` cannot prove the file was not modified twice within the
+  same second. Both validators come from the same stat as the streamed bytes, and both reveal
+  the file's modification time; see the readme note before binding beyond localhost.
+- Directory listings set an explicit `Content-Length`, so HEAD on a listing reports the page
+  size instead of nothing.
+- Route construction moved into a `build_routes` seam, and a `warp::test` pass now pins the
+  composed route in-tree: empty-query and Range wiring, HEAD parity with GET (including hidden
+  paths, traversal attempts, and hidden zip downloads), If-Range match and mismatch, the 405
+  `Allow` header, and both zip flavors. Conditional GET (`If-None-Match`/`If-Modified-Since`
+  answering 304) is recorded in the backlog, not built; browsers revalidating against these new
+  validators still get full 200s.
+
+## 2.2.0
+- File responses stream in 64 KiB chunks instead of buffering whole files, and HTTP Range
+  requests are supported: a single `bytes=` range answers 206 with `Content-Range`, an
+  unsatisfiable one answers 416, and every file response advertises `Accept-Ranges: bytes` with an
+  exact `Content-Length`. Multi-range and malformed `Range` headers are ignored and the whole file
+  is served, which RFC 9110 permits a server to do.
+- New `?download=zip` on directory URLs: streams the folder as a deflate-compressed zip archive,
+  produced on a blocking thread and fed through a bounded channel, so large folders never buffer
+  whole in memory (there is also no `Content-Length`, so browsers show no progress bar). Hidden
+  entries stay out unless `--serve-hidden` is on; symlinks are not followed and not archived;
+  empty directories are not recorded. An entry that cannot be read before its header is written
+  is skipped and logged at warn level; a failure after that point aborts the download, because
+  the 200 is already on the wire. At most 4 archives build concurrently; requests beyond that get
+  a 503. The zip dependency is trimmed to the deflate write path (pure-Rust zlib-rs backend).
+- Opening a file that exists but cannot be read now logs a warning before the 404; it used to be
+  indistinguishable from a missing file.
+- Note on the access log: it records the status at time-to-reply and the request's content-length.
+  For streamed file and zip responses it reflects neither mid-stream failures nor response sizes;
+  a zip that breaks mid-transfer still logs as 200, and the warn-level entry from the archive
+  builder is the durable record of what went wrong.
+
 ## 2.1.1
 - Security (Windows): the hidden-file block now checks backslash-separated path segments too.
   `PathBuf::join` honors `\` on Windows, so an URL like `/sub%5C..%5C.secret%5Cdata.txt` could

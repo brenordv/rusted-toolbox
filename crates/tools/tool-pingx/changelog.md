@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.4
+- Validation errors are visible again: logging now boots on the failure path too, before the
+  error is reported, so `pingx 127.0.0.1 -c 0` reports the count error on stderr instead of
+  exiting 1 with zero bytes on either stream. main's message is now "Invalid arguments: ..."
+  (only validation failures reach that arm; clap reports its own parse errors) and prints the
+  full error chain.
+- The Resolved Target block only prints in loud default mode: `--quiet` and the json, csv, and
+  template output modes suppress it, so `pingx host -q -o json | jq .` gets a bare JSON
+  document, matching the readme samples.
+- No more trailing interval sleep after the final packet: `pingx host -c 3` prints the summary
+  right after the third reply instead of one `--interval` later.
+
 ## 2.0.3
 - Internal dedup, output bytes unchanged: reverse-DNS display escaping now comes from
   `common_utils::string_utils::escape_for_terminal_display` (the local `sanitize_display` copy is

@@ -112,9 +112,11 @@ impl ChatUi {
     pub fn run(self) -> Result<()> {
         info!("Starting chat UI...");
         let terminal = ratatui::init();
-        self.chat_loop(terminal)?;
+        // The terminal must leave raw/alternate-screen mode even when the
+        // chat loop fails, or the error lands on an unusable terminal.
+        let result = self.chat_loop(terminal);
         ratatui::restore();
-        Ok(())
+        result
     }
 
     fn chat_loop(mut self, mut terminal: DefaultTerminal) -> Result<()> {

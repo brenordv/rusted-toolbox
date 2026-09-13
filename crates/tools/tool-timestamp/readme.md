@@ -102,11 +102,9 @@ The tool reports the parse failure on stderr and exits with code 1.
 
 1. **Limited US date format support**: formats like "MM/DD/YYYY h:mm AM/PM" are not supported
    and exit with an error.
-2. **Timezone handling**: datetime parsing assumes the local timezone; there is no option to
-   parse in a different timezone.
-3. **Signed milliseconds heuristic**: the milliseconds branch keys on token length, so a
-   sign prefix (`+` or `-`) makes an 11-character seconds value like `-1000000000` read as
-   milliseconds.
+2. **Timezone handling**: datetime formats without an explicit offset are parsed as local
+   time; an offset-carrying input like `2021-06-15T12:30:00+0900` is honored as the instant
+   it names.
 
 ## Comparison with Unix tools
 

@@ -1,4 +1,5 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use tracing::info;
 
 /// Raw URL of the upstream AI agent artifacts template. Its uncommented
 /// entries cover local agent state (Aider histories, Claude Code local
@@ -7,14 +8,30 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 pub const AI_ARTIFACTS_TEMPLATE_URL: &str =
     "https://raw.githubusercontent.com/github/gitignore/main/Global/Agents.gitignore";
 
+/// Objective-C template, queued for `.mm` files and for `.m` files resolved to
+/// Objective-C by [`Config::resolve_dot_m`].
+pub const OBJECTIVE_C_TEMPLATE_URL: &str =
+    "https://raw.githubusercontent.com/github/gitignore/main/Objective-C.gitignore";
+
+/// Matlab template, queued for `.mat` files and for `.m` files resolved to
+/// Matlab by [`Config::resolve_dot_m`].
+pub const MATLAB_TEMPLATE_URL: &str =
+    "https://raw.githubusercontent.com/brenordv/gitignore-files/refs/heads/master/Matlab.gitignore";
+
+/// `.m` belongs to both Objective-C and Matlab, so it has no entry in the
+/// static map: detection only records it, and [`Config::resolve_dot_m`] picks
+/// the template(s) from companion evidence after the walk.
+const DOT_M_KEY: &str = ".m";
+
+/// Extension-to-template map. A `BTreeMap` iterates in sorted key order, so
+/// key matching and the queued-for-download log stay deterministic run to run.
 pub struct Config {
-    mappings: HashMap<String, String>,
-    map_keys: Vec<String>,
+    mappings: BTreeMap<String, String>,
 }
 
 impl Config {
     pub fn new() -> Self {
-        let mut mappings = HashMap::new();
+        let mut mappings = BTreeMap::new();
 
         mappings.insert(
             ".py".to_string(),
@@ -146,17 +163,9 @@ impl Config {
             );
         });
 
-        ".m|.mm".split("|").for_each(|key| {
-            mappings.insert(
-                key.to_string(),
-                "https://raw.githubusercontent.com/github/gitignore/main/Objective-C.gitignore"
-                    .to_string(),
-            );
-        });
+        mappings.insert(".mm".to_string(), OBJECTIVE_C_TEMPLATE_URL.to_string());
 
-        ".mat|.m".split("|").for_each(|key| {
-            mappings.insert(key.to_string(), "https://raw.githubusercontent.com/brenordv/gitignore-files/refs/heads/master/Matlab.gitignore".to_string());
-        });
+        mappings.insert(".mat".to_string(), MATLAB_TEMPLATE_URL.to_string());
 
         ".pl|.pm".split("|").for_each(|key| {
             mappings.insert(
@@ -219,15 +228,7 @@ impl Config {
             );
         });
 
-        // Sorted so key matching (and the queued-for-download log) does not
-        // depend on HashMap iteration order.
-        let mut map_keys = mappings
-            .keys()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
-        map_keys.sort();
-
-        Self { mappings, map_keys }
+        Self { mappings }
     }
 
     pub fn update_map_keys_for_file(
@@ -237,17 +238,56 @@ impl Config {
         pending_urls: &mut BTreeSet<String>,
     ) -> Vec<String> {
         let mut new_keys: Vec<String> = vec![];
+        let file_lower = file.to_lowercase();
 
-        self.map_keys.iter().for_each(|key| {
-            if file.to_lowercase().ends_with(key) {
+        for (key, url) in &self.mappings {
+            if file_lower.ends_with(key) {
                 if keys_found.insert(key.to_string()) {
                     new_keys.push(key.to_string());
                 };
-                pending_urls.insert(self.mappings.get(key).unwrap().to_string());
+                pending_urls.insert(url.to_string());
             }
-        });
+        }
+
+        // `.m` queues nothing here (and stays out of the queued-for-download
+        // log); resolve_dot_m picks its template(s) once the walk is done.
+        if file_lower.ends_with(DOT_M_KEY) {
+            keys_found.insert(DOT_M_KEY.to_string());
+        }
 
         new_keys
+    }
+
+    /// Queues the template(s) for a detected `.m` footprint from companion
+    /// evidence gathered during the walk: `.mm` means Objective-C, `.mat`
+    /// means Matlab. With no companion (or both), both templates are queued:
+    /// both URLs are reachable through the static map anyway, and
+    /// over-covering beats silently dropping a detected footprint.
+    pub fn resolve_dot_m(&self, keys_found: &HashSet<String>, pending_urls: &mut BTreeSet<String>) {
+        if !keys_found.contains(DOT_M_KEY) {
+            return;
+        }
+
+        match (keys_found.contains(".mm"), keys_found.contains(".mat")) {
+            (true, false) => {
+                info!(".m resolved to the Objective-C template (companion .mm found)");
+                pending_urls.insert(OBJECTIVE_C_TEMPLATE_URL.to_string());
+            }
+            (false, true) => {
+                info!(".m resolved to the Matlab template (companion .mat found)");
+                pending_urls.insert(MATLAB_TEMPLATE_URL.to_string());
+            }
+            (true, true) => {
+                info!(".m has both .mm and .mat companions; queuing the Objective-C and Matlab templates");
+                pending_urls.insert(OBJECTIVE_C_TEMPLATE_URL.to_string());
+                pending_urls.insert(MATLAB_TEMPLATE_URL.to_string());
+            }
+            (false, false) => {
+                info!(".m is ambiguous (no .mm or .mat companion); queuing the Objective-C and Matlab templates");
+                pending_urls.insert(OBJECTIVE_C_TEMPLATE_URL.to_string());
+                pending_urls.insert(MATLAB_TEMPLATE_URL.to_string());
+            }
+        }
     }
 }
 
@@ -255,12 +295,16 @@ impl Config {
 mod tests {
     use super::*;
 
+    fn keys(entries: &[&str]) -> HashSet<String> {
+        entries.iter().map(|k| k.to_string()).collect()
+    }
+
     #[test]
-    fn new_builds_non_empty_mappings_with_one_key_per_entry() {
+    fn new_builds_non_empty_mappings_without_a_dot_m_entry() {
         let config = Config::new();
 
         assert!(!config.mappings.is_empty());
-        assert_eq!(config.mappings.len(), config.map_keys.len());
+        assert!(!config.mappings.contains_key(DOT_M_KEY));
     }
 
     #[test]
@@ -337,6 +381,94 @@ mod tests {
         assert_eq!(new_keys, vec![".rs.bk".to_string()]);
         assert!(!keys_found.contains(".rs"));
         assert!(pending_urls.iter().any(|u| u.contains("Rust.gitignore")));
+    }
+
+    #[test]
+    fn update_map_keys_for_file_records_dot_m_without_queueing() {
+        let config = Config::new();
+        let mut keys_found = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
+
+        let new_keys =
+            config.update_map_keys_for_file("analysis.m", &mut keys_found, &mut pending_urls);
+
+        assert!(new_keys.is_empty());
+        assert!(keys_found.contains(DOT_M_KEY));
+        assert!(pending_urls.is_empty());
+    }
+
+    #[test]
+    fn update_map_keys_for_file_matches_dot_mm_via_the_static_map() {
+        let config = Config::new();
+        let mut keys_found = HashSet::new();
+        let mut pending_urls = BTreeSet::new();
+
+        let new_keys =
+            config.update_map_keys_for_file("view.mm", &mut keys_found, &mut pending_urls);
+
+        assert_eq!(new_keys, vec![".mm".to_string()]);
+        assert!(!keys_found.contains(DOT_M_KEY));
+        assert!(pending_urls.contains(OBJECTIVE_C_TEMPLATE_URL));
+    }
+
+    #[test]
+    fn resolve_dot_m_alone_queues_both_templates() {
+        let config = Config::new();
+        let mut pending_urls = BTreeSet::new();
+
+        config.resolve_dot_m(&keys(&[".m"]), &mut pending_urls);
+
+        assert!(pending_urls.contains(OBJECTIVE_C_TEMPLATE_URL));
+        assert!(pending_urls.contains(MATLAB_TEMPLATE_URL));
+        assert_eq!(pending_urls.len(), 2);
+    }
+
+    #[test]
+    fn resolve_dot_m_with_mm_companion_queues_objective_c_only() {
+        let config = Config::new();
+        let mut pending_urls = BTreeSet::new();
+
+        config.resolve_dot_m(&keys(&[".m", ".mm"]), &mut pending_urls);
+
+        assert_eq!(
+            pending_urls.into_iter().collect::<Vec<_>>(),
+            vec![OBJECTIVE_C_TEMPLATE_URL.to_string()]
+        );
+    }
+
+    #[test]
+    fn resolve_dot_m_with_mat_companion_queues_matlab_only() {
+        let config = Config::new();
+        let mut pending_urls = BTreeSet::new();
+
+        config.resolve_dot_m(&keys(&[".m", ".mat"]), &mut pending_urls);
+
+        assert_eq!(
+            pending_urls.into_iter().collect::<Vec<_>>(),
+            vec![MATLAB_TEMPLATE_URL.to_string()]
+        );
+    }
+
+    #[test]
+    fn resolve_dot_m_with_both_companions_queues_both_templates() {
+        let config = Config::new();
+        let mut pending_urls = BTreeSet::new();
+
+        config.resolve_dot_m(&keys(&[".m", ".mm", ".mat"]), &mut pending_urls);
+
+        assert!(pending_urls.contains(OBJECTIVE_C_TEMPLATE_URL));
+        assert!(pending_urls.contains(MATLAB_TEMPLATE_URL));
+        assert_eq!(pending_urls.len(), 2);
+    }
+
+    #[test]
+    fn resolve_dot_m_is_a_noop_when_dot_m_was_not_detected() {
+        let config = Config::new();
+        let mut pending_urls = BTreeSet::new();
+
+        config.resolve_dot_m(&keys(&[".mat"]), &mut pending_urls);
+
+        assert!(pending_urls.is_empty());
     }
 
     #[test]

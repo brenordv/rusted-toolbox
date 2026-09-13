@@ -23,8 +23,10 @@ struct CliArgs {
 
     /// Parse STRING and use it instead of the current time. Accepts the POSIX
     /// form YYYY-MM-DDThh:mm:SS[.frac][Z] ('T' or a space; 'Z' means UTC),
-    /// US month-first MM/DD/YYYY, named months (15 Jan 2024), RFC-2822 style
-    /// with offset, and 'now'; date-only values resolve to local midnight
+    /// the ISO offset form YYYY-MM-DDThh:mm:ss[.frac]+hh[:]mm (fraction with
+    /// '.' or ','), US month-first MM/DD/YYYY, named months (15 Jan 2024),
+    /// RFC-2822 style with offset, and 'now'; date-only values resolve to
+    /// local midnight
     #[arg(short = 'd', long = "date", value_name = "STRING")]
     pub date: Option<String>,
 
@@ -150,7 +152,16 @@ fn build_touch_args(args: &CliArgs) -> Result<TouchArgs> {
 fn parse_date_string(date_str: &str) -> Result<FileTime, String> {
     // Offset-carrying formats parse offset-aware, so `+0900` (or `+0000`)
     // names the instant it says instead of being read as local wall time.
-    let offset_formats = ["%Y-%m-%d %H:%M:%S %z", "%a, %d %b %Y %H:%M:%S %z"];
+    // `%z` accepts `+0900` and `+09:00` and tolerates a leading space, and
+    // `%.f` makes a dot fraction optional, so the first format covers the
+    // T-separated ISO forms with or without a fraction or colon.
+    let offset_formats = [
+        "%Y-%m-%dT%H:%M:%S%.f%z",
+        "%Y-%m-%d %H:%M:%S %z",
+        "%a, %d %b %Y %H:%M:%S %z",
+    ];
+
+    let (normalized, utc) = normalize_posix_datetime(date_str);
 
     for format in offset_formats {
         if let Ok(dt) = DateTime::parse_from_str(date_str, format) {
@@ -159,9 +170,18 @@ fn parse_date_string(date_str: &str) -> Result<FileTime, String> {
                 dt.timestamp_subsec_nanos(),
             ));
         }
+        // The comma-fraction convention also applies to the offset forms
+        // (`10:30:45,5+0900`). A Z-stripped body carries no offset, so the
+        // `utc` flag stays with the naive path below.
+        if !utc && normalized != date_str {
+            if let Ok(dt) = DateTime::parse_from_str(&normalized, format) {
+                return Ok(filetime_from_timestamp(
+                    dt.timestamp(),
+                    dt.timestamp_subsec_nanos(),
+                ));
+            }
+        }
     }
-
-    let (normalized, utc) = normalize_posix_datetime(date_str);
 
     // Formats that carry both a date and a time component. `%.f` also matches
     // when no fraction is present, so it covers the whole-second forms too.
@@ -213,8 +233,9 @@ fn parse_date_string(date_str: &str) -> Result<FileTime, String> {
         "now" => Ok(FileTime::now()),
         _ => Err(format!(
             "Invalid date string: {date_str}. Accepted forms: 'YYYY-MM-DD [hh:mm[:ss[.frac]][Z]]' \
-             ('T' also separates date and time), 'MM/DD/YYYY [hh:mm[:ss]]', \
-             'DD Mon YYYY [hh:mm[:ss]]', RFC-2822 style with offset, or 'now'."
+             ('T' also separates date and time), 'YYYY-MM-DDThh:mm:ss[.frac]+hh[:]mm', \
+             'MM/DD/YYYY [hh:mm[:ss]]', 'DD Mon YYYY [hh:mm[:ss]]', RFC-2822 style with \
+             offset, or 'now'."
         )),
     }
 }
@@ -506,15 +527,39 @@ mod tests {
             "2024-01-15 10:30:45Z",
             "2024-01-15 10:30:45 +0000",
             "Mon, 15 Jan 2024 10:30:45 +0000",
+            "2024-01-15T10:30:45+0000",
+            "2024-01-15T10:30:45+00:00",
         ] {
             let ft =
                 parse_date_string(input).unwrap_or_else(|e| panic!("'{input}' should parse: {e}"));
             assert_eq!(ft.unix_seconds(), EPOCH, "input: {input}");
         }
 
-        // A non-zero offset shifts the instant.
-        let ft = parse_date_string("2024-01-15 10:30:45 +0900").unwrap();
-        assert_eq!(ft.unix_seconds(), EPOCH - 9 * 3600);
+        // A non-zero offset shifts the instant, in every offset spelling.
+        for input in [
+            "2024-01-15 10:30:45 +0900",
+            "2024-01-15T10:30:45+0900",
+            "2024-01-15T10:30:45+09:00",
+            "2024-01-15T10:30:45 +0900",
+        ] {
+            let ft =
+                parse_date_string(input).unwrap_or_else(|e| panic!("'{input}' should parse: {e}"));
+            assert_eq!(ft.unix_seconds(), EPOCH - 9 * 3600, "input: {input}");
+        }
+    }
+
+    #[test]
+    fn date_string_offset_forms_accept_fractions() {
+        for input in ["2024-01-15T10:30:45.5+0000", "2024-01-15T10:30:45,5+0000"] {
+            let ft =
+                parse_date_string(input).unwrap_or_else(|e| panic!("'{input}' should parse: {e}"));
+            assert_eq!(ft.unix_seconds(), 1_705_314_645, "input: {input}");
+            assert_eq!(ft.nanoseconds(), 500_000_000, "input: {input}");
+        }
+
+        let ft = parse_date_string("2024-01-15T10:30:45.25+0900").unwrap();
+        assert_eq!(ft.unix_seconds(), 1_705_314_645 - 9 * 3600);
+        assert_eq!(ft.nanoseconds(), 250_000_000);
     }
 
     #[test]

@@ -123,9 +123,18 @@ pub async fn resolve_target(args: &PingxArgs) -> Result<ResolvedTargetInfo> {
     })
 }
 
+/// The Resolved Target block belongs to human-readable default output only:
+/// `--quiet` asks for silence, and the json/csv/template modes feed parsers
+/// that a leading header block would break.
+fn should_print_supplemental(args: &PingxArgs) -> bool {
+    !args.quiet && matches!(args.output, OutputMode::Default)
+}
+
 pub async fn run_ping(args: &PingxArgs) -> Result<()> {
     let resolved = resolve_target(args).await?;
-    print_supplemental_header(args, &resolved);
+    if should_print_supplemental(args) {
+        print_supplemental_header(args, &resolved);
+    }
 
     // Verbose info
     if args.verbose && !args.quiet {
@@ -182,10 +191,6 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
             if deadline_start.elapsed() >= Duration::from_secs_f64(deadline) {
                 break;
             }
-        }
-
-        if !args.is_infinite() && sent >= args.count as u64 {
-            break;
         }
 
         if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -263,6 +268,12 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
                     next_stats_due = Some(due + Duration::from_secs_f64(every));
                 }
             }
+        }
+
+        // The interval spaces packets; after the final one there is nothing
+        // left to space, so the summary prints immediately.
+        if !args.is_infinite() && sent >= args.count as u64 {
+            break;
         }
 
         sleep(Duration::from_secs_f64(args.interval_secs)).await;
@@ -484,6 +495,52 @@ mod tests {
             time_ms,
             error: error.map(str::to_string),
         }
+    }
+
+    fn ping_args(quiet: bool, output: OutputMode) -> PingxArgs {
+        PingxArgs {
+            target: "example.com".to_string(),
+            count: 3,
+            interval_secs: 1.0,
+            payload_size_bytes: 56,
+            per_reply_timeout_secs: 2.0,
+            overall_deadline_secs: None,
+            continuous: false,
+            ip_mode: IpMode::Auto,
+            timestamp_prefix: false,
+            quiet,
+            verbose: false,
+            numeric: false,
+            output,
+            stats_every_secs: None,
+            beep_on_loss: false,
+            stop_on_error: true,
+        }
+    }
+
+    #[test]
+    fn supplemental_header_prints_only_in_loud_default_mode() {
+        assert!(should_print_supplemental(&ping_args(
+            false,
+            OutputMode::Default
+        )));
+
+        assert!(!should_print_supplemental(&ping_args(
+            true,
+            OutputMode::Default
+        )));
+        assert!(!should_print_supplemental(&ping_args(
+            false,
+            OutputMode::Json
+        )));
+        assert!(!should_print_supplemental(&ping_args(
+            false,
+            OutputMode::Csv
+        )));
+        assert!(!should_print_supplemental(&ping_args(
+            false,
+            OutputMode::Template("%host%".to_string())
+        )));
     }
 
     #[test]

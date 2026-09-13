@@ -25,7 +25,8 @@ It can output results either to the console or to a separate file per search ter
 
 - **Exit codes:** `0` on completion, `1` on failure (for example, the input cannot be opened or an
   output file cannot be written), and `130` when the run is interrupted with Ctrl+C. An interrupted
-  run flushes and keeps whatever partial output was already written.
+  run flushes and keeps whatever partial output was already written. In console mode a closed
+  stdout pipe (for example piping into `head`) ends the run quietly with exit `0`.
 - **Ordered output:** matched lines are written in the order they appear in the input.
 - **Multiple terms per line:** in console mode a line is printed once even if it matches several
   terms. In file mode the line is written to each matched term's file.

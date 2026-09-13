@@ -1,22 +1,23 @@
 use crate::models::{B64Config, B64Mode, InputSource, OutputTarget};
+use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::write::EncoderWriter;
-use base64::{DecodeSliceError, Engine};
+use base64::Engine;
+use common_cli::broken_pipe::BrokenPipe;
 use common_utils::constants::SIZE_64KB;
 use std::fs::File;
 use std::io::{self, BufWriter, Cursor, Read, Write};
 use std::num::NonZeroUsize;
-use std::path::Path;
 
 /// Runs the Base64 tool with the provided configuration.
-pub fn run(config: &B64Config) -> Result<(), AppError> {
+pub fn run(config: &B64Config) -> Result<()> {
     match config.mode {
         B64Mode::Encode => encode(config),
         B64Mode::Decode => decode(config),
     }
 }
 
-fn encode(config: &B64Config) -> Result<(), AppError> {
+fn encode(config: &B64Config) -> Result<()> {
     let mut reader = open_reader(&config.input)?;
     let writer = open_writer(&config.output)?;
 
@@ -46,7 +47,7 @@ fn encode(config: &B64Config) -> Result<(), AppError> {
     Ok(())
 }
 
-fn decode(config: &B64Config) -> Result<(), AppError> {
+fn decode(config: &B64Config) -> Result<()> {
     let mut reader = open_reader(&config.input)?;
     let writer = open_writer(&config.output)?;
 
@@ -66,7 +67,7 @@ fn decode(config: &B64Config) -> Result<(), AppError> {
         pending.extend(chunk.iter().copied().filter(|byte| keep(*byte)));
 
         if padding_seen && !pending.is_empty() {
-            return Err(AppError::trailing_data_after_padding(&config.input));
+            return Err(DecodeError::trailing_data_after_padding(&config.input));
         }
 
         let aligned = pending.len() / 4 * 4;
@@ -91,16 +92,13 @@ fn decode(config: &B64Config) -> Result<(), AppError> {
     })?;
 
     if padding_seen && !pending.is_empty() {
-        return Err(AppError::trailing_data_after_padding(&config.input));
+        return Err(DecodeError::trailing_data_after_padding(&config.input));
     }
 
     // The chunk loop decodes every complete quad, so any bytes left here form an
     // incomplete trailing quad (1-3 bytes), never a decodable block.
     if !pending.is_empty() {
-        return Err(AppError::invalid_base64(
-            &config.input,
-            "invalid Base64 length",
-        ));
+        return Err(DecodeError::invalid(&config.input, "invalid Base64 length"));
     }
 
     writer
@@ -114,14 +112,14 @@ fn decode(config: &B64Config) -> Result<(), AppError> {
 fn for_each_chunk(
     reader: &mut impl Read,
     source: &InputSource,
-    mut f: impl FnMut(&[u8]) -> Result<(), AppError>,
-) -> Result<(), AppError> {
+    mut f: impl FnMut(&[u8]) -> Result<()>,
+) -> Result<()> {
     let mut buffer = vec![0u8; SIZE_64KB];
 
     loop {
         let read = reader
             .read(&mut buffer)
-            .map_err(|err| AppError::read_error(source, err))?;
+            .with_context(|| format!("error reading from {}", input_label(source)))?;
 
         if read == 0 {
             break;
@@ -140,7 +138,7 @@ fn decode_block(
     writer: &mut impl Write,
     source: &InputSource,
     output: &OutputTarget,
-) -> Result<(), AppError> {
+) -> Result<()> {
     let output_len = block.len() / 4 * 3;
     if decoded_buffer.len() < output_len {
         decoded_buffer.resize(output_len, 0);
@@ -148,7 +146,7 @@ fn decode_block(
 
     let decoded_size = STANDARD
         .decode_slice(block, &mut decoded_buffer[..output_len])
-        .map_err(|err| AppError::decode_error(source, err))?;
+        .map_err(|err| DecodeError::invalid(source, err))?;
 
     writer
         .write_all(&decoded_buffer[..decoded_size])
@@ -157,22 +155,24 @@ fn decode_block(
     Ok(())
 }
 
-fn open_reader(source: &InputSource) -> Result<Box<dyn Read + '_>, AppError> {
+fn open_reader(source: &InputSource) -> Result<Box<dyn Read + '_>> {
     match source {
         InputSource::Stdin => Ok(Box::new(io::stdin().lock())),
         InputSource::File(path) => {
-            let file = File::open(path).map_err(|err| AppError::cannot_open(path, err))?;
+            let file = File::open(path)
+                .with_context(|| format!("cannot open '{}'", path.to_string_lossy()))?;
             Ok(Box::new(file))
         }
         InputSource::Text(text) => Ok(Box::new(Cursor::new(text.as_bytes()))),
     }
 }
 
-fn open_writer(target: &OutputTarget) -> Result<Box<dyn Write>, AppError> {
+fn open_writer(target: &OutputTarget) -> Result<Box<dyn Write>> {
     match target {
         OutputTarget::Stdout => Ok(Box::new(io::stdout().lock())),
         OutputTarget::File(path) => {
-            let file = File::create(path).map_err(|err| AppError::cannot_create(path, err))?;
+            let file = File::create(path)
+                .with_context(|| format!("cannot open output file '{}'", path.to_string_lossy()))?;
             Ok(Box::new(file))
         }
     }
@@ -186,14 +186,18 @@ fn is_not_line_break(byte: u8) -> bool {
     byte != b'\r' && byte != b'\n'
 }
 
-fn map_write_error(target: &OutputTarget, err: io::Error) -> AppError {
+/// Maps a write failure into the anyhow chain: a closed pipe becomes the
+/// [`BrokenPipe`] marker whatever the target; anything else is wrapped with
+/// the target's label.
+fn map_write_error(target: &OutputTarget, err: io::Error) -> anyhow::Error {
     if err.kind() == io::ErrorKind::BrokenPipe {
-        return AppError::broken_pipe();
+        return anyhow::Error::new(BrokenPipe);
     }
 
     match target {
-        OutputTarget::Stdout => AppError::write_stdout(err),
-        OutputTarget::File(path) => AppError::write_file(path, err),
+        OutputTarget::Stdout => anyhow::Error::new(err).context("error writing to stdout"),
+        OutputTarget::File(path) => anyhow::Error::new(err)
+            .context(format!("error writing to '{}'", path.to_string_lossy())),
     }
 }
 
@@ -250,89 +254,55 @@ impl<'a, W: Write> Write for WrapWriter<'a, W> {
     }
 }
 
-/// Error type carrying message and exit code.
+/// A Base64 data error (exit code 2): the input is not valid Base64.
+///
+/// Constructors return a ready-to-propagate [`anyhow::Error`] carrying a
+/// `DecodeError` at the chain root, so [`exit_code_for`] can classify the
+/// failure by downcast.
 #[derive(Debug)]
-pub struct AppError {
-    pub message: String,
-    pub exit_code: i32,
+pub struct DecodeError {
+    message: String,
 }
 
-impl AppError {
-    fn new<S: Into<String>>(message: S, exit_code: i32) -> Self {
-        Self {
-            message: message.into(),
-            exit_code,
-        }
+impl DecodeError {
+    fn build(message: String) -> anyhow::Error {
+        anyhow::Error::new(Self { message })
     }
 
-    fn decode_error(source: &InputSource, err: DecodeSliceError) -> Self {
-        Self::new(
-            format!("decode error: {} (input: {})", err, input_label(source)),
-            2,
-        )
+    fn invalid(source: &InputSource, reason: impl std::fmt::Display) -> anyhow::Error {
+        Self::build(format!(
+            "decode error: {} (input: {})",
+            reason,
+            input_label(source)
+        ))
     }
 
-    fn invalid_base64(source: &InputSource, reason: &str) -> Self {
-        Self::new(
-            format!("decode error: {} (input: {})", reason, input_label(source)),
-            2,
-        )
+    fn trailing_data_after_padding(source: &InputSource) -> anyhow::Error {
+        Self::build(format!(
+            "decode error: trailing data after padding; input may be concatenated Base64 streams (input: {})",
+            input_label(source)
+        ))
     }
+}
 
-    fn trailing_data_after_padding(source: &InputSource) -> Self {
-        Self::new(
-            format!(
-                "decode error: trailing data after padding; input may be concatenated Base64 streams (input: {})",
-                input_label(source)
-            ),
-            2,
-        )
+impl std::fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
     }
+}
 
-    fn cannot_open(path: &Path, err: io::Error) -> Self {
-        Self::new(
-            format!("cannot open '{}': {}", path.to_string_lossy(), err),
-            1,
-        )
-    }
+impl std::error::Error for DecodeError {}
 
-    fn cannot_create(path: &Path, err: io::Error) -> Self {
-        Self::new(
-            format!(
-                "cannot open output file '{}': {}",
-                path.to_string_lossy(),
-                err
-            ),
-            1,
-        )
-    }
-
-    fn read_error(source: &InputSource, err: io::Error) -> Self {
-        match source {
-            InputSource::Stdin => Self::new(format!("error reading from stdin: {}", err), 1),
-            InputSource::File(path) => Self::new(
-                format!("error reading from '{}': {}", path.to_string_lossy(), err),
-                1,
-            ),
-            InputSource::Text(_) => {
-                Self::new(format!("error reading from inline text input: {}", err), 1)
-            }
-        }
-    }
-
-    fn write_stdout(err: io::Error) -> Self {
-        Self::new(format!("error writing to stdout: {}", err), 1)
-    }
-
-    fn write_file(path: &Path, err: io::Error) -> Self {
-        Self::new(
-            format!("error writing to '{}': {}", path.to_string_lossy(), err),
-            1,
-        )
-    }
-
-    fn broken_pipe() -> Self {
-        Self::new(String::new(), 0)
+/// Maps a run error to the tool's exit code: `0` for the [`BrokenPipe`] marker
+/// (the consumer stopped reading, a clean stop), `2` for Base64 data errors,
+/// and `1` for every other failure.
+pub fn exit_code_for(err: &anyhow::Error) -> i32 {
+    if err.is::<BrokenPipe>() {
+        0
+    } else if err.is::<DecodeError>() {
+        2
+    } else {
+        1
     }
 }
 
@@ -348,7 +318,7 @@ fn input_label(source: &InputSource) -> String {
 mod tests {
     use super::*;
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use tempfile::tempdir;
 
     fn config(mode: B64Mode, input: InputSource, output: &Path) -> B64Config {
@@ -487,8 +457,9 @@ mod tests {
         let cfg = config(B64Mode::Decode, InputSource::File(input_path), &output_path);
 
         let err = run(&cfg).err().unwrap();
-        assert_eq!(err.exit_code, 2);
-        assert!(err.message.contains("decode error"));
+        assert!(err.is::<DecodeError>());
+        assert_eq!(exit_code_for(&err), 2);
+        assert!(err.to_string().contains("decode error"));
     }
 
     #[test]
@@ -561,8 +532,8 @@ mod tests {
             &boundary_output,
         );
         let boundary_err = run(&boundary_cfg).err().unwrap();
-        assert_eq!(boundary_err.exit_code, 2);
-        assert!(boundary_err.message.starts_with("decode error:"));
+        assert_eq!(exit_code_for(&boundary_err), 2);
+        assert!(boundary_err.to_string().starts_with("decode error:"));
         assert!(!fs::read(&boundary_output).unwrap().is_empty());
 
         let small_input = dir.path().join("small.b64");
@@ -575,8 +546,8 @@ mod tests {
             &small_output,
         );
         let small_err = run(&small_cfg).err().unwrap();
-        assert_eq!(small_err.exit_code, 2);
-        assert!(small_err.message.starts_with("decode error:"));
+        assert_eq!(exit_code_for(&small_err), 2);
+        assert!(small_err.to_string().starts_with("decode error:"));
         assert!(fs::read(&small_output).unwrap().is_empty());
     }
 
@@ -592,8 +563,8 @@ mod tests {
         );
 
         let err = run(&cfg).err().unwrap();
-        assert_eq!(err.exit_code, 2);
-        assert!(err.message.starts_with("decode error:"));
+        assert_eq!(exit_code_for(&err), 2);
+        assert!(err.to_string().starts_with("decode error:"));
         assert!(fs::read(&output_path).unwrap().is_empty());
     }
 
@@ -609,8 +580,8 @@ mod tests {
         );
 
         let err = run(&cfg).err().unwrap();
-        assert_eq!(err.exit_code, 2);
-        assert!(err.message.contains("invalid Base64 length"));
+        assert_eq!(exit_code_for(&err), 2);
+        assert!(err.to_string().contains("invalid Base64 length"));
     }
 
     #[test]
@@ -622,8 +593,8 @@ mod tests {
         let cfg = config(B64Mode::Decode, InputSource::File(missing), &output_path);
 
         let err = run(&cfg).err().unwrap();
-        assert_eq!(err.exit_code, 1);
-        assert!(err.message.contains("cannot open"));
+        assert_eq!(exit_code_for(&err), 1);
+        assert!(format!("{:#}", err).contains("cannot open"));
     }
 
     #[test]
@@ -720,8 +691,48 @@ mod tests {
         };
 
         let err = run(&cfg).err().unwrap();
-        assert_eq!(err.exit_code, 2);
-        assert!(err.message.contains("invalid Base64 length"));
+        assert_eq!(exit_code_for(&err), 2);
+        assert!(err.to_string().contains("invalid Base64 length"));
         assert!(fs::read(&output_path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn closed_pipe_write_maps_to_the_clean_exit_marker_for_both_targets() {
+        let closed = || io::Error::new(io::ErrorKind::BrokenPipe, "closed");
+
+        let err = map_write_error(&OutputTarget::Stdout, closed());
+        assert!(err.is::<BrokenPipe>());
+        assert_eq!(exit_code_for(&err), 0);
+
+        // The marker is deliberate for file targets too: a consumer-side stop is
+        // a clean exit no matter where the output was going.
+        let err = map_write_error(&OutputTarget::File(PathBuf::from("out.bin")), closed());
+        assert!(err.is::<BrokenPipe>());
+        assert_eq!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn other_write_errors_carry_the_target_label() {
+        let full = || io::Error::new(io::ErrorKind::StorageFull, "full");
+
+        let err = map_write_error(&OutputTarget::Stdout, full());
+        assert_eq!(exit_code_for(&err), 1);
+        assert!(format!("{:#}", err).starts_with("error writing to stdout"));
+
+        let err = map_write_error(&OutputTarget::File(PathBuf::from("out.bin")), full());
+        assert_eq!(exit_code_for(&err), 1);
+        assert!(format!("{:#}", err).contains("error writing to 'out.bin'"));
+    }
+
+    #[test]
+    fn exit_code_for_classifies_decode_marker_and_other_errors() {
+        let decode = DecodeError::invalid(&InputSource::Stdin, "bad quad");
+        assert_eq!(exit_code_for(&decode), 2);
+
+        let pipe = anyhow::Error::new(BrokenPipe);
+        assert_eq!(exit_code_for(&pipe), 0);
+
+        let other = anyhow::anyhow!("some I/O failure");
+        assert_eq!(exit_code_for(&other), 1);
     }
 }

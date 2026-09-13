@@ -16,7 +16,6 @@ license = "GPL-3.0-only"
 # Internal
 cli-signal-monitor = { path = "crates/libs/cli-signal-monitor" }
 common-cli = { path = "crates/libs/common-cli" }
-common-cli-env = { path = "crates/libs/common-cli-env" }
 common-file-utils = { path = "crates/libs/common-file-utils" }
 common-utils = { path = "crates/libs/common-utils" }
 common-utils-ext = { path = "crates/libs/common-utils-ext" }
@@ -41,12 +40,12 @@ crossterm = "0.29.0"
 csv = "1.4.0"
 ctrlc = "3.5.2"
 dns-lookup = "3.0.1"
-dotenvy = "0.15.7"
 fake = { version = "5.1.0", features = ["derive", "chrono"] }
 filetime = "0.2.29"
 futures-util = "0.3.34"
 gif = "0.14.2"
 globset = "0.4.20"
+httpdate = "1.0.3"
 hurl = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
 hurl_core = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
 image = "0.25.10"
@@ -77,6 +76,7 @@ sled = "0.34.7"
 surge-ping = "0.9.0"
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
@@ -84,8 +84,14 @@ url = "2.5.8"
 uuid = { version = "1.24.1", features = ["v4"] }
 walkdir = "2.5.0"
 warp = { version = "0.4.3", features = ["server"] }
+# Write/compress path only; the default bzip2/lzma/zstd/aes surface stays off.
+# The zlib-rs flate2 backend is the pure-Rust one zip's own `deflate`
+# meta-feature selects; bare `deflate-flate2` leaves flate2 backend-less
+# and fails to compile.
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # Dev dependencies
+http-body-util = "0.1"
 rstest = "0.26.1"
 tempfile = "3.27.0"
 

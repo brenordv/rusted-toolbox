@@ -71,7 +71,7 @@ pub fn generate_qrcode(args: &QrCodeConfig) -> Result<()> {
         )
     });
 
-    if !filename.ends_with(&format!(".{}", filename_ext)) {
+    if !filename_matches_format(&filename, &filename_ext) {
         filename.push_str(&format!(".{}", filename_ext));
     }
 
@@ -141,18 +141,32 @@ fn inferred_output_format(output_file: &str) -> Option<String> {
     }
 }
 
+/// Reports whether `filename` already carries `format`, compared
+/// case-insensitively like the save dispatch: either its extension matches,
+/// or the whole basename is the dotfile form `.{format}` (which has no
+/// `Path::extension` but needs no appending either).
+fn filename_matches_format(filename: &str, format: &str) -> bool {
+    let path = Path::new(filename);
+    if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
+        return ext.eq_ignore_ascii_case(format);
+    }
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.strip_prefix('.')
+                .is_some_and(|rest| rest.eq_ignore_ascii_case(format))
+        })
+}
+
 /// Returns the extension of `output_file` when the saved file will end up as
 /// `{output_file}.{format}`, carrying an extension that contradicts the
-/// effective output format. Returns `None` when the filename already ends with
-/// the format or has no extension.
+/// effective output format. Returns `None` when the filename already carries
+/// the format (compared case-insensitively) or has no extension.
 fn mismatched_output_extension(output_file: &str, format: &str) -> Option<String> {
-    if output_file.ends_with(&format!(".{}", format)) {
-        return None;
-    }
-
     Path::new(output_file)
         .extension()
         .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.eq_ignore_ascii_case(format))
         .map(|ext| ext.to_string())
 }
 
@@ -333,6 +347,71 @@ mod tests {
     fn mismatched_output_extension_accepts_matching_or_missing_extension() {
         assert_eq!(mismatched_output_extension("x.png", "png"), None);
         assert_eq!(mismatched_output_extension("x", "png"), None);
+    }
+
+    #[test]
+    fn mismatched_output_extension_compares_case_insensitively() {
+        assert_eq!(mismatched_output_extension("x.PNG", "png"), None);
+        assert_eq!(mismatched_output_extension("x.svg", "SVG"), None);
+    }
+
+    #[test]
+    fn filename_matches_format_compares_case_insensitively() {
+        assert!(filename_matches_format("x.png", "png"));
+        assert!(filename_matches_format("x.png", "PNG"));
+        assert!(filename_matches_format("x.SVG", "svg"));
+        assert!(!filename_matches_format("x.txt", "png"));
+        assert!(!filename_matches_format("x", "png"));
+    }
+
+    #[test]
+    fn filename_matches_format_accepts_the_dotfile_form() {
+        assert!(filename_matches_format(".png", "png"));
+        assert!(filename_matches_format(".PNG", "png"));
+        assert!(!filename_matches_format(".txt", "png"));
+    }
+
+    #[test]
+    fn generate_qrcode_keeps_filename_when_format_differs_only_in_case() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("code.png");
+        let cfg = text_config(
+            Some("PNG".to_string()),
+            Some(path.to_string_lossy().to_string()),
+        );
+
+        generate_qrcode(&cfg).unwrap();
+
+        assert!(std::fs::metadata(&path).unwrap().len() > 0);
+        assert!(!dir.path().join("code.png.PNG").exists());
+    }
+
+    #[test]
+    fn generate_qrcode_keeps_uppercase_filename_for_svg_format() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("code.SVG");
+        let cfg = text_config(
+            Some("svg".to_string()),
+            Some(path.to_string_lossy().to_string()),
+        );
+
+        generate_qrcode(&cfg).unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("<svg"));
+        assert!(!dir.path().join("code.SVG.svg").exists());
+    }
+
+    #[test]
+    fn generate_qrcode_infers_format_from_uppercase_extension() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("code.PNG");
+        let cfg = text_config(None, Some(path.to_string_lossy().to_string()));
+
+        generate_qrcode(&cfg).unwrap();
+
+        assert!(std::fs::metadata(&path).unwrap().len() > 0);
+        assert!(!dir.path().join("code.PNG.PNG").exists());
     }
 
     #[test]

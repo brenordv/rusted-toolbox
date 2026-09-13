@@ -1,16 +1,17 @@
 //! Mock data generators for `tool-mock`.
 //!
 //! [`generate_mock_data`] dispatches a [`models::MockOptions`] to one of the
-//! generators grouped under [`generators`] (personal, internet, random,
-//! commerce). Input is validated first, so an out-of-range option (`min > max`,
-//! `range == 0`, a year offset or precision past the caps below) returns an
-//! error instead of panicking on an empty or unrepresentable random range.
+//! private generator modules (personal, internet, random, commerce). Input is
+//! validated first, so an out-of-range option (`min > max`, `range == 0`, a
+//! year offset or precision past the caps below) returns an error instead of
+//! panicking on an empty or unrepresentable random range. The generators stay
+//! private so no caller can reach them with unvalidated options.
 
 use crate::generators::*;
 use crate::models::{DataType, MockOptions};
 use anyhow::Result;
 
-pub mod generators;
+mod generators;
 pub mod models;
 
 /// Upper bound accepted for the year-offset options (`age`, `range`). Keeps
@@ -119,6 +120,8 @@ fn validate(options: &MockOptions, data_type: &DataType) -> Result<()> {
 mod tests {
     use super::*;
 
+    use crate::models::Locale;
+
     fn options_for(data_type: DataType) -> MockOptions {
         MockOptions {
             data_type,
@@ -130,6 +133,7 @@ mod tests {
             past: false,
             future: false,
             range: None,
+            locale: Locale::En,
         }
     }
 
@@ -288,6 +292,40 @@ mod tests {
         let error = generate_mock_data(&opts).unwrap_err();
 
         assert!(format!("{error:#}").contains("precision"));
+    }
+
+    #[test]
+    fn every_locale_generates_a_non_empty_first_name() {
+        for locale in Locale::ALL {
+            let mut opts = options_for(DataType::FirstName);
+            opts.locale = locale;
+
+            let output = generate_mock_data(&opts).unwrap();
+
+            assert!(!output.is_empty(), "empty output for {locale:?}");
+        }
+    }
+
+    // Pins that the locale actually switches the underlying data set: under
+    // fake 5.1.0 the zh_cn first-name array is entirely CJK, so any ASCII
+    // output means the dispatch fell through to English. Doubles as a
+    // tripwire for a fake upgrade changing locale data.
+    #[test]
+    fn zh_cn_first_name_is_non_ascii() {
+        let mut opts = options_for(DataType::FirstName);
+        opts.locale = Locale::ZhCn;
+
+        let output = generate_mock_data(&opts).unwrap();
+
+        assert!(!output.is_ascii(), "expected CJK output, got '{output}'");
+    }
+
+    #[test]
+    fn locale_free_types_generate_under_any_locale() {
+        let mut opts = options_for(DataType::Integer);
+        opts.locale = Locale::JaJp;
+
+        assert!(generate_mock_data(&opts).is_ok());
     }
 
     #[test]

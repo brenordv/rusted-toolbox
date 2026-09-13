@@ -18,8 +18,7 @@ fn main() {
     let args = match initialize() {
         Ok(a) => a,
         Err(e) => {
-            // Logging is not installed yet at this point, so report on stderr directly.
-            eprintln!("split failed to start: {}", e);
+            error!("Invalid arguments: {:#}", e);
             exit_error();
         }
     };
@@ -30,7 +29,7 @@ fn main() {
         Ok(RunOutcome::Completed) => exit_success(),
         Ok(RunOutcome::Interrupted) => exit_with_code(EXIT_CODE_INTERRUPTED_BY_USER),
         Err(e) => {
-            error!("Error splitting input file: {}", e);
+            error!("Error splitting input file: {:#}", e);
             exit_error();
         }
     }

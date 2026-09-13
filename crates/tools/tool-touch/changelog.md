@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0
+- `-d` accepts the offset-aware T-separated ISO forms: `2024-01-15T10:30:45+0900`, with a
+  `.`/`,` fraction, a `+09:00` colon offset, or a space before the offset. Only the
+  space-separated `%z` forms parsed offset-aware before.
+- The three production `current_times.unwrap()` calls are gone: the final timestamp pair is
+  resolved in one place that reads the file's current times only for partial updates, where
+  the untouched timestamp must keep its value. Side effect: a full update (both timestamps,
+  or no explicit source with both flags) no longer performs a redundant metadata read, so
+  that failure mode disappears there.
+
 ## 2.1.0
 - `-d` accepts the POSIX form `YYYY-MM-DDThh:mm:SS[.frac][Z]`: the `T` separator (a space still works), fractional seconds with `.` or `,` (carried into the file timestamp at nanosecond precision), and a trailing `Z` meaning UTC.
 - Offset-carrying date strings (`2024-01-15 10:30:45 +0900`, RFC-2822 style) now honor their offset. They used to be read as local wall time with the offset silently discarded.

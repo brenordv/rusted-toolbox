@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.2
+- Console mode now treats a closed stdout pipe (for example `get-lines ... | head`) as a clean
+  stop with exit `0`, matching the other streaming tools, instead of reporting "failed writing
+  to stdout" and exiting `1`. A Ctrl+C interrupt still exits `130` even when the pipe closes
+  during the final flush. File mode is unchanged: write and flush failures there still fail
+  the run.
+- Non-pipe console failures now use the shared broken-pipe helper's wording: writes report
+  "failed to write output" (was "failed writing to stdout") and flushes report "failed to
+  flush output" (was "failed flushing stdout").
+
 ## 2.0.1
 - Runtime info lines in the `--app-header` block are now rendered through the shared
   `common-cli` header formatting. The printed bytes are unchanged.

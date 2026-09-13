@@ -1,31 +1,28 @@
 use crate::models::MockOptions;
 use anyhow::Result;
 use chrono::{Datelike, Local, NaiveDate};
-use fake::faker::address::en::*;
-use fake::faker::name::en::*;
-use fake::faker::phone_number::en::*;
 use fake::Fake;
 use rand::RngExt;
 
 /// Generate a random first name
-pub fn generate_first_name(_options: &MockOptions) -> Result<String> {
-    Ok(FirstName().fake::<String>())
+pub fn generate_first_name(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, name::FirstName))
 }
 
 /// Generate a random last name
-pub fn generate_last_name(_options: &MockOptions) -> Result<String> {
-    Ok(LastName().fake::<String>())
+pub fn generate_last_name(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, name::LastName))
 }
 
 /// Generate a full name (first + last)
-pub fn generate_full_name(_options: &MockOptions) -> Result<String> {
-    Ok(Name().fake::<String>())
+pub fn generate_full_name(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, name::Name))
 }
 
 /// Generate a random email address
-pub fn generate_email(_options: &MockOptions) -> Result<String> {
-    let first_name = FirstName().fake::<String>().to_lowercase();
-    let last_name = LastName().fake::<String>().to_lowercase();
+pub fn generate_email(options: &MockOptions) -> Result<String> {
+    let first_name = localized!(options.locale, name::FirstName).to_lowercase();
+    let last_name = localized!(options.locale, name::LastName).to_lowercase();
     let domains = [
         "gmail.com",
         "yahoo.com",
@@ -39,42 +36,42 @@ pub fn generate_email(_options: &MockOptions) -> Result<String> {
 }
 
 /// Generate a phone number
-pub fn generate_phone(_options: &MockOptions) -> Result<String> {
-    Ok(PhoneNumber().fake::<String>())
+pub fn generate_phone(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, phone_number::PhoneNumber))
 }
 
 /// Generate a street name
-pub fn generate_street(_options: &MockOptions) -> Result<String> {
-    Ok(StreetName().fake::<String>())
+pub fn generate_street(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, address::StreetName))
 }
 
 /// Generate a city name
-pub fn generate_city(_options: &MockOptions) -> Result<String> {
-    Ok(CityName().fake::<String>())
+pub fn generate_city(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, address::CityName))
 }
 
 /// Generate a state name
-pub fn generate_state(_options: &MockOptions) -> Result<String> {
-    Ok(StateName().fake::<String>())
+pub fn generate_state(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, address::StateName))
 }
 
 /// Generate a country name
-pub fn generate_country(_options: &MockOptions) -> Result<String> {
-    Ok(CountryName().fake::<String>())
+pub fn generate_country(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, address::CountryName))
 }
 
 /// Generate a postal/zip code
-pub fn generate_postal_code(_options: &MockOptions) -> Result<String> {
-    Ok(PostCode().fake::<String>())
+pub fn generate_postal_code(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, address::PostCode))
 }
 
 /// Generate a full address
-pub fn generate_address(_options: &MockOptions) -> Result<String> {
+pub fn generate_address(options: &MockOptions) -> Result<String> {
     let street_number: u32 = (1..9999).fake();
-    let street_name = StreetName().fake::<String>();
-    let city = CityName().fake::<String>();
-    let state = StateAbbr().fake::<String>();
-    let zip = PostCode().fake::<String>();
+    let street_name = localized!(options.locale, address::StreetName);
+    let city = localized!(options.locale, address::CityName);
+    let state = localized!(options.locale, address::StateAbbr);
+    let zip = localized!(options.locale, address::PostCode);
 
     Ok(format!(
         "{street_number} {street_name}, {city}, {state} {zip}"
@@ -120,7 +117,7 @@ pub fn generate_birthday(options: &MockOptions) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::DataType;
+    use crate::models::{DataType, Locale};
     use chrono::Datelike;
     use rstest::rstest;
 
@@ -135,6 +132,7 @@ mod tests {
             past: false,
             future: false,
             range: None,
+            locale: Locale::En,
         }
     }
 

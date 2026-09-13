@@ -19,7 +19,7 @@ fn output_template_without_tags_should_fail() {
 }
 
 #[test]
-fn invalid_count_should_fail() {
+fn invalid_count_should_fail_and_report_on_stderr() {
     let output = Command::new(get_pingx_binary_path())
         .arg("127.0.0.1")
         .arg("--count")
@@ -27,4 +27,8 @@ fn invalid_count_should_fail() {
         .output()
         .expect("failed to run pingx");
     assert!(!output.status.success(), "--count 0 must fail");
+    assert!(
+        !output.stderr.is_empty(),
+        "the validation error must be reported, not swallowed"
+    );
 }

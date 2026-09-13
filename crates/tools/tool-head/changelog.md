@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0
+- GNU's obsolete option syntax is now accepted: `head -5` means `-n 5`, and the trailing
+  letters work as in GNU (`b`/`k`/`m` switch to bytes with 512/1024/1048576 multipliers, `c`
+  bytes, `l` lines, `q`/`v`/`z` the matching flags), so `head -5k` is 5120 bytes and
+  `head -5kl` is 5120 lines. As in GNU, only the first argument is inspected: a `-5` behind
+  `--` is still a file operand, a bare `-5` in any later position is rejected as an unknown
+  option (GNU rejects it too), and later modern flags still win (`head -5 -n 3` prints 3
+  lines).
+- An invalid trailing letter reports `invalid trailing option -- 'X'` through the standard
+  parse-error path, which exits 2 like every other parse error here (GNU exits 1 on this one
+  path).
+
 ## 1.1.0
 - Counts accept GNU's full suffix grammar (lowercase `k`/`m`, `B` forms as powers of 1000, `iB`
   forms as powers of 1024) and saturate at the 64-bit maximum instead of rejecting `Z` and larger

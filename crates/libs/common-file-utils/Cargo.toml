@@ -1,6 +1,6 @@
 [package]
 name = "common-file-utils"
-version = "2.0.1"
+version = "2.1.0"
 description = "Common file system utils. Designed for more complex/specialized operations "
 edition.workspace = true
 authors.workspace = true

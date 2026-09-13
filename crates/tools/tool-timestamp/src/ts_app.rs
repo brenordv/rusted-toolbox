@@ -1,26 +1,34 @@
 use anyhow::{Context, Result};
-use chrono::{Local, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
 use std::str::FromStr;
+
+/// Layouts carrying an explicit UTC offset. These must parse through
+/// `DateTime::parse_from_str`: `NaiveDateTime::parse_from_str` accepts `%z`
+/// but documents the offset as ignored, which would silently read the wall
+/// time as local.
+const OFFSET_LAYOUTS: &[&str] = &[
+    "%Y-%m-%dT%H:%M:%S%z", // YYYY-MM-DDTHH:MM:SS<timezone>
+];
 
 /// Datetime format patterns for parsing various timestamp formats.
 ///
-/// Supports ISO 8601, space-separated, and slash-separated formats with optional timezone info.
-/// Includes both full datetime and date-only variants for flexible parsing.
+/// Supports ISO 8601, space-separated, and slash-separated formats, all read
+/// as local wall time. Includes both full datetime and date-only variants for
+/// flexible parsing.
 const LAYOUTS: &[&str] = &[
-    "%Y-%m-%dT%H:%M:%S",   // YYYY-MM-DDTHH:MM:SS
-    "%Y-%m-%dT%H:%M:%S%z", // YYYY-MM-DDTHH:MM:SS<timezone>
-    "%Y-%m-%d %H:%M:%S",   // YYYY-MM-DD HH:MM:SS
-    "%Y-%m-%d %H:%M",      // YYYY-MM-DD HH:MM
-    "%Y-%m-%d",            // YYYY-MM-DD
-    "%d-%m-%Y %H:%M:%S",   // DD-MM-YYYY HH:MM:SS
-    "%d-%m-%Y %H:%M",      // DD-MM-YYYY HH:MM
-    "%d-%m-%Y",            // DD-MM-YYYY
-    "%Y/%m/%d %H:%M:%S",   // YYYY/MM/DD HH:MM:SS
-    "%Y/%m/%d %H:%M",      // YYYY/MM/DD HH:MM
-    "%Y/%m/%d",            // YYYY/MM/DD
-    "%d/%m/%Y %H:%M:%S",   // DD/MM/YYYY HH:MM:SS
-    "%d/%m/%Y %H:%M",      // DD/MM/YYYY HH:MM
-    "%d/%m/%Y",            // DD/MM/YYYY
+    "%Y-%m-%dT%H:%M:%S", // YYYY-MM-DDTHH:MM:SS
+    "%Y-%m-%d %H:%M:%S", // YYYY-MM-DD HH:MM:SS
+    "%Y-%m-%d %H:%M",    // YYYY-MM-DD HH:MM
+    "%Y-%m-%d",          // YYYY-MM-DD
+    "%d-%m-%Y %H:%M:%S", // DD-MM-YYYY HH:MM:SS
+    "%d-%m-%Y %H:%M",    // DD-MM-YYYY HH:MM
+    "%d-%m-%Y",          // DD-MM-YYYY
+    "%Y/%m/%d %H:%M:%S", // YYYY/MM/DD HH:MM:SS
+    "%Y/%m/%d %H:%M",    // YYYY/MM/DD HH:MM
+    "%Y/%m/%d",          // YYYY/MM/DD
+    "%d/%m/%Y %H:%M:%S", // DD/MM/YYYY HH:MM:SS
+    "%d/%m/%Y %H:%M",    // DD/MM/YYYY HH:MM
+    "%d/%m/%Y",          // DD/MM/YYYY
 ];
 
 /// How a numeric input is read: bare seconds, or milliseconds when the token is
@@ -33,12 +41,14 @@ enum NumericInterpretation {
 }
 
 /// Classifies a numeric input token. Returns `None` when the token is not an
-/// integer. Tokens longer than 10 characters are read as milliseconds (a
-/// 10-digit seconds value covers dates up to November 2286).
+/// integer. Tokens with more than 10 digits (a leading sign excluded) are
+/// read as milliseconds (a 10-digit seconds value covers dates up to
+/// November 2286).
 fn interpret_numeric(input: &str) -> Option<NumericInterpretation> {
     let value = i64::from_str(input).ok()?;
 
-    if input.len() > 10 {
+    let digits = input.strip_prefix(['+', '-']).unwrap_or(input);
+    if digits.len() > 10 {
         Some(NumericInterpretation::Milliseconds(value))
     } else {
         Some(NumericInterpretation::Seconds(value))
@@ -122,12 +132,19 @@ fn print_unix_as_datetime(unix_timestamp: i64) -> Result<()> {
 
 /// Attempts to parse datetime string using multiple format patterns.
 ///
-/// Tries full datetime formats first, then date-only formats (assuming midnight).
-/// Uses local timezone for conversion to Unix timestamp.
+/// Offset-carrying layouts are tried first and honor the offset as an
+/// absolute instant; then full datetime formats, then date-only formats
+/// (assuming midnight), both read as local wall time.
 ///
 /// # Errors
 /// Returns error message if no format matches the input string
 fn guess_datetime_format(input: &str) -> Result<i64> {
+    for layout in OFFSET_LAYOUTS {
+        if let Ok(dt) = DateTime::parse_from_str(input, layout) {
+            return Ok(dt.timestamp());
+        }
+    }
+
     for layout in LAYOUTS {
         if let Ok(dt) = NaiveDateTime::parse_from_str(input, layout) {
             return Ok(Local
@@ -207,6 +224,27 @@ mod tests {
     }
 
     #[test]
+    fn guess_datetime_format_honors_an_explicit_offset() {
+        // Absolute instants, independent of the process timezone.
+        assert_eq!(
+            guess_datetime_format("2021-06-15T12:30:00+0900").unwrap(),
+            1623727800
+        );
+        assert_eq!(
+            guess_datetime_format("2021-06-15T12:30:00+0000").unwrap(),
+            1623760200
+        );
+    }
+
+    #[test]
+    fn guess_datetime_format_t_form_without_offset_stays_local() {
+        let t_form = guess_datetime_format("2021-06-15T12:30:00").unwrap();
+        let space_form = guess_datetime_format("2021-06-15 12:30:00").unwrap();
+
+        assert_eq!(t_form, space_form);
+    }
+
+    #[test]
     fn format_unix_to_datetime_pins_epoch_utc_line() {
         let (utc_line, _) = format_unix_to_datetime(0).unwrap();
 
@@ -237,6 +275,22 @@ mod tests {
     #[test]
     fn interpret_numeric_returns_none_for_non_numeric_input() {
         assert_eq!(interpret_numeric("2021-06-15"), None);
+    }
+
+    #[test]
+    fn interpret_numeric_excludes_the_sign_from_the_digit_count() {
+        assert_eq!(
+            interpret_numeric("-1700000000"),
+            Some(NumericInterpretation::Seconds(-1700000000))
+        );
+        assert_eq!(
+            interpret_numeric("+1700000000"),
+            Some(NumericInterpretation::Seconds(1700000000))
+        );
+        assert_eq!(
+            interpret_numeric("-1700000000000"),
+            Some(NumericInterpretation::Milliseconds(-1700000000000))
+        );
     }
 
     #[test]

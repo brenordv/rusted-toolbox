@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+- Added `is_otel_endpoint_configured`, a public presence check over the same
+  endpoint-resolution rules `init_with_otel` uses (explicit value first, then
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, empty-after-trim counts as absent). It returns
+  only a bool; the endpoint value is never returned or logged. First consumer is
+  netquality's runtime-info header line, which previously re-implemented these
+  rules locally.
+
 ## 1.1.1
 - Created the readme: feature gate, endpoint resolution, an adoption recipe,
   and the contracts that only lived in doc comments (guard lifetime vs exit

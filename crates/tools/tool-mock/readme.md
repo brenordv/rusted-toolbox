@@ -102,6 +102,23 @@ Shared flags from the common CLI: `--app-header` (print the runtime header block
 - `--past` - Generate past dates/times (long-only; conflicts with `--future`)
 - `-f, --future` - Generate future dates/times (conflicts with `--past`)
 - `-r, --range <YEARS>` - Date range in years (default: 50)
+- `-l, --locale <CODE>` - Locale for the fake-backed generators (default: `en`)
+
+### Locales
+
+`--locale` accepts `en`, `ar-sa`, `cy-gb`, `de-de`, `fa-ir`, `fr-fr`, `it-it`, `ja-jp`,
+`nl-nl`, `pt-br`, `pt-pt`, `tr-tr`, `zh-cn`, `zh-tw` (case-insensitive; `_` works as the
+separator too). It is honored by `person.*` except `person.birthday`, `internet.username`,
+`commerce.company`, `commerce.job-title`, and `commerce.industry`. Passing a non-default
+locale for any other type logs a warning and generates as usual. The underlying `fake` crate
+falls back to its English data for categories a locale does not localize, and
+`person.email` localizes only the name parts, so non-Latin locales produce non-ASCII local
+parts in mock emails.
+
+```bash
+mock person.full-name --locale ja-jp
+mock person.address -l pt-br
+```
 
 ## Examples with Options
 ```bash

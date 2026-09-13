@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.0.2
+- An I/O-class error while reading records (for example a network share dropping mid-run) now
+  aborts the run with an error naming the input file and the rows read so far. Previously the
+  error arm counted the row as skipped and retried the same position forever, spamming
+  "Skipping unparseable row". Parse-class errors (such as invalid UTF-8) still skip the
+  offending row and continue. The partial `_normalized` file is kept, same as an interrupted
+  run.
+- The progress line no longer shows "NaN lines/s" when no measurable time has elapsed (for
+  example on an empty input); it shows `0.00` instead.
+- The "Skipping unparseable row" and "No default value mapped for column" warnings go through
+  the logger instead of raw stderr writes, so they also reach `--log-to-file`. At the default
+  level they still print to stderr; `--log-level error` or `disabled` now silences them, and
+  `--log-to-console` routes them to stdout with the rest of the log stream.
+- Run failures reported by the entrypoint now print the full error chain, so the underlying
+  OS error (missing path, dropped share) is visible instead of only the outermost context.
+
 ## 2.0.1
 - Pre-boot startup failures (missing input file, argument errors) are now written with `eprintln!`. The 2.0.0 entry claimed this fix, but the call site still used `error!`, which discards the message because the tracing subscriber is only installed later during boot-up.
 - Removed a warning emoji left in the `--clean-string` runtime notice (emoji output was dropped in 1.0.1).

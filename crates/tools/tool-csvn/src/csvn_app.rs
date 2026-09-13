@@ -1,6 +1,6 @@
 use crate::models::CsvNConfig;
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use common_utils::constants::SIZE_128KB;
 use common_utils::datetime_utc_utils::DateTimeUtcUtils;
 use common_utils::string_utils::format_duration_to_string;
@@ -9,11 +9,12 @@ use csv::{Reader, ReaderBuilder, StringRecord, Writer, WriterBuilder};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::warn;
 
 /// Progress feedback is printed at most this often, regardless of the row interval.
 const FEEDBACK_MIN_INTERVAL: Duration = Duration::from_millis(250);
@@ -114,42 +115,99 @@ pub fn process_file(config: &CsvNConfig, shutdown_signal: Arc<AtomicBool>) -> Re
         .write_record(&headers)
         .context("Failed to write headers to output file")?;
 
+    let stats = run_normalization(
+        &mut reader,
+        &mut output_file,
+        &headers,
+        &column_defaults,
+        config,
+        &shutdown_signal,
+    )?;
+
+    output_file.flush().context("Failed to flush output file")?;
+
+    report_summary(&stats);
+
+    Ok(stats.interrupted)
+}
+
+/// Row counters accumulated by the normalization loop.
+#[derive(Debug)]
+struct NormalizationStats {
+    line_count: usize,
+    repaired_rows: usize,
+    skipped_rows: usize,
+    interrupted: bool,
+}
+
+/// Runs the normalization loop over an already-open reader.
+///
+/// Parse-class errors (for example invalid UTF-8) skip the offending row and the run
+/// carries on; an I/O-class read error aborts the run, since the reader cannot advance
+/// past it and retrying would loop forever. `interrupted` is set when the shutdown
+/// signal was observed mid-run; the rows written so far stay in the output either way.
+///
+/// # Errors
+/// Returns an error when reading fails with an I/O-class error or a normalized row
+/// cannot be written.
+fn run_normalization<R: Read, W: Write>(
+    reader: &mut Reader<R>,
+    output_file: &mut Writer<W>,
+    headers: &[String],
+    column_defaults: &[Option<String>],
+    config: &CsvNConfig,
+    shutdown_signal: &AtomicBool,
+) -> Result<NormalizationStats> {
     let start_time = Utc::now();
-    let mut line_count: usize = 0;
-    let mut repaired_rows: usize = 0;
-    let mut skipped_rows: usize = 0;
+    let mut stats = NormalizationStats {
+        line_count: 0,
+        repaired_rows: 0,
+        skipped_rows: 0,
+        interrupted: false,
+    };
     let mut warned_columns = vec![false; headers.len()];
 
     let mut record = StringRecord::new();
     let mut output_record = StringRecord::new();
     let mut last_feedback = Instant::now();
-    let mut interrupted = false;
 
     loop {
         if shutdown_signal.load(Ordering::Relaxed) {
-            interrupted = true;
+            stats.interrupted = true;
             println!("\n- Saving progress and exiting gracefully...");
-            println!("- Processed [{}] lines before shutdown", line_count);
+            println!("- Processed [{}] lines before shutdown", stats.line_count);
             break;
         }
 
         match reader.read_record(&mut record) {
             Ok(true) => {}
             Ok(false) => break,
+            Err(e) if e.is_io_error() => {
+                // Terminate the in-place progress line so the error is not
+                // appended to it on the console.
+                println!();
+                return Err(e).with_context(|| {
+                    format!(
+                        "Failed to read the input CSV {} after {} rows",
+                        config.input_file.display(),
+                        stats.line_count
+                    )
+                });
+            }
             Err(e) => {
-                skipped_rows += 1;
-                eprintln!("Skipping unparseable row: {}", e);
+                stats.skipped_rows += 1;
+                warn!("Skipping unparseable row: {}", e);
                 continue;
             }
         }
 
         if record.len() != headers.len() {
-            repaired_rows += 1;
+            stats.repaired_rows += 1;
         }
 
         normalize_into(
-            &column_defaults,
-            &headers,
+            column_defaults,
+            headers,
             &record,
             config.clean_string,
             &mut output_record,
@@ -160,48 +218,44 @@ pub fn process_file(config: &CsvNConfig, shutdown_signal: Arc<AtomicBool>) -> Re
             .write_record(&output_record)
             .context("Failed to write normalized line to output file")?;
 
-        line_count += 1;
-        if line_count.is_multiple_of(config.feedback_interval)
+        stats.line_count += 1;
+        if stats.line_count.is_multiple_of(config.feedback_interval)
             && last_feedback.elapsed() >= FEEDBACK_MIN_INTERVAL
         {
-            update_process_feedback(start_time, line_count)?;
+            update_process_feedback(start_time, stats.line_count)?;
             last_feedback = Instant::now();
         }
     }
 
-    update_process_feedback(start_time, line_count)?;
+    update_process_feedback(start_time, stats.line_count)?;
     println!();
 
-    output_file.flush().context("Failed to flush output file")?;
-
-    report_summary(interrupted, line_count, repaired_rows, skipped_rows);
-
-    Ok(interrupted)
+    Ok(stats)
 }
 
 /// Writes the completion summary, including any repaired or skipped row counts.
-fn report_summary(interrupted: bool, line_count: usize, repaired_rows: usize, skipped_rows: usize) {
-    if interrupted {
+fn report_summary(stats: &NormalizationStats) {
+    if stats.interrupted {
         println!(
             "[OK] Progress saved successfully. {} lines processed.",
-            line_count
+            stats.line_count
         );
     } else {
         println!(
             "[OK] File processing completed successfully. {} lines processed.",
-            line_count
+            stats.line_count
         );
     }
 
-    if repaired_rows > 0 {
+    if stats.repaired_rows > 0 {
         println!(
             "- Repaired {} row(s) whose column count did not match the header.",
-            repaired_rows
+            stats.repaired_rows
         );
     }
 
-    if skipped_rows > 0 {
-        println!("- Skipped {} unparseable row(s).", skipped_rows);
+    if stats.skipped_rows > 0 {
+        println!("- Skipped {} unparseable row(s).", stats.skipped_rows);
     }
 }
 
@@ -229,7 +283,7 @@ fn normalize_into(
                 None => {
                     if !warned_columns[index] {
                         warned_columns[index] = true;
-                        eprintln!(
+                        warn!(
                             "No default value mapped for column [{}]. Leaving empty fields empty.",
                             header
                         );
@@ -253,20 +307,29 @@ fn normalize_into(
 /// Returns an error if stdout cannot be flushed.
 fn update_process_feedback(start_time: DateTime<Utc>, line_count: usize) -> Result<()> {
     let elapsed = start_time.get_elapsed_time();
-    let lines_per_second = line_count as f64 / elapsed.as_seconds_f64();
 
     // Feedback line has some padding to the right to make it look nicer.
     print!(
         "[Lines processed: {}][Elapsed Time: {}][Speed: {:.2} lines/s]                                 \r",
         line_count,
         format_duration_to_string(elapsed),
-        lines_per_second
+        lines_per_second(line_count, elapsed)
     );
     std::io::stdout()
         .flush()
         .context("Failed to flush stdout.")?;
 
     Ok(())
+}
+
+/// Lines-per-second rate, or `0.0` when no measurable time has elapsed.
+fn lines_per_second(line_count: usize, elapsed: TimeDelta) -> f64 {
+    let seconds = elapsed.as_seconds_f64();
+    if seconds > 0.0 {
+        line_count as f64 / seconds
+    } else {
+        0.0
+    }
 }
 
 #[cfg(test)]
@@ -452,6 +515,54 @@ mod tests {
         let output = fs::read_to_string(dir.path().join("data_normalized.csv")).unwrap();
         assert!(!interrupted);
         assert_eq!(output, "name,city\nJohn,Paris\nAlice,Rome\n");
+    }
+
+    /// A reader whose every read fails, modeling a dropped network share mid-run.
+    struct FailingReader;
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("simulated read failure"))
+        }
+    }
+
+    #[test]
+    fn run_normalization_aborts_on_persistent_io_error() {
+        let headers = vec!["name".to_string(), "city".to_string()];
+        let defaults = build_column_defaults(&HashMap::new(), &headers);
+        let config = config_for(PathBuf::from("in.csv"), None, false, HashMap::new());
+        let mut reader = ReaderBuilder::new()
+            .flexible(true)
+            .has_headers(false)
+            .from_reader(FailingReader);
+        let mut output = WriterBuilder::new().from_writer(Vec::new());
+        let signal = AtomicBool::new(false);
+
+        let error = run_normalization(
+            &mut reader,
+            &mut output,
+            &headers,
+            &defaults,
+            &config,
+            &signal,
+        )
+        .unwrap_err();
+
+        let chain = format!("{:#}", error);
+        assert!(chain.contains("Failed to read the input CSV"));
+        assert!(chain.contains("after 0 rows"));
+        assert!(chain.contains("simulated read failure"));
+    }
+
+    #[test]
+    fn lines_per_second_is_zero_when_no_time_elapsed() {
+        assert_eq!(lines_per_second(0, TimeDelta::zero()), 0.0);
+        assert_eq!(lines_per_second(500, TimeDelta::zero()), 0.0);
+    }
+
+    #[test]
+    fn lines_per_second_divides_by_elapsed_seconds() {
+        assert_eq!(lines_per_second(100, TimeDelta::seconds(2)), 50.0);
     }
 
     #[test]

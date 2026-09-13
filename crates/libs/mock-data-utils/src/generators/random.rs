@@ -171,7 +171,7 @@ pub fn generate_car_brand(_options: &MockOptions) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::DataType;
+    use crate::models::{DataType, Locale};
     use chrono::{NaiveDate, NaiveDateTime};
 
     fn options() -> MockOptions {
@@ -185,6 +185,7 @@ mod tests {
             past: false,
             future: false,
             range: None,
+            locale: Locale::En,
         }
     }
 
@@ -279,9 +280,55 @@ mod tests {
     }
 
     #[test]
+    fn generate_datetime_past_is_before_now() {
+        let mut opts = options();
+        opts.past = true;
+
+        let parsed =
+            NaiveDateTime::parse_from_str(&generate_datetime(&opts).unwrap(), "%Y-%m-%d %H:%M:%S")
+                .unwrap();
+
+        assert!(parsed < Local::now().naive_local());
+    }
+
+    #[test]
+    fn generate_datetime_future_is_after_now() {
+        let before = Local::now().naive_local();
+        let mut opts = options();
+        opts.future = true;
+
+        let parsed =
+            NaiveDateTime::parse_from_str(&generate_datetime(&opts).unwrap(), "%Y-%m-%d %H:%M:%S")
+                .unwrap();
+
+        assert!(parsed > before);
+    }
+
+    #[test]
     fn generate_timestamp_is_numeric() {
         let ts = generate_timestamp(&options()).unwrap();
         assert!(ts.parse::<i64>().is_ok());
+    }
+
+    #[test]
+    fn generate_timestamp_past_is_before_now() {
+        let mut opts = options();
+        opts.past = true;
+
+        let ts: i64 = generate_timestamp(&opts).unwrap().parse().unwrap();
+
+        assert!(ts < Utc::now().timestamp());
+    }
+
+    #[test]
+    fn generate_timestamp_future_is_after_now() {
+        let before = Utc::now().timestamp();
+        let mut opts = options();
+        opts.future = true;
+
+        let ts: i64 = generate_timestamp(&opts).unwrap().parse().unwrap();
+
+        assert!(ts > before);
     }
 
     #[test]

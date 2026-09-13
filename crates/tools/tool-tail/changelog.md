@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0
+- `--follow=name` no longer holds one stale descriptor per followed file: each polling cycle
+  releases any held handle before reopening the path, matching the documented contract that
+  name mode keeps no handle between cycles.
+- Follow mode no longer retries persistent per-file stat/read failures forever. Without
+  `--retry`, a source whose stat or read fails is abandoned (same policy name mode already
+  applied to open failures) and the run reports it; with `--retry`, tail keeps trying as
+  before. The once-per-transition warning now names the consequence on the non-retry path.
+  This resolves the backlog note about the follow loop retrying persistent I/O errors
+  without bound (recorded in next.md under tool-lookup, but the follow loop is tail's).
+
 ## 1.1.0
 - Counts accept GNU's full suffix grammar (lowercase `k`/`m`, `B` forms as powers of 1000, `iB`
   forms as powers of 1024) and saturate at the 64-bit maximum instead of rejecting `Z` and larger

@@ -42,11 +42,13 @@ pub enum PatternMode {
     Regex,
 }
 
+// Display feeds clap's `default_value_t`, which parses the rendered text
+// back through the ValueEnum, so it must produce the kebab-case value names.
 impl fmt::Display for PatternMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PatternMode::Wildcard => write!(f, "Wildcard"),
-            PatternMode::Regex => write!(f, "Regex"),
+            PatternMode::Wildcard => write!(f, "wildcard"),
+            PatternMode::Regex => write!(f, "regex"),
         }
     }
 }
@@ -84,5 +86,18 @@ impl FilesLookupConfig {
             no_errors,
             no_summary,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pattern_mode_display_matches_the_value_enum_names() {
+        // clap's default_value_t parses the Display output back through the
+        // ValueEnum, so these must stay the kebab-case value names.
+        assert_eq!(PatternMode::Wildcard.to_string(), "wildcard");
+        assert_eq!(PatternMode::Regex.to_string(), "regex");
     }
 }

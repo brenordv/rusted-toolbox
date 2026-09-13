@@ -1,13 +1,11 @@
 use crate::models::MockOptions;
 use anyhow::Result;
-use fake::faker::company::en::*;
-use fake::faker::job::en::*;
 use fake::Fake;
 use rand::RngExt;
 
 /// Generate a random company name
-pub fn generate_company(_options: &MockOptions) -> Result<String> {
-    Ok(CompanyName().fake::<String>())
+pub fn generate_company(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, company::CompanyName))
 }
 
 /// Generate a random product name
@@ -148,13 +146,13 @@ fn truncate_at_word_boundary(sentence: &str, length: usize) -> String {
 }
 
 /// Generate a random job title
-pub fn generate_job_title(_options: &MockOptions) -> Result<String> {
-    Ok(Title().fake::<String>())
+pub fn generate_job_title(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, job::Title))
 }
 
 /// Generate a random industry name
-pub fn generate_industry(_options: &MockOptions) -> Result<String> {
-    Ok(Industry().fake::<String>())
+pub fn generate_industry(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, company::Industry))
 }
 
 /// Generate a random business buzzword
@@ -200,7 +198,7 @@ pub fn generate_buzzword(_options: &MockOptions) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::DataType;
+    use crate::models::{DataType, Locale};
     use rstest::rstest;
 
     fn options() -> MockOptions {
@@ -214,6 +212,7 @@ mod tests {
             past: false,
             future: false,
             range: None,
+            locale: Locale::En,
         }
     }
 

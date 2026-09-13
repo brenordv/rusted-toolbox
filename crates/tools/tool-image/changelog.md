@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.1.3
+- Every encoder now writes to a temporary file in the destination directory and renames it
+  over the target once the encode finishes. Before, `File::create` truncated the destination
+  up front, and when no operation changes the file name (a quality-only re-encode, for
+  example) the destination is the input itself, so a failed encode destroyed the only copy.
+  Now a failure leaves the destination exactly as it was. On Unix the temporary file honors
+  the umask instead of tempfile's 0600 default, and a replaced destination keeps its own
+  permissions.
+- The GIF encoder's delete-partial-output-on-failure step is gone; with the rename scheme a
+  partial file can no longer land on the output path in the first place.
+
+## 2.1.2
+- main now follows the fleet's entrypoint pattern: a failed run logs the full error chain
+  through `error!` and exits 1 via the shared exit helpers, instead of returning
+  `anyhow::Result` and getting anyhow's `Error: ...` debug print.
+- Every encoder's output-file creation now names the output path in its error. Before, only
+  the GIF encoder did; a permission failure in the PNG/JPEG/WebP/AVIF/BMP paths read as a
+  bare OS error under a warn line that only named the input file.
+- The non-fatal orientation-read failure during decode now logs at `warn!` instead of
+  `error!`; processing continues without the transform either way.
+
+## 2.1.1
+- Fixed GIF encoding, which was unusable end to end: the quantized palette was never handed to
+  the encoder (empty global palette plus a frame without a local one), so gif 0.14 rejected
+  every frame with `MissingColorPalette` and a headers-only `.gif` stub was left on disk looking
+  like output. The quantized palette now becomes the global color table, and a failed encode
+  deletes the partial output file (a failed deletion logs a warning naming the path).
+- The GIF transparent index now picks the first fully transparent palette entry; the old check
+  was inverted (it looked for the first opaque entry) and could never report an entry at
+  position 0.
+- Images wider or taller than 65535 pixels are rejected with a clear error before any file is
+  created; the old `as u16` cast wrapped silently and then panicked inside the frame builder.
+- GIF trailer-write failures (for example a disk filling up on the final bytes) now surface as
+  errors instead of being swallowed, so a truncated file can no longer pass as a successful
+  encode.
+- A run with any failed job now exits 1 with "N of M jobs failed"; each failure logs a warning
+  naming its input file. Previously all failures were counted but the tool still exited 0, and
+  the underlying error was only visible at debug level.
+
 ## 2.1.0
 - Added `-q/--quality <1-100>`: sets the encoding quality for JPEG (default 100) and AVIF
   (default 95) output. Values outside 1-100 are rejected at parse time; when the output format is

@@ -24,6 +24,17 @@ Each option is honored only by the generators listed; the rest ignore it.
 | `age`           | `person.birthday` (target age in years)                                                            |
 | `past`/`future` | `random.date`, `random.time`, `random.datetime`, `random.timestamp`; `past` wins when both are set |
 | `range`         | `random.date`, `random.datetime`, `random.timestamp` (half-width in years, minimum 1)              |
+| `locale`        | the fake-backed types: `person.*` except birthday, `internet.username`, `commerce.company`, `commerce.job-title`, `commerce.industry` |
+
+## Locales
+
+`Locale` covers the 14 locales fake 5.1.0 ships: `en` (default), `ar-sa`, `cy-gb`, `de-de`,
+`fa-ir`, `fr-fr`, `it-it`, `ja-jp`, `nl-nl`, `pt-br`, `pt-pt`, `tr-tr`, `zh-cn`, `zh-tw`.
+`Locale::from_code` parses case-insensitively with `-` and `_` interchangeable.
+`DataType::is_locale_aware` reports whether a type honors the locale. fake falls back to its
+English data for any category a locale does not localize, so every locale is valid for every
+type. `person.email` localizes the name parts while its domain list stays fixed, so non-Latin
+locales produce non-ASCII local parts (mock data, matching fake's own localized name data).
 
 ## Contracts
 

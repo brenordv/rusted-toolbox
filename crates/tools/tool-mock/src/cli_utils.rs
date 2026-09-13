@@ -2,8 +2,8 @@ use crate::models::MockConfig;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::tool_exit_helpers::exit_error;
-use mock_data_utils::models::DataType;
-use tracing::error;
+use mock_data_utils::models::{DataType, Locale};
+use tracing::{error, warn};
 
 /// Generate mock data for testing and development
 ///
@@ -54,13 +54,30 @@ pub struct CliArgs {
     #[arg(short = 'r', long = "range", required = false, default_value_t = 50)]
     pub range: u32,
 
+    /// Locale for the fake-backed generators (see Locales in --help)
+    #[arg(
+        short = 'l',
+        long = "locale",
+        value_name = "CODE",
+        default_value = "en",
+        value_parser = Locale::from_code
+    )]
+    pub locale: Locale,
+
     #[command(flatten)]
     pub common: CommonToolArgs,
 }
 
 /// Get help text for available data types
-fn get_help_text() -> &'static str {
-    "Personal Information:
+fn get_help_text() -> String {
+    format!(
+        "{}\n\nLocales:\n  --locale accepts: {}\n  Honored by person.* (except birthday), internet.username, commerce.company,\n  commerce.job-title, and commerce.industry; other types warn and ignore it.",
+        DATA_TYPE_HELP,
+        Locale::all_codes().join(", ")
+    )
+}
+
+const DATA_TYPE_HELP: &str = "Personal Information:
   person.first-name     - Generate a random first name
   person.last-name      - Generate a random last name
   person.full-name      - Generate a full name (first + last)
@@ -98,7 +115,13 @@ Commerce:
   commerce.product-description - Generate a product description
   commerce.job-title    - Generate a job title
   commerce.industry     - Generate an industry name
-  commerce.buzzword     - Generate a business buzzword"
+  commerce.buzzword     - Generate a business buzzword";
+
+/// True when a non-default locale was requested for a data type whose
+/// generator ignores it; `initialize` logs a warning for this case so the
+/// flag is never silently inert.
+fn locale_is_inert(locale: Locale, data_type: &DataType) -> bool {
+    locale != Locale::En && !data_type.is_locale_aware()
 }
 
 /// Reject bounds where the minimum exceeds the maximum.
@@ -144,17 +167,26 @@ pub fn initialize() -> MockConfig {
         }
     };
 
-    MockConfig::new(
+    if locale_is_inert(args.locale, &data_type) {
+        warn!(
+            locale = %args.locale,
+            data_type = %args.data_type,
+            "--locale has no effect: this generator is not locale-aware"
+        );
+    }
+
+    MockConfig {
         data_type,
-        args.min,
-        args.max,
-        args.length,
-        args.precision,
-        args.age,
-        args.past,
-        args.future,
-        Some(args.range),
-    )
+        min: args.min,
+        max: args.max,
+        length: args.length,
+        precision: args.precision,
+        age: args.age,
+        past: args.past,
+        future: args.future,
+        range: Some(args.range),
+        locale: args.locale,
+    }
 }
 
 #[cfg(test)]
@@ -189,5 +221,51 @@ mod tests {
         assert!(validate_range(None, None).is_ok());
         assert!(validate_range(Some(3), None).is_ok());
         assert!(validate_range(None, Some(3)).is_ok());
+    }
+
+    /// The baked default string must round-trip through the same parser as
+    /// user input, or every defaulted invocation dies at parse time.
+    #[test]
+    fn locale_default_parses_to_en() {
+        let args = CliArgs::parse_from(["mock", "person.first-name"]);
+
+        assert_eq!(args.locale, Locale::En);
+    }
+
+    #[test]
+    fn locale_flag_parses_both_spellings_and_separators() {
+        let args = CliArgs::parse_from(["mock", "person.first-name", "-l", "pt_BR"]);
+        assert_eq!(args.locale, Locale::PtBr);
+
+        let args = CliArgs::parse_from(["mock", "person.first-name", "--locale", "ja-jp"]);
+        assert_eq!(args.locale, Locale::JaJp);
+    }
+
+    #[test]
+    fn locale_flag_rejects_unknown_code() {
+        let result = CliArgs::try_parse_from(["mock", "person.first-name", "-l", "xx-yy"]);
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("xx-yy"), "{error}");
+    }
+
+    #[test]
+    fn locale_is_inert_only_for_non_default_locale_on_unaware_types() {
+        assert!(locale_is_inert(Locale::JaJp, &DataType::Buzzword));
+        assert!(!locale_is_inert(Locale::En, &DataType::Buzzword));
+        assert!(!locale_is_inert(Locale::JaJp, &DataType::FirstName));
+        assert!(!locale_is_inert(Locale::En, &DataType::FirstName));
+    }
+
+    #[test]
+    fn help_text_lists_data_types_and_locales() {
+        let help = get_help_text();
+
+        assert!(help.contains("person.first-name"));
+        assert!(help.contains("commerce.buzzword"));
+        assert!(help.contains("Locales:"));
+        for code in Locale::all_codes() {
+            assert!(help.contains(code), "missing locale code {code}");
+        }
     }
 }

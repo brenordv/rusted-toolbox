@@ -1,6 +1,6 @@
 [package]
 name = "imgx"
-version = "2.1.0"
+version = "2.1.3"
 description = "Quick way for editing images from the terminal"
 edition.workspace = true
 authors.workspace = true
@@ -22,7 +22,5 @@ imagequant = { workspace = true }
 indicatif = { workspace = true }
 num_cpus = { workspace = true }
 rayon = { workspace = true }
-tracing = { workspace = true }
-
-[dev-dependencies]
 tempfile = { workspace = true }
+tracing = { workspace = true }

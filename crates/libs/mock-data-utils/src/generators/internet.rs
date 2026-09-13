@@ -8,8 +8,8 @@ const PASSWORD_CHARSET: &str =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
 
 /// Generate a random username
-pub fn generate_username(_options: &MockOptions) -> Result<String> {
-    Ok(Username().fake::<String>())
+pub fn generate_username(options: &MockOptions) -> Result<String> {
+    Ok(localized!(options.locale, internet::Username))
 }
 
 /// Generate a random password
@@ -72,7 +72,7 @@ pub fn generate_file_url(_options: &MockOptions) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::DataType;
+    use crate::models::{DataType, Locale};
 
     fn options() -> MockOptions {
         MockOptions {
@@ -85,6 +85,7 @@ mod tests {
             past: false,
             future: false,
             range: None,
+            locale: Locale::En,
         }
     }
 

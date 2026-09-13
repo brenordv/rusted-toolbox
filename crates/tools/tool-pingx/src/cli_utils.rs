@@ -76,6 +76,8 @@ struct CliArgs {
 }
 
 /// Parses command-line arguments and returns the runtime configuration.
+/// Logging boots before this function returns, on the failure path too, so a
+/// validation error reported by the caller always reaches a live subscriber.
 ///
 /// # Errors
 /// Returns an error when `--ipv4` and `--ipv6` are combined, when `--count` is
@@ -83,19 +85,30 @@ struct CliArgs {
 pub fn initialize() -> Result<PingxArgs> {
     let args = CliArgs::parse();
 
-    let config = build_config(&args)?;
-
-    args.common.app_boot_up(
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION"),
-        true,
-        false,
-        Some(|| {
-            print_header(&config);
-        }),
-    );
-
-    Ok(config)
+    match build_config(&args) {
+        Ok(config) => {
+            args.common.app_boot_up(
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                true,
+                false,
+                Some(|| {
+                    print_header(&config);
+                }),
+            );
+            Ok(config)
+        }
+        Err(e) => {
+            args.common.app_boot_up(
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                true,
+                false,
+                None::<fn()>,
+            );
+            Err(e)
+        }
+    }
 }
 
 /// Validates the parsed arguments and resolves them into a [`PingxArgs`].

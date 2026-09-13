@@ -10,7 +10,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 /// How a split run ended: the whole input was processed, or the user
 /// interrupted it after some parts were already written.
@@ -38,7 +38,8 @@ pub fn get_input_file_reader(args: &SplitArgs) -> Result<BufReader<File>> {
 /// On interruption the line already read is still written, so no data is dropped.
 ///
 /// # Errors
-/// Returns error if file operations fail or the input is not valid UTF-8.
+/// Returns error if file operations fail (including flushing an output part)
+/// or the input is not valid UTF-8.
 pub fn process_input_file(
     args: &SplitArgs,
     shutdown_signal: Arc<AtomicBool>,
@@ -139,21 +140,15 @@ pub fn process_input_file(
         // The line already read is written before honoring the shutdown, so an
         // interrupted run never drops data it has consumed.
         if shutdown_signal.load(Ordering::Relaxed) {
-            println!("\n- Saving progress and exiting gracefully...");
+            print_status("\n- Saving progress and exiting gracefully...");
             outcome = RunOutcome::Interrupted;
             break;
         }
 
         // Check if we need to start a new file
         if current_line_count >= args.lines_per_file {
-            // Flush and close the current file
-            if let Some(mut writer) = current_output_writer.take() {
-                if let Err(e) = writer.flush() {
-                    eprintln!(
-                        "Warning: Failed to flush output file {}: {}",
-                        output_filename, e
-                    );
-                }
+            if let Some(writer) = current_output_writer.take() {
+                close_part(writer, &output_filename)?;
             }
             current_line_count = 0;
             current_file_number += 1;
@@ -182,10 +177,8 @@ pub fn process_input_file(
     }
 
     // Ensure final file is properly flushed
-    if let Some(mut writer) = current_output_writer {
-        if let Err(e) = writer.flush() {
-            eprintln!("Warning: Failed to flush final output file: {}", e);
-        }
+    if let Some(writer) = current_output_writer {
+        close_part(writer, &output_filename)?;
     }
 
     if feedback_enabled {
@@ -207,13 +200,51 @@ pub fn process_input_file(
         }
     }
 
-    println!();
-    println!(
-        "\n- Elapsed time: {}",
+    print_status(&format!(
+        "\n\n- Elapsed time: {}",
         format_duration_to_string(start_time.get_elapsed_time())
-    );
+    ));
 
     Ok(outcome)
+}
+
+/// Flushes and closes one output part's writer.
+///
+/// The flush is explicit because `BufWriter`'s `Drop` discards flush errors,
+/// and an incomplete part on disk must surface as a run failure.
+///
+/// # Errors
+/// Returns the flush error with the part filename attached.
+fn close_part(mut writer: BufWriter<impl Write>, name: &str) -> Result<()> {
+    writer
+        .flush()
+        .with_context(|| format!("Failed to flush output file: [{}]", name))
+}
+
+/// Writes one status line (message plus newline) to `output`, mapping a
+/// closed pipe to the shared [`BrokenPipe`] marker.
+///
+/// # Errors
+/// Fails with the [`BrokenPipe`] marker when the consumer closed the pipe,
+/// or with the underlying I/O error for any other write or flush failure.
+fn write_status(output: &mut impl Write, msg: &str) -> Result<()> {
+    write_out(output, msg.as_bytes())?;
+    write_out(output, b"\n")?;
+    flush_out(output)
+}
+
+/// Prints one status line to stdout without ever failing the split (its
+/// product is the part files): a closed consumer is a debug note, any other
+/// stdout failure a warning.
+fn print_status(msg: &str) {
+    let mut stdout = std::io::stdout();
+    if let Err(e) = write_status(&mut stdout, msg) {
+        if e.is::<BrokenPipe>() {
+            debug!("Status output skipped: stdout closed by the consumer");
+        } else {
+            warn!("Cannot write status output to stdout: {}", e);
+        }
+    }
 }
 
 /// Writes one progress-feedback line (lines/second, data processed, current
@@ -281,7 +312,7 @@ fn try_get_csv_header(args: &SplitArgs, reader: &mut BufReader<File>) -> Result<
         .context("Failed to read CSV header line")?;
 
     if bytes_read == 0 {
-        error!("Warning: CSV mode enabled but no header line found");
+        warn!("CSV mode enabled but no header line found");
         return Ok(None);
     }
 
@@ -293,7 +324,7 @@ fn try_get_csv_header(args: &SplitArgs, reader: &mut BufReader<File>) -> Result<
         }
     }
 
-    println!("CSV mode: Header line detected and will be repeated in each file");
+    print_status("CSV mode: Header line detected and will be repeated in each file");
     Ok(Some(header_line))
 }
 
@@ -451,6 +482,75 @@ mod tests {
         assert!(text.contains("Total Lines:105"));
         assert!(text.contains("Files:2"));
         assert!(text.contains("split_input_2.txt"));
+    }
+
+    /// A writer that accepts writes but fails every flush with `StorageFull`.
+    struct FailingFlush;
+
+    impl Write for FailingFlush {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(std::io::ErrorKind::StorageFull, "full"))
+        }
+    }
+
+    /// A writer that fails every operation with `ErrorKind::BrokenPipe`.
+    struct ClosedPipe;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+    }
+
+    #[test]
+    fn close_part_propagates_flush_failures_naming_the_part() {
+        let writer = BufWriter::new(FailingFlush);
+
+        let error = close_part(writer, "split_input_7.txt").unwrap_err();
+
+        assert!(format!("{:#}", error).contains("split_input_7.txt"));
+    }
+
+    #[test]
+    fn close_part_succeeds_on_a_healthy_writer() {
+        let writer = BufWriter::new(Vec::new());
+
+        assert!(close_part(writer, "split_input_1.txt").is_ok());
+    }
+
+    #[test]
+    fn write_status_writes_the_message_with_a_trailing_newline() {
+        let mut out: Vec<u8> = Vec::new();
+
+        write_status(&mut out, "\n- Saving progress").unwrap();
+
+        assert_eq!(out, b"\n- Saving progress\n");
+    }
+
+    #[test]
+    fn write_status_maps_a_closed_pipe_to_the_marker() {
+        let error = write_status(&mut ClosedPipe, "done").unwrap_err();
+
+        assert!(error.is::<BrokenPipe>());
+    }
+
+    #[test]
+    fn write_status_keeps_other_errors_ordinary() {
+        let error = write_status(&mut FailingFlush, "done").unwrap_err();
+
+        assert!(!error.is::<BrokenPipe>());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "mock-data-utils"
-version = "1.1.2"
+version = "3.0.0"
 description = "Mock data generator utils."
 edition.workspace = true
 authors.workspace = true

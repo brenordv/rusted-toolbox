@@ -318,6 +318,8 @@ Details:
 - The image downloads the Speedtest CLI to `/usr/local/bin/speedtest` and exposes its location
   through the `SPEEDTEST_CLI_PATH` environment variable.
 - The entrypoint script appends `--speedtest-cli-path "$SPEEDTEST_CLI_PATH"` to the arguments
-  automatically unless you pass `--speedtest-cli-path` yourself, so `--expected-download` is the
-  only required flag inside the container.
+  automatically unless you pass `--speedtest-cli-path` or `--config` yourself, so
+  `--expected-download` is the only required flag inside the container. In config-file mode,
+  set `speed.speedtest_cli_path` to `/usr/local/bin/speedtest` in the config to use the bundled
+  Ookla CLI (leaving it unset uses the embedded Cloudflare test).
 - The working directory is `/data`; mount a volume there to keep the SQLite database across runs.

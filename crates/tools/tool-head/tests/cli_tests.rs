@@ -85,3 +85,37 @@ fn help_exits_zero() {
     assert_eq!(output.status.code(), Some(0));
     assert!(!output.stdout.is_empty());
 }
+
+#[test]
+fn obsolete_count_syntax_prints_that_many_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(&dir, "in.txt", b"1\n2\n3\n4\n5\n");
+
+    let output = run_tool(&["-3", input.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"1\n2\n3\n");
+}
+
+#[test]
+fn obsolete_trailing_letters_apply_the_matching_flags() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(&dir, "one.txt", b"x\ny\n");
+
+    let output = run_tool(&["-1qv", input.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("==>"), "stdout: {stdout}");
+}
+
+#[test]
+fn obsolete_invalid_trailing_letter_is_named_on_stderr() {
+    let output = run_tool(&["-5X"]);
+    // Exit 2 through the shared parse-error path; the changelog documents the
+    // divergence from GNU's exit 1.
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid trailing option -- 'X'"),
+        "stderr: {stderr}"
+    );
+}

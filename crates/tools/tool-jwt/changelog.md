@@ -1,3 +1,23 @@
+# 2.0.4
+- The claim printers no longer panic when the consumer closes the output pipe
+  (`jwt ... | head`): they write through the shared broken-pipe helpers and main treats a
+  closed pipe as a normal end of output, exiting 0. The clipboard copy (`-c`), which does
+  not depend on stdout, still runs after a closed pipe.
+- The printers take an output writer and return errors instead of printing directly, so
+  write failures other than a closed pipe are reported through the normal error path.
+
+# 2.0.3
+- A JSON-formatting failure now exits through the shared flush-aware error path instead of a raw
+  `process::exit(1)` that could drop buffered output.
+- "Claim not found" moved from a raw stderr print to a warning log, so it is visible at the
+  default level and now respects `--log-level` and `--log-to-file`; the exit code stays 0.
+- The empty-claims message dropped from error to warning; it exits 0 as documented, and error
+  level implied a failure that never was.
+- App errors are reported once by main: the decode-failure message no longer doubles its
+  "Error decoding token:" prefix.
+- `jwt_app.rs` no longer calls exit helpers; fallible operations return errors and main decides
+  the exit.
+
 # 2.0.2
 - Fixed a startup regression from 2.0.0: running without an explicit `--print` failed with
   "invalid value 'Pretty'" because the declared default rendered its Display form, which the

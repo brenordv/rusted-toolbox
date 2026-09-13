@@ -35,5 +35,8 @@ Shared flags from the common CLI: `--app-header` (print the tool header block),
 
 - Output goes to stdout, one guid per line; diagnostics go to stderr, so the
   output can be piped or captured cleanly.
+- A consumer that closes the pipe early (`guid -m 1000 | head -5`) ends the run
+  quietly with exit code 0; only the requested lines are produced.
 - Clipboard copy failures are reported and exit with code 1.
-- Exit codes: 0 on success, 1 on failure (invalid count, clipboard error).
+- Exit codes: 0 on success (including a consumer-closed pipe), 1 on failure
+  (invalid count, write error, clipboard error).

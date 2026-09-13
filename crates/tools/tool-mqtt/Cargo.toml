@@ -1,6 +1,6 @@
 [package]
 name = "mqtt"
-version = "2.3.0"
+version = "2.3.1"
 description = "Tool for quickly post to or read from a MQTT topic."
 edition.workspace = true
 authors.workspace = true

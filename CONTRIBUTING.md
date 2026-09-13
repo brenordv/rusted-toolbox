@@ -10,7 +10,7 @@ Each tool follows a few principles I try to stick to:
 The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
 
 1. **Tool crates: `crates/tools/*`**
-   - Each CLI tool has its own crate (e.g., `crates/tools/tool-cat`, `crates/tools/tool-jwt`, `crates/tools/tool-split`).
+   - Each CLI tool has its own crate (e.g., `crates/tools/tool-cat`, `crates/tools/tool-jwt`, `crates/tools/tool-csv-split`).
    - Each tool crate contains:
      - `main.rs` (thin entrypoint that orchestrates the tool logic);
      - `cli_utils.rs` (argument parsing/validation and the tool's header printer);
@@ -25,7 +25,6 @@ The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
    - `crates/libs/common-utils`: general-purpose helpers (datetime, strings, file system, shared constants), kept as dependency-free as possible.
    - `crates/libs/common-utils-ext`: helpers that pull in heavier dependencies and that only some tools need (clipboard, GUID generation, regex sanitizing).
    - `crates/libs/common-cli`: the common CLI arg parser, header formatting, exit helpers, and basic logging used by all tools.
-   - `crates/libs/common-cli-env`: loads environment variables into the CLI.
    - `crates/libs/common-file-utils`: file-system operations more specialized than the ones in `common-utils`.
    - `crates/libs/common-serialization-utils`: loads serialized data (JSON) from files into typed objects.
    - `crates/libs/cli-signal-monitor`: watches for Ctrl+C and runs the tool's graceful-shutdown path.

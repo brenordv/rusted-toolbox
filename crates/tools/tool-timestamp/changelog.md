@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.2
+- Offset-carrying datetimes now parse offset-aware: `ts "2021-06-15T12:30:00+0900"` returns
+  1623727800 (the instant the offset names) instead of the wall time re-read as local
+  (1623774600 on a UTC-4 machine, for example). The `%z` layout previously went through
+  `NaiveDateTime::parse_from_str`, which chrono documents as ignoring the offset; it now goes
+  through `DateTime::parse_from_str`, as touch 2.1.0 does. Formats without an offset still
+  parse as local time.
+- A leading sign no longer counts toward the 10-character seconds/milliseconds cutoff, so
+  `ts -- -1700000000` (year 1916) is read as seconds instead of being misread as milliseconds
+  and yielding a 1969 date. The known-issue entry recording this edge is gone from the readme.
+
 ## 2.0.1
 - BREAKING: unparseable datetime input now exits with code 1 and reports the
   failure on stderr. It printed "Invalid date-time format" to stdout and exited

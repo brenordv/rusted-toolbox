@@ -1,4 +1,4 @@
-use crate::models::{MqttCommand, MqttConfig};
+use crate::models::{MqttCommand, MqttConfig, MqttCredentials};
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 
@@ -109,24 +109,25 @@ fn print_runtime_info(args: &MqttConfig) {
 pub fn initialize() -> Result<MqttConfig> {
     let args = CliArgs::parse();
 
-    let command_config = match args.command {
-        Commands::Read(read_args) => MqttConfig {
-            command: MqttCommand::Read,
-            host: read_args.common.host,
-            port: read_args.common.port,
-            topic: read_args.common.topic,
-            username: read_args.common.username,
-            password: read_args.common.password,
-            message: None,
-        },
-        Commands::Post(post_args) => MqttConfig {
-            command: MqttCommand::Post,
-            host: post_args.common.host,
-            port: post_args.common.port,
-            topic: post_args.common.topic,
-            username: post_args.common.username,
-            password: post_args.common.password,
-            message: Some(post_args.message),
+    let (command, connection, message) = match args.command {
+        Commands::Read(read_args) => (MqttCommand::Read, read_args.common, None),
+        Commands::Post(post_args) => (MqttCommand::Post, post_args.common, Some(post_args.message)),
+    };
+
+    // A one-sided pair resolves to no credentials here and is rejected right
+    // after logging boots, so the error is reported through the subscriber.
+    let credential_spec = resolve_credentials(connection.username, connection.password);
+    let partial_credentials = matches!(credential_spec, CredentialSpec::Partial);
+
+    let command_config = MqttConfig {
+        command,
+        host: connection.host,
+        port: connection.port,
+        topic: connection.topic,
+        message,
+        credentials: match credential_spec {
+            CredentialSpec::Complete(credentials) => Some(credentials),
+            CredentialSpec::Anonymous | CredentialSpec::Partial => None,
         },
     };
 
@@ -138,8 +139,11 @@ pub fn initialize() -> Result<MqttConfig> {
         Some(|| print_runtime_info(&command_config)),
     );
 
+    if partial_credentials {
+        anyhow::bail!("Username and password are required together.");
+    }
+
     validate_host_and_port(&command_config.host, command_config.port)?;
-    validate_user_and_password(&command_config.username, &command_config.password)?;
     validate_topic(&command_config.topic)?;
 
     match &command_config.command {
@@ -150,6 +154,25 @@ pub fn initialize() -> Result<MqttConfig> {
     }
 
     Ok(command_config)
+}
+
+/// Outcome of pairing the optional `--username`/`--password` flags: a complete
+/// pair, no credentials at all, or the one-sided combination the caller must
+/// reject.
+enum CredentialSpec {
+    Anonymous,
+    Complete(MqttCredentials),
+    Partial,
+}
+
+fn resolve_credentials(username: Option<String>, password: Option<String>) -> CredentialSpec {
+    match (username, password) {
+        (Some(username), Some(password)) => {
+            CredentialSpec::Complete(MqttCredentials { username, password })
+        }
+        (None, None) => CredentialSpec::Anonymous,
+        _ => CredentialSpec::Partial,
+    }
 }
 
 fn validate_message(message: &Option<String>) -> Result<()> {
@@ -184,18 +207,6 @@ fn validate_topic(topic: &str) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn validate_user_and_password(username: &Option<String>, password: &Option<String>) -> Result<()> {
-    if username.is_none() && password.is_none() {
-        return Ok(());
-    };
-
-    if username.is_some() && password.is_some() {
-        return Ok(());
-    };
-
-    anyhow::bail!("Username and password are required together.");
 }
 
 #[cfg(test)]
@@ -276,25 +287,39 @@ mod tests {
     }
 
     #[test]
-    fn validate_user_and_password_accepts_neither() {
-        assert!(validate_user_and_password(&None, &None).is_ok());
+    fn resolve_credentials_neither_is_anonymous() {
+        assert!(matches!(
+            resolve_credentials(None, None),
+            CredentialSpec::Anonymous
+        ));
     }
 
     #[test]
-    fn validate_user_and_password_accepts_both() {
-        assert!(
-            validate_user_and_password(&Some("user".to_string()), &Some("pass".to_string()))
-                .is_ok()
-        );
+    fn resolve_credentials_both_builds_the_pair() {
+        let spec = resolve_credentials(Some("user".to_string()), Some("pass".to_string()));
+
+        match spec {
+            CredentialSpec::Complete(credentials) => {
+                assert_eq!(credentials.username, "user");
+                assert_eq!(credentials.password, "pass");
+            }
+            _ => panic!("expected a complete credential pair"),
+        }
     }
 
     #[test]
-    fn validate_user_and_password_rejects_username_only() {
-        assert!(validate_user_and_password(&Some("user".to_string()), &None).is_err());
+    fn resolve_credentials_username_only_is_partial() {
+        assert!(matches!(
+            resolve_credentials(Some("user".to_string()), None),
+            CredentialSpec::Partial
+        ));
     }
 
     #[test]
-    fn validate_user_and_password_rejects_password_only() {
-        assert!(validate_user_and_password(&None, &Some("pass".to_string())).is_err());
+    fn resolve_credentials_password_only_is_partial() {
+        assert!(matches!(
+            resolve_credentials(None, Some("pass".to_string())),
+            CredentialSpec::Partial
+        ));
     }
 }

@@ -36,7 +36,7 @@ tail -f -s 0.5 app.log   # poll twice a second
 | `-c`, `--bytes [+]NUM`      | Print the last NUM bytes; `+NUM` starts at byte NUM                                                                                  |
 | `-f`, `--follow[=MODE]`     | Output appended data as the file grows; MODE is `descriptor` (default) or `name` and binds only in the attached form `--follow=name` |
 | `-F`                        | Same as `--follow=name --retry`                                                                                                      |
-| `--retry`                   | Keep trying to open a file that cannot be opened                                                                                     |
+| `--retry`                   | Keep trying files that cannot be opened, statted, or read; without it, a file that keeps failing is abandoned                        |
 | `-s`, `--sleep-interval N`  | Seconds between follow checks (default 1.0; floating point accepted)                                                                 |
 | `--max-unchanged-stats N`   | Accepted for GNU compatibility; has no effect in this port                                                                           |
 | `--pid PID`                 | Not supported by this port; rejected with an error                                                                                   |

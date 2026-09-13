@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.3.1
+- Broker credentials travel as a typed pair (`MqttCredentials`) built during argument
+  resolution, so `create_connection_options` no longer unwraps `--username`/`--password`
+  under a validation performed far away. A one-sided pair is unrepresentable past parsing
+  and is rejected right after logging boots, with the same message as before. The struct
+  deliberately has no `Debug` derive, so the password cannot leak through `{:?}` formatting.
+  Cosmetic side effect on failing runs only: with a one-sided pair, `--app-header` now shows
+  `Connection type: Anonymous` before the error (it used to show `Authenticated`).
+- main follows the fleet's entrypoint pattern: argument and run failures log the full error
+  chain through `error!` and exit 1 via the shared exit helpers, instead of returning
+  `anyhow::Result` and getting anyhow's `Error: ...` debug print.
+
 ## 2.3.0
 - Ctrl+C now stops both modes cleanly through the shared cli-signal-monitor flag instead of
   requiring a kill. The subscriber exits 0 (interrupting a subscription is its normal ending);

@@ -1,6 +1,6 @@
 [package]
 name = "whisper"
-version = "2.0.1"
+version = "2.0.2"
 description = "Bare-bones, secure, and private P2P chat"
 edition.workspace = true
 authors.workspace = true

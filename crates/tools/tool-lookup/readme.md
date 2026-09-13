@@ -50,7 +50,7 @@ Behavior:
 Output:
 - Default: `<file_path>:<line_number>| <line>`
 - With `--line-only`: just the line content
-- Summary (unless `--no-summary`): files searched, lines scanned, matches found, binary files skipped, invalid UTF-8 lines skipped, and elapsed time
+- Summary on stderr (unless `--no-summary`): files searched, lines scanned, matches found, binary files skipped, invalid UTF-8 lines skipped, and elapsed time. Stdout carries only the matches, so piping stays clean.
 
 Examples:
 ```bash
@@ -85,8 +85,8 @@ Arguments and options:
 Behavior:
 - Prints the absolute path to each match (with Windows verbatim prefixes like `\\?\` removed for readability)
 - Shows progress as: `Reading: <folder>` updated on the same line; lines are cleared to avoid overlap
-- On traversal errors: clears the progress line, prints a brief error message, and continues
-- At the end, prints a summary with total dirs, files, matches, and elapsed time (unless `--no-summary`)
+- On traversal errors: clears the progress line, logs a brief warning to stderr, and continues
+- At the end, prints a summary with total dirs, files, matches, and elapsed time to stderr (unless `--no-summary`); stdout carries only the matched paths
 
 Examples:
 ```bash

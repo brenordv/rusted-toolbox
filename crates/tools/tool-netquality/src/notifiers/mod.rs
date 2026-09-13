@@ -71,7 +71,7 @@ impl Notifier {
     pub(crate) async fn send_message(&mut self, config: &NetQualityConfig, message: &str) {
         if let Some(telegram) = &self.telegram {
             if let Err(error) = telegram.send(message).await {
-                warn!("Failed to send Telegram notification: {error}");
+                warn!("Failed to send Telegram notification: {error:#}");
             }
         }
 

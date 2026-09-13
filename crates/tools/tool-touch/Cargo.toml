@@ -1,6 +1,6 @@
 [package]
 name = "touch"
-version = "2.1.0"
+version = "2.2.0"
 description = "Port of the Unix touch command."
 edition.workspace = true
 authors.workspace = true

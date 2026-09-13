@@ -1,14 +1,17 @@
 use crate::models::SplitArgs;
 use anyhow::{Context, Result};
 use clap::Parser;
+use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::format_config_item;
 use common_utils::file_system::get_current_dir;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use tracing::{debug, warn};
 
 /// Split files by the number of lines.
 ///
-/// Split large UTF-8 text or CSV files by line count, preserving an optional CSV header in each part.
+/// Split large CSV or UTF-8 text files by line count, preserving an optional CSV header in each part.
 #[derive(Parser, Debug)]
 #[command(about, long_about, version)]
 struct CliArgs {
@@ -53,8 +56,8 @@ pub fn initialize() -> Result<SplitArgs> {
 
     let config = build_args(&args, &get_current_dir());
 
-    validate_and_prepare(&config)?;
-
+    // Logging boots before validation, so validation failures are reported
+    // through the subscriber by the entrypoint instead of a pre-boot print.
     args.common.app_boot_up(
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
@@ -64,6 +67,8 @@ pub fn initialize() -> Result<SplitArgs> {
             print_header(&config);
         }),
     );
+
+    validate_and_prepare(&config)?;
 
     Ok(config)
 }
@@ -147,20 +152,40 @@ fn validate_and_prepare(args: &SplitArgs) -> Result<()> {
     Ok(())
 }
 
-/// Prints the tool's runtime configuration, shown under `--app-header`.
+/// Writes the tool's runtime-config lines (shown under `--app-header`) to
+/// `output`, mapping a closed pipe to the shared [`BrokenPipe`] marker.
+///
+/// # Errors
+/// Fails with the [`BrokenPipe`] marker when the consumer closed the pipe,
+/// or with the underlying I/O error for any other write or flush failure.
+fn write_header(output: &mut impl Write, args: &SplitArgs) -> Result<()> {
+    let lines = [
+        format_config_item("Input file", &args.input_file),
+        format_config_item("Output dir", &args.output_dir),
+        format_config_item("Lines per file", args.lines_per_file),
+        format_config_item("File prefix", &args.prefix),
+        format_config_item("CSV mode", args.csv_mode),
+        format_config_item("Feedback interval", args.feedback_interval),
+    ];
+    for line in lines {
+        write_out(output, line.as_bytes())?;
+        write_out(output, b"\n")?;
+    }
+    flush_out(output)
+}
+
+/// Prints the tool's runtime configuration, shown under `--app-header`,
+/// without ever failing the run: a closed consumer is a debug note, any
+/// other stdout failure a warning.
 fn print_header(args: &SplitArgs) {
-    println!("{}", format_config_item("Input file", &args.input_file));
-    println!("{}", format_config_item("Output dir", &args.output_dir));
-    println!(
-        "{}",
-        format_config_item("Lines per file", args.lines_per_file)
-    );
-    println!("{}", format_config_item("File prefix", &args.prefix));
-    println!("{}", format_config_item("CSV mode", args.csv_mode));
-    println!(
-        "{}",
-        format_config_item("Feedback interval", args.feedback_interval)
-    );
+    let mut stdout = std::io::stdout();
+    if let Err(e) = write_header(&mut stdout, args) {
+        if e.is::<BrokenPipe>() {
+            debug!("Header output skipped: stdout closed by the consumer");
+        } else {
+            warn!("Cannot write the header to stdout: {}", e);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +216,72 @@ mod tests {
     fn print_header_smoke() {
         let args = sample_args("in.txt".to_string(), "out".to_string());
         print_header(&args);
+    }
+
+    /// A writer that fails every operation with `ErrorKind::BrokenPipe`.
+    struct ClosedPipe;
+
+    impl std::io::Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed",
+            ))
+        }
+    }
+
+    /// A writer that accepts writes but fails every flush with `StorageFull`.
+    struct FailingFlush;
+
+    impl std::io::Write for FailingFlush {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(std::io::ErrorKind::StorageFull, "full"))
+        }
+    }
+
+    #[test]
+    fn write_header_pins_the_six_config_lines() {
+        let args = sample_args("in.txt".to_string(), "out".to_string());
+        let mut out: Vec<u8> = Vec::new();
+
+        write_header(&mut out, &args).unwrap();
+
+        let expected = concat!(
+            "  - Input file: in.txt\n",
+            "  - Output dir: out\n",
+            "  - Lines per file: 100\n",
+            "  - File prefix: split\n",
+            "  - CSV mode: false\n",
+            "  - Feedback interval: 100\n",
+        );
+        assert_eq!(String::from_utf8(out).unwrap(), expected);
+    }
+
+    #[test]
+    fn write_header_maps_a_closed_pipe_to_the_marker() {
+        let args = sample_args("in.txt".to_string(), "out".to_string());
+
+        let error = write_header(&mut ClosedPipe, &args).unwrap_err();
+
+        assert!(error.is::<BrokenPipe>());
+    }
+
+    #[test]
+    fn write_header_keeps_other_errors_ordinary() {
+        let args = sample_args("in.txt".to_string(), "out".to_string());
+
+        let error = write_header(&mut FailingFlush, &args).unwrap_err();
+
+        assert!(!error.is::<BrokenPipe>());
     }
 
     #[test]

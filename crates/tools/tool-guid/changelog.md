@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.2
+- `guid -m N | head` exits 0 quietly when the consumer closes the pipe, instead of reporting
+  "Error while writing guids" and exiting 1. Writes go through `common-cli`'s broken-pipe
+  helpers, so any other write failure still exits 1, with the message now reading
+  "failed to write output: ...".
+- Error handling moved to the entrypoint per CONTRIBUTING.md: `guid_app.rs` returns errors
+  instead of calling `exit_error()` itself, and the clipboard helper takes `&str` and returns a
+  `Result` that main reports.
+
 ## 2.0.1
 - `-m/--multiple` prints one guid per line. It printed each guid followed by a
   carriage return, so on a terminal every guid overwrote the previous one and

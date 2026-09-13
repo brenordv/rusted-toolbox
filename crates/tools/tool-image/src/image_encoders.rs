@@ -1,5 +1,5 @@
 use crate::models::ImageMeta;
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use image::{ColorType, DynamicImage, ImageEncoder};
 use std::fs::File;
 use std::io::Write;
@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use tracing::{debug, info, warn};
 
 pub fn encode_png(output_path: &PathBuf, image: &DynamicImage, meta: &ImageMeta) -> Result<()> {
-    let file = File::create(output_path)?;
+    let file = File::create(output_path)
+        .with_context(|| format!("Cannot create output file '{}'", output_path.display()))?;
     let mut encoder = image::codecs::png::PngEncoder::new(file);
 
     if let Some(ref icc) = meta.icc {
@@ -48,7 +49,8 @@ pub fn encode_jpeg(
 
     let quality = quality.unwrap_or(JPEG_QUALITY);
     debug!(quality, "Encoding JPEG...");
-    let file = File::create(output_path)?;
+    let file = File::create(output_path)
+        .with_context(|| format!("Cannot create output file '{}'", output_path.display()))?;
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, quality);
 
     if let Some(ref icc) = meta.icc {
@@ -70,7 +72,8 @@ pub fn encode_jpeg(
 
 pub fn encode_webp(output_path: &PathBuf, image: &DynamicImage) -> Result<()> {
     debug!("Encoding WebP in lossless mode");
-    let file = File::create(output_path)?;
+    let file = File::create(output_path)
+        .with_context(|| format!("Cannot create output file '{}'", output_path.display()))?;
     let encoder = image::codecs::webp::WebPEncoder::new_lossless(file);
 
     encoder.write_image(
@@ -100,7 +103,8 @@ pub fn encode_avif(
 ) -> Result<()> {
     let quality = quality.unwrap_or(AVIF_QUALITY);
     debug!(quality, speed = AVIF_SPEED, "Encoding AVIF...");
-    let file = File::create(output_path)?;
+    let file = File::create(output_path)
+        .with_context(|| format!("Cannot create output file '{}'", output_path.display()))?;
     let mut encoder =
         image::codecs::avif::AvifEncoder::new_with_speed_quality(file, AVIF_SPEED, quality);
 
@@ -123,7 +127,8 @@ pub fn encode_avif(
 
 pub fn encode_bmp(output_path: &PathBuf, image: &DynamicImage) -> Result<()> {
     debug!("Encoding BMP...");
-    let mut file = File::create(output_path)?;
+    let mut file = File::create(output_path)
+        .with_context(|| format!("Cannot create output file '{}'", output_path.display()))?;
     let encoder = image::codecs::bmp::BmpEncoder::new(&mut file);
 
     encoder.write_image(
@@ -139,36 +144,47 @@ pub fn encode_bmp(output_path: &PathBuf, image: &DynamicImage) -> Result<()> {
 pub fn encode_gif(output_path: &PathBuf, image: &DynamicImage) -> Result<()> {
     debug!("Encoding GIF");
 
-    let mut file = File::create(output_path)?;
-
     // Convert to RGBA for quantization
     let rgba_image = image.to_rgba8();
 
-    // Create GIF encoder
-    let mut encoder = gif::Encoder::new(
-        &mut file,
-        rgba_image.width() as u16,
-        rgba_image.height() as u16,
-        &[],
-    )?;
+    // GIF stores dimensions as u16, so anything past 65535 cannot be encoded.
+    let (Ok(width), Ok(height)) = (
+        u16::try_from(rgba_image.width()),
+        u16::try_from(rgba_image.height()),
+    ) else {
+        bail!(
+            "Cannot encode a {}x{} image as GIF: the format caps each dimension at {} pixels",
+            rgba_image.width(),
+            rgba_image.height(),
+            u16::MAX
+        );
+    };
 
-    // Use global color table
-    encoder.set_repeat(gif::Repeat::Infinite)?;
+    // All fallible pixel work happens before the output file exists.
+    let quantized = quantize_for_gif(&rgba_image)?;
 
-    // Quantize the image to 256 colors
-    encode_gif_with_quantization(&rgba_image, &mut encoder)
+    let file = File::create(output_path)
+        .with_context(|| format!("Cannot create output file '{}'", output_path.display()))?;
+
+    write_gif(file, width, height, quantized)
 }
 
-fn encode_gif_with_quantization<W: Write>(
-    rgba_image: &image::RgbaImage,
-    encoder: &mut gif::Encoder<W>,
-) -> Result<()> {
+/// A GIF-ready image: an RGB global color table, pixels as palette indexes,
+/// and the palette index that renders transparent, when one exists.
+struct QuantizedGif {
+    palette_rgb: Vec<u8>,
+    indexed_pixels: Vec<u8>,
+    transparent: Option<u8>,
+}
+
+/// Quantizes an RGBA image to at most 256 colors for GIF encoding.
+fn quantize_for_gif(rgba_image: &image::RgbaImage) -> Result<QuantizedGif> {
     use imagequant::{Attributes, RGBA};
 
     debug!("Using high-quality quantization for GIF");
 
-    let width = rgba_image.width();
-    let height = rgba_image.height();
+    let width = rgba_image.width() as usize;
+    let height = rgba_image.height() as usize;
     let pixels: Vec<RGBA> = rgba_image
         .pixels()
         .map(|p| RGBA::new(p[0], p[1], p[2], p[3]))
@@ -177,27 +193,52 @@ fn encode_gif_with_quantization<W: Write>(
     let mut liq = Attributes::new();
     liq.set_quality(0, 100)?;
 
-    let mut img = liq.new_image(pixels.clone(), width as usize, height as usize, 0.0)?;
+    let mut img = liq.new_image(pixels, width, height, 0.0)?;
 
     let mut result = liq.quantize(&mut img)?;
 
-    let (palette, pixels) = result.remapped(&mut img)?;
+    let (palette, indexed_pixels) = result.remapped(&mut img)?;
 
-    // Convert palette to GIF format
-    let transparent_values = palette.iter().map(|p| p.a).collect::<Vec<_>>();
-    let first_available_alpha: u8 =
-        transparent_values.iter().position(|a| *a != 0).unwrap_or(0) as u8;
-    let transparent = if first_available_alpha > 0 {
-        Some(first_available_alpha)
-    } else {
-        None
-    };
+    // The first fully transparent palette entry becomes the GIF transparent
+    // index; the try_from never fails in practice because imagequant palettes
+    // hold at most 256 entries.
+    let transparent = palette
+        .iter()
+        .position(|color| color.a == 0)
+        .and_then(|index| u8::try_from(index).ok());
 
-    let mut frame =
-        gif::Frame::from_indexed_pixels(width as u16, height as u16, pixels.clone(), transparent);
+    let palette_rgb = palette
+        .iter()
+        .flat_map(|color| [color.r, color.g, color.b])
+        .collect();
+
+    Ok(QuantizedGif {
+        palette_rgb,
+        indexed_pixels,
+        transparent,
+    })
+}
+
+/// Writes a single-frame GIF through `writer`, using the quantized palette as
+/// the global color table.
+fn write_gif<W: Write>(writer: W, width: u16, height: u16, quantized: QuantizedGif) -> Result<()> {
+    let mut encoder = gif::Encoder::new(writer, width, height, &quantized.palette_rgb)?;
+    encoder.set_repeat(gif::Repeat::Infinite)?;
+
+    let mut frame = gif::Frame::from_indexed_pixels(
+        width,
+        height,
+        quantized.indexed_pixels,
+        quantized.transparent,
+    );
     frame.delay = 0; // Static image
 
     encoder.write_frame(&frame)?;
+
+    // The encoder's Drop discards trailer-write errors; into_inner propagates
+    // them and hands the writer back, so the handle is closed before any
+    // cleanup runs on the path it wrote to.
+    encoder.into_inner()?;
 
     Ok(())
 }
@@ -277,6 +318,123 @@ mod tests {
             ]);
         }
         DynamicImage::ImageRgb8(img)
+    }
+
+    #[test]
+    fn gif_round_trip_decodes_with_original_dimensions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.gif");
+        let original = tiny_rgba();
+
+        encode_gif(&path, &original).unwrap();
+        let decoded = image::open(&path).unwrap();
+
+        assert_eq!(decoded.width(), original.width());
+        assert_eq!(decoded.height(), original.height());
+    }
+
+    /// Builds an 8x8 image whose right half is fully transparent.
+    fn half_transparent_rgba() -> DynamicImage {
+        let mut img = RgbaImage::new(8, 8);
+        for (x, _y, pixel) in img.enumerate_pixels_mut() {
+            *pixel = if x < 4 {
+                Rgba([255, 0, 0, 255])
+            } else {
+                Rgba([0, 0, 0, 0])
+            };
+        }
+        DynamicImage::ImageRgba8(img)
+    }
+
+    #[test]
+    fn gif_keeps_fully_transparent_pixels_transparent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.gif");
+
+        encode_gif(&path, &half_transparent_rgba()).unwrap();
+        let decoded = image::open(&path).unwrap().to_rgba8();
+
+        assert!(decoded.pixels().any(|p| p[3] == 0));
+        assert!(decoded.pixels().any(|p| p[3] == 255));
+    }
+
+    #[test]
+    fn gif_opaque_image_stays_opaque() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.gif");
+
+        encode_gif(&path, &gradient_rgb_64()).unwrap();
+        let decoded = image::open(&path).unwrap().to_rgba8();
+
+        assert!(decoded.pixels().all(|p| p[3] == 255));
+    }
+
+    #[test]
+    fn gif_rejects_dimensions_over_the_format_ceiling() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.gif");
+        let image = DynamicImage::ImageRgba8(RgbaImage::new(65_536, 1));
+
+        let result = encode_gif(&path, &image);
+
+        assert!(result.is_err());
+        assert!(!path.exists());
+    }
+
+    /// A writer that accepts `remaining` bytes and then fails with
+    /// `StorageFull`, simulating a disk that fills up mid-encode.
+    struct FailingWriter {
+        remaining: usize,
+    }
+
+    impl Write for FailingWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.remaining == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::StorageFull,
+                    "disk full",
+                ));
+            }
+            let written = buf.len().min(self.remaining);
+            self.remaining -= written;
+            Ok(written)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn quantized_tiny() -> QuantizedGif {
+        quantize_for_gif(&tiny_rgba().to_rgba8()).unwrap()
+    }
+
+    #[test]
+    fn write_gif_surfaces_immediate_writer_failure() {
+        // Encoder::new writes the screen descriptor immediately, so a writer
+        // that fails on the first byte errors during construction.
+        let result = write_gif(FailingWriter { remaining: 0 }, 8, 8, quantized_tiny());
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn write_gif_surfaces_late_writer_failure() {
+        let mut full = Vec::new();
+        write_gif(&mut full, 8, 8, quantized_tiny()).unwrap();
+
+        // One byte short of a complete file: construction succeeds and the
+        // failure surfaces from the frame write or the trailer.
+        let result = write_gif(
+            FailingWriter {
+                remaining: full.len() - 1,
+            },
+            8,
+            8,
+            quantized_tiny(),
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]

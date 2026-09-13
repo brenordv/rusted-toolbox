@@ -287,47 +287,57 @@ impl StorageConfig {
 }
 
 /// Parses the CLI, resolves the configuration, and boots logging with optional
-/// OpenTelemetry export. The returned guard, when present, must stay alive for
-/// the whole run and be dropped before any exit helper so telemetry flushes.
+/// OpenTelemetry export. Logging boots before this function returns, on the
+/// failure path too, so a resolution error reported by the caller always
+/// reaches a live subscriber. The returned guard, when present, must stay
+/// alive for the whole run and be dropped before any exit helper so telemetry
+/// flushes.
 pub async fn initialize() -> Result<(NetQualityConfig, Option<OtelGuard>)> {
     let args = CliArgs::parse();
 
     let config = match args.config {
-        None => NetQualityConfig::from_args(&args)?,
+        None => NetQualityConfig::from_args(&args),
         Some(config_path) => NetQualityConfig::from_config(config_path)
             .await
-            .context("Failed to load configuration file")?,
+            .context("Failed to load configuration file"),
     };
 
-    let otel_guard = args.common.app_boot_up_with_otel(
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION"),
-        false,
-        false,
-        config.otel_endpoint.as_deref(),
-        Some(|| {
-            print_runtime_info(&config);
-        }),
-    );
-
-    Ok((config, otel_guard))
+    match config {
+        Ok(config) => {
+            let otel_guard = args.common.app_boot_up_with_otel(
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                false,
+                false,
+                config.otel_endpoint.as_deref(),
+                Some(|| {
+                    print_runtime_info(&config);
+                }),
+            );
+            Ok((config, otel_guard))
+        }
+        Err(e) => {
+            // Deliberately no OTel on this path: the endpoint lives in the
+            // config that just failed to resolve, and the caller's error arm
+            // exits without a guard to drop, so an env-endpoint pipeline
+            // would buffer telemetry that never flushes.
+            args.common.app_boot_up(
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                false,
+                false,
+                None::<fn()>,
+            );
+            Err(e)
+        }
+    }
 }
 
-/// Presence flag for the header line: an endpoint counts when the configured
-/// value, or the OTEL_EXPORTER_OTLP_ENDPOINT variable that logging-otel falls
-/// back to, is non-empty after trimming. Only presence is reported; the
-/// endpoint value itself is never printed.
+/// Presence flag for the header line, using logging-otel's own resolution
+/// rules (configured value first, then OTEL_EXPORTER_OTLP_ENDPOINT). Only
+/// presence is reported; the endpoint value itself is never printed.
 fn otel_export_configured(config: &NetQualityConfig) -> bool {
-    let has_value = |value: &str| !value.trim().is_empty();
-
-    config
-        .otel_endpoint
-        .as_deref()
-        .map(has_value)
-        .unwrap_or(false)
-        || std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
-            .map(|value| has_value(&value))
-            .unwrap_or(false)
+    logging_otel::is_otel_endpoint_configured(config.otel_endpoint.as_deref())
 }
 
 fn print_runtime_info(config: &NetQualityConfig) {

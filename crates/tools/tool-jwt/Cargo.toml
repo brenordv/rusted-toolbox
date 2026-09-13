@@ -1,6 +1,6 @@
 [package]
 name = "jwt"
-version = "2.0.2"
+version = "2.0.4"
 description = "Decodes JWT tokens and extracts their public claims, headers, and payload information. Optionally copies claims to clipboard."
 edition.workspace = true
 authors.workspace = true

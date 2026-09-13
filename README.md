@@ -6,7 +6,7 @@ We currently have the following tools:
 2. A high-performance tool to [read messages from EventHub](crates/tools/tool-eventhub-read/readme.md),
 3. and another is to [export the messages](crates/tools/tool-eventhub-export/readme.md);
 4. A [CSV data normalizer](crates/tools/tool-csvn/readme.md) tool;
-5. A tool that [splits large files](crates/tools/tool-split/readme.md) (including CSV) into smaller ones;
+5. A tool that [splits large files](crates/tools/tool-csv-split/readme.md) (including CSV) into smaller ones;
 6. A tool [that searches for multiple terms](crates/tools/tool-get-lines/readme.md) inside a text file and creates one output file per search term;
 7. A tool that mimics the [cat](crates/tools/tool-cat/readme.md) command from Unix (useful on Windows);
 8. A tool that mimics the [touch](crates/tools/tool-touch/readme.md) command from Unix (also useful on Windows);
