@@ -3,7 +3,7 @@ pub(crate) mod telegram_notifier;
 use crate::models::{NetQualityConfig, NotificationConfig, OutageInfo, SpeedResult};
 use anyhow::Result;
 use chrono::Duration as ChronoDuration;
-use tracing::{info_span, trace, warn};
+use tracing::{info_span, trace, warn, Instrument};
 
 use self::telegram_notifier::TelegramNotifier;
 
@@ -68,22 +68,28 @@ impl Notifier {
         self.send_message(config, &message).await;
     }
 
+    /// Delivers one notification inside the `netquality.notification` span,
+    /// which raccoon_otel's subscriber exports to the OTel collector. The
+    /// span wraps the Telegram send and every diagnostic about it, attached
+    /// with `Instrument` because a guard held across an `.await` would detach
+    /// the async body from the span. The span is info-level: at the default
+    /// `warn` log level it is disabled and the events export uncorrelated.
     pub(crate) async fn send_message(&mut self, config: &NetQualityConfig, message: &str) {
-        if let Some(telegram) = &self.telegram {
-            if let Err(error) = telegram.send(message).await {
-                warn!("Failed to send Telegram notification: {error:#}");
+        let span = info_span!("netquality.notification", "notification.message" = message,);
+        async {
+            if let Some(telegram) = &self.telegram {
+                if let Err(error) = telegram.send(message).await {
+                    warn!("Failed to send Telegram notification: {error:#}");
+                }
+            }
+
+            trace!("Notification sent: {}", message);
+            if config.notifications.telegram.is_none() {
+                warn!("No notification channels configured; message only sent via tracing.");
             }
         }
-
-        // Emit a tracing span that raccoon_otel's subscriber exports to the OTel collector.
-        // This replaces the old OpenTelemetryNotifier — same data, no separate provider.
-        let span = info_span!("netquality.notification", "notification.message" = message,);
-        let _guard = span.enter();
-
-        trace!("Notification sent: {}", message);
-        if config.notifications.telegram.is_none() {
-            warn!("No notification channels configured; message only sent via tracing.");
-        }
+        .instrument(span)
+        .await;
     }
 
     pub(crate) fn shutdown(&self) {

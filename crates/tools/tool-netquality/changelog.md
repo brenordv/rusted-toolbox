@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.4
+- The bot token lives in a `BotToken` newtype whose `Debug` renders `<redacted>`, covering
+  the runtime config, the config-file model, and the parsed CLI arguments (all derive Debug
+  and were one `dbg!` away from printing it). The unused `Serialize` derives came off the
+  config-file structs as part of the same change, so the token has no serialization path
+  either; nothing in the crate serialized them.
+- The `--telegram-token` help, its readme entry, and the first usage example steer toward
+  the config-file form: a token on the command line is visible in the process list and
+  shell history.
+- The Telegram send failure warning fires inside the `netquality.notification` span
+  (attached with `tracing::Instrument` across the await), so the OTel trace export records
+  it as an event on that span instead of dropping it uncorrelated. The span is info-level:
+  the correlation shows at `--log-level info` or lower, and OTel log records stay
+  trace-uncorrelated either way (the appender bridge carries no span context).
+
 ## 2.1.3
 - Telegram send errors can no longer leak the bot token. The token is part of the request
   URL, and reqwest transport errors render that URL, so a connect/timeout failure put the

@@ -1,11 +1,10 @@
-use crate::models::{EngineResult, RunMode, RunOutcome, RunStats, RxgetConfig};
+use crate::models::{EngineResult, RunMode, RunOutcome, RunStats, RxgetConfig, Target};
 use anyhow::{Context, Result};
 use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
 use common_utils::constants::SIZE_128KB;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, Write};
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{debug, error, warn};
 
@@ -64,7 +63,7 @@ fn run_inner<W: Write>(
     let mut seen: HashSet<Vec<u8>> = HashSet::new();
     let mut all_ok = true;
 
-    for path in &config.targets {
+    for target in &config.targets {
         if shutdown.load(Ordering::Relaxed) {
             warn!("interrupted; output is partial");
             return Ok((RunOutcome::Interrupted, all_ok));
@@ -73,26 +72,41 @@ fn run_inner<W: Write>(
             seen.clear();
         }
 
-        let file = match File::open(path) {
-            Ok(file) => file,
-            Err(open_error) => {
-                error!(path = %path.display(), "cannot open: {open_error}");
-                all_ok = false;
-                continue;
+        let label = target.label();
+        let scan = match target {
+            Target::Stdin => scan_file(
+                &mut std::io::stdin().lock(),
+                &label,
+                config,
+                has_group,
+                &mut seen,
+                shutdown,
+                out,
+                stats,
+            ),
+            Target::File(path) => {
+                let file = match File::open(path) {
+                    Ok(file) => file,
+                    Err(open_error) => {
+                        error!(path = %label, "cannot open: {open_error}");
+                        all_ok = false;
+                        continue;
+                    }
+                };
+                scan_file(
+                    &mut BufReader::with_capacity(SIZE_128KB, file),
+                    &label,
+                    config,
+                    has_group,
+                    &mut seen,
+                    shutdown,
+                    out,
+                    stats,
+                )
             }
         };
-        let mut reader = BufReader::with_capacity(SIZE_128KB, file);
 
-        match scan_file(
-            &mut reader,
-            path,
-            config,
-            has_group,
-            &mut seen,
-            shutdown,
-            out,
-            stats,
-        ) {
+        match scan {
             Ok(ScanEnd::Eof) => stats.targets_processed += 1,
             Ok(ScanEnd::OverCap) => {
                 stats.targets_processed += 1;
@@ -117,10 +131,10 @@ enum ScanEnd {
     Interrupted,
 }
 
-#[allow(clippy::too_many_arguments)] // one call site; splitting into a context struct would only rename the same eight values
+#[allow(clippy::too_many_arguments)] // two call sites on one match; splitting into a context struct would only rename the same eight values
 fn scan_file<R: BufRead, W: Write>(
     reader: &mut R,
-    path: &Path,
+    label: &str,
     config: &RxgetConfig,
     has_group: bool,
     seen: &mut HashSet<Vec<u8>>,
@@ -128,29 +142,27 @@ fn scan_file<R: BufRead, W: Write>(
     out: &mut W,
     stats: &mut RunStats,
 ) -> Result<ScanEnd> {
-    let prefix: Option<Vec<u8>> = config
-        .with_filename
-        .then(|| path.display().to_string().into_bytes());
+    let prefix: Option<Vec<u8>> = config.with_filename.then(|| label.as_bytes().to_vec());
     let mut line: Vec<u8> = Vec::new();
     let mut line_number: u64 = 0;
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
-            warn!(path = %path.display(), "interrupted; output is partial");
+            warn!(path = %label, "interrupted; output is partial");
             return Ok(ScanEnd::Interrupted);
         }
         line_number += 1;
 
         let read = read_line_capped(reader, &mut line)
-            .with_context(|| format!("error reading '{}'", path.display()))?;
+            .with_context(|| format!("error reading '{label}'"))?;
         match read {
             ReadLine::Eof => return Ok(ScanEnd::Eof),
             ReadLine::OverCap => {
                 error!(
-                    path = %path.display(),
+                    path = %label,
                     line = line_number,
                     cap_bytes = LINE_CAP,
-                    "line exceeds the cap without a delimiter; the rest of this file is skipped"
+                    "line exceeds the cap without a delimiter; the rest of this input is skipped"
                 );
                 return Ok(ScanEnd::OverCap);
             }
@@ -273,6 +285,7 @@ fn trim_eol(line: &[u8]) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::test_writers::ClosedPipe;
     use regex::bytes::Regex;
     use rstest::rstest;
     use std::path::PathBuf;
@@ -283,8 +296,38 @@ mod tests {
             pattern: Regex::new(pattern).unwrap(),
             mode,
             with_filename: false,
-            targets,
+            targets: targets.into_iter().map(Target::File).collect(),
         }
+    }
+
+    #[test]
+    fn stdin_label_prefixes_values_with_standard_input() {
+        let cfg = RxgetConfig {
+            pattern: Regex::new(r"x=(\d)").unwrap(),
+            mode: RunMode::All,
+            with_filename: true,
+            targets: vec![Target::Stdin],
+        };
+        let flag = AtomicBool::new(false);
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        let mut stats = RunStats::default();
+
+        let mut reader = BufReader::new(&b"x=4\n"[..]);
+        let end = scan_file(
+            &mut reader,
+            &Target::Stdin.label(),
+            &cfg,
+            true,
+            &mut seen,
+            &flag,
+            &mut out,
+            &mut stats,
+        )
+        .unwrap();
+
+        assert!(matches!(end, ScanEnd::Eof));
+        assert_eq!(out, b"standard input: 4\n");
     }
 
     fn run_engine(config: &RxgetConfig) -> (Vec<u8>, EngineResult) {
@@ -448,15 +491,6 @@ mod tests {
 
     #[test]
     fn broken_pipe_yields_quiet_success() {
-        struct ClosedPipe;
-        impl Write for ClosedPipe {
-            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-                Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed"))
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
         let dir = tempdir().unwrap();
         let file = write_file(&dir, "in.txt", b"x=1\n");
 

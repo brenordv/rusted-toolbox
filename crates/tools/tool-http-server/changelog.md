@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.4.3
+- Two of the recorded test gaps closed: a route test pins that a file with a pre-Unix-epoch
+  mtime serves 200 with no `ETag`/`Last-Modified` (the 2.4.0 panic guard, previously
+  unit-tested only), and a unit test pins that `ChannelWriter` reports `BrokenPipe` once the
+  response receiver is gone, the signal that unwinds a zip build and frees its slot when the
+  client disconnects. New dev-dependency: `filetime` (workspace version) for the mtime test.
+  The zip 503 slot-exhaustion branch stays untested by decision, recorded in the backlog.
+
+## 2.4.2
+- The startup prints (the "Server running at ..." banner and the `--app-header` runtime-config
+  lines) go through `common_cli::broken_pipe`: a consumer that closes stdout before boot gets
+  a debug note instead of a panic, any other stdout failure a single warning, and the server
+  starts either way. Pairs with common-cli 1.7.0, which made the shared header block around
+  those lines broken-pipe safe.
+
+## 2.4.1
+- Security: a non-hidden symlink inside the root could serve a hidden sibling without
+  `--serve-hidden`, because only the URL path was screened for dotted segments. The
+  canonicalized target, taken relative to the root, is screened too now, so `link -> .secret`
+  answers 404 the same as the direct path. With `--serve-hidden` the alias serves as before.
+- The `Range` unit matches case-insensitively per RFC 9110 §14.1; `Bytes=0-5` used to get the
+  whole file as a 200, now it gets the 206.
+- A directory entry that fails to read mid-listing still truncates the page to what was
+  collected, but now logs a warning naming the directory; it was silent, so a permissions
+  hiccup produced a shorter page with no operator-visible trace.
+
 ## 2.4.0
 - Conditional GET: a GET or HEAD whose `If-None-Match` or `If-Modified-Since` validator is
   still current is answered with a bodyless 304 carrying the same `ETag` and `Last-Modified`

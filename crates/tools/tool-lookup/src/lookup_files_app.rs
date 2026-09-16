@@ -247,6 +247,7 @@ fn brief_walkdir_error(e: &walkdir::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::test_writers::ClosedPipe;
 
     fn matcher(patterns: &[&str], mode: PatternMode, case_sensitive: bool) -> Matcher {
         let patterns: Vec<String> = patterns.iter().map(|p| p.to_string()).collect();
@@ -332,23 +333,6 @@ mod tests {
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains("hit.log"));
         assert!(!text.contains("Summary:"));
-    }
-
-    struct ClosedPipe;
-
-    impl std::io::Write for ClosedPipe {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
     }
 
     #[test]

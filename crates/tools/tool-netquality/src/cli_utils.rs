@@ -1,5 +1,5 @@
 use crate::models::{
-    resolve_urls, ConnectivityConfig, NetQualityConfig, NotificationConfig, SpeedConfig,
+    resolve_urls, BotToken, ConnectivityConfig, NetQualityConfig, NotificationConfig, SpeedConfig,
     StorageConfig, TelegramConfig, ThresholdCategory, Thresholds, UrlMode,
 };
 use anyhow::{anyhow, Context, Result};
@@ -159,9 +159,10 @@ pub struct CliArgs {
     #[arg(long = "speedtest-cli-path", required_unless_present = "config")]
     speedtest_cli_path: Option<PathBuf>,
 
-    /// Telegram bot token for notification.
+    /// Telegram bot token for notification. Prefer the config-file form: a CLI
+    /// token is visible in the process list and shell history.
     #[arg(long = "telegram-token", required = false)]
-    telegram_token: Option<String>,
+    telegram_token: Option<BotToken>,
 
     /// Telegram chat ID for notification.
     #[arg(long = "telegram-chat-id", required = false)]
@@ -612,6 +613,16 @@ mod tests {
             connectivity.urls.last().map(String::as_str),
             Some("https://example.com/health")
         );
+    }
+
+    #[test]
+    fn cli_args_debug_redacts_the_telegram_token() {
+        let secret = "123456:sekret-token-value";
+        let args = parse_args(&["--telegram-token", secret, "--telegram-chat-id", "1"]);
+
+        let rendered = format!("{args:?}");
+        assert!(!rendered.contains(secret), "leaked: {rendered}");
+        assert!(rendered.contains("<redacted>"));
     }
 
     #[test]

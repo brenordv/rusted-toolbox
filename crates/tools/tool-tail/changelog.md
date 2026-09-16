@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.0
+- GNU's obsolete first-argument forms are accepted, matching head 1.2.0's parity: `tail -5`,
+  `tail +5`, and the unit letters `b` (512-byte blocks), `c` (bytes), `l` (lines) with an
+  optional trailing `f` for follow (`tail +20lf log`). Honored only as the first argument
+  with at most one following operand (`--` allowed), per GNU's structural gate; the count and
+  its `b` multiplier flow through the modern count parser. Deviations, recorded in the
+  readme: always on (no `_POSIX2_VERSION` knob), digit-less forms (`-l`, `+f`) stay
+  unrecognized, and malformed forms fall through to the normal parser instead of a
+  named-letter error. A file named `-5` or `+5` stays reachable after `--`.
+- Test suites use the shared `common_cli::test_writers` doubles instead of a private
+  failing-writer copy; behavior pinned by the tests is unchanged.
+
 ## 1.2.0
 - `--follow=name` no longer holds one stale descriptor per followed file: each polling cycle
   releases any held handle before reopening the path, matching the documented contract that

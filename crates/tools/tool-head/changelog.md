@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+- The test suite uses the shared `common_cli::test_writers::FailAfter` double instead of a
+  private byte-budget failing-writer copy; the behavior pinned by the tests is unchanged.
+
 ## 1.2.0
 - GNU's obsolete option syntax is now accepted: `head -5` means `-n 5`, and the trailing
   letters work as in GNU (`b`/`k`/`m` switch to bytes with 512/1024/1048576 multipliers, `c`

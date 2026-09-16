@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.4
+- The test suite uses the shared `common_cli::test_writers::FailAfter` double instead of a
+  private byte-budget failing-writer copy; the behavior pinned by the tests is unchanged.
+
 ## 2.1.3
 - Every encoder now writes to a temporary file in the destination directory and renames it
   over the target once the encode finishes. Before, `File::create` truncated the destination

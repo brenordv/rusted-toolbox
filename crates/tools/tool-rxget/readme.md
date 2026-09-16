@@ -31,13 +31,20 @@ rxget -p "error code (\d+)" logs\*.log
 rxget -p "error code (\d+)" "logs/**/*.log"
 ```
 
+### Read standard input
+A `-` target reads standard input; it mixes with files and patterns at its position:
+```bash
+journalctl -u app | rxget -p 'id=(\d+)' -
+rxget -p 'user=(\w+)' -m unique-per-run before.log - after.log
+```
+
 ## Command-line options
 | Flag                      | Description                                                                                                                    |
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `<TARGET>...`             | Files and/or wildcard patterns (at least one). Supports `*`, `?`, `[ab]`, `{a,b}`, and recursive `**`                          |
+| `<TARGET>...`             | Files, wildcard patterns, and/or `-` for standard input (at least one). Supports `*`, `?`, `[ab]`, `{a,b}`, and recursive `**` |
 | `-p`, `--pattern <REGEX>` | Extraction regex (required); group 1 is the value when the pattern has capture groups                                          |
 | `-m`, `--mode <MODE>`     | `all` (default), `unique-per-file`, or `unique-per-run`; unique modes print the first occurrence and suppress later duplicates |
-| `-H`, `--with-filename`   | Prefix each value with the file it came from, as `<filename>: <value>`                                                         |
+| `-H`, `--with-filename`   | Prefix each value with the input it came from, as `<name>: <value>` (`standard input` for `-`)                                 |
 
 The shared workspace flags (`--app-header`, `--log-level`, `--log-to-console`, `--log-to-file`,
 `--rotate-log-file-by-day`, `--verbose`) are accepted; `--verbose` is unused by this tool.
@@ -75,4 +82,8 @@ Regex case sensitivity is the pattern's business: use `(?i)` for case-insensitiv
   line boundary, not inside a single match call.
 - `--log-level debug` prints an end-of-run summary: targets processed, values emitted,
   duplicates suppressed.
-- No stdin input in this version; pass file paths or patterns.
+- Standard input: the exact argument `-` reads stdin at its position in the target order;
+  repeated `-` arguments read it once. It labels as `standard input` in `-H` prefixes and
+  diagnostics, and `unique-per-file` treats the whole stream as one file. A real file named
+  `-` stays reachable as `./-`. The 8 MiB line cap applies to stdin too. Ctrl+C is observed
+  between lines, so at an idle interactive stdin it takes effect on the next line or EOF.

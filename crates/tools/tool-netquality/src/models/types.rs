@@ -221,9 +221,40 @@ pub struct NotificationConfig {
     pub min_upload_threshold: ThresholdCategory,
 }
 
+/// A Telegram bot token. `Debug` renders `<redacted>` so the secret cannot
+/// leak through `{:?}` formatting of any struct that carries it (the runtime
+/// config, the config-file model, and the parsed CLI arguments all do); the
+/// send path reads the raw value through [`expose`](Self::expose).
+#[derive(Clone, PartialEq, Deserialize)]
+#[serde(transparent)]
+pub struct BotToken(String);
+
+impl BotToken {
+    /// The raw token, for building the Telegram API request URL. The URL must
+    /// never reach a log or error chain; the notifier strips it with
+    /// `without_url()`.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for BotToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
+impl std::str::FromStr for BotToken {
+    type Err = std::convert::Infallible;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Ok(Self(value.to_string()))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TelegramConfig {
-    pub bot_token: String,
+    pub bot_token: BotToken,
     pub chat_id: String,
 }
 
@@ -273,7 +304,10 @@ impl Thresholds {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// The config-file models only deserialize: nothing writes a config back out,
+// and keeping `Serialize` off them means the bot token has no serialization
+// path at all.
+#[derive(Debug, Clone, Deserialize)]
 pub struct ConfigFile {
     pub connectivity: Option<ConnectivityConfigFile>,
     pub speed: Option<SpeedConfigFile>,
@@ -283,7 +317,7 @@ pub struct ConfigFile {
     pub otel_endpoint: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ConnectivityConfigFile {
     pub delay_secs: Option<u64>,
     pub timeout_secs: Option<u64>,
@@ -293,7 +327,7 @@ pub struct ConnectivityConfigFile {
     pub url_mode: Option<UrlMode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SpeedConfigFile {
     pub expected_download_mbps: f32,
     pub expected_upload_mbps: Option<f32>,
@@ -303,20 +337,20 @@ pub struct SpeedConfigFile {
     pub speedtest_cli_path: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct NotificationConfigFile {
     pub telegram: Option<TelegramConfigFile>,
     pub min_download_threshold: Option<ThresholdCategory>,
     pub min_upload_threshold: Option<ThresholdCategory>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct TelegramConfigFile {
-    pub bot_token: Option<String>,
+    pub bot_token: Option<BotToken>,
     pub chat_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct StorageConfigFile {
     pub db_path: Option<PathBuf>,
     pub cleanup_enabled: Option<bool>,
@@ -645,7 +679,7 @@ mod tests {
     fn resolve_notifications_rejects_partial_telegram() {
         let config = NotificationConfigFile {
             telegram: Some(TelegramConfigFile {
-                bot_token: Some("token".to_string()),
+                bot_token: Some("token".parse().unwrap()),
                 chat_id: None,
             }),
             min_download_threshold: None,
@@ -659,7 +693,7 @@ mod tests {
     fn resolve_notifications_accepts_full_telegram_and_overrides() {
         let config = NotificationConfigFile {
             telegram: Some(TelegramConfigFile {
-                bot_token: Some("token".to_string()),
+                bot_token: Some("token".parse().unwrap()),
                 chat_id: Some("chat".to_string()),
             }),
             min_download_threshold: Some(ThresholdCategory::Expected),
@@ -669,7 +703,7 @@ mod tests {
         let notifications = resolve_notifications(Some(config)).expect("should resolve");
 
         let telegram = notifications.telegram.expect("telegram should be set");
-        assert_eq!(telegram.bot_token, "token");
+        assert_eq!(telegram.bot_token.expose(), "token");
         assert_eq!(telegram.chat_id, "chat");
         assert_eq!(
             notifications.min_download_threshold,
@@ -679,6 +713,42 @@ mod tests {
             notifications.min_upload_threshold,
             ThresholdCategory::VerySlow
         );
+    }
+
+    #[test]
+    fn debug_output_redacts_the_bot_token_everywhere_it_lives() {
+        let secret = "123456:sekret-token-value";
+
+        let runtime = NotificationConfig {
+            telegram: Some(TelegramConfig {
+                bot_token: secret.parse().unwrap(),
+                chat_id: "chat".to_string(),
+            }),
+            min_download_threshold: ThresholdCategory::Medium,
+            min_upload_threshold: ThresholdCategory::Slow,
+        };
+        let rendered = format!("{runtime:?}");
+        assert!(!rendered.contains(secret), "leaked: {rendered}");
+        assert!(rendered.contains("<redacted>"));
+
+        let file = NotificationConfigFile {
+            telegram: Some(TelegramConfigFile {
+                bot_token: Some(secret.parse().unwrap()),
+                chat_id: Some("chat".to_string()),
+            }),
+            min_download_threshold: None,
+            min_upload_threshold: None,
+        };
+        let rendered = format!("{file:?}");
+        assert!(!rendered.contains(secret), "leaked: {rendered}");
+        assert!(rendered.contains("<redacted>"));
+    }
+
+    #[test]
+    fn bot_token_deserializes_transparently_from_a_json_string() {
+        let file: TelegramConfigFile =
+            serde_json::from_str(r#"{"bot_token": "abc", "chat_id": "1"}"#).unwrap();
+        assert_eq!(file.bot_token.unwrap().expose(), "abc");
     }
 
     #[test]

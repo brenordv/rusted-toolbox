@@ -1,11 +1,13 @@
 use crate::models::ServerConfig;
 use anyhow::{Context, Result};
 use clap::Parser;
+use common_cli::broken_pipe::{write_out, BrokenPipe};
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::format_config_item;
 use common_cli::tool_exit_helpers::exit_error;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use tracing::{debug, warn};
 
 /// Simple HTTP server for local files.
 ///
@@ -41,16 +43,27 @@ pub struct CliArgs {
     pub common: CommonToolArgs,
 }
 
+/// Prints the tool-specific header lines. The lines are informational, so a
+/// failing stdout never fails the boot: a closed pipe stops with a debug note,
+/// any other write error with one warning.
 fn print_runtime_info(args: &ServerConfig) {
-    println!(
-        "{}",
-        format_config_item("Root directory", args.root_path.display())
-    );
-    println!("{}", format_config_item("Port", args.port));
-    println!(
-        "{}",
-        format_config_item("Serve hidden files", args.serve_hidden)
-    );
+    let lines = [
+        format_config_item("Root directory", args.root_path.display()),
+        format_config_item("Port", args.port),
+        format_config_item("Serve hidden files", args.serve_hidden),
+    ];
+
+    let mut stdout = std::io::stdout();
+    for line in lines {
+        if let Err(error) = write_out(&mut stdout, format!("{line}\n").as_bytes()) {
+            if error.is::<BrokenPipe>() {
+                debug!("Runtime-config lines skipped: stdout closed by the consumer");
+            } else {
+                warn!("Runtime-config lines not printed: {error:#}");
+            }
+            return;
+        }
+    }
 }
 
 /// Parses the CLI arguments, validates them, and boots logging. Validation

@@ -1,10 +1,10 @@
-use crate::models::TelegramConfig;
+use crate::models::{BotToken, TelegramConfig};
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 
 pub(crate) struct TelegramNotifier {
     client: Client,
-    bot_token: String,
+    bot_token: BotToken,
     chat_id: String,
 }
 
@@ -27,7 +27,10 @@ impl TelegramNotifier {
     /// Returns a token-free error when the request fails or Telegram answers
     /// with a non-success status.
     pub(crate) async fn send(&self, message: &str) -> Result<()> {
-        let url = format!("https://api.telegram.org/bot{}/sendMessage", self.bot_token);
+        let url = format!(
+            "https://api.telegram.org/bot{}/sendMessage",
+            self.bot_token.expose()
+        );
 
         let payload = serde_json::json!({
             "chat_id": self.chat_id,

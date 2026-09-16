@@ -1,7 +1,10 @@
 use crate::app_logger::AppLogger;
+use crate::broken_pipe::{write_out, BrokenPipe};
 use crate::header_format::{format_config_section, render_standard_header};
 use crate::tool_log_level::ToolLogLevel;
 use clap::Args;
+use std::io::Write;
+use tracing::{debug, warn};
 
 /// The CLI flags shared by every tool: logging level and channels, the header
 /// toggle, and verbose mode. Flattened into each tool's argument parser with
@@ -106,15 +109,45 @@ impl CommonToolArgs {
 /// Prints the rendered standard header, the optional tool-specific config
 /// section, and the trailing blank line. Both boot paths print through here so
 /// the `--app-header` byte layout cannot drift between them.
+///
+/// The header is informational, so a failing stdout never fails or panics the
+/// boot: a closed pipe skips the rest of the block (the tool's own printer
+/// included, since it would hit the same dead pipe) with a debug note, and any
+/// other write error skips it with one warning naming the error.
 fn print_header_block(header: &str, tool_header_printer: Option<impl FnOnce()>) {
-    println!("{header}");
+    if let Err(error) = write_header_block(&mut std::io::stdout(), header, tool_header_printer) {
+        if error.is::<BrokenPipe>() {
+            debug!("--app-header block skipped: stdout closed by the consumer");
+        } else {
+            warn!("--app-header block not printed: {error:#}");
+        }
+    }
+}
+
+/// Writes the shared header-block lines to `out`, calling the tool printer
+/// between the section line and the trailing blank line. Split from
+/// [`print_header_block`] so tests can inject a writer; the tool printer still
+/// prints through its own means, which is the production arrangement too.
+///
+/// # Errors
+/// Fails with the first write error, [`BrokenPipe`]-marked when the consumer
+/// closed the pipe; the remaining lines and the tool printer are skipped.
+fn write_header_block<W: Write>(
+    out: &mut W,
+    header: &str,
+    tool_header_printer: Option<impl FnOnce()>,
+) -> anyhow::Result<()> {
+    write_out(out, format!("{header}\n").as_bytes())?;
 
     if let Some(printer) = tool_header_printer {
-        println!("{}", format_config_section("Tool Runtime Config"));
+        write_out(
+            out,
+            format!("{}\n", format_config_section("Tool Runtime Config")).as_bytes(),
+        )?;
         printer();
     }
 
-    println!();
+    write_out(out, b"\n")
 }
 
 /// The shared CLI flags for a tool that owns its own verbosity flag and derives
@@ -209,7 +242,50 @@ impl CommonToolArgsNoVerbose {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_writers::{ClosedPipe, FailingDisk};
     use clap::Parser;
+
+    #[test]
+    fn write_header_block_pins_the_shared_bytes_with_a_tool_section() {
+        let mut out: Vec<u8> = Vec::new();
+        let mut printer_ran = false;
+
+        write_header_block(&mut out, "HEADER", Some(|| printer_ran = true)).unwrap();
+
+        assert!(printer_ran);
+        let expected = format!(
+            "HEADER\n{}\n\n",
+            format_config_section("Tool Runtime Config")
+        );
+        assert_eq!(out, expected.as_bytes());
+    }
+
+    #[test]
+    fn write_header_block_pins_the_shared_bytes_without_a_tool_section() {
+        let mut out: Vec<u8> = Vec::new();
+
+        write_header_block(&mut out, "HEADER", None::<fn()>).unwrap();
+
+        assert_eq!(out, b"HEADER\n\n");
+    }
+
+    #[test]
+    fn write_header_block_on_a_closed_pipe_skips_the_tool_printer() {
+        let mut printer_ran = false;
+
+        let error =
+            write_header_block(&mut ClosedPipe, "HEADER", Some(|| printer_ran = true)).unwrap_err();
+
+        assert!(error.is::<BrokenPipe>());
+        assert!(!printer_ran, "the printer must not run on a dead pipe");
+    }
+
+    #[test]
+    fn write_header_block_keeps_other_write_errors_unmarked() {
+        let error = write_header_block(&mut FailingDisk, "HEADER", None::<fn()>).unwrap_err();
+
+        assert!(!error.is::<BrokenPipe>());
+    }
 
     #[derive(Parser, Debug)]
     struct TestCli {

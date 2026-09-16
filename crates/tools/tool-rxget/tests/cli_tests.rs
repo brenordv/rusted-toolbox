@@ -1,5 +1,6 @@
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 const EXE: &str = env!("CARGO_BIN_EXE_rxget");
 
@@ -14,6 +15,23 @@ fn run_tool(args: &[&str]) -> Output {
         .args(args)
         .output()
         .expect("failed to spawn rxget")
+}
+
+fn run_tool_with_stdin(args: &[&str], stdin: &[u8]) -> Output {
+    let mut child = Command::new(EXE)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn rxget");
+    child
+        .stdin
+        .take()
+        .expect("stdin handle")
+        .write_all(stdin)
+        .expect("failed to write stdin");
+    child.wait_with_output().expect("failed to wait for rxget")
 }
 
 #[test]
@@ -94,4 +112,49 @@ fn help_exits_zero() {
     let output = run_tool(&["--help"]);
     assert_eq!(output.status.code(), Some(0));
     assert!(!output.stdout.is_empty());
+}
+
+#[test]
+fn dash_target_reads_standard_input() {
+    let output = run_tool_with_stdin(&["-p", r"id=(\d+)", "-"], b"id=42 and id=7\n");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"42\n7\n");
+}
+
+#[test]
+fn dash_target_with_filename_prefixes_standard_input() {
+    let output = run_tool_with_stdin(&["-p", r"id=(\d+)", "-H", "-"], b"id=42\n");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"standard input: 42\n");
+}
+
+#[test]
+fn unique_per_run_spans_stdin_and_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = fixture(&dir, "a.log", b"id=1 id=2\n");
+
+    let output = run_tool_with_stdin(
+        &[
+            "-p",
+            r"id=(\d+)",
+            "-m",
+            "unique-per-run",
+            file.to_str().unwrap(),
+            "-",
+        ],
+        b"id=2 id=3\n",
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"1\n2\n3\n");
+}
+
+#[test]
+fn empty_stdin_emits_nothing_and_exits_zero() {
+    let output = run_tool_with_stdin(&["-p", r"id=(\d+)", "-"], b"");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty());
 }

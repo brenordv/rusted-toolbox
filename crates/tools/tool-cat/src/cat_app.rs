@@ -432,6 +432,7 @@ mod tests {
     use super::*;
     use crate::cli_utils::CliArgs;
     use clap::Parser;
+    use common_cli::test_writers::FailAfter;
     use rstest::*;
     use tempfile::tempdir;
 
@@ -464,26 +465,6 @@ mod tests {
         run_cook(input, options, chunk, &mut state, &mut out);
         finish_trailing_cr(options, &mut state, &mut out);
         out
-    }
-
-    struct FailingWriter {
-        accepted: usize,
-        fail_after: usize,
-    }
-
-    impl Write for FailingWriter {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            if self.accepted >= self.fail_after {
-                return Err(io::Error::new(ErrorKind::BrokenPipe, "pipe closed"));
-            }
-            let n = (self.fail_after - self.accepted).min(buf.len());
-            self.accepted += n;
-            Ok(n)
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
     }
 
     #[test]
@@ -809,10 +790,7 @@ mod tests {
         std::fs::write(&path, b"hello world, this is more than eight bytes\n").unwrap();
         let mut o = opts();
         o.files = vec![path.to_str().unwrap().to_string()];
-        let mut out = FailingWriter {
-            accepted: 0,
-            fail_after: 8,
-        };
+        let mut out = FailAfter::broken_pipe(8);
 
         let ok = run(&o, &mut out);
 

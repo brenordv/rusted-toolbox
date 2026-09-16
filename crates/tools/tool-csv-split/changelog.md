@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.0.6
+- The last recorded test gap closed: `process_input_file` delegates to an inner function
+  generic over part-writer creation, and two tests inject a failing-flush writer to pin that
+  a part-flush failure propagates from both `close_part` call sites (the mid-run part
+  boundary and the final part). A regression back to the pre-3.0.1 warn-and-continue would
+  now fail the suite. Output bytes and behavior are unchanged; the production path still
+  writes plain files.
+
+## 3.0.5
+- Two of the recorded test gaps closed: a process-level test pins that a run whose stdout
+  pipe is closed before it starts still writes every part and exits 0, and a unit test pins
+  the empty-input CSV-mode path (run completes, no parts created). The remaining gap, a pin
+  that a part-flush failure propagates from both `close_part` call sites, stays recorded:
+  forcing a flush failure portably needs a writer seam the code does not have.
+
+## 3.0.4
+- Test suites use the shared `common_cli::test_writers` doubles instead of the two private
+  copies; behavior pinned by the tests is unchanged.
+
+## 3.0.3
+- Startup failures log as "Startup failed:"; the old "Invalid arguments:" label also
+  covered output-directory creation errors, which are I/O problems, not argument problems.
+- The warning for a failed final progress-feedback write no longer says feedback was
+  "disabled"; nothing is disabled at that point, it is the last line of the run.
+- The argument-parsing test helper's argv[0] says `csv-split`; it still said `split`
+  (inert either way, clap ignores argv[0] in `try_parse_from`).
+
 ## 3.0.2
 - The startup config banner's own lines (the six items under "Tool Runtime Config") go
   through `common_cli::broken_pipe` now: a consumer that closes stdout before they print

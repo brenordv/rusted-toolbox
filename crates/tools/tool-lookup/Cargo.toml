@@ -1,6 +1,6 @@
 [package]
 name = "lookup"
-version = "3.2.1"
+version = "3.2.2"
 description = "Tool to recursively search for text in files"
 edition.workspace = true
 authors.workspace = true

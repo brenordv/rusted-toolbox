@@ -383,6 +383,21 @@ mod tests {
     }
 
     #[test]
+    fn channel_writer_reports_broken_pipe_once_the_receiver_is_gone() {
+        // This BrokenPipe is what unwinds a build whose client disconnected,
+        // which in turn ends the blocking task and releases its zip slot.
+        let (tx, rx) = mpsc::channel::<io::Result<Vec<u8>>>(CHANNEL_CAPACITY);
+        drop(rx);
+
+        let mut writer = ChannelWriter { tx };
+        let error = writer.write(b"data").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        // An empty write never touches the channel.
+        assert_eq!(writer.write(b"").unwrap(), 0);
+        writer.flush().unwrap();
+    }
+
+    #[test]
     fn archive_entry_name_uses_forward_slashes_and_skips_the_base() {
         let base = Path::new("root");
         assert_eq!(

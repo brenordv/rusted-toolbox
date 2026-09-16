@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.3
+- The test suite uses the shared `common_cli::test_writers::FailAfter` double instead of a
+  private byte-budget failing-writer copy; the behavior pinned by the tests is unchanged.
+
 ## 2.0.2
 - Broken-pipe handling now comes from `common_cli::broken_pipe` (the local `BrokenPipe` marker
   and `write_out`/`flush_out` copies are gone). Behavior is unchanged: `cat big | head` still

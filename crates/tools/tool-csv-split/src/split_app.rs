@@ -7,7 +7,7 @@ use common_utils::datetime_utc_utils::DateTimeUtcUtils;
 use common_utils::string_utils::{format_bytes_to_string, format_duration_to_string};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tracing::{debug, warn};
@@ -44,6 +44,21 @@ pub fn process_input_file(
     args: &SplitArgs,
     shutdown_signal: Arc<AtomicBool>,
 ) -> Result<RunOutcome> {
+    process_input_with(args, shutdown_signal, |path| {
+        File::create(path)
+            .with_context(|| format!("Failed to create output file: [{}]", path.display()))
+    })
+}
+
+/// The engine behind [`process_input_file`], generic over how a part's writer
+/// is created. The seam exists for the tests: a real part-flush failure is not
+/// forcible portably, and the exit-1-on-flush-failure contract must stay
+/// pinned at both `close_part` call sites.
+fn process_input_with<W: Write>(
+    args: &SplitArgs,
+    shutdown_signal: Arc<AtomicBool>,
+    mut create_part: impl FnMut(&Path) -> Result<W>,
+) -> Result<RunOutcome> {
     // Open the input file
     let mut reader = get_input_file_reader(args)?;
 
@@ -55,7 +70,7 @@ pub fn process_input_file(
 
     let mut current_line_count = 0;
 
-    let mut current_output_writer: Option<BufWriter<File>> = None;
+    let mut current_output_writer: Option<BufWriter<W>> = None;
 
     let mut total_lines_processed: u64 = 0;
 
@@ -107,10 +122,7 @@ pub fn process_input_file(
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("file_{}", current_file_number));
 
-            let file = File::create(&output_path).context(format!(
-                "Failed to create output file: [{}]",
-                output_path.display()
-            ))?;
+            let file = create_part(&output_path)?;
 
             // Use BufWriter with a large buffer (64KB) for better write performance
             let mut writer = BufWriter::with_capacity(SIZE_64KB, file);
@@ -195,7 +207,10 @@ pub fn process_input_file(
             if e.is::<BrokenPipe>() {
                 debug!("Final progress feedback skipped: stdout closed by the consumer");
             } else {
-                warn!("Progress feedback disabled: cannot write to stdout: {}", e);
+                warn!(
+                    "Final progress feedback failed: cannot write to stdout: {}",
+                    e
+                );
             }
         }
     }
@@ -331,6 +346,7 @@ fn try_get_csv_header(args: &SplitArgs, reader: &mut BufReader<File>) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::test_writers::{ClosedPipe, FailingFlush};
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;
@@ -396,6 +412,61 @@ mod tests {
             "l5\n"
         );
         assert!(!outdir.join("split_input_4.txt").exists());
+    }
+
+    #[test]
+    fn part_boundary_flush_failure_stops_the_run() {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("input.txt");
+        fs::write(&input, "l1\nl2\nl3\nl4\n").unwrap();
+        let args = args_for(&input, dir.path(), 2, false);
+
+        // Two lines per part: the first part closes, and flushes, at the
+        // mid-run boundary.
+        let error = process_input_with(&args, Arc::new(AtomicBool::new(false)), |_| {
+            Ok(FailingFlush)
+        })
+        .unwrap_err();
+
+        assert!(
+            error.to_string().contains("Failed to flush output file"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn final_part_flush_failure_stops_the_run() {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("input.txt");
+        fs::write(&input, "l1\n").unwrap();
+        let args = args_for(&input, dir.path(), 100, false);
+
+        // One short part: the only close, and flush, is the final one after
+        // the read loop.
+        let error = process_input_with(&args, Arc::new(AtomicBool::new(false)), |_| {
+            Ok(FailingFlush)
+        })
+        .unwrap_err();
+
+        assert!(
+            error.to_string().contains("Failed to flush output file"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn empty_input_in_csv_mode_completes_with_no_parts() {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("input.csv");
+        fs::write(&input, "").unwrap();
+        let outdir = dir.path().join("out");
+        fs::create_dir_all(&outdir).unwrap();
+        let args = args_for(&input, &outdir, 2, true);
+
+        let outcome = process_input_file(&args, Arc::new(AtomicBool::new(false))).unwrap();
+
+        assert_eq!(outcome, RunOutcome::Completed);
+        assert_eq!(fs::read_dir(&outdir).unwrap().count(), 0);
     }
 
     #[test]
@@ -482,36 +553,6 @@ mod tests {
         assert!(text.contains("Total Lines:105"));
         assert!(text.contains("Files:2"));
         assert!(text.contains("split_input_2.txt"));
-    }
-
-    /// A writer that accepts writes but fails every flush with `StorageFull`.
-    struct FailingFlush;
-
-    impl Write for FailingFlush {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(std::io::ErrorKind::StorageFull, "full"))
-        }
-    }
-
-    /// A writer that fails every operation with `ErrorKind::BrokenPipe`.
-    struct ClosedPipe;
-
-    impl Write for ClosedPipe {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
     }
 
     #[test]

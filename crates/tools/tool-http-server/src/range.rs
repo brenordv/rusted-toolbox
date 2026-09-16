@@ -14,17 +14,23 @@ pub enum RangeOutcome {
 }
 
 /// Interprets a `Range` header value against a resource of `len` bytes, per
-/// RFC 9110 §14. Exactly one `bytes=` spec is supported, in the forms `a-b`
-/// (inclusive), `a-`, and `-suffix`. Everything else (other units, multiple
-/// ranges, non-numeric or overflowing tokens, `a > b`) is ignored and the
-/// whole resource is served, which the RFC permits a server to do. A spec
-/// that is well-formed but selects no bytes (`start >= len`, a `-0` suffix)
-/// is unsatisfiable. An inclusive end at or past the resource clamps to it.
+/// RFC 9110 §14. Exactly one `bytes=` spec is supported (the unit compared
+/// case-insensitively per §14.1), in the forms `a-b` (inclusive), `a-`, and
+/// `-suffix`. Everything else (other units, multiple ranges, non-numeric or
+/// overflowing tokens, `a > b`) is ignored and the whole resource is served,
+/// which the RFC permits a server to do. A spec that is well-formed but
+/// selects no bytes (`start >= len`, a `-0` suffix) is unsatisfiable. An
+/// inclusive end at or past the resource clamps to it.
 pub fn parse_byte_range(header: Option<&str>, len: u64) -> RangeOutcome {
     let Some(header) = header else {
         return RangeOutcome::Full;
     };
-    let Some(spec) = header.trim().strip_prefix("bytes=") else {
+    let header = header.trim();
+    let Some(spec) = header
+        .get(..6)
+        .filter(|unit| unit.eq_ignore_ascii_case("bytes="))
+        .and_then(|_| header.get(6..))
+    else {
         return RangeOutcome::Full;
     };
     if spec.contains(',') {
@@ -131,6 +137,18 @@ mod tests {
         assert_eq!(
             parse_byte_range(Some("bytes=0-9"), 10),
             RangeOutcome::Partial(0..10)
+        );
+    }
+
+    #[test]
+    fn range_unit_matches_case_insensitively() {
+        assert_eq!(
+            parse_byte_range(Some("Bytes=2-5"), 10),
+            RangeOutcome::Partial(2..6)
+        );
+        assert_eq!(
+            parse_byte_range(Some("BYTES=-4"), 10),
+            RangeOutcome::Partial(6..10)
         );
     }
 

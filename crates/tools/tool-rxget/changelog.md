@@ -1,3 +1,13 @@
+# 1.1.0
+- Stdin input via the `-` target convention: the exact argument `-` reads standard input at
+  its position in the target order, mixing freely with files and patterns. It labels as
+  `standard input` in `-H` prefixes and diagnostics, `unique-per-file` treats the stream as
+  one file, repeated `-` arguments dedup to one read, and the 8 MiB line cap applies. Targets
+  are now an enum internally, so stdin can never collide with a real file named `-` (still
+  reachable as `./-`).
+- Test suites use the shared `common_cli::test_writers` doubles instead of a private
+  failing-writer copy; behavior pinned by the tests is unchanged.
+
 # 1.0.1
 - Target dedup keys on parsed path components instead of the raw path string, so a file named
   both literally and via a glob counts once on Windows too (the glob expansion spells the

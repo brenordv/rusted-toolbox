@@ -1,3 +1,7 @@
+# 2.0.5
+- Test suites use the shared `common_cli::test_writers` doubles instead of a private
+  failing-writer copy; behavior pinned by the tests is unchanged.
+
 # 2.0.4
 - The claim printers no longer panic when the consumer closes the output pipe
   (`jwt ... | head`): they write through the shared broken-pipe helpers and main treats a

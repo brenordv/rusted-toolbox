@@ -18,7 +18,7 @@ fn main() {
     let args = match initialize() {
         Ok(a) => a,
         Err(e) => {
-            error!("Invalid arguments: {:#}", e);
+            error!("Startup failed: {:#}", e);
             exit_error();
         }
     };

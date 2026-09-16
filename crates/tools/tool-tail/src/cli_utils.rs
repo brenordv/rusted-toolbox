@@ -6,6 +6,7 @@ use common_cli::tool_exit_helpers::exit_error;
 use common_cli::tool_log_level::ToolLogLevel;
 use shared_head_tail::count_parser::parse_tail_count;
 use shared_head_tail::models::{resolve_count, Count, CountPrefix, HeaderPolicy};
+use std::ffi::OsString;
 use std::time::Duration;
 use tracing::error;
 
@@ -150,11 +151,104 @@ pub fn build_tail_config(args: &TailArgs) -> Result<TailConfig> {
     })
 }
 
+/// True when GNU tail's structural gate lets argv[1] be an obsolete option:
+/// it is the sole argument, or exactly one operand follows (a bare `-` is an
+/// operand, any longer `-x...` is an option), or `--` follows with at most
+/// one operand after it.
+fn obsolete_gate(args: &[OsString]) -> bool {
+    let is_double_dash = |arg: &OsString| arg.to_str() == Some("--");
+    match args.len() {
+        2 => true,
+        3 => {
+            let second = args[2].as_encoded_bytes();
+            is_double_dash(&args[2]) || !(second.len() >= 2 && second[0] == b'-')
+        }
+        4 => is_double_dash(&args[2]),
+        _ => false,
+    }
+}
+
+/// Rewrites GNU's obsolete first-argument forms (`tail -5`, `tail +20lf`,
+/// `tail -5b file`) into the equivalent modern flags at the same position,
+/// leaving every other argv untouched. Mirrors GNU tail's
+/// `parse_obsolete_option`: only argv[1] is considered, only under the
+/// structural gate above, and only with at least one digit after the sign
+/// (GNU's digit-less forms like `-l` or `+f` are not honored; the readme
+/// records the deviation). The grammar is `[+-]DIGITS[b|c|l]?[f]?`: `b`
+/// counts 512-byte blocks (emitted as the `b` count suffix so the parser
+/// owns the multiplier), `c` bytes, `l` lines, and a trailing `f` follows.
+/// A `+` keeps its from-start meaning through the emitted count. Anything
+/// outside the grammar passes through unchanged for clap to report, the way
+/// GNU falls back to standard parsing; a non-UTF-8 argv[1] passes through
+/// too.
+pub fn rewrite_obsolete_argv(args: Vec<OsString>) -> Vec<OsString> {
+    let Some(first) = args.get(1).and_then(|arg| arg.to_str()) else {
+        return args;
+    };
+    let sign = match first.as_bytes().first() {
+        Some(&sign @ (b'-' | b'+')) => sign,
+        _ => return args,
+    };
+    let body = &first[1..];
+    if !body.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+        return args;
+    }
+    if !obsolete_gate(&args) {
+        return args;
+    }
+
+    let digits_end = body
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(body.len());
+    let (digits, letters) = body.split_at(digits_end);
+
+    let mut flag = "-n";
+    let mut suffix = "";
+    let mut rest = letters;
+    match rest.as_bytes().first() {
+        Some(b'b') => {
+            flag = "-c";
+            suffix = "b";
+            rest = &rest[1..];
+        }
+        Some(b'c') => {
+            flag = "-c";
+            rest = &rest[1..];
+        }
+        Some(b'l') => {
+            rest = &rest[1..];
+        }
+        _ => {}
+    }
+    let follow = match rest {
+        "" => false,
+        "f" => true,
+        _ => return args,
+    };
+
+    let mut count = String::new();
+    if sign == b'+' {
+        count.push('+');
+    }
+    count.push_str(digits);
+    count.push_str(suffix);
+
+    let mut rewritten: Vec<OsString> = Vec::with_capacity(args.len() + 2);
+    rewritten.push(args[0].clone());
+    rewritten.push(OsString::from(flag));
+    rewritten.push(OsString::from(count));
+    if follow {
+        rewritten.push(OsString::from("-f"));
+    }
+    rewritten.extend(args.into_iter().skip(2));
+    rewritten
+}
+
 /// Parses the command line, boots logging (and the optional `--app-header`
 /// block), and returns the engine configuration. Boot happens before the
 /// configuration is validated so the `--pid` rejection reaches the subscriber.
 pub fn initialize() -> TailConfig {
-    let cli = CliArgs::parse();
+    let cli = CliArgs::parse_from(rewrite_obsolete_argv(std::env::args_os().collect()));
 
     cli.common.app_boot_up_with_level(
         env!("CARGO_PKG_NAME"),
@@ -292,5 +386,105 @@ mod tests {
 
         let cfg = config(&["tail", "--verbose", "-q"]);
         assert_eq!(cfg.headers, HeaderPolicy::Never);
+    }
+
+    fn rewritten(argv: &[&str]) -> Vec<String> {
+        rewrite_obsolete_argv(argv.iter().map(OsString::from).collect())
+            .into_iter()
+            .map(|arg| arg.into_string().unwrap())
+            .collect()
+    }
+
+    #[rstest]
+    #[case::plain(&["tail", "-5", "f"], &["tail", "-n", "5", "f"])]
+    #[case::plus_form(&["tail", "+5"], &["tail", "-n", "+5"])]
+    #[case::plus_zero(&["tail", "+0"], &["tail", "-n", "+0"])]
+    #[case::block_multiplier(&["tail", "-5b"], &["tail", "-c", "5b"])]
+    #[case::plus_block(&["tail", "+5b", "f"], &["tail", "-c", "+5b", "f"])]
+    #[case::bytes_letter(&["tail", "-5c"], &["tail", "-c", "5"])]
+    #[case::lines_letter(&["tail", "-5l"], &["tail", "-n", "5"])]
+    #[case::trailing_follow(&["tail", "-5f"], &["tail", "-n", "5", "-f"])]
+    #[case::block_and_follow(&["tail", "-5bf", "f"], &["tail", "-c", "5b", "-f", "f"])]
+    #[case::plus_lines_follow(&["tail", "+20lf"], &["tail", "-n", "+20", "-f"])]
+    #[case::bare_dash_operand(&["tail", "-5", "-"], &["tail", "-n", "5", "-"])]
+    #[case::double_dash(&["tail", "-5", "--"], &["tail", "-n", "5", "--"])]
+    #[case::double_dash_operand(&["tail", "-5", "--", "f"], &["tail", "-n", "5", "--", "f"])]
+    fn obsolete_forms_rewrite_to_modern_flags(#[case] argv: &[&str], #[case] expected: &[&str]) {
+        assert_eq!(rewritten(argv), expected);
+    }
+
+    #[rstest]
+    #[case::no_args(&["tail"])]
+    #[case::two_operands(&["tail", "-5", "a", "b"])]
+    #[case::double_dash_two_operands(&["tail", "-5", "--", "a", "b"])]
+    #[case::option_after_count(&["tail", "-5", "-n", "3"])]
+    #[case::bare_dash(&["tail", "-"])]
+    #[case::count_after_double_dash(&["tail", "--", "-5"])]
+    #[case::modern_bytes(&["tail", "-c", "5"])]
+    #[case::modern_follow(&["tail", "-f"])]
+    #[case::digitless_lines(&["tail", "-l"])]
+    #[case::digitless_plus_follow(&["tail", "+f"])]
+    #[case::unknown_letter(&["tail", "-5x"])]
+    #[case::letter_after_bytes(&["tail", "-5cb"])]
+    #[case::letter_after_follow(&["tail", "-5fc"])]
+    fn non_obsolete_argv_passes_through(#[case] argv: &[&str]) {
+        assert_eq!(rewritten(argv), argv);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_first_arg_passes_through() {
+        use std::os::unix::ffi::OsStringExt;
+        let bad = OsString::from_vec(vec![b'-', b'5', 0xFF]);
+
+        let args = vec![OsString::from("tail"), bad.clone()];
+        assert_eq!(rewrite_obsolete_argv(args)[1], bad);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn non_utf8_first_arg_passes_through() {
+        use std::os::windows::ffi::OsStringExt;
+        let bad = OsString::from_wide(&[u16::from(b'-'), u16::from(b'5'), 0xD800]);
+
+        let args = vec![OsString::from("tail"), bad.clone()];
+        assert_eq!(rewrite_obsolete_argv(args)[1], bad);
+    }
+
+    fn config_via_rewrite(argv: &[&str]) -> TailConfig {
+        let args = rewrite_obsolete_argv(argv.iter().map(OsString::from).collect());
+        let cli = CliArgs::try_parse_from(args).unwrap();
+        build_tail_config(&cli.args).unwrap()
+    }
+
+    #[test]
+    fn rewritten_obsolete_forms_parse_to_the_expected_config() {
+        let cfg = config_via_rewrite(&["tail", "-5"]);
+        assert_eq!(cfg.unit, CountUnit::Lines);
+        assert_eq!(cfg.count, 5);
+        assert!(!cfg.from_start);
+
+        let cfg = config_via_rewrite(&["tail", "+5"]);
+        assert_eq!(cfg.unit, CountUnit::Lines);
+        assert_eq!(cfg.count, 5);
+        assert!(cfg.from_start);
+
+        let cfg = config_via_rewrite(&["tail", "-5b"]);
+        assert_eq!(cfg.unit, CountUnit::Bytes);
+        assert_eq!(cfg.count, 2560);
+
+        let cfg = config_via_rewrite(&["tail", "-5f", "app.log"]);
+        assert_eq!(cfg.follow, Some(FollowMode::Descriptor));
+        assert_eq!(cfg.count, 5);
+        assert_eq!(cfg.files, vec!["app.log".to_string()]);
+    }
+
+    #[test]
+    fn later_modern_flags_override_the_obsolete_form() {
+        // The obsolete form is honored with `--` even when modern flags never
+        // could follow it; the plain two-flag case goes through unrewritten.
+        let cfg = config_via_rewrite(&["tail", "-5", "--", "f.txt"]);
+        assert_eq!(cfg.count, 5);
+        assert_eq!(cfg.files, vec!["f.txt".to_string()]);
     }
 }

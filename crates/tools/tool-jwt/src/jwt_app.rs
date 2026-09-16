@@ -202,6 +202,7 @@ fn format_claim_value(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::test_writers::ClosedPipe;
     use serde_json::json;
 
     const SAMPLE_TOKEN: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
@@ -403,24 +404,6 @@ mod tests {
 
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains("name: John Doe"));
-    }
-
-    /// A writer that always reports a closed pipe.
-    struct ClosedPipe;
-
-    impl std::io::Write for ClosedPipe {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
     }
 
     #[test]

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.7.0
+- Added the `test_writers` module: shared failing `Write` doubles for the tools' test suites
+  (`ClosedPipe`, `FailingDisk`, `FailingFlush`, and the byte-budget `FailAfter` with a
+  configurable error kind). Several crates carried private copies of these shapes; they now
+  import the shared ones.
+- The `--app-header` block is broken-pipe safe: the standard header, the "Tool Runtime Config"
+  section line, and the trailing blank line go through `broken_pipe::write_out`, so a consumer
+  that closes stdout before boot gets a debug note instead of a panic. On a dead pipe the rest
+  of the block is skipped, the tool's own printer callback included (it would hit the same
+  pipe); any other stdout write error logs one warning naming the error and skips the same
+  way. Boot never fails because of stdout state, and the happy-path bytes are unchanged
+  (pinned by new tests). Closes the fleet-wide gap recorded in the workspace backlog
+  (csv-split 3.0.2's note).
+- New `tracing` dependency for the two diagnostics above.
+
 ## 1.6.0
 - Added `header_format::format_config_label`: the label-only level-2 line renderer for group or
   mode lines that carry no value (`Inputs:`, `Resolved Target`). pingx and remove-zw adopted it

@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.2.2
+- Test suites use the shared `common_cli::test_writers` doubles instead of the two private
+  closed-pipe copies (one per lookup app); behavior pinned by the tests is unchanged.
+
 ## 3.2.1
 - The binary sniff (`is_probably_binary`) moved to `common-file-utils` so other tools can use
   it; the `text` search now calls it there. No behavior change: same 8 KiB NUL-byte sample,

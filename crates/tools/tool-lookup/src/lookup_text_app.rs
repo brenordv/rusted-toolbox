@@ -110,6 +110,7 @@ pub fn run_text_lookup(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::test_writers::ClosedPipe;
     use std::fs;
     use tempfile::tempdir;
 
@@ -204,23 +205,6 @@ mod tests {
 
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains("notes.txt:1| has needle here"));
-    }
-
-    struct ClosedPipe;
-
-    impl Write for ClosedPipe {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
     }
 
     #[test]

@@ -53,6 +53,18 @@ so `-c 5Z` means the whole input.
 Repeated `-n`/`-c` flags, or both together, are last-wins on the command line, matching GNU
 getopt; so are `-q` and `-v`/`--verbose` against each other.
 
+### Obsolete first-argument forms
+The GNU obsolete syntax is accepted when it is the first argument and at most one file operand
+follows (a `--` may sit between them): `tail -5` is the last 5 lines, `tail +5` starts at line
+5, and the count may carry one unit letter (`b` = 512-byte blocks, `c` = bytes, `l` = lines)
+plus a trailing `f` for follow, so `tail +20lf log` is `tail -n +20 -f log`. Deviations from
+GNU: the forms are always honored (there is no `_POSIX2_VERSION`/`POSIXLY_CORRECT` knob), the
+digit-less spellings (`tail -l`, `tail +f`) are not recognized, and where GNU silently falls
+back to standard parsing on a malformed form this port does the same, so the error comes from
+the normal argument parser rather than a named-letter message (head differs here: its obsolete
+letters can combine, and an unknown one is named). A file literally named `-5` or `+5` stays
+reachable after `--`.
+
 ### Shared flags
 These flags are common to every tool in this workspace and have no short form:
 
@@ -90,7 +102,6 @@ These flags are common to every tool in this workspace and have no short form:
 - A regular file that reports size 0 but still yields content when read (Linux `/proc`-style
   virtual files) is handled through the streaming path, so the last-NUM forms work on it. Follow
   mode still trusts the reported size and does not handle such files.
-- Obsolete option syntax (`tail +5`) is not accepted; use `-n +5`.
 - On non-Windows systems the build scripts do not copy this binary into `dist/`, since coreutils
   already provides `tail`.
 

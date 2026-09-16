@@ -39,30 +39,8 @@ pub fn copy_guid_to_clipboard(guid: &str) -> Result<()> {
 mod tests {
     use super::*;
     use common_cli::broken_pipe::BrokenPipe;
-    use std::io::ErrorKind;
+    use common_cli::test_writers::{ClosedPipe, FailingDisk};
     use uuid::Uuid;
-
-    struct ClosedPipe;
-
-    impl Write for ClosedPipe {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed"))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed"))
-        }
-    }
-
-    struct FailingDisk;
-
-    impl Write for FailingDisk {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(ErrorKind::StorageFull, "full"))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(ErrorKind::StorageFull, "full"))
-        }
-    }
 
     #[test]
     fn create_guid_empty_returns_all_zeros() {

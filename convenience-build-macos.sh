@@ -4,7 +4,7 @@
 #
 # Usage:
 #   chmod +x convenience-build-macos.sh && ./convenience-build-macos.sh
-#   Or via curl: --update this--
+#   Or via curl:
 #     curl -sSL https://raw.githubusercontent.com/brenordv/rusted-toolbox/refs/heads/master/convenience-build-macos.sh | bash
 #
 # This script will:
@@ -52,8 +52,23 @@ create_install_dir() {
 update_path() {
   local shell_name rc_file export_line
   shell_name=$(basename "${SHELL:-/bin/bash}")
-  rc_file="$HOME/.${shell_name}rc"
+
+  case "$shell_name" in
+    bash) rc_file="$HOME/.bashrc" ;;
+    zsh)  rc_file="$HOME/.zshrc" ;;
+    fish)
+      # fish uses a different mechanism; still export for current session
+      rc_file="$HOME/.config/fish/config.fish"
+      ;;
+    *)    rc_file="$HOME/.${shell_name}rc" ;;
+  esac
+
   export_line="export PATH=\"\$PATH:$INSTALL_DIR\""
+
+  if [ ! -f "$rc_file" ]; then
+    print_warning "Shell rc file not found ($rc_file). Creating it."
+    touch "$rc_file"
+  fi
 
   if ! grep -qxF "$export_line" "$rc_file" 2>/dev/null; then
     print_status "Adding $INSTALL_DIR to PATH in $rc_file"
@@ -68,6 +83,10 @@ update_path() {
 # Check/install Rust via rustup
 check_rust() {
   if ! command_exists rustc || ! command_exists cargo; then
+    if ! command_exists curl; then
+      print_error "'curl' is required to install rustup. Install it (e.g., 'brew install curl') and rerun."
+      exit 1
+    fi
     print_status "Rust not found. Installing with rustup..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     # shellcheck disable=SC1090
@@ -109,9 +128,14 @@ install_prerequisites() {
 
 # Clone or update repository
 setup_repository() {
+  if ! command_exists git; then
+    print_error "'git' is required. Install the Xcode Command Line Tools ('xcode-select --install') and rerun."
+    exit 1
+  fi
+
   mkdir -p "$CLONE_BASE"
   cd "$CLONE_BASE"
-  if [ -d "$REPO_NAME" ]; then
+  if [ -d "$REPO_NAME/.git" ]; then
     print_status "Updating existing repo: $REPO_NAME"
     cd "$REPO_NAME"
     # stash local changes
@@ -119,7 +143,7 @@ setup_repository() {
       print_warning "Stashing local changes"
       git stash push -m "Auto-stash before update $(date)"
     fi
-    git pull origin master
+    git pull --ff-only origin master
     print_success "Repository updated"
   else
     print_status "Cloning repo: $REPO_URL"

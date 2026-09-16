@@ -205,9 +205,9 @@ fn elide_last_bytes<R: Read, W: Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::test_writers::FailAfter;
     use rstest::rstest;
     use shared_head_tail::models::{HeaderPolicy, RunOutcome};
-    use std::io::ErrorKind;
     use std::sync::atomic::AtomicBool;
     use tempfile::tempdir;
 
@@ -396,23 +396,6 @@ mod tests {
 
     #[test]
     fn broken_pipe_ends_the_run_with_quiet_success() {
-        struct FailingWriter {
-            accepted: usize,
-        }
-        impl Write for FailingWriter {
-            fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-                if self.accepted >= 4 {
-                    return Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed"));
-                }
-                let n = (4 - self.accepted).min(data.len());
-                self.accepted += n;
-                Ok(n)
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-
         let dir = tempdir().unwrap();
         let a = dir.path().join("a");
         std::fs::write(&a, b"a longer line than four bytes\n").unwrap();
@@ -420,7 +403,7 @@ mod tests {
         let mut cfg = config(CountUnit::Lines, 10, false);
         cfg.files = vec![a.to_string_lossy().to_string()];
         let flag = AtomicBool::new(false);
-        let mut out = FailingWriter { accepted: 0 };
+        let mut out = FailAfter::broken_pipe(4);
         let result = run(&cfg, &flag, &mut out).unwrap();
         assert!(result.all_ok);
         assert_eq!(result.outcome, RunOutcome::Completed);

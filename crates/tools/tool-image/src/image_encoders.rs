@@ -246,6 +246,7 @@ fn write_gif<W: Write>(writer: W, width: u16, height: u16, quantized: QuantizedG
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::test_writers::FailAfter;
     use image::{ImageFormat, Rgba, RgbaImage};
 
     /// Builds an 8x8 RGBA image with a per-pixel gradient, including
@@ -381,30 +382,6 @@ mod tests {
         assert!(!path.exists());
     }
 
-    /// A writer that accepts `remaining` bytes and then fails with
-    /// `StorageFull`, simulating a disk that fills up mid-encode.
-    struct FailingWriter {
-        remaining: usize,
-    }
-
-    impl Write for FailingWriter {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            if self.remaining == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::StorageFull,
-                    "disk full",
-                ));
-            }
-            let written = buf.len().min(self.remaining);
-            self.remaining -= written;
-            Ok(written)
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
     fn quantized_tiny() -> QuantizedGif {
         quantize_for_gif(&tiny_rgba().to_rgba8()).unwrap()
     }
@@ -413,7 +390,7 @@ mod tests {
     fn write_gif_surfaces_immediate_writer_failure() {
         // Encoder::new writes the screen descriptor immediately, so a writer
         // that fails on the first byte errors during construction.
-        let result = write_gif(FailingWriter { remaining: 0 }, 8, 8, quantized_tiny());
+        let result = write_gif(FailAfter::storage_full(0), 8, 8, quantized_tiny());
 
         assert!(result.is_err());
     }
@@ -426,9 +403,7 @@ mod tests {
         // One byte short of a complete file: construction succeeds and the
         // failure surfaces from the frame write or the trailer.
         let result = write_gif(
-            FailingWriter {
-                remaining: full.len() - 1,
-            },
+            FailAfter::storage_full(full.len() - 1),
             8,
             8,
             quantized_tiny(),

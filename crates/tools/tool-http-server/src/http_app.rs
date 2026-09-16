@@ -2,6 +2,7 @@ use crate::conditional::{if_range_allows, not_modified, strong_etag};
 use crate::models::{DirEntry, FileEntry, ServerConfig};
 use crate::range::{parse_byte_range, RangeOutcome};
 use crate::zip_stream::serve_directory_zip;
+use common_cli::broken_pipe::{write_out, BrokenPipe};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -99,7 +100,15 @@ pub async fn start_server(config: ServerConfig) {
 
     let addr: SocketAddr = (config.host, config.port).into();
 
-    println!("Server running at http://{}", addr);
+    // The banner is informational; a dead stdout must not stop the server.
+    let banner = format!("Server running at http://{}\n", addr);
+    if let Err(error) = write_out(&mut std::io::stdout(), banner.as_bytes()) {
+        if error.is::<BrokenPipe>() {
+            debug!("Startup banner skipped: stdout closed by the consumer");
+        } else {
+            warn!("Startup banner not printed: {error:#}");
+        }
+    }
 
     warp::serve(routes)
         .bind(addr)
@@ -194,9 +203,22 @@ async fn resolve_and_serve(
         return Err(warp::reject::not_found());
     }
 
-    // Block access to hidden files/directories unless explicitly enabled
-    if !serve_hidden && contains_hidden_segment(relative_path) {
-        return Err(warp::reject::not_found());
+    // Block access to hidden files/directories unless explicitly enabled.
+    // Both the URL path and the canonicalized target are screened: the URL
+    // check alone would let a non-hidden symlink inside the root alias a
+    // hidden sibling into view.
+    if !serve_hidden {
+        if contains_hidden_segment(relative_path) {
+            return Err(warp::reject::not_found());
+        }
+        if let Ok(canonical_relative) = canonical_file_path.strip_prefix(&canonical_root_path) {
+            if canonical_relative
+                .components()
+                .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+            {
+                return Err(warp::reject::not_found());
+            }
+        }
     }
 
     if !canonical_file_path.exists() {
@@ -430,7 +452,19 @@ async fn collect_directory_entries(
     // An entry that fails mid-walk ends the walk with what was collected, so
     // one bad entry renders a partial listing rather than a 404 for the
     // whole directory. Only a directory that cannot be opened at all errors.
-    while let Some(entry) = entries.next_entry().await.unwrap_or(None) {
+    loop {
+        let entry = match entries.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            Err(e) => {
+                warn!(
+                    "Directory listing truncated: reading an entry of [{}] failed: {}",
+                    dir_path.display(),
+                    e
+                );
+                break;
+            }
+        };
         let path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
 
@@ -799,6 +833,56 @@ mod tests {
         .await;
 
         assert!(result.is_ok(), "hidden file should be served when enabled");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_handle_request_symlink_alias_of_hidden_dir_stays_blocked() {
+        let dir = tempdir().unwrap();
+        let hidden_dir = dir.path().join(".secret");
+        fs::create_dir(&hidden_dir).unwrap();
+        fs::write(hidden_dir.join("data.txt"), "secret").unwrap();
+        std::os::unix::fs::symlink(&hidden_dir, dir.path().join("alias")).unwrap();
+
+        let result = handle_request(
+            dir.path().to_path_buf(),
+            "/alias/data.txt",
+            warp::http::Method::GET,
+            false,
+            RequestHeaders::default(),
+            &HashMap::new(),
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "a symlink alias of a hidden directory should stay blocked"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_handle_request_symlink_alias_of_hidden_dir_served_when_enabled() {
+        let dir = tempdir().unwrap();
+        let hidden_dir = dir.path().join(".secret");
+        fs::create_dir(&hidden_dir).unwrap();
+        fs::write(hidden_dir.join("data.txt"), "secret").unwrap();
+        std::os::unix::fs::symlink(&hidden_dir, dir.path().join("alias")).unwrap();
+
+        let result = handle_request(
+            dir.path().to_path_buf(),
+            "/alias/data.txt",
+            warp::http::Method::GET,
+            true,
+            RequestHeaders::default(),
+            &HashMap::new(),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "the alias should serve once hidden entries are enabled"
+        );
     }
 
     #[tokio::test]
@@ -1359,6 +1443,28 @@ mod tests {
 
         assert_eq!(response.status(), 200);
         assert_eq!(response.body().as_ref(), b"hello world");
+    }
+
+    #[tokio::test]
+    async fn route_pre_epoch_mtime_serves_200_without_validators() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("old.txt");
+        fs::write(&path, "ancient").unwrap();
+        filetime::set_file_mtime(&path, filetime::FileTime::from_unix_time(-1_000, 0)).unwrap();
+
+        let response = warp::test::request()
+            .method("GET")
+            .path("/old.txt")
+            .reply(&routes_for(dir.path()))
+            .await;
+
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.body().as_ref(), b"ancient");
+        assert!(
+            response.headers().get("etag").is_none(),
+            "a pre-epoch mtime cannot produce a validator"
+        );
+        assert!(response.headers().get("last-modified").is_none());
     }
 
     #[tokio::test]

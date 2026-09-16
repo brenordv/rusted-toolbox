@@ -30,7 +30,9 @@ It runs a simple 1-second loop that schedules connectivity and speed checks usin
 - `--db-cleanup-interval <SECS>`: Database cleanup interval in seconds (default: `3600`)
 - `--disable-db-cleanup-enabled`: Disable the periodic database cleanup
 - `--speedtest-cli-path <FILE>`: Path to Ookla `speedtest` CLI binary (required if not in config)
-- `--telegram-token <TOKEN>`: Telegram bot token
+- `--telegram-token <TOKEN>`: Telegram bot token. A token passed on the command line is
+  visible in the process list and lands in shell history; use the config file for anything
+  beyond a quick test
 - `--telegram-chat-id <CHAT>`: Telegram chat ID
 - `--otel-endpoint <URL>`: OpenTelemetry OTLP endpoint
 
@@ -291,8 +293,11 @@ outages.
 # Usage Examples
 ### Run with defaults + CLI overrides
 ```bash
-netquality --expected-download 100 --expected-upload 20 --speedtest-cli-path speedtest --telegram-token TOKEN --telegram-chat-id 123
+netquality --expected-download 100 --expected-upload 20 --speedtest-cli-path speedtest
 ```
+For Telegram notifications, put the bot token in the config file (see below); the
+`--telegram-token`/`--telegram-chat-id` flags exist for quick tests, and a token on the
+command line is visible to the process list and shell history.
 
 ### Use a custom config file
 ```bash

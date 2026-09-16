@@ -11,12 +11,13 @@ use tracing::error;
 ///
 /// Applies the pattern to every line of every target and prints the extracted values, one per
 /// line. The value is capture group 1 when the pattern has capture groups, the whole match
-/// otherwise. Targets are literal file paths and/or wildcard patterns; the tool expands
-/// wildcards itself, so patterns work the same in shells that do not (Windows).
+/// otherwise. Targets are literal file paths, wildcard patterns, and/or `-` for standard
+/// input; the tool expands wildcards itself, so patterns work the same in shells that do
+/// not (Windows).
 #[derive(Parser, Debug)]
 #[command(about, long_about, version)]
 pub struct CliArgs {
-    /// Files and/or wildcard patterns to scan
+    /// Files and/or wildcard patterns to scan; '-' reads standard input
     #[arg(value_name = "TARGET", required = true, num_args = 1..)]
     pub targets: Vec<String>,
 
@@ -34,7 +35,7 @@ pub struct CliArgs {
     )]
     pub mode: RunMode,
 
-    /// Prefix each value with the file it came from, as `<filename>: <value>`
+    /// Prefix each value with the input it came from, as `<name>: <value>`
     #[arg(short = 'H', long = "with-filename")]
     pub with_filename: bool,
 

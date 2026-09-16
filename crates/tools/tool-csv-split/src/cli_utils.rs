@@ -192,6 +192,7 @@ fn print_header(args: &SplitArgs) {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+    use common_cli::test_writers::{ClosedPipe, FailingFlush};
     use std::fs;
     use tempfile::tempdir;
 
@@ -216,36 +217,6 @@ mod tests {
     fn print_header_smoke() {
         let args = sample_args("in.txt".to_string(), "out".to_string());
         print_header(&args);
-    }
-
-    /// A writer that fails every operation with `ErrorKind::BrokenPipe`.
-    struct ClosedPipe;
-
-    impl std::io::Write for ClosedPipe {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
-    }
-
-    /// A writer that accepts writes but fails every flush with `StorageFull`.
-    struct FailingFlush;
-
-    impl std::io::Write for FailingFlush {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(std::io::ErrorKind::StorageFull, "full"))
-        }
     }
 
     #[test]
@@ -340,7 +311,7 @@ mod tests {
     }
 
     fn cli_args_for(file: &str, output_dir: Option<&str>) -> CliArgs {
-        let mut argv = vec!["split", "-f", file];
+        let mut argv = vec!["csv-split", "-f", file];
         if let Some(dir) = output_dir {
             argv.push("-o");
             argv.push(dir);

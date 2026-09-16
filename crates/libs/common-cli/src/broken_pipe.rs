@@ -52,28 +52,7 @@ pub fn flush_out<W: Write>(out: &mut W) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct ClosedPipe;
-
-    impl Write for ClosedPipe {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed"))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed"))
-        }
-    }
-
-    struct FailingDisk;
-
-    impl Write for FailingDisk {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(ErrorKind::StorageFull, "full"))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(ErrorKind::StorageFull, "full"))
-        }
-    }
+    use crate::test_writers::{ClosedPipe, FailingDisk};
 
     #[test]
     fn closed_pipe_maps_to_the_marker_on_write_and_flush() {

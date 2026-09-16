@@ -1,3 +1,4 @@
+use crate::models::Target;
 use globset::GlobBuilder;
 use std::collections::HashSet;
 use std::ffi::OsString;
@@ -9,27 +10,33 @@ use walkdir::{DirEntry, WalkDir};
 /// The resolved target list plus whether any target argument failed.
 #[derive(Debug)]
 pub struct Expansion {
-    pub targets: Vec<PathBuf>,
+    pub targets: Vec<Target>,
     pub failed: bool,
 }
 
-/// Resolves each target argument in order: an existing file is included
-/// as-is, a directory is an error, anything else with glob metacharacters is
-/// expanded (sorted within its argument), and a missing literal is an error.
-/// The final list is deduplicated lexically by parsed path components, first
-/// occurrence kept.
+/// Resolves each target argument in order: the exact argument `-` is standard
+/// input, an existing file is included as-is, a directory is an error,
+/// anything else with glob metacharacters is expanded (sorted within its
+/// argument), and a missing literal is an error. The final list is
+/// deduplicated, first occurrence kept: files lexically by parsed path
+/// components, stdin as its own single slot (so repeated `-` reads stdin
+/// once and never collides with a real file named `-`, reachable as `./-`).
 pub fn expand_targets(args: &[String]) -> Expansion {
     let mut failed = false;
-    let mut collected: Vec<PathBuf> = Vec::new();
+    let mut collected: Vec<Target> = Vec::new();
 
     for arg in args {
         expand_one(arg, &mut collected, &mut failed);
     }
 
-    let mut seen: HashSet<OsString> = HashSet::new();
+    let mut seen_paths: HashSet<OsString> = HashSet::new();
+    let mut seen_stdin = false;
     let targets = collected
         .into_iter()
-        .filter(|path| seen.insert(dedup_key(path)))
+        .filter(|target| match target {
+            Target::Stdin => !std::mem::replace(&mut seen_stdin, true),
+            Target::File(path) => seen_paths.insert(dedup_key(path)),
+        })
         .collect();
 
     Expansion { targets, failed }
@@ -47,9 +54,16 @@ fn dedup_key(path: &Path) -> OsString {
         .into_os_string()
 }
 
-fn expand_one(arg: &str, results: &mut Vec<PathBuf>, failed: &mut bool) {
+fn expand_one(arg: &str, results: &mut Vec<Target>, failed: &mut bool) {
+    // The bare-dash convention wins over the filesystem: a real file named
+    // `-` stays reachable as `./-`.
+    if arg == "-" {
+        results.push(Target::Stdin);
+        return;
+    }
+
     match fs::metadata(Path::new(arg)) {
-        Ok(metadata) if metadata.is_file() => results.push(PathBuf::from(arg)),
+        Ok(metadata) if metadata.is_file() => results.push(Target::File(PathBuf::from(arg))),
         Ok(metadata) if metadata.is_dir() => {
             error!(target = %arg, "is a directory; pass a pattern like dir/*.log");
             *failed = true;
@@ -76,7 +90,7 @@ fn has_glob_metachar(value: &str) -> bool {
     value.contains(['*', '?', '[', '{'])
 }
 
-fn expand_glob(arg: &str, results: &mut Vec<PathBuf>, failed: &mut bool) {
+fn expand_glob(arg: &str, results: &mut Vec<Target>, failed: &mut bool) {
     // globset disables backslash escapes on Windows, so a backslash there is
     // always a path separator; on Unix it stays the escape character.
     #[cfg(windows)]
@@ -130,7 +144,7 @@ fn expand_glob(arg: &str, results: &mut Vec<PathBuf>, failed: &mut bool) {
     if matches.is_empty() {
         warn!(target = %arg, "matched no files");
     }
-    results.extend(matches);
+    results.extend(matches.into_iter().map(Target::File));
 }
 
 /// Splits a pattern into its leading metacharacter-free directory components
@@ -215,10 +229,12 @@ mod tests {
         expansion
             .targets
             .iter()
-            .map(|p| {
-                p.file_name()
+            .map(|target| match target {
+                Target::Stdin => "-".to_string(),
+                Target::File(p) => p
+                    .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
             })
             .collect()
     }
@@ -229,7 +245,39 @@ mod tests {
         let file = touch(dir.path(), "a.txt");
         let expansion = expand(&[file.to_string_lossy().into_owned()]);
         assert!(!expansion.failed);
-        assert_eq!(expansion.targets, vec![file]);
+        assert_eq!(expansion.targets, vec![Target::File(file)]);
+    }
+
+    #[test]
+    fn dash_is_stdin_and_keeps_its_position() {
+        let dir = tempdir().unwrap();
+        let file = touch(dir.path(), "a.txt");
+
+        let expansion = expand(&[file.to_string_lossy().into_owned(), "-".to_string()]);
+
+        assert!(!expansion.failed);
+        assert_eq!(expansion.targets, vec![Target::File(file), Target::Stdin]);
+    }
+
+    #[test]
+    fn repeated_dash_dedups_to_one_stdin_slot() {
+        let expansion = expand(&["-".to_string(), "-".to_string()]);
+        assert!(!expansion.failed);
+        assert_eq!(expansion.targets, vec![Target::Stdin]);
+    }
+
+    #[test]
+    fn stdin_and_a_real_file_named_dash_stay_distinct() {
+        let dir = tempdir().unwrap();
+        let dash_file = touch(dir.path(), "-");
+
+        let expansion = expand(&["-".to_string(), dash_file.to_string_lossy().into_owned()]);
+
+        assert!(!expansion.failed);
+        assert_eq!(
+            expansion.targets,
+            vec![Target::Stdin, Target::File(dash_file)]
+        );
     }
 
     #[test]
@@ -327,7 +375,7 @@ mod tests {
         let bad = format!("{}/[unclosed", dir.path().display());
         let expansion = expand(&[bad, good.to_string_lossy().into_owned()]);
         assert!(expansion.failed);
-        assert_eq!(expansion.targets, vec![good]);
+        assert_eq!(expansion.targets, vec![Target::File(good)]);
     }
 
     #[test]

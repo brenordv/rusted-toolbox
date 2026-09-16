@@ -43,9 +43,8 @@ I still love Go, I'm using those incidents as an opportunity to improve my knowl
 language and centralizing my tools and helpers in one place.
 
 - **2nd**: I use a couple of tools that are spread around a bunch of repositories, and that's a bit annoying to set up on new
-machines. So I also ported the [JWT decoder tool](https://github.com/brenordv/python-snippets/tree/master/jwt_decoder_cli) 
-that I created using Python, and the Split tool is an evolution of a powershell script I wrote a long time ago in a blog
-post.
+machines. So I also ported the [JWT decoder tool](https://github.com/brenordv/python-snippets/tree/master/jwt_decoder_cli) that I created using Python, and the csv-split tool is an evolution of
+a powershell script I wrote a long time ago in a blog post.
 
 - **3rd**: Nice to have all the tools in a single repository, and being able to generate a cross-platform executable, which
 helps a lot when you have to use Linux, MacOS, and Windows machines frequently.

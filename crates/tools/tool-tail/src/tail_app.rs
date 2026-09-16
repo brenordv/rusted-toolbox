@@ -704,10 +704,10 @@ fn sleep_with_shutdown(total: Duration, shutdown: &AtomicBool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::test_writers::ClosedPipe;
     use rstest::rstest;
     use shared_head_tail::models::{HeaderPolicy, RunOutcome};
     use std::fs::OpenOptions;
-    use std::io::ErrorKind;
     use std::sync::atomic::AtomicBool;
     use tempfile::tempdir;
 
@@ -875,15 +875,6 @@ mod tests {
 
     #[test]
     fn broken_pipe_yields_quiet_success() {
-        struct ClosedPipe;
-        impl Write for ClosedPipe {
-            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-                Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed"))
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
         let dir = tempdir().unwrap();
         let path = dir.path().join("in.txt");
         std::fs::write(&path, b"data\n").unwrap();

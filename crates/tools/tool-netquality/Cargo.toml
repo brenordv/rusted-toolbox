@@ -1,6 +1,6 @@
 [package]
 name = "netquality"
-version = "2.1.3"
+version = "2.1.4"
 description = "Cross platform CLI tool that monitors internet connectivity and speed."
 edition.workspace = true
 authors.workspace = true

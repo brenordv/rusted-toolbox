@@ -398,6 +398,7 @@ fn scan(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common_cli::test_writers::ClosedPipe;
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;
@@ -668,25 +669,6 @@ mod tests {
 
         let written = String::from_utf8(buffer.0.borrow().clone()).unwrap();
         assert_eq!(written, "2\ta single error here\n");
-    }
-
-    /// A writer that fails every operation with `ErrorKind::BrokenPipe`.
-    struct ClosedPipe;
-
-    impl Write for ClosedPipe {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "closed",
-            ))
-        }
     }
 
     #[test]

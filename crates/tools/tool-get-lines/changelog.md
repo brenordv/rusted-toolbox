@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.3
+- Test suites use the shared `common_cli::test_writers` doubles instead of a private
+  failing-writer copy; behavior pinned by the tests is unchanged.
+
 ## 2.0.2
 - Console mode now treats a closed stdout pipe (for example `get-lines ... | head`) as a clean
   stop with exit `0`, matching the other streaming tools, instead of reporting "failed writing

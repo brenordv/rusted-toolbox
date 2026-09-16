@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.4
+- The single-guid print goes through `common_cli::broken_pipe`: `guid | true` exits 0 with a
+  debug note instead of panicking with 101 (the bulk `-m` path already behaved this way). A
+  requested clipboard copy still happens when the pipe is closed, since it does not depend on
+  stdout. New process-level tests pin both output paths against a pre-closed pipe.
+
+## 2.0.3
+- Test suites use the shared `common_cli::test_writers` doubles instead of the two private
+  copies (a closed-pipe writer and a failing-disk writer); behavior pinned by the tests is
+  unchanged.
+
 ## 2.0.2
 - `guid -m N | head` exits 0 quietly when the consumer closes the pipe, instead of reporting
   "Error while writing guids" and exiting 1. Writes go through `common-cli`'s broken-pipe

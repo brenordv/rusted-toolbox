@@ -108,6 +108,37 @@ fn gnu_suffix_forms_parse_through_the_real_cli() {
 }
 
 #[test]
+fn obsolete_minus_count_prints_the_last_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(&dir, "in.txt", b"1\n2\n3\n4\n5\n");
+
+    let output = run_tool(&["-2", input.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"4\n5\n");
+}
+
+#[test]
+fn obsolete_plus_count_starts_at_the_given_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(&dir, "in.txt", b"1\n2\n3\n4\n5\n");
+
+    let output = run_tool(&["+4", input.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"4\n5\n");
+}
+
+#[test]
+fn obsolete_count_with_two_operands_stays_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = fixture(&dir, "a.txt", b"x\n");
+    let b = fixture(&dir, "b.txt", b"y\n");
+
+    let output = run_tool(&["-2", a.to_str().unwrap(), b.to_str().unwrap()]);
+    assert_ne!(output.status.code(), Some(0));
+    assert!(!output.stderr.is_empty());
+}
+
+#[test]
 fn help_exits_zero() {
     let output = run_tool(&["--help"]);
     assert_eq!(output.status.code(), Some(0));

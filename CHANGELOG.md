@@ -39,7 +39,27 @@
 - `remove-zw` 2.1.0: `--check` reports findings without rewriting and exits diff-style (0 clean,
   1 findings, 2 error); `--keep-bom` preserves a leading UTF-8 BOM.
 - `common-cli` 1.5.0: new `broken_pipe` module so tools exit cleanly when stdout closes early;
-  `head`, `tail`, and `rxget` use it.
+  `head`, `tail`, and `rxget` use it. 1.7.0 made the shared `--app-header` block broken-pipe
+  safe for the whole fleet and added the `test_writers` module, which replaced the private
+  failing-writer test doubles eleven crates carried.
+- `csv-split` 3.0.x: the file splitter formerly named `split` (the old name shadowed coreutils
+  `split`). A failed part flush exits 1 instead of passing for a success, and every stdout
+  print in the tool is broken-pipe safe.
+- `https` 2.2.0 through 2.4.2: file responses stream in 64 KiB chunks with HTTP Range support
+  (206/416), directories download as streamed zip archives (`?download=zip`, bounded memory,
+  at most 4 concurrent builds), HEAD answers with GET's headers, files carry
+  `Last-Modified`/`ETag` validators with `If-Range` and conditional-GET 304 handling, a
+  symlink alias can no longer expose hidden entries without `--serve-hidden`, and the startup
+  prints are broken-pipe safe.
+- `rxget` 1.1.0: a `-` target reads standard input, mixing with files and patterns.
+- `tail` 1.3.0: GNU's obsolete first-argument forms (`tail -5`, `tail +20lf`) are accepted,
+  matching `head` 1.2.0's obsolete-form support.
+- `netquality` 2.1.4: the Telegram bot token renders as `<redacted>` in every Debug output,
+  the docs steer token delivery to the config file, and a failed Telegram send is recorded on
+  the `netquality.notification` span.
+- `gitignore` 2.1.2 prunes ignored directories during the scan walk; `imgx` 2.1.3 encodes to a
+  temp file and renames over the destination so a failed encode cannot truncate an existing
+  image.
 - Reworked the release workflow: each platform publishes one zip per tool
   (`rusted-toolbox_<platform>_<tool>-<version>.zip`) plus an `all` bundle, the Unix bundles skip
   the ported tools, builds run `--locked`, a single publish job uploads everything, and every
@@ -48,7 +68,7 @@
 - Doc-currency audit across every active crate: 11 readmes corrected against the actual flags and
   output (a `-L` short flag pingx never had, whisper's log-level examples, timestamp's header
   block, and others).
-- `cargo test --workspace` now runs 1132 tests.
+- `cargo test --workspace` now runs 1421 tests.
 - Added an `improvements.md` to every active crate: a running list of planned and deferred
   improvements.
 - `gitignore` 2.1.0: new `--ai` flag and AI-agent footprint detection (`.claude`, `.cursor`,
@@ -63,6 +83,10 @@
   system `head` and `tail`. Pruned eleven `[workspace.dependencies]` entries no crate uses
   (`async-trait`, `bytes`, `dialoguer`, `futures`, `log`, `notify`, `proc-macro2`, `quote`,
   `shell-words`, `syn`, `tokio-stream`).
+- The macOS convenience installer caught up with the Ubuntu one: fast-forward-only pull (a
+  diverged clone now fails loudly instead of merging), clone detection via `.git`, explicit
+  git/curl checks with install hints, and per-shell rc-file handling for the PATH update. Also
+  dropped a leftover placeholder from its usage comment.
 - Left the EventHub crates (`tool-eventhub-read`, `tool-eventhub-export`, `shared-eventhub`)
   untouched; they are on hold.
 
