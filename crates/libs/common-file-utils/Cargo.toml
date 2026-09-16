@@ -1,0 +1,15 @@
+[package]
+name = "common-file-utils"
+version = "2.1.0"
+description = "Common file system utils. Designed for more complex/specialized operations "
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# External
+walkdir = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

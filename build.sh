@@ -1,6 +1,9 @@
 #!/bin/bash
+# Builds every tool in the workspace and copies the binaries into dist/.
+# Tools live under crates/tools/*; shared libraries under crates/libs/*.
+# The whole workspace is built in one pass so shared crates compile only once.
 
-echo "Building Rust CLI tools for multiple platforms..."
+echo "Building Rust CLI tools..."
 
 # Check if Rust is installed
 if ! command -v cargo &> /dev/null; then
@@ -8,21 +11,22 @@ if ! command -v cargo &> /dev/null; then
     exit 1
 fi
 
-# Create output directories
+# Create output directory
 mkdir -p dist
 
-echo "Building for Linux (x86_64)..."
+echo "Building the workspace (release)..."
 cargo build --release
 if [ $? -ne 0 ]; then
-    echo "Failed to build for Linux"
+    echo "Failed to build the workspace"
     exit 1
 fi
 
-# Copy Linux binaries, except touch and cat because you already got that.
-find /target/release -maxdepth 1 -type f -executable \
-   ! -name "touch" ! -name "cat" \
+# Copy every built binary except touch, cat, head, and tail, which the system already provides.
+# Binaries are the extension-less files at the top of target/release; .d files and hidden files
+# (.cargo-lock) are build metadata.
+find ./target/release -maxdepth 1 -type f ! -name "*.d" ! -name ".*" ! -name "touch" \
+   ! -name "cat" ! -name "head" ! -name "tail" \
    -exec cp {} dist/ \;
 
-
 echo "Build completed successfully for native system."
-echo "Binaries are available in the dist/ directory." 
+echo "Binaries are available in the dist/ directory."

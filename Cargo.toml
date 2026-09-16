@@ -2,38 +2,98 @@
 resolver = "2"
 
 members = [
-    "crates/ai-macros",
-    "crates/shared",
-    "crates/tool-cat",
-    "crates/tool-csvn",
-    "crates/tool-eventhub-export",
-    "crates/tool-eventhub-read",
-    "crates/tool-get-lines",
-    "crates/tool-guid",
-    "crates/tool-jwt",
-    "crates/tool-split",
-    "crates/tool-touch",
-    "crates/tool-timestamp",
-    "crates/tool-http-server",
-    "crates/tool-mock",
-    "crates/ai-tool-chatbot",
-    "crates/ai-shared",
-    "crates/ai-tool-how",
-    "crates/tool-whisper",
-    "crates/tool-gitignore",
-    "crates/tool-image",
-    "crates/tool-mqtt",
-    "crates/tool-aiignore",
-    "crates/tool-qrcode",
-    "crates/shared-eventhub",
-    "crates/tool-lookup",
-    "crates/tool-pingx",
-    "crates/tool-whurl",
-    "crates/tool-b64",
-    "crates/tool-distro-cc",
-    "crates/tool-netquality",
-    "crates/tool-remove-zw"
+    "crates/libs/*",
+    "crates/tools/*",
 ]
+
+[workspace.package]
+edition = "2021"
+authors = ["Breno RdV"]
+repository = "https://github.com/brenordv/rusted-toolbox"
+license = "GPL-3.0-only"
+
+[workspace.dependencies]
+# Internal
+cli-signal-monitor = { path = "crates/libs/cli-signal-monitor" }
+common-cli = { path = "crates/libs/common-cli" }
+common-file-utils = { path = "crates/libs/common-file-utils" }
+common-utils = { path = "crates/libs/common-utils" }
+common-utils-ext = { path = "crates/libs/common-utils-ext" }
+common-serialization-utils = { path = "crates/libs/common-serialization-utils" }
+logging-otel = { path = "crates/libs/logging-otel" }
+mock-data-utils = { path = "crates/libs/mock-data-utils" }
+shared-eventhub = { path = "crates/libs/shared-eventhub" }
+shared-head-tail = { path = "crates/libs/shared-head-tail" }
+
+# External
+aho-corasick = "1.1.5"
+anyhow = "1.0.104"
+arboard = "3.6.1"
+azeventhubs = "0.20.0"
+base64 = "0.23.1"
+camino = "1.2.5"
+cfspeedtest = "2.2.2"
+chrono = { version = "0.4.45", features = ["serde"] }
+clap = { version = "4.6.6", features = ["derive"] }
+colored = "3.1.1"
+crossterm = "0.29.0"
+csv = "1.4.0"
+ctrlc = "3.5.2"
+dns-lookup = "3.0.1"
+fake = { version = "5.1.0", features = ["derive", "chrono"] }
+filetime = "0.2.29"
+futures-util = "0.3.34"
+gif = "0.14.2"
+globset = "0.4.20"
+httpdate = "1.0.3"
+hurl = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
+hurl_core = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
+image = "0.25.10"
+imagequant = "4.4.1"
+indicatif = "0.18.6"
+jsonwebtoken = "11.0.0"
+mime_guess = "2.0.5"
+num_cpus = "1.17.0"
+once_cell = "1.21.4"
+percent-encoding = "2.3.2"
+qrcodegen = "1.8.0"
+raccoon-otel = "1.1.0"
+rand = "0.10.2"
+rand06-compat = "0.2.0"
+ratatui = "0.30.2"
+rayon = "1.12.0"
+regex = "1.13.1"
+# Workspace default reqwest (gitignore). netquality pins its
+# own 0.12 to match cfspeedtest; see crates/tools/tool-netquality/Cargo.toml.
+reqwest = { version = "0.13.4", features = ["json"] }
+rsa = { version = "0.9.10", features = ["sha2"] }
+rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha256 = "1.6.0"
+sled = "0.34.7"
+surge-ping = "0.9.0"
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tracing = "0.1.44"
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+url = "2.5.8"
+uuid = { version = "1.24.1", features = ["v4"] }
+walkdir = "2.5.0"
+warp = { version = "0.4.3", features = ["server"] }
+# Write/compress path only; the default bzip2/lzma/zstd/aes surface stays off.
+# The zlib-rs flate2 backend is the pure-Rust one zip's own `deflate`
+# meta-feature selects; bare `deflate-flate2` leaves flate2 backend-less
+# and fails to compile.
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+# Dev dependencies
+http-body-util = "0.1"
+rstest = "0.26.1"
+tempfile = "3.27.0"
 
 [profile.release]
 lto = true

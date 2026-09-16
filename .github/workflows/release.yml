@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    # tool-whurl depends on hurl, which pulls in the libxml crate, a binding to
+    # the native libxml2 C library. On MSVC Windows its build script probes only
+    # vcpkg, so the static-md triplet (static lib, dynamic CRT to match Rust's
+    # default MSVC CRT) is selected here and installed below. Unix and macOS
+    # resolve libxml2 through pkg-config, where this variable is unused.
+    env:
+      VCPKGRS_TRIPLET: x64-windows-static-md
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x86_64
+          - os: macos-latest
+            label: macos-aarch64
+          - os: windows-latest
+            label: windows-x86_64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install libxml2 (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          vcpkg install libxml2:x64-windows-static-md
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # A tag can point at a commit that never went through a PR, so the
+      # release gates on the test suite instead of trusting CI ran.
+      - name: Run tests
+        run: cargo test --workspace --locked
+
+      - name: Build release binaries
+        run: cargo build --release --workspace --locked
+
+      # Each platform publishes one zip per tool, named
+      # rusted-toolbox_<platform>_<tool>-<toolversion>.zip, plus an "all"
+      # bundle named with the tag version. Unix uses Info-ZIP zip so the
+      # executable bit survives extraction; Compress-Archive would drop it.
+      - name: Package artifacts (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.label }}
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          echo "tag version: ${tag_version}"
+          # Ports of standard Unix commands stay out of the Unix "all"
+          # bundle so they never shadow the system binaries; a future
+          # ported tool must be added here.
+          ported=' cat head tail touch '
+          echo "excluded from the all bundle:${ported}"
+          tools="$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[]
+                | select(.manifest_path | contains("/crates/tools/"))
+                | select(any(.targets[]; .kind | index("bin")))
+                | "\(.name) \(.version)"')"
+          if [[ -z "$tools" ]]; then
+            echo "no tools discovered from cargo metadata" >&2
+            exit 1
+          fi
+          echo "discovered tools:"
+          echo "${tools}"
+          mkdir -p dist bundle
+          tool_count=0
+          excluded_count=0
+          while IFS=' ' read -r name version; do
+            bin="target/release/${name}"
+            if [[ ! -f "$bin" ]]; then
+              echo "expected binary not found: ${bin} (tool ${name})" >&2
+              exit 1
+            fi
+            zip -j "dist/rusted-toolbox_${PLATFORM}_${name}-${version}.zip" "$bin"
+            if [[ "$ported" != *" ${name} "* ]]; then
+              cp "$bin" bundle/
+            else
+              excluded_count=$((excluded_count + 1))
+            fi
+            tool_count=$((tool_count + 1))
+          done <<< "${tools}"
+          zip -j "dist/rusted-toolbox_${PLATFORM}_all-${tag_version}.zip" bundle/*
+          ls -l dist
+          shopt -s nullglob
+          zips=(dist/*.zip)
+          bundle_files=(bundle/*)
+          expected_zips=$((tool_count + 1))
+          expected_bundle=$((tool_count - excluded_count))
+          if [[ "${#zips[@]}" -ne "$expected_zips" || "${#bundle_files[@]}" -ne "$expected_bundle" ]]; then
+            echo "artifact mismatch: ${#zips[@]} zips (expected ${expected_zips}), ${#bundle_files[@]} bundled binaries (expected ${expected_bundle})" >&2
+            exit 1
+          fi
+
+      - name: Package artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PLATFORM: ${{ matrix.label }}
+        run: |
+          $platform = $env:PLATFORM
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          Write-Host "tag version: $tagVersion"
+          $metadata = cargo metadata --format-version 1 --no-deps
+          if ($LASTEXITCODE -ne 0) { throw "cargo metadata failed with exit code $LASTEXITCODE" }
+          $tools = ($metadata | ConvertFrom-Json).packages |
+            Where-Object { ($_.manifest_path -replace '\\', '/') -match '/crates/tools/' } |
+            Where-Object { $_.targets.kind -contains 'bin' }
+          if (-not $tools) { throw 'no tools discovered from cargo metadata' }
+          Write-Host 'discovered tools:'
+          $tools | ForEach-Object { Write-Host "$($_.name) $($_.version)" }
+          New-Item -ItemType Directory -Force -Path dist, bundle | Out-Null
+          foreach ($tool in $tools) {
+            $bin = "target/release/$($tool.name).exe"
+            if (-not (Test-Path $bin)) { throw "expected binary not found: $bin (tool $($tool.name))" }
+            Compress-Archive -Path $bin -DestinationPath "dist/rusted-toolbox_${platform}_$($tool.name)-$($tool.version).zip"
+            Copy-Item $bin bundle/
+          }
+          Compress-Archive -Path bundle/* -DestinationPath "dist/rusted-toolbox_${platform}_all-${tagVersion}.zip"
+          Get-ChildItem dist
+          $zipCount = @(Get-ChildItem dist/*.zip).Count
+          $expected = @($tools).Count + 1
+          if ($zipCount -ne $expected) { throw "artifact count mismatch: $zipCount zips (expected $expected)" }
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-${{ matrix.label }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # A single publish job keeps the three platform builds from racing to
+  # create the release for the same tag.
+  release:
+    name: publish release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - name: List artifacts
+        run: ls -l dist
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: dist/*.zip
+          fail_on_unmatched_files: true

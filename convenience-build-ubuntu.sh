@@ -12,7 +12,7 @@
 # 2. Clone/update the repository in $CLONE_BASE
 # 3. Build the project for Linux
 # 4. Install tools from target/release to $INSTALL_DIR and update PATH
-# 5. Exclude 'cat' and 'touch' tools to avoid conflicts with coreutils
+# 5. Exclude the ported Unix tools (cat, head, tail, touch) to avoid shadowing coreutils
 #
 # Notes:
 # - Recommended (optional) packages for common Rust crates on Ubuntu:
@@ -177,42 +177,23 @@ install_tools() {
 
   print_status "Installing tools from $release_dir to $INSTALL_DIR"
 
-  # Exclude 'cat' and 'touch' to avoid clashes with coreutils
-  local tools=(
-    "how"
-    "aiignore"
-    "b64"
-    "csvn"
-    "distro-cc"
-    "eh-export"
-    "eh-read"
-    "get-lines"
-    "gitignore"
-    "guid"
-    "http"
-    "imgx"
-    "jwt"
-    "lookup"
-    "pingx"
-    "mock"
-    "mqtt"
-    "qrcode"
-    "remove-zw"
-    "split"
-    "ts"
-    "whisper"
-    "whurl"
-  )
-
-  for tool in "${tools[@]}"; do
-    local tool_path="$release_dir/$tool"
-    if [ -f "$tool_path" ] && [ -x "$tool_path" ]; then
-      cp "$tool_path" "$INSTALL_DIR/"
-      print_success "Installed $tool"
-    else
-      print_warning "Tool $tool not found or not executable at $tool_path"
-    fi
+  # Install every built binary except the ported Unix tools (cat, head, tail, touch), which
+  # coreutils already provides. The same ported list lives in build.sh and release.yml.
+  # Binaries are the extension-less files at the top of target/release; .d files are build metadata.
+  local installed=0
+  for tool_path in "$release_dir"/*; do
+    [ -f "$tool_path" ] || continue
+    local tool
+    tool="$(basename "$tool_path")"
+    case "$tool" in
+      *.d | cat | head | tail | touch) continue ;;
+    esac
+    [ -x "$tool_path" ] || continue
+    cp "$tool_path" "$INSTALL_DIR/"
+    print_success "Installed $tool"
+    installed=$((installed + 1))
   done
+  print_status "Installed $installed tool(s)"
 }
 
 main() {

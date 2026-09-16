@@ -1,0 +1,23 @@
+[package]
+name = "whisper"
+version = "2.0.2"
+description = "Bare-bones, secure, and private P2P chat"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+ratatui = { workspace = true }
+rsa = { workspace = true }
+rand = { workspace = true }
+rand06-compat = { workspace = true }
+base64 = { workspace = true }
+sha256 = { workspace = true }

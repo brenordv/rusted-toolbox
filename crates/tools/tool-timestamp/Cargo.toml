@@ -1,0 +1,19 @@
+[package]
+name = "ts"
+version = "2.0.2"
+description = "Bidirectional CLI converter between Unix timestamps and human-readable datetimes with auto-detection, multi-format support, and UTC/local output."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # rust-toolchain.toml pins the toolchain and declares the rustfmt and
+      # clippy components; rustup installs them on the first cargo invocation.
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    # tool-whurl depends on hurl, which pulls in the libxml crate, a binding to
+    # the native libxml2 C library. On MSVC Windows its build script probes only
+    # vcpkg, so the static-md triplet (static lib, dynamic CRT to match Rust's
+    # default MSVC CRT) is selected here and installed below. Unix and macOS
+    # resolve libxml2 through pkg-config, where this variable is unused.
+    env:
+      VCPKGRS_TRIPLET: x64-windows-static-md
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install libxml2 (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          vcpkg install libxml2:x64-windows-static-md
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # --locked matches release.yml, so lockfile drift fails here instead of
+      # at tag time. cargo test builds the workspace; no separate build step.
+      - run: cargo test --workspace --locked

@@ -16,7 +16,8 @@ if %ERRORLEVEL% NEQ 0 (
     echo Failed to build for native platform
     exit /b 1
 )
-:: Copy Windows binaries
+:: Copy every tool binary produced by the workspace build.
+:: Tools live under crates\tools\*; shared libraries under crates\libs\*.
 copy target\release\*.exe dist\windows\ >nul
 
 echo Build completed successfully.

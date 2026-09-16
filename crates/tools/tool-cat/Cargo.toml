@@ -1,0 +1,22 @@
+[package]
+name = "cat"
+version = "2.0.3"
+description = "Port of the Unix cat command."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tempfile = { workspace = true }

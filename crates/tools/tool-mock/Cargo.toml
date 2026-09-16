@@ -1,0 +1,18 @@
+[package]
+name = "mock"
+version = "2.1.0"
+description = "Mock data generator CLI tool."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+mock-data-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }

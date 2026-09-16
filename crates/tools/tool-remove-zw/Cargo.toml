@@ -1,0 +1,23 @@
+[package]
+name = "remove-zw"
+version = "2.2.0"
+description = "Removes zero-width Unicode format characters from text"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+once_cell = { workspace = true }
+regex = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
