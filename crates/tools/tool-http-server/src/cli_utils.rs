@@ -32,7 +32,12 @@ pub struct CliArgs {
 
     /// Host that will be used to bind the server. Long-only so `-h` stays
     /// bound to clap's help.
-    #[arg(short= 'o',long = "host", default_value = "127.0.0.1", required = false)]
+    #[arg(
+        short = 'o',
+        long = "host",
+        default_value = "127.0.0.1",
+        required = false
+    )]
     pub host: String,
 
     /// Serve hidden files and directories (names starting with '.').
