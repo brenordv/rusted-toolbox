@@ -1,12 +1,12 @@
 use crate::conditional::{if_range_allows, not_modified, strong_etag};
 use crate::models::{DirEntry, FileEntry, ServerConfig};
 use crate::range::{parse_byte_range, RangeOutcome};
-use crate::zip_stream::serve_directory_zip;
+use crate::zip_stream::{serve_directory_zip, serve_selection_zip};
 use common_cli::broken_pipe::{write_out, BrokenPipe};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
@@ -44,6 +44,45 @@ struct RequestHeaders<'a> {
     if_modified_since: Option<&'a str>,
 }
 
+/// Upper bound on `pick` parameters per request, so a request bounds its own
+/// validation work (each pick costs filesystem calls) before any zip build
+/// slot is consulted.
+const MAX_PICKS: usize = 512;
+
+/// The query parameters the server understands. Parsed from the raw query
+/// string so repeated `pick` keys survive; everything else in the query is
+/// ignored, as it always was.
+#[derive(Debug, Default, PartialEq)]
+struct QueryOptions {
+    download: Option<String>,
+    picks: Vec<String>,
+}
+
+/// Parses the raw query string with the decoder behind warp's typed query
+/// filter, giving that filter's decoding semantics: plus-as-space,
+/// percent-decoding, lossy UTF-8, bare keys as empty values. `download`
+/// collapses to its last occurrence, as a map extraction would; `pick` values
+/// are collected in request order.
+fn parse_query(raw: &str) -> Result<QueryOptions, serde_urlencoded::de::Error> {
+    let pairs: Vec<(String, String)> = serde_urlencoded::from_str(raw)?;
+    let mut options = QueryOptions::default();
+    for (key, value) in pairs {
+        match key.as_str() {
+            "download" => options.download = Some(value),
+            "pick" => options.picks.push(value),
+            _ => {}
+        }
+    }
+    Ok(options)
+}
+
+/// Extracts the raw query string, or an empty string when the request has no
+/// query at all (warp's `query::raw` rejects that case instead of defaulting).
+fn raw_query_or_empty() -> impl Filter<Extract = (String,), Error = std::convert::Infallible> + Clone
+{
+    warp::query::raw().or_else(|_| async { Ok::<_, std::convert::Infallible>((String::new(),)) })
+}
+
 /// Composes the server's single route: every request, whatever its path,
 /// method, or query, funnels through [`handle_request`] and its security
 /// checks. Exposed as a seam so tests can drive the composed route through
@@ -62,7 +101,7 @@ fn build_routes(
         .and(warp::header::optional::<String>("if-range"))
         .and(warp::header::optional::<String>("if-none-match"))
         .and(warp::header::optional::<String>("if-modified-since"))
-        .and(warp::query::<HashMap<String, String>>())
+        .and(raw_query_or_empty())
         .and_then(
             move |path: warp::path::FullPath,
                   method: warp::http::Method,
@@ -70,9 +109,20 @@ fn build_routes(
                   if_range: Option<String>,
                   if_none_match: Option<String>,
                   if_modified_since: Option<String>,
-                  query: HashMap<String, String>| {
+                  raw_query: String| {
                 let root_path = root_path.clone();
                 async move {
+                    let query = match parse_query(&raw_query) {
+                        Ok(query) => query,
+                        // Mirrors warp's own mapping of query rejections.
+                        Err(_) => {
+                            return Ok(warp::reply::with_status(
+                                "Invalid query string",
+                                StatusCode::BAD_REQUEST,
+                            )
+                            .into_response());
+                        }
+                    };
                     handle_request(
                         root_path,
                         path.as_str(),
@@ -131,7 +181,7 @@ async fn handle_request(
     method: warp::http::Method,
     serve_hidden: bool,
     headers: RequestHeaders<'_>,
-    query: &HashMap<String, String>,
+    query: &QueryOptions,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let head_only = method == warp::http::Method::HEAD;
     if method != warp::http::Method::GET && !head_only {
@@ -173,7 +223,7 @@ async fn resolve_and_serve(
     serve_hidden: bool,
     head_only: bool,
     headers: RequestHeaders<'_>,
-    query: &HashMap<String, String>,
+    query: &QueryOptions,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     // Decode URL path
     let decoded_path = percent_decode_str(request_path)
@@ -230,9 +280,17 @@ async fn resolve_and_serve(
         serve_file(&canonical_file_path, headers).await
     } else if canonical_file_path.is_dir() {
         // An explicit download request wins over index files, so a directory
-        // carrying an index.html can still be fetched as an archive.
-        if query.get("download").map(String::as_str) == Some("zip") {
-            return serve_directory_zip(&canonical_file_path, serve_hidden, head_only).await;
+        // carrying an index.html can still be fetched as an archive. A request
+        // with `pick` parameters serves exactly the validated selection or
+        // fails whole: the access log records only the URI path, so a silent
+        // fallback to the full directory would be indistinguishable from an
+        // intended whole-directory download.
+        if query.download.as_deref() == Some("zip") {
+            if query.picks.is_empty() {
+                return serve_directory_zip(&canonical_file_path, serve_hidden, head_only).await;
+            }
+            let roots = validate_picks(&canonical_file_path, &query.picks, serve_hidden)?;
+            return serve_selection_zip(&canonical_file_path, roots, serve_hidden, head_only).await;
         }
 
         // Check for index files
@@ -255,6 +313,116 @@ async fn resolve_and_serve(
     } else {
         Err(warp::reject::not_found())
     }
+}
+
+/// Resolves the request's `pick` parameters against the canonicalized listed
+/// directory into the canonical paths a selection archive will read.
+/// All-or-nothing: any invalid pick fails the whole request, so a selection
+/// is never served silently lighter than asked. One warning names the
+/// offenders (capped) before the rejection, since the access log records only
+/// the URI path and would otherwise show a bare 404.
+fn validate_picks(
+    listed_dir: &Path,
+    picks: &[String],
+    serve_hidden: bool,
+) -> Result<Vec<PathBuf>, warp::Rejection> {
+    if picks.len() > MAX_PICKS {
+        warn!(
+            dir = %listed_dir.display(),
+            picks = picks.len(),
+            limit = MAX_PICKS,
+            "Selection rejected: too many pick parameters"
+        );
+        return Err(warp::reject::not_found());
+    }
+
+    let mut invalid: Vec<&str> = Vec::new();
+    let mut seen = HashSet::new();
+    let mut roots = Vec::new();
+    let mut duplicates = 0usize;
+
+    for pick in picks {
+        match resolve_pick(listed_dir, pick, serve_hidden) {
+            Some(path) => {
+                if seen.insert(path.clone()) {
+                    roots.push(path);
+                } else {
+                    duplicates += 1;
+                }
+            }
+            None => invalid.push(pick.as_str()),
+        }
+    }
+
+    if !invalid.is_empty() {
+        let shown: Vec<&str> = invalid.iter().take(5).copied().collect();
+        warn!(
+            dir = %listed_dir.display(),
+            invalid = invalid.len(),
+            picks = ?shown,
+            "Selection rejected: invalid pick parameters"
+        );
+        return Err(warp::reject::not_found());
+    }
+    if duplicates > 0 {
+        debug!(
+            dir = %listed_dir.display(),
+            duplicates,
+            "Dropped duplicate picks from the selection"
+        );
+    }
+
+    Ok(roots)
+}
+
+/// Resolves one pick to its canonical path, or `None` when it is invalid.
+/// Picks name direct children of the listed directory only: a single path
+/// component, never `.` or `..`, no separators. A pick that is a symlink is
+/// refused, since the archive walk never records symlinks. The canonicalized
+/// result must stay under the listed directory, and its relative form is
+/// screened for hidden segments the same way URL paths are (the pick itself
+/// is lstat'ed as a non-link, but the two canonical checks stay as the
+/// backstop should the entry change underneath this function).
+fn resolve_pick(listed_dir: &Path, pick: &str, serve_hidden: bool) -> Option<PathBuf> {
+    if pick.is_empty() || pick == "." || pick == ".." || pick.contains(['/', '\\']) {
+        return None;
+    }
+    // The pick must parse as exactly one normal path component. This also
+    // rejects Windows drive-relative forms like `C:name`, which carry a
+    // prefix component without any separator and would otherwise resolve
+    // against the process's per-drive working directory in `Path::join`.
+    let mut components = Path::new(pick).components();
+    if !matches!(
+        (components.next(), components.next()),
+        (Some(Component::Normal(_)), None)
+    ) {
+        return None;
+    }
+    if !serve_hidden && pick.starts_with('.') {
+        return None;
+    }
+
+    let candidate = listed_dir.join(pick);
+    let metadata = std::fs::symlink_metadata(&candidate).ok()?;
+    if metadata.file_type().is_symlink() {
+        return None;
+    }
+
+    let canonical = candidate.canonicalize().ok()?;
+    if !canonical.starts_with(listed_dir) {
+        return None;
+    }
+    if !serve_hidden {
+        let relative = canonical.strip_prefix(listed_dir).ok()?;
+        if relative
+            .components()
+            .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+        {
+            return None;
+        }
+    }
+
+    Some(canonical)
 }
 
 /// Serves a file as a streamed response. Without a `Range` header the whole
@@ -530,7 +698,20 @@ async fn serve_directory_listing(
 
 /// Renders the directory-listing page. Every untrusted value (the request path
 /// in the title and heading, entry names, and every href) is HTML-escaped
-/// before interpolation.
+/// before interpolation. The page links the zip form of the listed directory,
+/// and each subdirectory row links its own; entry paths arrive with their
+/// segments already percent-encoded, so a `?` in a name cannot start the query.
+/// The table is a GET form: each entry row carries a `pick` checkbox whose
+/// value is the raw entry name (the browser form-encodes it on submit;
+/// pre-encoding here would double-encode), and the submit button contributes
+/// `download=zip`, so a submission with picks downloads exactly the selection
+/// and one with nothing checked downloads the whole directory, same as the
+/// header link. The select column's header holds a nameless select-all
+/// checkbox driven by the page's one script: the script is a fixed string
+/// with no interpolated values, so entry names can never reach a script
+/// context, and the checkbox contributes no form field. It renders hidden
+/// and only the script reveals it, so without JavaScript (or in an empty
+/// directory) the dead control never shows.
 fn render_directory_listing(
     request_path: &str,
     directories: &[DirEntry],
@@ -540,6 +721,12 @@ fn render_directory_listing(
         "Index of /".to_string()
     } else {
         format!("Index of {}", html_escape(request_path))
+    };
+
+    let zip_href = if request_path.is_empty() {
+        "/?download=zip".to_string()
+    } else {
+        format!("{}?download=zip", request_path)
     };
 
     let mut html = format!(
@@ -599,21 +786,41 @@ fn render_directory_listing(
             text-align: right;
             font-family: monospace;
         }}
+        .download {{
+            margin: 8px 0 0 0;
+            font-size: 0.9em;
+        }}
+        .zip {{
+            color: #6c757d;
+        }}
+        .select {{
+            width: 1%;
+        }}
+        button.zip {{
+            font: inherit;
+            font-size: 0.9em;
+            cursor: pointer;
+        }}
     </style>
 </head>
 <body>
     <div class="container">
         <h1>{}</h1>
+        <p class="download"><a href="{}" class="zip">📦 Download this directory as .zip</a></p>
+        <form method="get">
         <table>
             <thead>
                 <tr>
+                    <th class="select"><input type="checkbox" id="pick-all" title="Select all" hidden></th>
                     <th>Name</th>
                     <th>Type</th>
                     <th>Size</th>
                 </tr>
             </thead>
             <tbody>"#,
-        title, title
+        title,
+        title,
+        html_escape(&zip_href)
     );
 
     // Add a parent directory link if not at the root. The trailing slash a
@@ -628,7 +835,8 @@ fn render_directory_listing(
 
         html.push_str(&format!(
             r#"<tr>
-                <td><a href="{}" class="directory">[DIR] ..</a></td>
+                <td></td>
+                <td><a href="{}" class="directory">📁 ..</a></td>
                 <td>Directory</td>
                 <td>-</td>
             </tr>"#,
@@ -640,12 +848,15 @@ fn render_directory_listing(
     for (name, path) in directories {
         html.push_str(&format!(
             r#"<tr>
-                <td><a href="{}" class="directory">[DIR] {}</a></td>
+                <td class="select"><input type="checkbox" name="pick" value="{}"></td>
+                <td><a href="{}" class="directory">📁 {}</a></td>
                 <td>Directory</td>
-                <td>-</td>
+                <td class="size"><a href="{}" class="zip">zip</a></td>
             </tr>"#,
+            html_escape(name),
             html_escape(path),
-            html_escape(name)
+            html_escape(name),
+            html_escape(&format!("{}?download=zip", path))
         ));
     }
 
@@ -654,10 +865,12 @@ fn render_directory_listing(
         let size_str = format_file_size(*size);
         html.push_str(&format!(
             r#"<tr>
-                <td><a href="{}" class="file">[FILE] {}</a></td>
+                <td class="select"><input type="checkbox" name="pick" value="{}"></td>
+                <td><a href="{}" class="file">📄 {}</a></td>
                 <td>File</td>
                 <td class="size">{}</td>
             </tr>"#,
+            html_escape(name),
             html_escape(path),
             html_escape(name),
             size_str
@@ -667,7 +880,35 @@ fn render_directory_listing(
     html.push_str(
         r#"        </tbody>
         </table>
+        <p class="download"><button type="submit" name="download" value="zip" class="zip">📦 Download selected as .zip</button></p>
+        </form>
     </div>
+    <script>
+        (function () {
+            "use strict";
+            var all = document.getElementById("pick-all");
+            var picks = Array.prototype.slice.call(document.querySelectorAll('input[name="pick"]'));
+            if (all === null || picks.length === 0) {
+                return;
+            }
+            var sync = function () {
+                var checked = picks.filter(function (pick) { return pick.checked; }).length;
+                all.checked = checked === picks.length;
+                all.indeterminate = checked > 0 && checked < picks.length;
+            };
+            all.hidden = false;
+            all.addEventListener("change", function () {
+                picks.forEach(function (pick) {
+                    pick.checked = all.checked;
+                });
+                all.indeterminate = false;
+            });
+            picks.forEach(function (pick) {
+                pick.addEventListener("change", sync);
+            });
+            sync();
+        })();
+    </script>
 </body>
 </html>"#,
     );
@@ -808,7 +1049,7 @@ mod tests {
             warp::http::Method::GET,
             false,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await;
 
@@ -828,7 +1069,7 @@ mod tests {
             warp::http::Method::GET,
             true,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await;
 
@@ -850,7 +1091,7 @@ mod tests {
             warp::http::Method::GET,
             false,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await;
 
@@ -875,7 +1116,7 @@ mod tests {
             warp::http::Method::GET,
             true,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await;
 
@@ -896,7 +1137,7 @@ mod tests {
             warp::http::Method::GET,
             false,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await;
 
@@ -913,7 +1154,7 @@ mod tests {
             warp::http::Method::POST,
             false,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await;
 
@@ -996,7 +1237,7 @@ mod tests {
             warp::http::Method::GET,
             false,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await;
 
@@ -1018,7 +1259,7 @@ mod tests {
             warp::http::Method::GET,
             false,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await
         .unwrap();
@@ -1040,7 +1281,7 @@ mod tests {
             warp::http::Method::GET,
             false,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await;
 
@@ -1082,7 +1323,7 @@ mod tests {
             warp::http::Method::GET,
             false,
             RequestHeaders::default(),
-            &HashMap::new(),
+            &QueryOptions::default(),
         )
         .await;
 
@@ -1096,14 +1337,14 @@ mod tests {
     fn parent_link_goes_up_one_level_despite_trailing_slash() {
         let html = render_directory_listing("/sub/", &[], &[]);
 
-        assert!(html.contains(r#"<a href="/" class="directory">[DIR] ..</a>"#));
+        assert!(html.contains(r#"<a href="/" class="directory">📁 ..</a>"#));
     }
 
     #[test]
     fn parent_link_from_nested_path_points_to_parent() {
         let html = render_directory_listing("/a/b", &[], &[]);
 
-        assert!(html.contains(r#"<a href="/a" class="directory">[DIR] ..</a>"#));
+        assert!(html.contains(r#"<a href="/a" class="directory">📁 ..</a>"#));
     }
 
     #[test]
@@ -1130,7 +1371,9 @@ mod tests {
         let html = render_directory_listing("/", &[], &files);
 
         assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;.txt"));
-        assert!(!html.contains("<script>"));
+        // The page carries its own static script tag; the injected name must
+        // never appear as live markup.
+        assert!(!html.contains("<script>alert(1)</script>"));
     }
 
     #[test]
@@ -1161,20 +1404,46 @@ mod tests {
     }
 
     #[test]
-    fn test_render_listing_uses_plain_text_markers() {
+    fn test_render_listing_uses_emoji_markers() {
         let dirs = vec![("sub".to_string(), "/sub".to_string())];
         let files = vec![("f.txt".to_string(), "/f.txt".to_string(), 1)];
 
         let root_html = render_directory_listing("/", &dirs, &files);
-        assert!(root_html.contains("[DIR] sub"));
-        assert!(root_html.contains("[FILE] f.txt"));
-        assert!(
-            !root_html.contains("[DIR] .."),
-            "the root has no parent link"
-        );
+        assert!(root_html.contains("📁 sub"));
+        assert!(root_html.contains("📄 f.txt"));
+        assert!(!root_html.contains("📁 .."), "the root has no parent link");
 
         let nested_html = render_directory_listing("/sub", &[], &[]);
-        assert!(nested_html.contains("[DIR] .."));
+        assert!(nested_html.contains("📁 .."));
+    }
+
+    #[test]
+    fn test_render_listing_links_zip_downloads() {
+        let dirs = vec![("sub".to_string(), "/sub".to_string())];
+
+        let root_html = render_directory_listing("/", &dirs, &[]);
+        assert!(
+            root_html.contains(r#"href="/?download=zip""#),
+            "the listed directory gets its own download link"
+        );
+        assert!(
+            root_html.contains(r#"href="/sub?download=zip""#),
+            "each subdirectory row gets a zip link"
+        );
+
+        let nested_html = render_directory_listing("/sub/", &[], &[]);
+        assert!(nested_html.contains(r#"href="/sub/?download=zip""#));
+    }
+
+    #[test]
+    fn test_render_listing_zip_link_keeps_encoded_question_mark_inert() {
+        // The entry path arrives with its segments already percent-encoded, so
+        // a `?` in a directory name must not become the query separator.
+        let dirs = vec![("a?b".to_string(), "/a%3Fb".to_string())];
+
+        let html = render_directory_listing("/", &dirs, &[]);
+
+        assert!(html.contains(r#"href="/a%3Fb?download=zip""#));
     }
 
     async fn body_bytes(response: warp::reply::Response) -> Vec<u8> {
@@ -1374,8 +1643,10 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("index.html"), "<h1>home</h1>").unwrap();
 
-        let query: HashMap<String, String> =
-            HashMap::from([("download".to_string(), "zip".to_string())]);
+        let query = QueryOptions {
+            download: Some("zip".to_string()),
+            picks: Vec::new(),
+        };
         let response = handle_request(
             dir.path().to_path_buf(),
             "/",
@@ -1401,8 +1672,10 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join(".secret")).unwrap();
 
-        let query: HashMap<String, String> =
-            HashMap::from([("download".to_string(), "zip".to_string())]);
+        let query = QueryOptions {
+            download: Some("zip".to_string()),
+            picks: Vec::new(),
+        };
         let result = handle_request(
             dir.path().to_path_buf(),
             "/.secret",
@@ -1864,5 +2137,331 @@ mod tests {
             &content_length
         );
         assert!(head.body().is_empty());
+    }
+
+    // Selection downloads: query parsing, pick validation, markup, and the
+    // composed route.
+
+    fn zip_entry_names(bytes: &[u8]) -> Vec<String> {
+        let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
+        archive.file_names().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn parse_query_collects_repeated_picks_in_order() {
+        let query = parse_query("download=zip&pick=a.txt&pick=sub&pick=b%20c").unwrap();
+
+        assert_eq!(query.download.as_deref(), Some("zip"));
+        assert_eq!(query.picks, vec!["a.txt", "sub", "b c"]);
+    }
+
+    #[test]
+    fn parse_query_download_keeps_the_last_occurrence() {
+        let query = parse_query("download=tar&download=zip").unwrap();
+
+        assert_eq!(query.download.as_deref(), Some("zip"));
+    }
+
+    #[test]
+    fn parse_query_matches_warps_decoder_semantics() {
+        // A bare key maps to an empty value.
+        let query = parse_query("download").unwrap();
+        assert_eq!(query.download.as_deref(), Some(""));
+
+        // A plus decodes to a space; %2B decodes to a literal plus.
+        let query = parse_query("pick=a+b&pick=a%2Bb").unwrap();
+        assert_eq!(query.picks, vec!["a b", "a+b"]);
+
+        // The decoder passes malformed escapes through literally and decodes
+        // invalid UTF-8 lossily; neither rejects.
+        assert!(parse_query("junk=%zz").is_ok());
+        assert!(parse_query("junk=%FF").is_ok());
+
+        // Unknown keys are ignored.
+        assert_eq!(parse_query("foo=bar").unwrap(), QueryOptions::default());
+    }
+
+    #[test]
+    fn resolve_pick_rejects_malformed_names() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let listed = dir.path().canonicalize().unwrap();
+
+        for pick in ["", ".", "..", "a/b", "a\\b", "../a.txt", "/etc/hosts"] {
+            assert!(
+                resolve_pick(&listed, pick, true).is_none(),
+                "pick {pick:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_pick_screens_hidden_names_by_flag() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(".hidden"), "h").unwrap();
+        let listed = dir.path().canonicalize().unwrap();
+
+        assert!(resolve_pick(&listed, ".hidden", false).is_none());
+        assert!(resolve_pick(&listed, ".hidden", true).is_some());
+    }
+
+    #[test]
+    fn resolve_pick_requires_existence_and_returns_canonical_paths() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let listed = dir.path().canonicalize().unwrap();
+
+        assert_eq!(
+            resolve_pick(&listed, "a.txt", false),
+            Some(listed.join("a.txt"))
+        );
+        assert!(resolve_pick(&listed, "missing.txt", false).is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolve_pick_rejects_drive_relative_names() {
+        let dir = tempdir().unwrap();
+        let listed = dir.path().canonicalize().unwrap();
+
+        assert!(resolve_pick(&listed, "C:name.txt", false).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_pick_rejects_symlinks() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("real.txt"), "r").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("real.txt"), dir.path().join("link.txt"))
+            .unwrap();
+        let listed = dir.path().canonicalize().unwrap();
+
+        assert!(resolve_pick(&listed, "link.txt", false).is_none());
+        assert!(resolve_pick(&listed, "real.txt", false).is_some());
+    }
+
+    #[test]
+    fn validate_picks_dedupes_and_caps() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let listed = dir.path().canonicalize().unwrap();
+
+        let picks = vec!["a.txt".to_string(), "a.txt".to_string()];
+        let roots = validate_picks(&listed, &picks, false).unwrap();
+        assert_eq!(roots, vec![listed.join("a.txt")]);
+
+        let too_many: Vec<String> = (0..=MAX_PICKS).map(|i| format!("f{i}")).collect();
+        assert!(validate_picks(&listed, &too_many, false).is_err());
+    }
+
+    #[test]
+    fn validate_picks_fails_whole_on_any_invalid_pick() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let listed = dir.path().canonicalize().unwrap();
+
+        let picks = vec!["a.txt".to_string(), "missing.txt".to_string()];
+        assert!(validate_picks(&listed, &picks, false).is_err());
+    }
+
+    #[test]
+    fn test_render_listing_form_carries_pick_checkboxes() {
+        let dirs = vec![("sub".to_string(), "/sub".to_string())];
+        let files = vec![("f.txt".to_string(), "/f.txt".to_string(), 1)];
+
+        let html = render_directory_listing("/sub", &dirs, &files);
+
+        assert!(html.contains(r#"<form method="get">"#));
+        assert!(html.contains(r#"<input type="checkbox" name="pick" value="sub">"#));
+        assert!(html.contains(r#"<input type="checkbox" name="pick" value="f.txt">"#));
+        assert!(html.contains(r#"<button type="submit" name="download" value="zip""#));
+        // Two entries, two pick checkboxes: the parent ".." row is not
+        // selectable, and the select-all control is not a pick.
+        assert_eq!(
+            html.matches(r#"<input type="checkbox" name="pick""#)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn test_render_listing_select_all_is_nameless_hidden_and_static() {
+        let files = vec![(r#"a"b&c.txt"#.to_string(), "/a%22b%26c.txt".to_string(), 1)];
+        let html = render_directory_listing("/", &[], &files);
+
+        // Nameless, so it can never submit as a form field; hidden until the
+        // script reveals it, so without JavaScript it never shows.
+        assert!(html.contains(
+            r#"<th class="select"><input type="checkbox" id="pick-all" title="Select all" hidden></th>"#
+        ));
+
+        // The page's one script is a fixed string: a listing with different
+        // (hostile) entry names renders byte-identical script content, so no
+        // entry name can reach a script context.
+        let script_of = |page: &str| {
+            let start = page.find("<script>").unwrap();
+            let end = page.find("</script>").unwrap();
+            page[start..end].to_string()
+        };
+        let dirs = vec![(r#"<sub>'"x"#.to_string(), "/%3Csub%3E'%22x".to_string())];
+        let other = render_directory_listing("/nested", &dirs, &[]);
+        assert_eq!(script_of(&html), script_of(&other));
+        assert_eq!(html.matches("<script>").count(), 1);
+    }
+
+    #[test]
+    fn test_render_listing_escapes_checkbox_values_without_preencoding() {
+        let name = r#"a"b&c.txt"#;
+        let files = vec![(name.to_string(), "/a%22b&c.txt".to_string(), 1)];
+
+        let html = render_directory_listing("/", &[], &files);
+
+        // The value is the raw name, attribute-escaped; the browser
+        // form-encodes it on submit, so pre-encoding would double-encode.
+        assert!(html.contains(r#"value="a&quot;b&amp;c.txt""#));
+        assert!(!html.contains(r#"value="a"b"#));
+    }
+
+    #[tokio::test]
+    async fn route_selection_zip_archives_exactly_the_picks() {
+        let _lock = crate::zip_stream::ZIP_TEST_LOCK.lock().await;
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("picked.txt"), "p").unwrap();
+        fs::write(dir.path().join("unpicked.txt"), "u").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("sub").join("inner.txt"), "i").unwrap();
+
+        let response = warp::test::request()
+            .method("GET")
+            .path("/?download=zip&pick=picked.txt&pick=sub")
+            .reply(&routes_for(dir.path()))
+            .await;
+
+        assert_eq!(response.status(), 200);
+        let disposition = response
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(disposition.contains("-selection.zip"));
+        let mut names = zip_entry_names(response.body());
+        names.sort();
+        assert_eq!(names, vec!["picked.txt", "sub/inner.txt"]);
+    }
+
+    #[tokio::test]
+    async fn route_selection_round_trips_special_characters_in_names() {
+        let _lock = crate::zip_stream::ZIP_TEST_LOCK.lock().await;
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a&b c.txt"), "x").unwrap();
+
+        // The pick arrives form-encoded, as a browser submits the checkbox
+        // value: `&` percent-encoded, the space as `+`.
+        let response = warp::test::request()
+            .method("GET")
+            .path("/?download=zip&pick=a%26b+c.txt")
+            .reply(&routes_for(dir.path()))
+            .await;
+
+        assert_eq!(response.status(), 200);
+        assert_eq!(zip_entry_names(response.body()), vec!["a&b c.txt"]);
+    }
+
+    #[tokio::test]
+    async fn route_selection_with_any_invalid_pick_answers_404_not_a_full_zip() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let routes = routes_for(dir.path());
+
+        for path in [
+            "/?download=zip&pick=missing.txt",
+            "/?download=zip&pick=a.txt&pick=missing.txt",
+            "/?download=zip&pick=../a.txt",
+            "/?download=zip&pick=sub%2Finner.txt",
+            "/?download=zip&pick=%2Fetc%2Fhosts",
+            "/?download=zip&pick=.",
+            "/?download=zip&pick=",
+        ] {
+            let response = warp::test::request()
+                .method("GET")
+                .path(path)
+                .reply(&routes)
+                .await;
+            assert_eq!(response.status(), 404, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn route_hidden_pick_is_404_by_default_and_served_with_the_flag() {
+        let _lock = crate::zip_stream::ZIP_TEST_LOCK.lock().await;
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(".hidden"), "h").unwrap();
+
+        let blocked = warp::test::request()
+            .method("GET")
+            .path("/?download=zip&pick=.hidden")
+            .reply(&routes_for(dir.path()))
+            .await;
+        assert_eq!(blocked.status(), 404);
+
+        let allowed = warp::test::request()
+            .method("GET")
+            .path("/?download=zip&pick=.hidden")
+            .reply(&build_routes(dir.path().to_path_buf(), true))
+            .await;
+        assert_eq!(allowed.status(), 200);
+        assert_eq!(zip_entry_names(allowed.body()), vec![".hidden"]);
+    }
+
+    #[tokio::test]
+    async fn route_pick_without_download_serves_the_listing() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+
+        let response = warp::test::request()
+            .method("GET")
+            .path("/?pick=a.txt")
+            .reply(&routes_for(dir.path()))
+            .await;
+
+        assert_eq!(response.status(), 200);
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(content_type.starts_with("text/html"));
+    }
+
+    #[tokio::test]
+    async fn route_head_selection_validates_picks_and_answers_headers_only() {
+        // No zip lock: a selection HEAD takes no build slot.
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let routes = routes_for(dir.path());
+
+        let ok = warp::test::request()
+            .method("HEAD")
+            .path("/?download=zip&pick=a.txt")
+            .reply(&routes)
+            .await;
+        assert_eq!(ok.status(), 200);
+        assert!(ok.body().is_empty());
+        let disposition = ok
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(disposition.contains("-selection.zip"));
+
+        let bad = warp::test::request()
+            .method("HEAD")
+            .path("/?download=zip&pick=missing.txt")
+            .reply(&routes)
+            .await;
+        assert_eq!(bad.status(), 404);
     }
 }

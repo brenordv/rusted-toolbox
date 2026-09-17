@@ -16,7 +16,10 @@ serving static websites, testing frontends, or sharing files during development.
   browser refreshes of unchanged assets transfer no bytes
 - HEAD requests answer with the same headers as GET and no body, so download managers can probe
   before fetching
-- Download any directory as a zip archive with `?download=zip`
+- Download any directory as a zip archive: every listing links a download of itself and of each
+  subdirectory, and `?download=zip` does the same from scripts
+- Select entries in a listing with checkboxes, one by one or all at once, and download just those
+  as one zip (`?download=zip&pick=<name>&pick=<name>` from scripts)
 - Directory browsing with file size display and navigation
 - Automatic index file serving (index.html, index.htm)
 - Request logging with detailed access information
@@ -98,8 +101,13 @@ Server running at http://192.168.1.100:3000
 ## Features in detail
 ### Directory browsing
 When accessing a directory without an index file, the server generates an HTML listing showing:
-- `[DIR]` entries for subdirectories with navigation links
-- `[FILE]` entries with human-readable sizes (B, KB, MB, GB, TB)
+- 📁 entries for subdirectories with navigation links and a `zip` download link per folder
+- 📄 entries with human-readable sizes (B, KB, MB, GB, TB)
+- A checkbox per entry plus a "📦 Download selected as .zip" button, so a hand-picked set of
+  files and folders downloads as one archive
+- A select-all checkbox in the table header that ticks or clears every entry at once (it needs
+  JavaScript and stays hidden without it)
+- A "📦 Download this directory as .zip" link for the directory being listed
 - Parent directory navigation (..)
 - Clean design with hover effects
 
@@ -140,11 +148,32 @@ build an archive, so it reports no meaningful size and answers 200 even while co
 downloads are being told 503.
 
 ### Download a folder as zip
-Append `?download=zip` to any directory URL to receive that folder as a zip archive:
+Every directory listing links a zip download of the folder it shows, and each subdirectory row
+carries a `zip` link, so a browser needs no URL editing. From a script, append `?download=zip` to
+any directory URL:
 
 ```bash
 curl -o project.zip "http://127.0.0.1:4200/project?download=zip"
 ```
+
+### Download a selection as zip
+Tick the checkboxes next to the entries you want and press "Download selected as .zip"; the
+archive contains exactly those files and folders (folders recursively), named
+`<dirname>-selection.zip`. The checkbox column's header holds a select-all box that ticks or
+clears the whole listing at once and shows an indeterminate mark while only some rows are ticked
+(it needs JavaScript and stays hidden without it). Submitting with nothing ticked downloads the
+whole directory, same as the header link. From a script, repeat the `pick` parameter:
+
+```bash
+curl -o parts.zip "http://127.0.0.1:4200/project?download=zip&pick=src&pick=readme.md"
+```
+
+Selection rules: each `pick` names a direct child of the directory in the URL (no paths, no
+`..`; both `/` and `\` count as separators, so a Unix file name containing a backslash cannot be
+selected), symlinks cannot be selected, hidden entries follow `--serve-hidden` like everywhere
+else, and at most 512 picks are accepted per request. Validation is all-or-nothing: one invalid pick
+fails the whole request with a 404 (the offending names are logged at warn level), so an archive
+is never silently lighter than what was asked. Duplicate picks collapse to one entry.
 
 The archive is deflate-compressed and streamed while it is being built, so large folders do not
 buffer in memory; the trade-off is that there is no `Content-Length`, so browsers cannot show a
@@ -222,5 +251,6 @@ logged, and the process exits with code 0.
 3. **No authentication**: No built-in authentication or access control mechanisms
 4. **Static only**: Does not support server-side processing or dynamic content generation
 5. **Zip downloads have no progress bar**: the archive is streamed while it is built, so the
-   response carries no `Content-Length`. A zip that fails mid-transfer also still shows as 200 in
-   the access log, because the status was already sent; the warn-level log entry is the record
+   response carries no `Content-Length`. A zip that fails mid-transfer (whole-directory and
+   selection downloads alike) also still shows as 200 in the access log, because the status was
+   already sent; the warn-level log entry is the record

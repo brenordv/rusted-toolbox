@@ -51,6 +51,17 @@
   `Last-Modified`/`ETag` validators with `If-Range` and conditional-GET 304 handling, a
   symlink alias can no longer expose hidden entries without `--serve-hidden`, and the startup
   prints are broken-pipe safe.
+- `https` 2.5.0: the directory listing got its 📁/📄 glyphs back and links zip downloads
+  directly: a "download this directory" link on every listing page and a `zip` link on every
+  subdirectory row. `?download=zip` stays the scripting form.
+- `https` 2.6.0: listings download selections: a checkbox per entry plus a "Download selected as
+  .zip" button, backed by repeatable `pick` query parameters
+  (`?download=zip&pick=src&pick=readme.md` works from curl too). Picks are direct children only,
+  validated all-or-nothing before the response starts, capped at 512, with symlinks not
+  selectable and hidden entries still behind `--serve-hidden`.
+- `https` 2.7.0: the listing header carries a select-all checkbox that ticks or clears every
+  entry at once. It is driven by the page's one static script (nothing is interpolated into
+  it), never submits a form field of its own, and stays hidden when JavaScript is off.
 - `rxget` 1.1.0: a `-` target reads standard input, mixing with files and patterns.
 - `tail` 1.3.0: GNU's obsolete first-argument forms (`tail -5`, `tail +20lf`) are accepted,
   matching `head` 1.2.0's obsolete-form support.
@@ -68,7 +79,7 @@
 - Doc-currency audit across every active crate: 11 readmes corrected against the actual flags and
   output (a `-L` short flag pingx never had, whisper's log-level examples, timestamp's header
   block, and others).
-- `cargo test --workspace` now runs 1421 tests.
+- `cargo test --workspace` now runs 1444 tests.
 - Added an `improvements.md` to every active crate: a running list of planned and deferred
   improvements.
 - `gitignore` 2.1.0: new `--ai` flag and AI-agent footprint detection (`.claude`, `.cursor`,

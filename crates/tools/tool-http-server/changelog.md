@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.7.0
+- The selection form's header row carries a select-all checkbox: ticking it selects every entry
+  in the listed directory, unticking clears them, and it tracks manual changes (indeterminate
+  while only some rows are ticked). It is wired by the page's one script, which is a fixed
+  string with nothing interpolated into it, so entry names cannot reach a script context. The
+  checkbox has no `name` and so never submits, and it renders hidden until the script reveals
+  it, so with JavaScript off (or in an empty directory) it never shows. The
+  `?download=zip&pick=<name>` query contract is unchanged.
+
+## 2.6.0
+- Directory listings can download a selection: each entry row carries a checkbox and the page a
+  "📦 Download selected as .zip" button, which submits as a plain GET
+  (`?download=zip&pick=<name>&pick=<name>`), so the same form works from curl. The archive holds
+  exactly the picked files and folders (folders recursively, entry names relative to the listed
+  directory) and downloads as `<dirname>-selection.zip`. Submitting with nothing ticked equals
+  the existing whole-directory download.
+- Picks name direct children only and are validated all-or-nothing before the response starts:
+  a malformed, missing, traversing, or symlink pick fails the request as 404 with one warn
+  naming the offenders (capped at five), never a silently lighter archive and never a fallback
+  to the whole directory. Hidden entries follow `--serve-hidden`; at most 512 picks per request;
+  duplicates collapse on canonical paths, which also keeps zip entry names collision-free (the
+  zip writer aborts a stream on duplicate names).
+- The query string is now parsed from its raw form so repeated `pick` keys survive; the decoder
+  is serde_urlencoded, the same one warp's typed query filter uses, so existing query behavior
+  (lossy UTF-8, `+` as space, bare keys, unknown keys ignored, last `download` wins) is
+  unchanged. `?download=zip` without picks behaves exactly as before.
+- HEAD on a selection validates the picks and answers the headers with no body and no build
+  slot, matching the whole-directory zip. The zip builder's log lines now carry the root count.
+
+## 2.5.0
+- The directory listing shows 📁/📄 glyphs again instead of the `[DIR]`/`[FILE]` markers 2.1.0
+  introduced. The 1.0.1 no-emoji rule was about terminal rendering; the listing is HTML for a
+  browser, where the glyphs render fine.
+- Zip downloads no longer require typing the query string: each listing page links a download of
+  the directory it shows ("📦 Download this directory as .zip"), and every subdirectory row
+  carries a `zip` link in its size column. `?download=zip` works as before and stays the form for
+  curl and scripts. The links reuse the listing's escaping: entry hrefs are built from
+  percent-encoded segments, so a `?` in a folder name cannot start the query early.
+
 ## 2.4.3
 - Two of the recorded test gaps closed: a route test pins that a file with a pre-Unix-epoch
   mtime serves 200 with no `ETag`/`Last-Modified` (the 2.4.0 panic guard, previously

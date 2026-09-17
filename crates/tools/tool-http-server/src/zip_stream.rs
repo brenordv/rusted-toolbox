@@ -1,6 +1,6 @@
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use std::io::{self, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
@@ -10,7 +10,7 @@ use warp::http::header::{HeaderValue, CONTENT_DISPOSITION, CONTENT_TYPE, RETRY_A
 use warp::http::StatusCode;
 use warp::Reply;
 use zip::result::ZipError;
-use zip::write::SimpleFileOptions;
+use zip::write::{SimpleFileOptions, StreamWriter};
 use zip::ZipWriter;
 
 /// Upper bound on concurrently running archive builders; each one occupies a
@@ -67,21 +67,48 @@ pub async fn serve_directory_zip(
     serve_hidden: bool,
     head_only: bool,
 ) -> Result<warp::reply::Response, warp::Rejection> {
+    let roots = vec![dir_path.to_path_buf()];
+    serve_zip(dir_path, roots, serve_hidden, head_only, "").await
+}
+
+/// Streams a selection of `base`'s entries as a zip archive. `roots` are the
+/// already-validated canonical paths of the picked entries; a picked file
+/// becomes one entry, a picked directory is archived recursively, and entry
+/// names stay relative to `base`, exactly as the whole-directory form names
+/// them. The archive downloads as `<dirname>-selection.zip`. Streaming,
+/// concurrency slots, and HEAD behavior are those of [`serve_directory_zip`].
+pub async fn serve_selection_zip(
+    base: &Path,
+    roots: Vec<PathBuf>,
+    serve_hidden: bool,
+    head_only: bool,
+) -> Result<warp::reply::Response, warp::Rejection> {
+    serve_zip(base, roots, serve_hidden, head_only, "-selection").await
+}
+
+async fn serve_zip(
+    base: &Path,
+    roots: Vec<PathBuf>,
+    serve_hidden: bool,
+    head_only: bool,
+    name_suffix: &'static str,
+) -> Result<warp::reply::Response, warp::Rejection> {
     if head_only {
         let mut response = warp::reply::reply().into_response();
         response
             .headers_mut()
             .insert(CONTENT_TYPE, HeaderValue::from_static("application/zip"));
-        response
-            .headers_mut()
-            .insert(CONTENT_DISPOSITION, content_disposition_for(dir_path));
+        response.headers_mut().insert(
+            CONTENT_DISPOSITION,
+            content_disposition_for(base, name_suffix),
+        );
         return Ok(response);
     }
 
     let permit = match ZIP_SLOTS.try_acquire() {
         Ok(permit) => permit,
         Err(_) => {
-            debug!(dir = %dir_path.display(), "Zip download slots exhausted; answering 503");
+            debug!(dir = %base.display(), "Zip download slots exhausted; answering 503");
             let mut response = warp::reply::with_status(
                 "zip download limit reached, try again later",
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -95,13 +122,13 @@ pub async fn serve_directory_zip(
     };
 
     let (tx, mut rx) = mpsc::channel::<io::Result<Vec<u8>>>(CHANNEL_CAPACITY);
-    let dir = dir_path.to_path_buf();
+    let base_owned = base.to_path_buf();
 
     tokio::task::spawn_blocking(move || {
         // The permit rides with the builder so a slot frees only when the
         // archive is done (or the client is gone), not at handler return.
         let _permit = permit;
-        build_zip(&dir, serve_hidden, &tx);
+        build_zip(&base_owned, &roots, serve_hidden, &tx);
     });
 
     let body = futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx));
@@ -109,9 +136,10 @@ pub async fn serve_directory_zip(
     response
         .headers_mut()
         .insert(CONTENT_TYPE, HeaderValue::from_static("application/zip"));
-    response
-        .headers_mut()
-        .insert(CONTENT_DISPOSITION, content_disposition_for(dir_path));
+    response.headers_mut().insert(
+        CONTENT_DISPOSITION,
+        content_disposition_for(base, name_suffix),
+    );
 
     Ok(response)
 }
@@ -139,21 +167,30 @@ impl Write for ChannelWriter {
     }
 }
 
-fn build_zip(dir: &Path, serve_hidden: bool, tx: &mpsc::Sender<io::Result<Vec<u8>>>) {
-    if let Err(error) = write_archive(dir, serve_hidden, tx) {
+fn build_zip(
+    base: &Path,
+    roots: &[PathBuf],
+    serve_hidden: bool,
+    tx: &mpsc::Sender<io::Result<Vec<u8>>>,
+) {
+    debug!(dir = %base.display(), roots = roots.len(), "Building zip archive");
+    if let Err(error) = write_archive(base, roots, serve_hidden, tx) {
         if error.kind() == io::ErrorKind::BrokenPipe {
-            debug!(dir = %dir.display(), "Client disconnected during zip stream");
+            debug!(dir = %base.display(), roots = roots.len(), "Client disconnected during zip stream");
             return;
         }
-        warn!(dir = %dir.display(), error = %error, "Zip production failed");
+        warn!(dir = %base.display(), roots = roots.len(), error = %error, "Zip production failed");
         // The 200 already went out; erroring the body stream aborts the
         // connection so the client at least sees a truncated transfer.
         let _ = tx.blocking_send(Err(error));
     }
 }
 
+type StreamArchive = ZipWriter<StreamWriter<BufWriter<ChannelWriter>>>;
+
 fn write_archive(
-    dir: &Path,
+    base: &Path,
+    roots: &[PathBuf],
     serve_hidden: bool,
     tx: &mpsc::Sender<io::Result<Vec<u8>>>,
 ) -> io::Result<()> {
@@ -165,51 +202,84 @@ fn write_archive(
         .compression_method(zip::CompressionMethod::Deflated)
         .large_file(true);
 
-    let walker = WalkDir::new(dir)
-        .sort_by_file_name()
-        .into_iter()
-        .filter_entry(|entry| {
-            serve_hidden
-                || entry.depth() == 0
-                || !entry.file_name().to_string_lossy().starts_with('.')
-        });
-
-    for entry in walker {
-        let entry = match entry {
-            Ok(entry) => entry,
+    for root in roots {
+        // lstat, not stat: a root that has become a symlink since validation
+        // must not be followed, matching the walk below, which never records
+        // symlinks either.
+        let metadata = match std::fs::symlink_metadata(root) {
+            Ok(metadata) => metadata,
             Err(error) => {
-                warn!(dir = %dir.display(), error = %error, "Skipping unreadable entry while building zip");
+                warn!(dir = %base.display(), entry = %root.display(), error = %error, "Skipping unreadable entry while building zip");
                 continue;
             }
         };
-        // Symlinks (and anything else that is not a plain file) stay out of
-        // the archive, so a link cannot smuggle content from outside the
-        // served tree.
-        if !entry.file_type().is_file() {
+
+        if metadata.is_file() {
+            write_file_entry(&mut archive, base, root, options)?;
             continue;
         }
-        let Some(entry_name) = archive_entry_name(dir, entry.path()) else {
+        if !metadata.is_dir() {
+            warn!(dir = %base.display(), entry = %root.display(), "Skipping non-regular entry while building zip");
             continue;
-        };
-        let mut file = match std::fs::File::open(entry.path()) {
-            Ok(file) => file,
-            Err(error) => {
-                warn!(dir = %dir.display(), entry = %entry.path().display(), error = %error, "Skipping unreadable entry while building zip");
+        }
+
+        let walker = WalkDir::new(root)
+            .sort_by_file_name()
+            .into_iter()
+            .filter_entry(|entry| {
+                serve_hidden
+                    || entry.depth() == 0
+                    || !entry.file_name().to_string_lossy().starts_with('.')
+            });
+
+        for entry in walker {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    warn!(dir = %base.display(), error = %error, "Skipping unreadable entry while building zip");
+                    continue;
+                }
+            };
+            // Symlinks (and anything else that is not a plain file) stay out
+            // of the archive, so a link cannot smuggle content from outside
+            // the served tree.
+            if !entry.file_type().is_file() {
                 continue;
             }
-        };
-
-        // From start_file on, this entry's local header is already on the
-        // wire; stream mode cannot retract it, so any failure below aborts
-        // the archive instead of skipping the entry.
-        archive
-            .start_file(&entry_name, options)
-            .map_err(zip_to_io_error)?;
-        io::copy(&mut file, &mut archive)?;
+            write_file_entry(&mut archive, base, entry.path(), options)?;
+        }
     }
 
     let mut inner = archive.finish().map_err(zip_to_io_error)?;
     inner.flush()
+}
+
+/// Writes one file into the archive under its `base`-relative name. A file
+/// that cannot be opened is skipped with a warning, which is only safe before
+/// its local header is written; from `start_file` on, any failure aborts the
+/// stream, so those errors propagate.
+fn write_file_entry(
+    archive: &mut StreamArchive,
+    base: &Path,
+    path: &Path,
+    options: SimpleFileOptions,
+) -> io::Result<()> {
+    let Some(entry_name) = archive_entry_name(base, path) else {
+        return Ok(());
+    };
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) => {
+            warn!(dir = %base.display(), entry = %path.display(), error = %error, "Skipping unreadable entry while building zip");
+            return Ok(());
+        }
+    };
+
+    archive
+        .start_file(&entry_name, options)
+        .map_err(zip_to_io_error)?;
+    io::copy(&mut file, archive)?;
+    Ok(())
 }
 
 fn zip_to_io_error(error: ZipError) -> io::Error {
@@ -240,8 +310,10 @@ fn archive_entry_name(base: &Path, path: &Path) -> Option<String> {
 /// quoted `filename` keeps only ASCII graphic characters and spaces (quotes,
 /// backslashes, and all control characters stripped) and falls back to
 /// `archive`; a name carrying non-ASCII additionally gets the RFC 8187
-/// `filename*` form so browsers restore the real name.
-fn content_disposition_for(dir_path: &Path) -> HeaderValue {
+/// `filename*` form so browsers restore the real name. `name_suffix` is a
+/// static ASCII marker appended before `.zip` ("-selection" for selection
+/// downloads, empty for whole-directory ones).
+fn content_disposition_for(dir_path: &Path, name_suffix: &str) -> HeaderValue {
     let dir_name = dir_path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -257,10 +329,10 @@ fn content_disposition_for(dir_path: &Path) -> HeaderValue {
         ascii_name
     };
 
-    let mut value = format!("attachment; filename=\"{ascii_name}.zip\"");
+    let mut value = format!("attachment; filename=\"{ascii_name}{name_suffix}.zip\"");
     if !dir_name.is_ascii() {
         let encoded = utf8_percent_encode(&dir_name, EXT_VALUE_ENCODE);
-        value.push_str(&format!("; filename*=UTF-8''{encoded}.zip"));
+        value.push_str(&format!("; filename*=UTF-8''{encoded}{name_suffix}.zip"));
     }
 
     HeaderValue::from_str(&value)
@@ -412,13 +484,13 @@ mod tests {
         // A backslash cannot appear inside a path component portably (it is
         // a separator on Windows), so the filter's backslash strip is covered
         // by the quote/control cases sharing the same predicate.
-        let value = content_disposition_for(Path::new("a\"b\u{1}d"));
+        let value = content_disposition_for(Path::new("a\"b\u{1}d"), "");
         assert_eq!(value.to_str().unwrap(), "attachment; filename=\"abd.zip\"");
     }
 
     #[test]
     fn content_disposition_falls_back_when_nothing_survives() {
-        let value = content_disposition_for(Path::new("\"\""));
+        let value = content_disposition_for(Path::new("\"\""), "");
         assert_eq!(
             value.to_str().unwrap(),
             "attachment; filename=\"archive.zip\""
@@ -427,9 +499,62 @@ mod tests {
 
     #[test]
     fn content_disposition_adds_ext_value_for_non_ascii_names() {
-        let value = content_disposition_for(Path::new("café"));
+        let value = content_disposition_for(Path::new("café"), "");
         let text = value.to_str().unwrap();
         assert!(text.starts_with("attachment; filename=\"caf.zip\""));
         assert!(text.contains("filename*=UTF-8''caf%C3%A9.zip"));
+    }
+
+    #[test]
+    fn content_disposition_appends_the_selection_suffix_to_both_forms() {
+        let value = content_disposition_for(Path::new("café"), "-selection");
+        let text = value.to_str().unwrap();
+        assert!(text.starts_with("attachment; filename=\"caf-selection.zip\""));
+        assert!(text.contains("filename*=UTF-8''caf%C3%A9-selection.zip"));
+    }
+
+    #[tokio::test]
+    async fn selection_zip_archives_picked_file_and_directory_only() {
+        let _lock = ZIP_TEST_LOCK.lock().await;
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("picked.txt"), "p").unwrap();
+        fs::write(dir.path().join("unpicked.txt"), "u").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("sub").join("inner.txt"), "i").unwrap();
+
+        let roots = vec![dir.path().join("picked.txt"), dir.path().join("sub")];
+        let response = serve_selection_zip(dir.path(), roots, false, false)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let disposition = response
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+
+        assert!(disposition.contains("-selection.zip"));
+        let mut names = entry_names(&bytes);
+        names.sort();
+        assert_eq!(names, vec!["picked.txt", "sub/inner.txt"]);
+    }
+
+    #[tokio::test]
+    async fn selection_zip_of_an_empty_directory_has_no_entries() {
+        let _lock = ZIP_TEST_LOCK.lock().await;
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join("empty")).unwrap();
+
+        let roots = vec![dir.path().join("empty")];
+        let response = serve_selection_zip(dir.path(), roots, false, false)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+
+        assert!(entry_names(&bytes).is_empty());
     }
 }
