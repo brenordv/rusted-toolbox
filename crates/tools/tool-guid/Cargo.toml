@@ -1,0 +1,22 @@
+[package]
+name = "guid"
+version = "2.0.4"
+description = "Command-line tool for generating UUIDv4s, single or in bulk, with clipboard integration."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+common-utils-ext = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+uuid = { workspace = true }

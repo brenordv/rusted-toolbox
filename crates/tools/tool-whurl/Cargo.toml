@@ -1,0 +1,31 @@
+[package]
+name = "whurl"
+version = "3.1.1"
+description = "Wrapper for Hurl with a few additional features."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+common-utils-ext = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+camino = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+hurl = { workspace = true }
+hurl_core = { workspace = true }
+once_cell = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

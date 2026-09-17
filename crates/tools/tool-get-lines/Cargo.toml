@@ -1,0 +1,23 @@
+[package]
+name = "get-lines"
+version = "2.0.3"
+description = "High-performance text search utility that extracts lines containing specific search patterns from text files."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+cli-signal-monitor = { workspace = true }
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+
+# External
+aho-corasick = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

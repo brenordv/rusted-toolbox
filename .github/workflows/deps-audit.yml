@@ -1,0 +1,44 @@
+name: deps-audit
+
+# Lives outside ci.yml so an advisory published overnight reds a scheduled run,
+# not every open PR. The schedule and push runs are the authoritative signal;
+# a pull_request run executes the PR head's copy of this file, so PR-green is
+# advisory, not the gate.
+on:
+  schedule:
+    # Off the top of the hour: GitHub sheds scheduled jobs queued at
+    # high-load times, and every hour starts one.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/deps-audit.yml"
+  push:
+    branches: [ master ]
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/deps-audit.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  advisories:
+    name: cargo-deny advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # The action's default arguments are replaced, not appended, when the
+      # input is set, so --all-features is restated alongside --locked.
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check advisories
+          arguments: --all-features --locked

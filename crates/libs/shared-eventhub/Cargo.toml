@@ -1,0 +1,32 @@
+[package]
+name = "shared-eventhub"
+version = "1.0.0"
+description = "Where all eventhub specific shared code lives."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+otel = ["raccoon-otel"]
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+common-serialization-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+azeventhubs = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+raccoon-otel = { workspace = true, optional = true }
+serde = { workspace = true }
+tracing-log = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

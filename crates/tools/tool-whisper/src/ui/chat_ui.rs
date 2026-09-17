@@ -1,0 +1,461 @@
+use crate::models::shared_types::UiMessage;
+use anyhow::Result;
+use ratatui::crossterm::event::{poll, KeyEventKind};
+use ratatui::layout::Position;
+use ratatui::widgets::{List, ListItem};
+use ratatui::{
+    crossterm::event::{self, Event, KeyCode},
+    layout::{Constraint, Layout},
+    style::{Color, Modifier, Style, Stylize},
+    text::{Line, Span},
+    widgets::{Block, Paragraph},
+    DefaultTerminal, Frame,
+};
+use std::cmp::PartialEq;
+use std::sync::mpsc::{Receiver, Sender};
+use std::time::Duration;
+use tracing::{debug, info};
+
+fn get_banner() -> String {
+    format!(
+        "{} | v{}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
+enum InputMode {
+    Normal,
+    Editing,
+}
+
+enum MessageKind {
+    Own,
+    Peer,
+    System,
+}
+
+enum ChatState {
+    Ok,
+    Exit,
+}
+
+struct Message {
+    text: String,
+    kind: MessageKind,
+}
+
+impl Message {
+    pub fn format(&'_ self) -> Line<'_> {
+        match self.kind {
+            MessageKind::Own => {
+                let color = Color::Green;
+                let text = format!("> {}", self.text);
+                Line::from(Span::styled(text, Style::default().fg(color)))
+            }
+            MessageKind::Peer => {
+                let color = Color::White;
+                let text = format!("< {}", self.text);
+                Line::from(Span::styled(text, Style::default().fg(color)))
+            }
+            MessageKind::System => {
+                let color = Color::Yellow;
+                let text = format!("[system] {}", self.text);
+                Line::from(Span::styled(text, Style::default().fg(color)))
+            }
+        }
+    }
+}
+
+pub struct ChatUi {
+    // Base properties
+    role_name: String,
+    outgoing_tx: Sender<String>,
+    incoming_rx: Receiver<UiMessage>,
+    // Ui properties
+    /// Current value of the input box
+    input: String,
+    /// Position of the cursor in the editor area (character index, not byte)
+    character_index: usize,
+    /// Current input mode
+    input_mode: InputMode,
+    /// History of messages (both sent and received)
+    messages: Vec<Message>,
+}
+
+impl PartialEq for ChatState {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            ChatState::Ok => matches!(other, ChatState::Ok),
+            ChatState::Exit => matches!(other, ChatState::Exit),
+        }
+    }
+}
+
+impl ChatUi {
+    pub fn new(
+        outgoing_tx: Sender<String>,
+        incoming_rx: Receiver<UiMessage>,
+        role_name: String,
+    ) -> Self {
+        Self {
+            role_name: format!("{}-Ui", role_name),
+            outgoing_tx,
+            incoming_rx,
+            input: String::new(),
+            character_index: 0,
+            input_mode: InputMode::Editing,
+            messages: Vec::new(),
+        }
+    }
+
+    pub fn run(self) -> Result<()> {
+        info!("Starting chat UI...");
+        let terminal = ratatui::init();
+        // The terminal must leave raw/alternate-screen mode even when the
+        // chat loop fails, or the error lands on an unusable terminal.
+        let result = self.chat_loop(terminal);
+        ratatui::restore();
+        result
+    }
+
+    fn chat_loop(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+        loop {
+            // Processing received messages
+            while let Ok(msg) = self.incoming_rx.try_recv() {
+                let message = match msg {
+                    UiMessage::Peer(text) => {
+                        debug!(
+                            role = %self.role_name,
+                            bytes = text.len(),
+                            "Received peer message"
+                        );
+                        Message {
+                            text,
+                            kind: MessageKind::Peer,
+                        }
+                    }
+                    UiMessage::System(text) => Message {
+                        text,
+                        kind: MessageKind::System,
+                    },
+                };
+                self.messages.push(message);
+            }
+
+            terminal.draw(|frame| self.draw(frame))?;
+
+            if self.process_key_inputs()? == ChatState::Exit {
+                return Ok(());
+            };
+        }
+    }
+
+    fn draw(&self, frame: &mut Frame) {
+        // Layout:
+        // [banner (1)] - app name and version.
+        // [messages (flex)] - message history
+        // [input (3)] - input box and cursor
+        // [helper (1)] - helper text (e.g. "Press q to exit")
+
+        let vertical = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
+        ]);
+        let [banner_area, messages_area, input_area, help_area] = vertical.areas(frame.area());
+
+        // Banner (top)
+        frame.render_widget(Paragraph::new(get_banner()), banner_area);
+
+        // Messages (no borders)
+        let items: Vec<ListItem> = self
+            .messages
+            .iter()
+            .map(|m| {
+                let line = m.format();
+                ListItem::new(line)
+            })
+            .collect();
+        frame.render_widget(List::new(items), messages_area);
+
+        // Input (bottom-1)
+        let input = Paragraph::new(self.input.as_str())
+            .style(match self.input_mode {
+                InputMode::Normal => Style::default(),
+                InputMode::Editing => Style::default().fg(Color::Green),
+            })
+            .block(Block::bordered().title("What's on your mind?"));
+        frame.render_widget(input, input_area);
+
+        // Cursor in input field when editing
+        if let InputMode::Editing = self.input_mode {
+            #[allow(clippy::cast_possible_truncation)]
+            frame.set_cursor_position(Position::new(
+                input_area.x + self.character_index as u16 + 1,
+                input_area.y + 1,
+            ));
+        }
+
+        // Helper (very bottom)
+        let (helper_line, style) = match self.input_mode {
+            InputMode::Normal => (
+                vec![
+                    "Press ".into(),
+                    "q".bold(),
+                    " to exit, ".into(),
+                    "e".bold(),
+                    " to start editing.".into(),
+                ],
+                Style::default().add_modifier(Modifier::RAPID_BLINK),
+            ),
+            InputMode::Editing => (
+                vec![
+                    "Press ".into(),
+                    "Esc".bold(),
+                    " to stop editing, ".into(),
+                    "Enter".bold(),
+                    " to send".into(),
+                ],
+                Style::default(),
+            ),
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(helper_line)).style(style),
+            help_area,
+        );
+    }
+
+    //region: Ui Logic
+    fn process_key_inputs(&mut self) -> Result<ChatState> {
+        if poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                match self.input_mode {
+                    InputMode::Normal => match key.code {
+                        KeyCode::Char('e') => {
+                            self.input_mode = InputMode::Editing;
+                        }
+                        KeyCode::Char('q') => {
+                            return Ok(ChatState::Exit);
+                        }
+                        _ => {}
+                    },
+                    InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
+                        KeyCode::Enter => self.submit_message()?,
+                        KeyCode::Char(to_insert) => self.enter_char(to_insert),
+                        KeyCode::Backspace => self.delete_char(),
+                        KeyCode::Left => self.move_cursor_left(),
+                        KeyCode::Right => self.move_cursor_right(),
+                        KeyCode::Esc => self.input_mode = InputMode::Normal,
+                        _ => {}
+                    },
+                    InputMode::Editing => {}
+                }
+            }
+        }
+        Ok(ChatState::Ok)
+    }
+
+    fn submit_message(&mut self) -> Result<()> {
+        if self.input.is_empty() {
+            debug!("[{}] Input is empty, not submitting", self.role_name);
+            return Ok(());
+        }
+        let msg = std::mem::take(&mut self.input);
+
+        debug!(
+            role = %self.role_name,
+            bytes = msg.len(),
+            "Submitting message"
+        );
+        self.outgoing_tx.send(msg.clone())?;
+
+        debug!(
+            "[{}] Message sent. Pushing to display history...",
+            self.role_name
+        );
+        self.messages.push(Message {
+            text: msg,
+            kind: MessageKind::Own,
+        });
+
+        self.reset_cursor();
+
+        Ok(())
+    }
+    //endregion: Ui Logic
+
+    //region: Ui
+    fn move_cursor_left(&mut self) {
+        let cursor_moved_left = self.character_index.saturating_sub(1);
+        self.character_index = self.clamp_cursor(cursor_moved_left);
+    }
+
+    fn move_cursor_right(&mut self) {
+        let cursor_moved_right = self.character_index.saturating_add(1);
+        self.character_index = self.clamp_cursor(cursor_moved_right);
+    }
+
+    fn enter_char(&mut self, new_char: char) {
+        let index = self.byte_index();
+        self.input.insert(index, new_char);
+        self.move_cursor_right();
+    }
+
+    /// Returns the byte index based on the character position.
+    fn byte_index(&self) -> usize {
+        self.input
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(self.character_index)
+            .unwrap_or(self.input.len())
+    }
+
+    fn delete_char(&mut self) {
+        if self.character_index != 0 {
+            let current_index = self.character_index;
+            let from_left_to_current_index = current_index - 1;
+
+            let before = self.input.chars().take(from_left_to_current_index);
+            let after = self.input.chars().skip(current_index);
+
+            self.input = before.chain(after).collect();
+            self.move_cursor_left();
+        }
+    }
+
+    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
+        new_cursor_pos.clamp(0, self.input.chars().count())
+    }
+
+    fn reset_cursor(&mut self) {
+        self.character_index = 0;
+    }
+    //endregion: Ui
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    fn test_ui() -> ChatUi {
+        let (outgoing_tx, _outgoing_rx) = mpsc::channel();
+        let (_incoming_tx, incoming_rx) = mpsc::channel();
+        ChatUi::new(outgoing_tx, incoming_rx, "TEST".to_string())
+    }
+
+    fn rendered_text(message: &Message) -> String {
+        message
+            .format()
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
+    #[test]
+    fn enter_char_appends_multibyte_chars_and_advances_cursor() {
+        let mut ui = test_ui();
+
+        for c in "héllo, 世界".chars() {
+            ui.enter_char(c);
+        }
+
+        assert_eq!(ui.input, "héllo, 世界");
+        assert_eq!(ui.character_index, "héllo, 世界".chars().count());
+    }
+
+    #[test]
+    fn enter_char_inserts_at_cursor_position_by_character_not_byte() {
+        let mut ui = test_ui();
+        for c in "日本".chars() {
+            ui.enter_char(c);
+        }
+
+        ui.move_cursor_left();
+        ui.enter_char('a');
+
+        assert_eq!(ui.input, "日a本");
+        assert_eq!(ui.character_index, 2);
+    }
+
+    #[test]
+    fn byte_index_maps_character_position_to_byte_offset() {
+        let mut ui = test_ui();
+        ui.input = "aé日".to_string();
+
+        ui.character_index = 0;
+        assert_eq!(ui.byte_index(), 0);
+        ui.character_index = 1;
+        assert_eq!(ui.byte_index(), 1);
+        ui.character_index = 2;
+        assert_eq!(ui.byte_index(), 3);
+        ui.character_index = 3;
+        assert_eq!(ui.byte_index(), 6);
+    }
+
+    #[test]
+    fn delete_char_removes_the_character_before_the_cursor() {
+        let mut ui = test_ui();
+        for c in "aé日".chars() {
+            ui.enter_char(c);
+        }
+
+        ui.delete_char();
+        assert_eq!(ui.input, "aé");
+        assert_eq!(ui.character_index, 2);
+
+        ui.move_cursor_left();
+        ui.delete_char();
+        assert_eq!(ui.input, "é");
+        assert_eq!(ui.character_index, 0);
+    }
+
+    #[test]
+    fn delete_char_at_start_is_a_no_op() {
+        let mut ui = test_ui();
+        ui.enter_char('é');
+        ui.reset_cursor();
+
+        ui.delete_char();
+
+        assert_eq!(ui.input, "é");
+        assert_eq!(ui.character_index, 0);
+    }
+
+    #[test]
+    fn clamp_cursor_limits_position_to_character_count() {
+        let mut ui = test_ui();
+        ui.input = "日本語".to_string();
+
+        assert_eq!(ui.clamp_cursor(99), 3);
+        assert_eq!(ui.clamp_cursor(2), 2);
+    }
+
+    #[test]
+    fn system_messages_render_with_the_system_prefix() {
+        let message = Message {
+            text: "peer disconnected".to_string(),
+            kind: MessageKind::System,
+        };
+
+        assert_eq!(rendered_text(&message), "[system] peer disconnected");
+    }
+
+    #[test]
+    fn peer_and_own_messages_render_with_direction_markers() {
+        let own = Message {
+            text: "hi".to_string(),
+            kind: MessageKind::Own,
+        };
+        let peer = Message {
+            text: "hello".to_string(),
+            kind: MessageKind::Peer,
+        };
+
+        assert_eq!(rendered_text(&own), "> hi");
+        assert_eq!(rendered_text(&peer), "< hello");
+    }
+}

@@ -1,0 +1,24 @@
+[package]
+name = "gitignore"
+version = "2.1.2"
+description = "Tool that scans the files and gets the appropriate data for creating/updating the gitignore file."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+walkdir = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

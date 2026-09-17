@@ -1,0 +1,24 @@
+[package]
+name = "qrcode"
+version = "2.1.1"
+description = "Tool to quickly generate QR Codes"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+image = { workspace = true }
+qrcodegen = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,24 @@
+[package]
+name = "jwt"
+version = "2.0.5"
+description = "Decodes JWT tokens and extracts their public claims, headers, and payload information. Optionally copies claims to clipboard."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+common-utils-ext = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+colored = { workspace = true }
+jsonwebtoken = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

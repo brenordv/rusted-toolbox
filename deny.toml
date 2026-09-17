@@ -1,0 +1,26 @@
+# Only the advisories check runs in CI (deps-audit.yml passes
+# `check advisories`), so the licenses/bans/sources sections stay
+# unconfigured on purpose.
+#
+# Vulnerability advisories error at the default severity. `unmaintained` is
+# scoped to workspace (direct) dependencies: the tree carries transitively
+# unmaintained crates (paste via several deps, instant via cfspeedtest's
+# stack) that no manifest here can fix, while an unmaintained crate this
+# workspace depends on directly is actionable and still errors. Every future
+# ignore entry must carry the advisory ID and a reason.
+[advisories]
+unmaintained = "workspace"
+ignore = [
+    # No fixed release exists (Marvin timing sidechannel in the rsa crate).
+    # Reached only through whisper's peer-to-peer encryption between two
+    # local terminals; exploiting it needs an oracle timing many
+    # decryptions, which that usage does not expose.
+    { id = "RUSTSEC-2023-0071", reason = "rsa: no safe upgrade exists; whisper's local peer-to-peer usage exposes no timing oracle" },
+    # The fix is azure_core >= 0.22, a manifest migration in the on-hold
+    # EventHub crates (shared-eventhub, eh-read, eh-export); it lands with
+    # that rework, not before.
+    { id = "RUSTSEC-2026-0275", reason = "azure_core header logging: remediation belongs to the deferred EventHub rework" },
+    # Notice-class advisory with no safe upgrade, reached only through the
+    # same on-hold EventHub chain.
+    { id = "RUSTSEC-2026-0174", reason = "http-types ASCII notice: no safe upgrade; EventHub chain only, deferred with that rework" },
+]

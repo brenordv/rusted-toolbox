@@ -1,0 +1,23 @@
+[package]
+name = "csv-split"
+version = "3.0.6"
+description = "Tool for splitting large CSV or UTF-8 text files by line count with header preservation, progress feedback, and graceful shutdown."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+cli-signal-monitor = { workspace = true }
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
