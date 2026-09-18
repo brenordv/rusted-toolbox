@@ -12,7 +12,7 @@
 /// Defined before the submodules, so macro_rules! textual scoping puts it in
 /// scope for all of them without imports.
 macro_rules! localized {
-    ($locale:expr, $module:ident :: $faker:ident) => {
+    ($locale:expr_2021, $module:ident :: $faker:ident) => {
         match $locale {
             $crate::models::Locale::En => fake::faker::$module::en::$faker().fake::<String>(),
             $crate::models::Locale::ArSa => fake::faker::$module::ar_sa::$faker().fake::<String>(),

@@ -1,5 +1,5 @@
 use crate::models::{InputSource, OutputTarget, RemoveZwArgs};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use common_utils::constants::SIZE_8KB;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -74,7 +74,7 @@ enum SampleKind {
 fn classify_sample(sample: &[u8]) -> SampleKind {
     match detect_bom(sample) {
         Bom::Utf16Le | Bom::Utf16Be | Bom::Utf32Le | Bom::Utf32Be => {
-            return SampleKind::UnsupportedEncoding
+            return SampleKind::UnsupportedEncoding;
         }
         Bom::Utf8 | Bom::None => {}
     }

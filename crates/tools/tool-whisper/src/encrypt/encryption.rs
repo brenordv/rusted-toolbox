@@ -1,7 +1,7 @@
 use crate::encrypt::message_decrypter::MessageDecrypter;
 use crate::encrypt::message_encrypter::MessageEncrypter;
 use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use rand06_compat::Rand0_6CompatExt;
 use rsa::pkcs8::DecodePublicKey;
 use rsa::{RsaPrivateKey, RsaPublicKey};

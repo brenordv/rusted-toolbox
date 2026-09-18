@@ -1,6 +1,6 @@
 use crate::models::{InputSource, OutputTarget, RemoveZwArgs};
-use anyhow::{anyhow, Result};
-use clap::{builder::NonEmptyStringValueParser, Parser};
+use anyhow::{Result, anyhow};
+use clap::{Parser, builder::NonEmptyStringValueParser};
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::{format_config_item, format_config_label};
 use common_utils::constants::CONFIG_UL_ITEM_LEVEL_3;
@@ -216,17 +216,16 @@ pub(crate) fn validate_args(args: &RemoveZwArgs) -> Result<()> {
         }
     }
 
-    if let Some(OutputTarget::File(_)) = args.output {
-        if args.inputs.len() > 1
+    if let Some(OutputTarget::File(_)) = args.output
+        && (args.inputs.len() > 1
             || args
                 .inputs
                 .iter()
-                .any(|i| matches!(i, InputSource::Directory(_)))
-        {
-            return Err(anyhow!(
-                "--output FILE requires a single file input (use '-' for stdout)"
-            ));
-        }
+                .any(|i| matches!(i, InputSource::Directory(_))))
+    {
+        return Err(anyhow!(
+            "--output FILE requires a single file input (use '-' for stdout)"
+        ));
     }
 
     Ok(())

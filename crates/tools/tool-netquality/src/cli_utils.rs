@@ -1,8 +1,8 @@
 use crate::models::{
-    resolve_urls, BotToken, ConnectivityConfig, NetQualityConfig, NotificationConfig, SpeedConfig,
-    StorageConfig, TelegramConfig, ThresholdCategory, Thresholds, UrlMode,
+    BotToken, ConnectivityConfig, NetQualityConfig, NotificationConfig, SpeedConfig, StorageConfig,
+    TelegramConfig, ThresholdCategory, Thresholds, UrlMode, resolve_urls,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::{ArgAction, Parser};
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::format_config_item_level3;

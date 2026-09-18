@@ -1,7 +1,7 @@
 use crate::progress_tracker::{OperationGuard, ProgressTracker};
-use anyhow::{anyhow, Context, Result};
-use azeventhubs::consumer::{EventPosition, ReadEventOptions};
+use anyhow::{Context, Result, anyhow};
 use azeventhubs::ReceivedEventData;
+use azeventhubs::consumer::{EventPosition, ReadEventOptions};
 use chrono::{DateTime, Local, Utc};
 use common_utils::file_system::resolve_path_with_base;
 use futures_util::StreamExt;
@@ -11,8 +11,8 @@ use shared_eventhub::eventhub_models::{
 use shared_eventhub::utils::get_eventhub_database_path::get_eventhub_database_path;
 use shared_eventhub::utils::message_matches_filter::message_matches_filter;
 use sled::Db;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -877,11 +877,12 @@ impl EventHubReader {
         let message_data = String::from_utf8_lossy(received_event.body()?).to_string();
 
         // Apply dump filter if configured and not empty
-        if let Some(filters) = &self.config.inbound_config.dump_filter {
-            if !filters.is_empty() && !message_matches_filter(&message_data, filters) {
-                self.progress.increment_skipped();
-                return Ok(());
-            }
+        if let Some(filters) = &self.config.inbound_config.dump_filter
+            && !filters.is_empty()
+            && !message_matches_filter(&message_data, filters)
+        {
+            self.progress.increment_skipped();
+            return Ok(());
         }
 
         let message = InboundMessage {

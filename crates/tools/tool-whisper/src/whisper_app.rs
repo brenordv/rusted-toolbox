@@ -10,7 +10,7 @@ use common_cli::tool_exit_helpers::exit_success;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;
-use std::thread::{sleep, JoinHandle};
+use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, SystemTime};
 use tracing::{debug, error, info, warn};
 
@@ -283,11 +283,11 @@ pub fn create_handlers(mut chat_session: ChatSession) -> Result<ChatHandlers> {
                 }
             };
 
-            if let Some(event) = event {
-                if incoming_msg_tx.send(event).is_err() {
-                    // The UI is gone; there is nobody left to notify.
-                    return Ok(());
-                }
+            if let Some(event) = event
+                && incoming_msg_tx.send(event).is_err()
+            {
+                // The UI is gone; there is nobody left to notify.
+                return Ok(());
             }
             sleep(Duration::from_millis(100));
         }

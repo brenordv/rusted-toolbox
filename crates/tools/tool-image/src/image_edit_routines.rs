@@ -4,9 +4,9 @@ use crate::image_encoders::{
 use crate::image_format_traits::ImageFormatTraits;
 use crate::models::{DecodedImage, EditJob, ImageMeta, ResizeSpec};
 use anyhow::{Context, Result};
+use image::ImageReader;
 use image::imageops::FilterType;
 use image::metadata::Orientation;
-use image::ImageReader;
 use image::{DynamicImage, ImageDecoder, ImageFormat};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::path::{Path, PathBuf};
@@ -91,14 +91,14 @@ fn encode_image(
     metadata: &ImageMeta,
     quality: Option<u8>,
 ) -> Result<()> {
-    if let Some(quality) = quality {
-        if !matches!(output_format, ImageFormat::Jpeg | ImageFormat::Avif) {
-            warn!(
-                format = ?output_format,
-                quality,
-                "--quality only affects JPEG and AVIF output; ignored for this format"
-            );
-        }
+    if let Some(quality) = quality
+        && !matches!(output_format, ImageFormat::Jpeg | ImageFormat::Avif)
+    {
+        warn!(
+            format = ?output_format,
+            quality,
+            "--quality only affects JPEG and AVIF output; ignored for this format"
+        );
     }
 
     encode_via_temp(output_path, |temp_file| match output_format {
@@ -185,14 +185,14 @@ fn encode_via_temp(output_path: &Path, encode: impl FnOnce(&PathBuf) -> Result<(
 
     // A destination being replaced keeps its own permissions rather than
     // inheriting the temp file's.
-    if let Ok(existing) = std::fs::metadata(output_path) {
-        if let Err(error) = std::fs::set_permissions(&temp_file, existing.permissions()) {
-            warn!(
-                path = %output_path.display(),
-                error = %error,
-                "Failed to copy the destination's permissions to the new output"
-            );
-        }
+    if let Ok(existing) = std::fs::metadata(output_path)
+        && let Err(error) = std::fs::set_permissions(&temp_file, existing.permissions())
+    {
+        warn!(
+            path = %output_path.display(),
+            error = %error,
+            "Failed to copy the destination's permissions to the new output"
+        );
     }
 
     temp.persist(output_path).with_context(|| {

@@ -5,8 +5,8 @@ use common_utils_ext::new_guid::new_guid;
 use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, Outgoing, QoS};
 use std::borrow::Cow;
 use std::io::{self, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
@@ -93,7 +93,9 @@ pub async fn read_messages(args: &MqttConfig, shutdown: Arc<AtomicBool>) -> Resu
                             debug!("Publish received: {:?}", message);
                             let (display, was_lossy) = format_payload_for_display(&message.payload);
                             if was_lossy {
-                                warn!("Payload is not valid UTF-8; invalid bytes replaced with U+FFFD for display");
+                                warn!(
+                                    "Payload is not valid UTF-8; invalid bytes replaced with U+FFFD for display"
+                                );
                             }
                             if let Err(e) = writeln!(io::stdout().lock(), "{}", display) {
                                 // A closed pipe (e.g. piping into head) ends the

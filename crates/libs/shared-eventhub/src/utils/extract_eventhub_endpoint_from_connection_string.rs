@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use common_utils::string_utils::sanitize_string_for_filename;
 use url::Url;
 
@@ -37,20 +37,20 @@ pub fn extract_eventhub_endpoint_from_connection_string(connection_string: &str)
     let mut endpoint = String::new();
 
     for part in connection_string.trim().split(';') {
-        if part.starts_with("Endpoint=") {
-            if let Some(endpoint_url) = part.strip_prefix("Endpoint=") {
-                // Parse URL to extract hostname
-                let url = Url::parse(endpoint_url).context(format!(
-                    "Invalid endpoint URL in connection string: {}",
-                    endpoint_url
-                ))?;
+        if part.starts_with("Endpoint=")
+            && let Some(endpoint_url) = part.strip_prefix("Endpoint=")
+        {
+            // Parse URL to extract hostname
+            let url = Url::parse(endpoint_url).context(format!(
+                "Invalid endpoint URL in connection string: {}",
+                endpoint_url
+            ))?;
 
-                endpoint = url
-                    .host_str()
-                    .context("No hostname found in endpoint URL")?
-                    .to_string();
-                break;
-            }
+            endpoint = url
+                .host_str()
+                .context("No hostname found in endpoint URL")?
+                .to_string();
+            break;
         }
     }
 
@@ -68,7 +68,10 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case("Endpoint=sb://example.servicebus.windows.net/;SharedAccessKeyName=key;SharedAccessKey=secret;", "example.servicebus.windows.net")]
+    #[case(
+        "Endpoint=sb://example.servicebus.windows.net/;SharedAccessKeyName=key;SharedAccessKey=secret;",
+        "example.servicebus.windows.net"
+    )]
     #[case(
         "Endpoint=sb://example.servicebus.windows.net:443/;SharedAccessKeyName=key;",
         "example.servicebus.windows.net"
@@ -77,7 +80,10 @@ mod tests {
         "SharedAccessKeyName=key;Endpoint=sb://test.eventhub.azure.com/;SharedAccessKey=secret;",
         "test.eventhub.azure.com"
     )]
-    #[case("Endpoint=sb://first.servicebus.windows.net/;Endpoint=sb://second.servicebus.windows.net/;SharedAccessKeyName=key;", "first.servicebus.windows.net")]
+    #[case(
+        "Endpoint=sb://first.servicebus.windows.net/;Endpoint=sb://second.servicebus.windows.net/;SharedAccessKeyName=key;",
+        "first.servicebus.windows.net"
+    )]
     #[case(
         " Endpoint=sb://example.servicebus.windows.net/; SharedAccessKeyName=key; ",
         "example.servicebus.windows.net"
@@ -99,7 +105,10 @@ mod tests {
         "192.168.1.100"
     )]
     #[case("Endpoint=sb://localhost:5671/;SharedAccessKeyName=key;", "localhost")]
-    #[case("Endpoint=sb://myeventhub.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=someKey123=;EntityPath=myeventhub", "myeventhub.servicebus.windows.net")]
+    #[case(
+        "Endpoint=sb://myeventhub.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=someKey123=;EntityPath=myeventhub",
+        "myeventhub.servicebus.windows.net"
+    )]
     #[case(
         "Endpoint=sb://example.servicebus.windows.net/some/path;SharedAccessKeyName=key;",
         "example.servicebus.windows.net"
@@ -131,10 +140,12 @@ mod tests {
         let result = extract_eventhub_endpoint_from_connection_string(input);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid endpoint URL"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid endpoint URL")
+        );
     }
 
     #[test]
@@ -144,10 +155,12 @@ mod tests {
         );
         dbg!(&result);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No hostname found in endpoint URL"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No hostname found in endpoint URL")
+        );
     }
 
     #[rstest]
@@ -160,9 +173,11 @@ mod tests {
     ) {
         let result = extract_eventhub_endpoint_from_connection_string(input);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No valid endpoint found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No valid endpoint found")
+        );
     }
 }

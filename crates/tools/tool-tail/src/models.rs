@@ -1,5 +1,5 @@
 use clap::ValueEnum;
-use shared_head_tail::models::{delimiter_for, CountUnit, HeaderPolicy};
+use shared_head_tail::models::{CountUnit, HeaderPolicy, delimiter_for};
 use std::time::Duration;
 
 /// How `--follow` tracks a file.

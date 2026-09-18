@@ -1,6 +1,6 @@
 use crate::image_edit_routines::{create_job_progress_bar, process_edit_job};
 use crate::models::{EditJob, ImageConfig, ProcessingStatsInner};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use indicatif::MultiProgress;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;

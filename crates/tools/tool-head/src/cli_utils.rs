@@ -4,7 +4,7 @@ use clap::{Args, CommandFactory, Parser};
 use common_cli::common_tool_args::CommonToolArgsNoVerbose;
 use common_cli::tool_log_level::ToolLogLevel;
 use shared_head_tail::count_parser::parse_head_count;
-use shared_head_tail::models::{resolve_count, Count, CountPrefix, HeaderPolicy};
+use shared_head_tail::models::{Count, CountPrefix, HeaderPolicy, resolve_count};
 use std::ffi::OsString;
 
 /// Print the first part of files.

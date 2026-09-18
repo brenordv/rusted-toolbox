@@ -1,4 +1,4 @@
-use crate::config::{Config, AI_ARTIFACTS_TEMPLATE_URL};
+use crate::config::{AI_ARTIFACTS_TEMPLATE_URL, Config};
 use crate::models::GitIgnoreConfig;
 use anyhow::{Context, Result};
 use reqwest::Client;

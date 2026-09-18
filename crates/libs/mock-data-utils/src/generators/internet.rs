@@ -1,7 +1,7 @@
 use crate::models::MockOptions;
 use anyhow::Result;
-use fake::faker::internet::en::*;
 use fake::Fake;
+use fake::faker::internet::en::*;
 use rand::RngExt;
 
 const PASSWORD_CHARSET: &str =

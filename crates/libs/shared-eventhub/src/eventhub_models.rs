@@ -5,9 +5,9 @@ use crate::eventhub_traits::{
     default_received_msg_path,
 };
 
-use anyhow::{anyhow, Error};
-use azeventhubs::consumer::{EventHubConsumerClient, EventHubConsumerClientOptions};
+use anyhow::{Error, anyhow};
 use azeventhubs::BasicRetryPolicy;
+use azeventhubs::consumer::{EventHubConsumerClient, EventHubConsumerClientOptions};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 

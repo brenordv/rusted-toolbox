@@ -1,5 +1,5 @@
 use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use rand06_compat::Rand0_6CompatExt;
 use rsa::pkcs8::EncodePublicKey;
 use rsa::traits::PublicKeyParts;

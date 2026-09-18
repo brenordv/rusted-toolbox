@@ -137,7 +137,9 @@ fn build_config(args: &CliArgs) -> Result<PingxArgs> {
 
     let count = args.count.unwrap_or(-1);
     if count == 0 || count < -1 {
-        anyhow::bail!("--count must be -1 (for infinite, but in this case you can also use --continuous) or >= 1");
+        anyhow::bail!(
+            "--count must be -1 (for infinite, but in this case you can also use --continuous) or >= 1"
+        );
     }
 
     let explicit_count_inf = args.count.is_some() && count == -1;

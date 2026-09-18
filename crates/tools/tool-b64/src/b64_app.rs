@@ -1,8 +1,8 @@
 use crate::models::{B64Config, B64Mode, InputSource, OutputTarget};
 use anyhow::{Context, Result};
+use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use base64::write::EncoderWriter;
-use base64::Engine;
 use common_cli::broken_pipe::BrokenPipe;
 use common_utils::constants::SIZE_64KB;
 use std::fs::File;

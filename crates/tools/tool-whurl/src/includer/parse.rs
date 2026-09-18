@@ -70,61 +70,61 @@ pub fn parse_top_comment_directives(contents: &str) -> Result<FileDirectives, Di
             break;
         }
 
-        if let Some(caps) = include_re.captures(trimmed) {
-            if let Some(path) = caps.name("path") {
-                let options = caps
-                    .name("opts")
-                    .map(|m| {
-                        m.as_str()
-                            .split(',')
-                            .filter_map(|opt| {
-                                let trimmed = opt.trim();
-                                if trimmed.is_empty() {
-                                    None
-                                } else {
-                                    Some(trimmed.to_string())
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
+        if let Some(caps) = include_re.captures(trimmed)
+            && let Some(path) = caps.name("path")
+        {
+            let options = caps
+                .name("opts")
+                .map(|m| {
+                    m.as_str()
+                        .split(',')
+                        .filter_map(|opt| {
+                            let trimmed = opt.trim();
+                            if trimmed.is_empty() {
+                                None
+                            } else {
+                                Some(trimmed.to_string())
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
 
-                let path = path.as_str().trim().to_string();
+            let path = path.as_str().trim().to_string();
 
-                let feed = match caps.name("feed") {
-                    Some(feed) => parse_feed(feed.as_str(), line_number)?,
-                    None if path.contains("->") => {
-                        // The arrow clause failed to match, so its text got
-                        // swallowed into the path (trailing content after the
-                        // closing brace, a lone arrow, or a literal `->` in a
-                        // path, which is unsupported).
-                        return Err(DirectiveParseError {
-                            line: line_number,
-                            message: "malformed feed clause; expected `-> { key=value, ... }` \
+            let feed = match caps.name("feed") {
+                Some(feed) => parse_feed(feed.as_str(), line_number)?,
+                None if path.contains("->") => {
+                    // The arrow clause failed to match, so its text got
+                    // swallowed into the path (trailing content after the
+                    // closing brace, a lone arrow, or a literal `->` in a
+                    // path, which is unsupported).
+                    return Err(DirectiveParseError {
+                        line: line_number,
+                        message: "malformed feed clause; expected `-> { key=value, ... }` \
                                       with nothing after the closing brace"
-                                .to_string(),
-                        });
-                    }
-                    None => Vec::new(),
-                };
+                            .to_string(),
+                    });
+                }
+                None => Vec::new(),
+            };
 
-                directives.includes.push(IncludeDirective {
-                    path,
-                    options,
-                    feed,
-                    line_number,
-                });
-                continue;
-            }
+            directives.includes.push(IncludeDirective {
+                path,
+                options,
+                feed,
+                line_number,
+            });
+            continue;
         }
 
-        if let Some(caps) = vars_re.captures(trimmed) {
-            if let Some(name) = caps.name("name") {
-                directives.vars.push(VarsDirective {
-                    name: name.as_str().trim().to_string(),
-                    _line_number: line_number,
-                });
-            }
+        if let Some(caps) = vars_re.captures(trimmed)
+            && let Some(name) = caps.name("name")
+        {
+            directives.vars.push(VarsDirective {
+                name: name.as_str().trim().to_string(),
+                _line_number: line_number,
+            });
         }
     }
 

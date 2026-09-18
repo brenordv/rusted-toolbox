@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use common_cli::tool_path_helpers::get_tool_path;
@@ -132,7 +132,7 @@ fn resolve_notifications(config: Option<NotificationConfigFile>) -> Result<Notif
                 telegram: None,
                 min_download_threshold: ThresholdCategory::Medium,
                 min_upload_threshold: ThresholdCategory::Slow,
-            })
+            });
         }
     };
 
@@ -143,7 +143,7 @@ fn resolve_notifications(config: Option<NotificationConfigFile>) -> Result<Notif
             _ => {
                 return Err(anyhow!(
                     "Telegram bot token and chat ID must both be provided together."
-                ))
+                ));
             }
         },
         None => None,

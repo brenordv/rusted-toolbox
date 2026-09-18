@@ -1,7 +1,7 @@
 use crate::models::{ConnectivityResult, SpeedResult};
 use anyhow::Result;
 use chrono::{Duration as ChronoDuration, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::Path;
 
 const CLEANUP_RETENTION_DAYS: i64 = 365;
@@ -14,10 +14,10 @@ pub(crate) struct CleanupStats {
 }
 
 pub(crate) fn create_database(path: &Path) -> Result<Connection> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).ok();
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).ok();
     }
 
     let conn = Connection::open(path)?;

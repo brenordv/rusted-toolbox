@@ -1,15 +1,15 @@
 use crate::models::SplitArgs;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
-use common_utils::constants::{SIZE_128KB, SIZE_64KB};
+use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
+use common_utils::constants::{SIZE_64KB, SIZE_128KB};
 use common_utils::datetime_utc_utils::DateTimeUtcUtils;
 use common_utils::string_utils::{format_bytes_to_string, format_duration_to_string};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{debug, warn};
 
 /// How a split run ended: the whole input was processed, or the user

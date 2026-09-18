@@ -1,5 +1,5 @@
 use crate::models::B64Config;
-use clap::{builder::NonEmptyStringValueParser, Parser};
+use clap::{Parser, builder::NonEmptyStringValueParser};
 use common_cli::common_tool_args::CommonToolArgs;
 
 /// Encode or decode data using Base64.

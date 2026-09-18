@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use shared_eventhub::eventhub_models::EventHubConfig;
 use std::path::{Path, PathBuf};
 

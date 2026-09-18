@@ -1,5 +1,5 @@
 use crate::app_logger::AppLogger;
-use crate::broken_pipe::{write_out, BrokenPipe};
+use crate::broken_pipe::{BrokenPipe, write_out};
 use crate::header_format::{format_config_section, render_standard_header};
 use crate::tool_log_level::ToolLogLevel;
 use clap::Args;

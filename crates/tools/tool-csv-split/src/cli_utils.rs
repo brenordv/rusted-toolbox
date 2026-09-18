@@ -1,7 +1,7 @@
 use crate::models::SplitArgs;
 use anyhow::{Context, Result};
 use clap::Parser;
-use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
+use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::format_config_item;
 use common_utils::file_system::get_current_dir;

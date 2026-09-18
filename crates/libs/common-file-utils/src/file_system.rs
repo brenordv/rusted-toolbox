@@ -7,7 +7,7 @@ use walkdir::WalkDir;
 /// skipped rather than surfaced, and a `path` that is a plain file yields just
 /// that file. Both follow from the underlying `walkdir` traversal with failed
 /// entries filtered out.
-pub fn list_all_files_recursively(path: &Path) -> impl Iterator<Item = PathBuf> {
+pub fn list_all_files_recursively(path: &Path) -> impl Iterator<Item = PathBuf> + use<> {
     WalkDir::new(path)
         .into_iter()
         .filter_map(|e| e.ok())

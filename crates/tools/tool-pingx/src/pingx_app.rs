@@ -7,8 +7,8 @@ use common_utils::string_utils::escape_for_terminal_display;
 use dns_lookup::lookup_addr;
 use serde::Serialize;
 use std::net::IpAddr;
-use surge_ping::{Client, ConfigBuilder, IcmpPacket, PingIdentifier, PingSequence, ICMP};
-use tokio::time::{sleep, Duration, Instant};
+use surge_ping::{Client, ConfigBuilder, ICMP, IcmpPacket, PingIdentifier, PingSequence};
+use tokio::time::{Duration, Instant, sleep};
 use tracing::debug;
 
 #[derive(Serialize)]
@@ -187,10 +187,10 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
         .map(|e| Instant::now() + Duration::from_secs_f64(e));
 
     loop {
-        if let Some(deadline) = args.overall_deadline_secs {
-            if deadline_start.elapsed() >= Duration::from_secs_f64(deadline) {
-                break;
-            }
+        if let Some(deadline) = args.overall_deadline_secs
+            && deadline_start.elapsed() >= Duration::from_secs_f64(deadline)
+        {
+            break;
         }
 
         if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -261,13 +261,12 @@ pub async fn run_ping(args: &PingxArgs) -> Result<()> {
             break;
         }
 
-        if let Some(every) = args.stats_every_secs {
-            if let Some(due) = next_stats_due {
-                if Instant::now() >= due {
-                    print_stats(args, sent, received);
-                    next_stats_due = Some(due + Duration::from_secs_f64(every));
-                }
-            }
+        if let Some(every) = args.stats_every_secs
+            && let Some(due) = next_stats_due
+            && Instant::now() >= due
+        {
+            print_stats(args, sent, received);
+            next_stats_due = Some(due + Duration::from_secs_f64(every));
         }
 
         // The interval spaces packets; after the final one there is nothing

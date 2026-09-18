@@ -2,7 +2,7 @@ use crate::export_progress_tracker::ExportProgressTracker;
 use crate::message_exporters::export_message_csv::export_message_csv;
 use crate::message_exporters::export_message_json::export_message_json;
 use crate::message_exporters::export_message_txt::export_message_txt;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
 use common_utils::file_system::resolve_path_with_base;
 use shared_eventhub::eventhub_models::{EventHubConfig, InboundMessage};
@@ -10,8 +10,8 @@ use shared_eventhub::utils::extract_eventhub_endpoint_from_connection_string::ex
 use shared_eventhub::utils::message_matches_filter::message_matches_filter;
 use sled::Db;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::fs;
 
 pub struct EventHubExporter {
@@ -55,7 +55,9 @@ impl EventHubExporter {
                 "Source database not found at: {:?}. Make sure eh-read has been run first with the same connection string and paths.\n\
                 Expected database file: {}.db\n\
                 In directory: {:?}",
-                source_db_path, endpoint, db_base_dir
+                source_db_path,
+                endpoint,
+                db_base_dir
             ));
         }
 
@@ -210,18 +212,18 @@ impl EventHubExporter {
     /// - Applies dump filters if configured
     async fn should_export_message(&self, message: &InboundMessage, key: &str) -> Result<bool> {
         // Check if already exported (unless ignoring checkpoint)
-        if !self.config.export_config.ignore_checkpoint {
-            if let Ok(Some(_)) = self.export_db.get(key.as_bytes()) {
-                // For condense_output=false, check if a file still exists
-                if !self.config.export_config.condense_output {
-                    let file_path = self.get_message_file_path(message);
-                    if !file_path.exists() {
-                        // File was deleted, re-export
-                        return Ok(true);
-                    }
+        if !self.config.export_config.ignore_checkpoint
+            && let Ok(Some(_)) = self.export_db.get(key.as_bytes())
+        {
+            // For condense_output=false, check if a file still exists
+            if !self.config.export_config.condense_output {
+                let file_path = self.get_message_file_path(message);
+                if !file_path.exists() {
+                    // File was deleted, re-export
+                    return Ok(true);
                 }
-                return Ok(false);
             }
+            return Ok(false);
         }
 
         // Check dump filter
@@ -346,7 +348,7 @@ impl EventHubExporter {
                 return Err(anyhow!(
                     "Unsupported export format: {}",
                     self.config.export_config.export_format
-                ))
+                ));
             }
         }
 

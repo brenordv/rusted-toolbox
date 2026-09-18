@@ -3,7 +3,7 @@ pub(crate) mod telegram_notifier;
 use crate::models::{NetQualityConfig, NotificationConfig, OutageInfo, SpeedResult};
 use anyhow::Result;
 use chrono::Duration as ChronoDuration;
-use tracing::{info_span, trace, warn, Instrument};
+use tracing::{Instrument, info_span, trace, warn};
 
 use self::telegram_notifier::TelegramNotifier;
 
@@ -77,10 +77,10 @@ impl Notifier {
     pub(crate) async fn send_message(&mut self, config: &NetQualityConfig, message: &str) {
         let span = info_span!("netquality.notification", "notification.message" = message,);
         async {
-            if let Some(telegram) = &self.telegram {
-                if let Err(error) = telegram.send(message).await {
-                    warn!("Failed to send Telegram notification: {error:#}");
-                }
+            if let Some(telegram) = &self.telegram
+                && let Err(error) = telegram.send(message).await
+            {
+                warn!("Failed to send Telegram notification: {error:#}");
             }
 
             trace!("Notification sent: {}", message);

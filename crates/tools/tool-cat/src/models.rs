@@ -99,7 +99,13 @@ mod tests {
     #[case::b_overrides_n(&["cat", "-b", "-n"], [false, false, false, true, true])]
     fn from_args_expands_flag_combinations(#[case] argv: &[&str], #[case] expected: [bool; 5]) {
         let config = parse(argv);
-        let [show_nonprinting, show_ends, show_tabs, number, number_nonblank] = expected;
+        let [
+            show_nonprinting,
+            show_ends,
+            show_tabs,
+            number,
+            number_nonblank,
+        ] = expected;
 
         assert_eq!(config.show_nonprinting, show_nonprinting);
         assert_eq!(config.show_ends, show_ends);

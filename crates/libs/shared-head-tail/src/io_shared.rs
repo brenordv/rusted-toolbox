@@ -7,7 +7,7 @@ use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::error;
 
-pub use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
+pub use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
 
 /// One input operand, resolved from the positional arguments.
 pub enum Input<'a> {

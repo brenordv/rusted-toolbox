@@ -16,5 +16,5 @@
 pub mod otel_app_logger;
 
 pub use otel_app_logger::{
-    is_otel_endpoint_configured, OtelAppLogger, OtelCommonToolArgs, OtelGuard,
+    OtelAppLogger, OtelCommonToolArgs, OtelGuard, is_otel_endpoint_configured,
 };

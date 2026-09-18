@@ -1,6 +1,6 @@
 use crate::models::{EngineResult, RunMode, RunOutcome, RunStats, RxgetConfig, Target};
 use anyhow::{Context, Result};
-use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
+use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
 use common_utils::constants::SIZE_128KB;
 use std::collections::HashSet;
 use std::fs::File;
