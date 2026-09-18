@@ -37,20 +37,20 @@ pub fn extract_eventhub_endpoint_from_connection_string(connection_string: &str)
     let mut endpoint = String::new();
 
     for part in connection_string.trim().split(';') {
-        if part.starts_with("Endpoint=") {
-            if let Some(endpoint_url) = part.strip_prefix("Endpoint=") {
-                // Parse URL to extract hostname
-                let url = Url::parse(endpoint_url).context(format!(
-                    "Invalid endpoint URL in connection string: {}",
-                    endpoint_url
-                ))?;
+        if part.starts_with("Endpoint=")
+            && let Some(endpoint_url) = part.strip_prefix("Endpoint=")
+        {
+            // Parse URL to extract hostname
+            let url = Url::parse(endpoint_url).context(format!(
+                "Invalid endpoint URL in connection string: {}",
+                endpoint_url
+            ))?;
 
-                endpoint = url
-                    .host_str()
-                    .context("No hostname found in endpoint URL")?
-                    .to_string();
-                break;
-            }
+            endpoint = url
+                .host_str()
+                .context("No hostname found in endpoint URL")?
+                .to_string();
+            break;
         }
     }
 

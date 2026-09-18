@@ -140,10 +140,10 @@ impl AppLogger {
 
         let mut layers: Vec<BoxedLayer> = vec![Self::terminal_layer(&plan.terminal)];
 
-        if plan.file {
-            if let Some(file_layer) = self.file_layer() {
-                layers.push(file_layer);
-            }
+        if plan.file
+            && let Some(file_layer) = self.file_layer()
+        {
+            layers.push(file_layer);
         }
 
         let subscriber = tracing_subscriber::registry()

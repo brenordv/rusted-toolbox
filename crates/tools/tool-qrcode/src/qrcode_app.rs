@@ -52,15 +52,15 @@ pub fn generate_qrcode(args: &QrCodeConfig) -> Result<()> {
         (None, None) => "png".to_string(),
     };
 
-    if let Some(output_file) = &args.output_file {
-        if let Some(ext) = mismatched_output_extension(output_file, &filename_ext) {
-            warn!(
-                extension = %ext,
-                format = %filename_ext,
-                output_file = %output_file,
-                "output file extension does not match the output format; the format extension will be appended"
-            );
-        }
+    if let Some(output_file) = &args.output_file
+        && let Some(ext) = mismatched_output_extension(output_file, &filename_ext)
+    {
+        warn!(
+            extension = %ext,
+            format = %filename_ext,
+            output_file = %output_file,
+            "output file extension does not match the output format; the format extension will be appended"
+        );
     }
 
     let mut filename = args.output_file.clone().unwrap_or_else(|| {

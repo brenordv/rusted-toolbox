@@ -877,11 +877,12 @@ impl EventHubReader {
         let message_data = String::from_utf8_lossy(received_event.body()?).to_string();
 
         // Apply dump filter if configured and not empty
-        if let Some(filters) = &self.config.inbound_config.dump_filter {
-            if !filters.is_empty() && !message_matches_filter(&message_data, filters) {
-                self.progress.increment_skipped();
-                return Ok(());
-            }
+        if let Some(filters) = &self.config.inbound_config.dump_filter
+            && !filters.is_empty()
+            && !message_matches_filter(&message_data, filters)
+        {
+            self.progress.increment_skipped();
+            return Ok(());
         }
 
         let message = InboundMessage {

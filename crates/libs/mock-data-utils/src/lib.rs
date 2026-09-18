@@ -90,17 +90,17 @@ fn validate(options: &MockOptions, data_type: &DataType) -> Result<()> {
             if min > max {
                 anyhow::bail!("min ({min}) must be <= max ({max})");
             }
-            if let Some(precision) = options.precision {
-                if precision > MAX_PRECISION {
-                    anyhow::bail!("precision ({precision}) must be <= {MAX_PRECISION}");
-                }
+            if let Some(precision) = options.precision
+                && precision > MAX_PRECISION
+            {
+                anyhow::bail!("precision ({precision}) must be <= {MAX_PRECISION}");
             }
         }
         DataType::Birthday => {
-            if let Some(age) = options.age {
-                if age > MAX_YEAR_OFFSET {
-                    anyhow::bail!("age ({age}) must be <= {MAX_YEAR_OFFSET}");
-                }
+            if let Some(age) = options.age
+                && age > MAX_YEAR_OFFSET
+            {
+                anyhow::bail!("age ({age}) must be <= {MAX_YEAR_OFFSET}");
             }
         }
         DataType::Date | DataType::DateTime | DataType::Timestamp => match options.range {

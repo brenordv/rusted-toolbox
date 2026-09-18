@@ -216,17 +216,16 @@ pub(crate) fn validate_args(args: &RemoveZwArgs) -> Result<()> {
         }
     }
 
-    if let Some(OutputTarget::File(_)) = args.output {
-        if args.inputs.len() > 1
+    if let Some(OutputTarget::File(_)) = args.output
+        && (args.inputs.len() > 1
             || args
                 .inputs
                 .iter()
-                .any(|i| matches!(i, InputSource::Directory(_)))
-        {
-            return Err(anyhow!(
-                "--output FILE requires a single file input (use '-' for stdout)"
-            ));
-        }
+                .any(|i| matches!(i, InputSource::Directory(_))))
+    {
+        return Err(anyhow!(
+            "--output FILE requires a single file input (use '-' for stdout)"
+        ));
     }
 
     Ok(())

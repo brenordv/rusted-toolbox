@@ -142,15 +142,15 @@ impl VariableAccumulator {
     }
 
     pub fn insert_with_origin(&mut self, key: String, value: String, origin_desc: String) {
-        if let Some(previous_origin) = self.origins.get(&key) {
-            if self.warn_on_collision {
-                warn!(
-                    key = %key,
-                    new_source = %origin_desc,
-                    previous_source = %previous_origin,
-                    "Environment variable collision; newer source overrides previous value"
-                );
-            }
+        if let Some(previous_origin) = self.origins.get(&key)
+            && self.warn_on_collision
+        {
+            warn!(
+                key = %key,
+                new_source = %origin_desc,
+                previous_source = %previous_origin,
+                "Environment variable collision; newer source overrides previous value"
+            );
         }
 
         self.values.insert(key.clone(), value);

@@ -77,10 +77,10 @@ impl Notifier {
     pub(crate) async fn send_message(&mut self, config: &NetQualityConfig, message: &str) {
         let span = info_span!("netquality.notification", "notification.message" = message,);
         async {
-            if let Some(telegram) = &self.telegram {
-                if let Err(error) = telegram.send(message).await {
-                    warn!("Failed to send Telegram notification: {error:#}");
-                }
+            if let Some(telegram) = &self.telegram
+                && let Err(error) = telegram.send(message).await
+            {
+                warn!("Failed to send Telegram notification: {error:#}");
             }
 
             trace!("Notification sent: {}", message);

@@ -261,13 +261,12 @@ async fn resolve_and_serve(
         if contains_hidden_segment(relative_path) {
             return Err(warp::reject::not_found());
         }
-        if let Ok(canonical_relative) = canonical_file_path.strip_prefix(&canonical_root_path) {
-            if canonical_relative
+        if let Ok(canonical_relative) = canonical_file_path.strip_prefix(&canonical_root_path)
+            && canonical_relative
                 .components()
                 .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
-            {
-                return Err(warp::reject::not_found());
-            }
+        {
+            return Err(warp::reject::not_found());
         }
     }
 
@@ -515,11 +514,11 @@ async fn serve_file(
         }
     };
 
-    if span.start != 0 {
-        if let Err(error) = file.seek(std::io::SeekFrom::Start(span.start)).await {
-            warn!(path = %file_path.display(), error = %error, "Failed to seek to the requested range");
-            return Err(warp::reject::not_found());
-        }
+    if span.start != 0
+        && let Err(error) = file.seek(std::io::SeekFrom::Start(span.start)).await
+    {
+        warn!(path = %file_path.display(), error = %error, "Failed to seek to the requested range");
+        return Err(warp::reject::not_found());
     }
 
     let mime_type = mime_guess::from_path(file_path)

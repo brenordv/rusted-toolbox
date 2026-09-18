@@ -58,11 +58,11 @@ fn main() {
         }
     }
 
-    if let Some(argument_to_clipboard) = args.claim_to_clipboard {
-        if let Err(e) = copy_claim_to_clipboard(argument_to_clipboard, &token_info.claims) {
-            error!("{:#}", e);
-            exit_error();
-        }
+    if let Some(argument_to_clipboard) = args.claim_to_clipboard
+        && let Err(e) = copy_claim_to_clipboard(argument_to_clipboard, &token_info.claims)
+    {
+        error!("{:#}", e);
+        exit_error();
     }
 
     exit_success();

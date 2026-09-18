@@ -173,13 +173,14 @@ fn parse_date_string(date_str: &str) -> Result<FileTime, String> {
         // The comma-fraction convention also applies to the offset forms
         // (`10:30:45,5+0900`). A Z-stripped body carries no offset, so the
         // `utc` flag stays with the naive path below.
-        if !utc && normalized != date_str {
-            if let Ok(dt) = DateTime::parse_from_str(&normalized, format) {
-                return Ok(filetime_from_timestamp(
-                    dt.timestamp(),
-                    dt.timestamp_subsec_nanos(),
-                ));
-            }
+        if !utc
+            && normalized != date_str
+            && let Ok(dt) = DateTime::parse_from_str(&normalized, format)
+        {
+            return Ok(filetime_from_timestamp(
+                dt.timestamp(),
+                dt.timestamp_subsec_nanos(),
+            ));
         }
     }
 

@@ -77,11 +77,11 @@ pub async fn run_app(config: &NetQualityConfig) -> Result<()> {
                 .context("Failed to store session")?;
         }
 
-        if let Some(next_cleanup_due) = next_cleanup_at {
-            if now >= next_cleanup_due {
-                run_database_cleanup(&mut connection);
-                next_cleanup_at = Some(Instant::now() + config.storage.cleanup_interval);
-            }
+        if let Some(next_cleanup_due) = next_cleanup_at
+            && now >= next_cleanup_due
+        {
+            run_database_cleanup(&mut connection);
+            next_cleanup_at = Some(Instant::now() + config.storage.cleanup_interval);
         }
 
         tokio::time::sleep(Duration::from_secs(1)).await;

@@ -224,10 +224,10 @@ fn log_execution_details(
                 call.response.status, call.response.version
             );
 
-            if !entry_behavior.quiet {
-                if let Some(formatted_body) = format_response_body(call) {
-                    info!("Response Body:\n{}", formatted_body);
-                }
+            if !entry_behavior.quiet
+                && let Some(formatted_body) = format_response_body(call)
+            {
+                info!("Response Body:\n{}", formatted_body);
             }
         }
 
@@ -308,12 +308,11 @@ fn format_response_body(call: &hurl::http::Call) -> Option<String> {
         .map(|header| header.value.to_ascii_lowercase().contains("json"))
         .unwrap_or(false);
 
-    if is_json {
-        if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&call.response.body) {
-            if let Ok(pretty) = serde_json::to_string_pretty(&json) {
-                return Some(pretty);
-            }
-        }
+    if is_json
+        && let Ok(json) = serde_json::from_slice::<serde_json::Value>(&call.response.body)
+        && let Ok(pretty) = serde_json::to_string_pretty(&json)
+    {
+        return Some(pretty);
     }
 
     match String::from_utf8(call.response.body.clone()) {

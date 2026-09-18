@@ -128,10 +128,10 @@ fn locale_is_inert(locale: Locale, data_type: &DataType) -> bool {
 ///
 /// Only errors when both bounds are present; equal bounds are accepted.
 pub(crate) fn validate_range(min: Option<i32>, max: Option<i32>) -> anyhow::Result<()> {
-    if let (Some(min), Some(max)) = (min, max) {
-        if min > max {
-            anyhow::bail!("Minimum value cannot be greater than maximum value");
-        }
+    if let (Some(min), Some(max)) = (min, max)
+        && min > max
+    {
+        anyhow::bail!("Minimum value cannot be greater than maximum value");
     }
 
     Ok(())

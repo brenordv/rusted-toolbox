@@ -212,18 +212,18 @@ impl EventHubExporter {
     /// - Applies dump filters if configured
     async fn should_export_message(&self, message: &InboundMessage, key: &str) -> Result<bool> {
         // Check if already exported (unless ignoring checkpoint)
-        if !self.config.export_config.ignore_checkpoint {
-            if let Ok(Some(_)) = self.export_db.get(key.as_bytes()) {
-                // For condense_output=false, check if a file still exists
-                if !self.config.export_config.condense_output {
-                    let file_path = self.get_message_file_path(message);
-                    if !file_path.exists() {
-                        // File was deleted, re-export
-                        return Ok(true);
-                    }
+        if !self.config.export_config.ignore_checkpoint
+            && let Ok(Some(_)) = self.export_db.get(key.as_bytes())
+        {
+            // For condense_output=false, check if a file still exists
+            if !self.config.export_config.condense_output {
+                let file_path = self.get_message_file_path(message);
+                if !file_path.exists() {
+                    // File was deleted, re-export
+                    return Ok(true);
                 }
-                return Ok(false);
             }
+            return Ok(false);
         }
 
         // Check dump filter

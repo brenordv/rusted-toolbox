@@ -78,10 +78,10 @@ pub fn list_apis(requests_root: &Utf8Path) -> Result<Vec<String>, DiscoverError>
             source,
         })?;
 
-        if metadata.is_dir() {
-            if let Some(name) = utf8_path.file_name() {
-                apis.push(name.to_string());
-            }
+        if metadata.is_dir()
+            && let Some(name) = utf8_path.file_name()
+        {
+            apis.push(name.to_string());
         }
     }
 
@@ -112,10 +112,11 @@ pub fn list_requests(requests_root: &Utf8Path, api: &str) -> Result<Vec<String>,
         })?;
         let path = Utf8PathBuf::from_path_buf(entry.path()).map_err(DiscoverError::NonUtf8Path)?;
 
-        if path.is_file() && path.extension() == Some("hurl") {
-            if let Some(name) = path.file_stem() {
-                requests.push(name.to_string());
-            }
+        if path.is_file()
+            && path.extension() == Some("hurl")
+            && let Some(name) = path.file_stem()
+        {
+            requests.push(name.to_string());
         }
     }
 

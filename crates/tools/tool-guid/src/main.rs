@@ -41,11 +41,11 @@ fn main() {
             }
         }
 
-        if args.add_to_clipboard {
-            if let Err(e) = copy_guid_to_clipboard(&guid) {
-                error!("{:#}", e);
-                exit_error();
-            }
+        if args.add_to_clipboard
+            && let Err(e) = copy_guid_to_clipboard(&guid)
+        {
+            error!("{:#}", e);
+            exit_error();
         }
     }
 
