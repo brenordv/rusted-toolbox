@@ -1,3 +1,3 @@
 mod embedded;
 
-pub use embedded::{run_hurl, EngineError};
+pub use embedded::{EngineError, run_hurl};

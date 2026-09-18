@@ -1,5 +1,8 @@
 # Workspace Changelog
 
+## v4
+- Updated Rust from edition 2021 to 2024.
+
 ## v3
 - Went through every active crate (the 21 tools plus the 9 non-eventhub libs) fixing bugs, adding
   tests, and bringing each readme and changelog in line with what the code actually does. Every

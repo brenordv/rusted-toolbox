@@ -1,5 +1,5 @@
 use crate::models::{TouchArgs, TouchTimeWord};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;

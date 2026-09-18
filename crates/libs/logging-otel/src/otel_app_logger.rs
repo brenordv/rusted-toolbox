@@ -130,7 +130,7 @@ impl OtelAppLogger for AppLogger {
                         return Some(OtelGuard {
                             _inner: guard,
                             _private: (),
-                        })
+                        });
                     }
                     Err(_) => {
                         // The raw error is deliberately not printed: raccoon-otel's
@@ -239,7 +239,8 @@ mod tests {
         const VAR: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
         let original = std::env::var(VAR).ok();
 
-        std::env::remove_var(VAR);
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var(VAR) };
         assert_eq!(
             resolve_endpoint(Some("http://collector:4318")),
             Some("http://collector:4318".to_string())
@@ -255,7 +256,8 @@ mod tests {
         assert!(!is_otel_endpoint_configured(Some("   ")));
         assert!(!is_otel_endpoint_configured(None));
 
-        std::env::set_var(VAR, "http://from-env:4318");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var(VAR, "http://from-env:4318") };
         assert_eq!(
             resolve_endpoint(None),
             Some("http://from-env:4318".to_string())
@@ -266,13 +268,16 @@ mod tests {
         );
         assert!(is_otel_endpoint_configured(None));
 
-        std::env::set_var(VAR, "   ");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var(VAR, "   ") };
         assert_eq!(resolve_endpoint(None), None);
         assert!(!is_otel_endpoint_configured(None));
 
         match original {
-            Some(value) => std::env::set_var(VAR, value),
-            None => std::env::remove_var(VAR),
+            // FIXME: Audit that the environment access only happens in single-threaded code.
+            Some(value) => unsafe { std::env::set_var(VAR, value) },
+            // FIXME: Audit that the environment access only happens in single-threaded code.
+            None => unsafe { std::env::remove_var(VAR) },
         }
     }
 

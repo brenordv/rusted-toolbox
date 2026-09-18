@@ -8,7 +8,7 @@ use crate::files::resolve::{FileResolver, ResolvedInclude};
 
 use super::graph::IncludeTracker;
 use super::parse::{
-    parse_top_comment_directives, FeedAssignment, FileDirectives, IncludeDirective, VarsDirective,
+    FeedAssignment, FileDirectives, IncludeDirective, VarsDirective, parse_top_comment_directives,
 };
 
 #[derive(Debug, Clone, Copy, Default)]

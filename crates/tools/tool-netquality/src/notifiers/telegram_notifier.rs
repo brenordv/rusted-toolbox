@@ -1,5 +1,5 @@
 use crate::models::{BotToken, TelegramConfig};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use reqwest::Client;
 
 pub(crate) struct TelegramNotifier {

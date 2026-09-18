@@ -7,8 +7,8 @@ use common_utils::string_utils::escape_for_terminal_display;
 use dns_lookup::lookup_addr;
 use serde::Serialize;
 use std::net::IpAddr;
-use surge_ping::{Client, ConfigBuilder, IcmpPacket, PingIdentifier, PingSequence, ICMP};
-use tokio::time::{sleep, Duration, Instant};
+use surge_ping::{Client, ConfigBuilder, ICMP, IcmpPacket, PingIdentifier, PingSequence};
+use tokio::time::{Duration, Instant, sleep};
 use tracing::debug;
 
 #[derive(Serialize)]

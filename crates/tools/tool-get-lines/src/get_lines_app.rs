@@ -1,15 +1,15 @@
 use crate::models::GetLinesConfig;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
-use anyhow::{bail, Context, Result};
-use common_cli::broken_pipe::{flush_out, write_out, BrokenPipe};
+use anyhow::{Context, Result, bail};
+use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
 use common_utils::constants::SIZE_128KB;
 use common_utils::string_utils::sanitize_string_for_filename;
 use std::collections::HashSet;
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{debug, warn};
 
 /// A single line longer than this (with no newline) aborts the run: the input is not line-oriented.

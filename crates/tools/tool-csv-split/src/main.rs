@@ -3,7 +3,7 @@ mod models;
 mod split_app;
 
 use crate::cli_utils::initialize;
-use crate::split_app::{process_input_file, RunOutcome};
+use crate::split_app::{RunOutcome, process_input_file};
 use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_cli::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
 use common_utils::constants::EXIT_CODE_INTERRUPTED_BY_USER;

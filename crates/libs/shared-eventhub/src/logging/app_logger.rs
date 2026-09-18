@@ -1,8 +1,8 @@
 #![allow(dead_code)] // This module is used by other modules, so the code is not really dead.
 
+use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::Layer;
 
 /// Represents the severity levels of a log message in an application.
 ///

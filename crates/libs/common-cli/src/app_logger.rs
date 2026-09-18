@@ -76,7 +76,8 @@ impl AppLogger {
     /// environment (e.g. the OTel one) honors the configured level.
     pub fn seed_rust_log(&self) {
         if std::env::var("RUST_LOG").is_err() {
-            std::env::set_var("RUST_LOG", self.tracing_level());
+            // FIXME: Audit that the environment access only happens in single-threaded code.
+            unsafe { std::env::set_var("RUST_LOG", self.tracing_level()) };
         }
     }
 
@@ -500,17 +501,21 @@ mod tests {
         // test that touches it, and it restores the original value at the end.
         let original = std::env::var("RUST_LOG").ok();
 
-        std::env::remove_var("RUST_LOG");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("RUST_LOG") };
         AppLogger::new("t", ToolLogLevel::Info, false, false, false).seed_rust_log();
         assert_eq!(std::env::var("RUST_LOG").unwrap(), "info");
 
-        std::env::set_var("RUST_LOG", "debug");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var("RUST_LOG", "debug") };
         AppLogger::new("t", ToolLogLevel::Info, false, false, false).seed_rust_log();
         assert_eq!(std::env::var("RUST_LOG").unwrap(), "debug");
 
         match original {
-            Some(value) => std::env::set_var("RUST_LOG", value),
-            None => std::env::remove_var("RUST_LOG"),
+            // FIXME: Audit that the environment access only happens in single-threaded code.
+            Some(value) => unsafe { std::env::set_var("RUST_LOG", value) },
+            // FIXME: Audit that the environment access only happens in single-threaded code.
+            None => unsafe { std::env::remove_var("RUST_LOG") },
         }
     }
 }

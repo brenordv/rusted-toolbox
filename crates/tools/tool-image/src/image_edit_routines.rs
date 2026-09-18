@@ -4,9 +4,9 @@ use crate::image_encoders::{
 use crate::image_format_traits::ImageFormatTraits;
 use crate::models::{DecodedImage, EditJob, ImageMeta, ResizeSpec};
 use anyhow::{Context, Result};
+use image::ImageReader;
 use image::imageops::FilterType;
 use image::metadata::Orientation;
-use image::ImageReader;
 use image::{DynamicImage, ImageDecoder, ImageFormat};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::path::{Path, PathBuf};

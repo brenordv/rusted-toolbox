@@ -93,7 +93,7 @@ fn normalize_token(fragments: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_token, CliArgs};
+    use super::{CliArgs, normalize_token};
     use crate::models::JwtPrint;
     use clap::{CommandFactory, Parser};
 

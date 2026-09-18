@@ -1,5 +1,5 @@
 use crate::models::{FilesLookupConfig, PatternMode};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use common_cli::broken_pipe::write_out;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};

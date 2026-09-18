@@ -1,5 +1,5 @@
 use crate::models::{Claims, ExpirationStatus, TokenInfo};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use common_cli::broken_pipe::write_out;
 use common_utils_ext::copy_string_to_clipboard::copy_to_clipboard;

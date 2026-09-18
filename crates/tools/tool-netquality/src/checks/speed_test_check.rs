@@ -1,5 +1,5 @@
 use crate::models::{NetQualityConfig, SpeedResult, ThresholdCategory, Thresholds};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use cfspeedtest::measurements::Measurement;
 use cfspeedtest::speedtest::TestType;
 use cfspeedtest::{OutputFormat, SpeedTestCLIOptions};

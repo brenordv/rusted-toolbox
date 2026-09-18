@@ -1,6 +1,6 @@
 use crate::cli_utils::initialize;
 use crate::guid_app::{copy_guid_to_clipboard, create_guid, generate_multiple_guid};
-use common_cli::broken_pipe::{write_out, BrokenPipe};
+use common_cli::broken_pipe::{BrokenPipe, write_out};
 use common_cli::tool_exit_helpers::{exit_error, exit_success};
 use tracing::{debug, error};
 

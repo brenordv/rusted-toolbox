@@ -3,7 +3,7 @@ pub(crate) mod telegram_notifier;
 use crate::models::{NetQualityConfig, NotificationConfig, OutageInfo, SpeedResult};
 use anyhow::Result;
 use chrono::Duration as ChronoDuration;
-use tracing::{info_span, trace, warn, Instrument};
+use tracing::{Instrument, info_span, trace, warn};
 
 use self::telegram_notifier::TelegramNotifier;
 

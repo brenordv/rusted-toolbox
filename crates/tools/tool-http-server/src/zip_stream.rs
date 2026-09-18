@@ -1,17 +1,17 @@
-use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
-use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
+use tokio::sync::mpsc;
 use tracing::{debug, warn};
 use walkdir::WalkDir;
-use warp::http::header::{HeaderValue, CONTENT_DISPOSITION, CONTENT_TYPE, RETRY_AFTER};
-use warp::http::StatusCode;
 use warp::Reply;
+use warp::http::StatusCode;
+use warp::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE, HeaderValue, RETRY_AFTER};
+use zip::ZipWriter;
 use zip::result::ZipError;
 use zip::write::{SimpleFileOptions, StreamWriter};
-use zip::ZipWriter;
 
 /// Upper bound on concurrently running archive builders; each one occupies a
 /// blocking-pool thread for the archive's whole duration.
@@ -299,11 +299,7 @@ fn archive_entry_name(base: &Path, path: &Path) -> Option<String> {
         .map(|component| component.as_os_str().to_string_lossy())
         .collect::<Vec<_>>()
         .join("/");
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 /// Builds the `Content-Disposition` header for the archive download. The

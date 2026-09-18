@@ -1,9 +1,9 @@
 use crate::conditional::{if_range_allows, not_modified, strong_etag};
 use crate::models::{DirEntry, FileEntry, ServerConfig};
-use crate::range::{parse_byte_range, RangeOutcome};
+use crate::range::{RangeOutcome, parse_byte_range};
 use crate::zip_stream::{serve_directory_zip, serve_selection_zip};
-use common_cli::broken_pipe::{write_out, BrokenPipe};
-use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
+use common_cli::broken_pipe::{BrokenPipe, write_out};
+use percent_encoding::{AsciiSet, CONTROLS, percent_decode_str, utf8_percent_encode};
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::{Component, Path, PathBuf};
@@ -11,11 +11,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info, warn};
+use warp::http::StatusCode;
 use warp::http::header::{
-    HeaderValue, ACCEPT_RANGES, ALLOW, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG,
+    ACCEPT_RANGES, ALLOW, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG, HeaderValue,
     LAST_MODIFIED,
 };
-use warp::http::StatusCode;
 use warp::{Filter, Reply};
 
 /// Read-buffer size for streamed file responses.
@@ -91,10 +91,10 @@ fn build_routes(
     root_path: PathBuf,
     serve_hidden: bool,
 ) -> impl Filter<Extract = (warp::reply::Response,), Error = warp::Rejection>
-       + Clone
-       + Send
-       + Sync
-       + 'static {
++ Clone
++ Send
++ Sync
++ 'static {
     warp::path::full()
         .and(warp::method())
         .and(warp::header::optional::<String>("range"))
@@ -1696,10 +1696,11 @@ mod tests {
     fn routes_for(
         dir: &Path,
     ) -> impl Filter<Extract = (warp::reply::Response,), Error = warp::Rejection>
-           + Clone
-           + Send
-           + Sync
-           + 'static {
+    + Clone
+    + Send
+    + Sync
+    + 'static
+    + use<> {
         build_routes(dir.to_path_buf(), false)
     }
 

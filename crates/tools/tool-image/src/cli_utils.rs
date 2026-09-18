@@ -1,6 +1,6 @@
 use crate::models::{ImageConfig, ResizeFilter, ResizeSpec};
-use crate::string_traits::{StringExt, SUPPORTED_FORMAT_NAMES};
-use anyhow::{anyhow, Context, Result};
+use crate::string_traits::{SUPPORTED_FORMAT_NAMES, StringExt};
+use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::format_config_item;
@@ -436,9 +436,11 @@ mod tests {
         let result = expand_input_paths(&vec![pattern]).unwrap();
 
         assert_eq!(result.len(), 2);
-        assert!(result
-            .iter()
-            .all(|p| p.extension().and_then(|e| e.to_str()) == Some("png")));
+        assert!(
+            result
+                .iter()
+                .all(|p| p.extension().and_then(|e| e.to_str()) == Some("png"))
+        );
     }
 
     #[test]

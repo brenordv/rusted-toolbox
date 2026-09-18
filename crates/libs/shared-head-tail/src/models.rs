@@ -115,11 +115,7 @@ pub fn resolve_count(
 
 /// The item delimiter for the `-z` flag: NUL when set, newline otherwise.
 pub fn delimiter_for(zero_terminated: bool) -> u8 {
-    if zero_terminated {
-        0
-    } else {
-        b'\n'
-    }
+    if zero_terminated { 0 } else { b'\n' }
 }
 
 #[cfg(test)]

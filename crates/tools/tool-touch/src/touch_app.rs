@@ -1,7 +1,7 @@
 use crate::models::{TouchArgs, TouchTimeWord};
 use anyhow::{Context, Result};
 use common_utils::file_system::get_full_filepath_from_string;
-use filetime::{set_file_times, set_symlink_file_times, FileTime};
+use filetime::{FileTime, set_file_times, set_symlink_file_times};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 

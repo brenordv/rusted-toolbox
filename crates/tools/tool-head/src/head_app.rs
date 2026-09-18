@@ -2,8 +2,8 @@ use crate::models::HeadConfig;
 use anyhow::{Context, Result};
 use common_utils::constants::SIZE_128KB;
 use shared_head_tail::io_shared::{
-    backward_scan_start, check_shutdown, copy_limited, finish_run, process_input_source,
-    read_chunk, run_inputs, split_items, write_out, HeaderState, Input,
+    HeaderState, Input, backward_scan_start, check_shutdown, copy_limited, finish_run,
+    process_input_source, read_chunk, run_inputs, split_items, write_out,
 };
 use shared_head_tail::models::{CountUnit, RunResult};
 use std::collections::VecDeque;

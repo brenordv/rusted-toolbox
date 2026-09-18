@@ -46,7 +46,9 @@ pub fn initialize() -> GitIgnoreConfig {
 
     if !target_folder.is_dir() {
         // Logging is not installed yet at this point, so report on stderr directly.
-        eprintln!("Error: Target folder does not exist, we don't have permission to read it or it is not a directory.");
+        eprintln!(
+            "Error: Target folder does not exist, we don't have permission to read it or it is not a directory."
+        );
         exit_error();
     }
 

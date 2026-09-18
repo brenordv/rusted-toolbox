@@ -1,6 +1,6 @@
 use crate::lookup_shared::{list_files, normalize_extensions, path_matches_allowed};
 use crate::models::TextLookupConfig;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use common_cli::broken_pipe::write_out;
 use common_file_utils::binary_sniff::is_probably_binary;
 use std::fs::File;

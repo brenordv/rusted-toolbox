@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 authors = ["Breno RdV"]
 repository = "https://github.com/brenordv/rusted-toolbox"
 license = "GPL-3.0-only"

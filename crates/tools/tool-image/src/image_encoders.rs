@@ -1,5 +1,5 @@
 use crate::models::ImageMeta;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use image::{ColorType, DynamicImage, ImageEncoder};
 use std::fs::File;
 use std::io::Write;

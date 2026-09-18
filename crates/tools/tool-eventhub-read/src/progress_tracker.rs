@@ -1,10 +1,10 @@
 use chrono::{DateTime, Local, Utc};
+use crossterm::ExecutableCommand;
 use crossterm::cursor::MoveToColumn;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::{Clear, ClearType};
-use crossterm::ExecutableCommand;
 use shared_eventhub::eventhub_models::InboundMessage;
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -211,7 +211,15 @@ impl ProgressTracker {
 
         format!(
             "Read: {} | Skipped: {} | Duplicated: {} | Rate: {:.2} msg/s | Runtime: {:02}:{:02}:{:02}.{:04} | Last: {}",
-            messages_read, messages_skipped, messages_duplicated, messages_per_second, hours, minutes, seconds, millis, last_msg_time
+            messages_read,
+            messages_skipped,
+            messages_duplicated,
+            messages_per_second,
+            hours,
+            minutes,
+            seconds,
+            millis,
+            last_msg_time
         )
     }
 

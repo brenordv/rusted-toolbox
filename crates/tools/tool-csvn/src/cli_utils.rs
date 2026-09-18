@@ -1,5 +1,5 @@
 use crate::models::CsvNConfig;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::format_config_item;

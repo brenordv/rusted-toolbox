@@ -1,8 +1,8 @@
+use crossterm::ExecutableCommand;
 use crossterm::cursor::MoveToColumn;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::{Clear, ClearType};
-use crossterm::ExecutableCommand;
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 

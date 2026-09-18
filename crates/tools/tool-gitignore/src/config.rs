@@ -278,12 +278,16 @@ impl Config {
                 pending_urls.insert(MATLAB_TEMPLATE_URL.to_string());
             }
             (true, true) => {
-                info!(".m has both .mm and .mat companions; queuing the Objective-C and Matlab templates");
+                info!(
+                    ".m has both .mm and .mat companions; queuing the Objective-C and Matlab templates"
+                );
                 pending_urls.insert(OBJECTIVE_C_TEMPLATE_URL.to_string());
                 pending_urls.insert(MATLAB_TEMPLATE_URL.to_string());
             }
             (false, false) => {
-                info!(".m is ambiguous (no .mm or .mat companion); queuing the Objective-C and Matlab templates");
+                info!(
+                    ".m is ambiguous (no .mm or .mat companion); queuing the Objective-C and Matlab templates"
+                );
                 pending_urls.insert(OBJECTIVE_C_TEMPLATE_URL.to_string());
                 pending_urls.insert(MATLAB_TEMPLATE_URL.to_string());
             }

@@ -5,7 +5,7 @@ use crate::files::discover::{
     load_dynamic_vars_file, load_env_file, resolve_file_root, resolve_vars_file_path,
 };
 use crate::files::{
-    list_apis, list_requests, locate_requests_root, FileResolver, ResolvedRunContext,
+    FileResolver, ResolvedRunContext, list_apis, list_requests, locate_requests_root,
 };
 use crate::includer;
 use crate::includer::Includer;
@@ -16,9 +16,9 @@ use crate::models::{
 };
 use crate::output::{print_test_summary, render_json_report, write_json_report};
 use crate::vars::{
-    gather_process_env_variables, parse_variables_file, DynamicEvalContext, VariableMap,
+    DynamicEvalContext, VariableMap, gather_process_env_variables, parse_variables_file,
 };
-use crate::whurl_utils::{display_relative_path, format_elapsed_line, ElapsedTracker};
+use crate::whurl_utils::{ElapsedTracker, display_relative_path, format_elapsed_line};
 use anyhow::anyhow;
 use camino::Utf8Path;
 use tracing::{info, warn};
@@ -916,9 +916,10 @@ mod tests {
         .expect_err("missing vars should fail");
 
         assert!(matches!(err, ToolError::Other(_)));
-        assert!(err
-            .to_string()
-            .contains("vars directive `missing` not found for api `api`"));
+        assert!(
+            err.to_string()
+                .contains("vars directive `missing` not found for api `api`")
+        );
     }
 
     #[test]

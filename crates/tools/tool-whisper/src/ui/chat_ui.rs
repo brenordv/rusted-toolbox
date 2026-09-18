@@ -1,15 +1,15 @@
 use crate::models::shared_types::UiMessage;
 use anyhow::Result;
-use ratatui::crossterm::event::{poll, KeyEventKind};
+use ratatui::crossterm::event::{KeyEventKind, poll};
 use ratatui::layout::Position;
 use ratatui::widgets::{List, ListItem};
 use ratatui::{
+    DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode},
     layout::{Constraint, Layout},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Paragraph},
-    DefaultTerminal, Frame,
 };
 use std::cmp::PartialEq;
 use std::sync::mpsc::{Receiver, Sender};

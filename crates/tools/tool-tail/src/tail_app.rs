@@ -2,9 +2,9 @@ use crate::models::{FollowMode, TailConfig};
 use anyhow::{Context, Result};
 use common_utils::constants::SIZE_128KB;
 use shared_head_tail::io_shared::{
-    backward_scan_start, check_shutdown, copy_limited, copy_to_end, finish_run, flush_out,
-    probe_seekable, process_input_source, read_chunk, resolve_inputs, run_inputs, split_items,
-    write_out, BrokenPipe, HeaderState, Input, Interrupted,
+    BrokenPipe, HeaderState, Input, Interrupted, backward_scan_start, check_shutdown, copy_limited,
+    copy_to_end, finish_run, flush_out, probe_seekable, process_input_source, read_chunk,
+    resolve_inputs, run_inputs, split_items, write_out,
 };
 use shared_head_tail::models::{CountUnit, RunResult};
 use std::collections::VecDeque;

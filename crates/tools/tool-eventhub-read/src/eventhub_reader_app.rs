@@ -1,7 +1,7 @@
 use crate::progress_tracker::{OperationGuard, ProgressTracker};
-use anyhow::{anyhow, Context, Result};
-use azeventhubs::consumer::{EventPosition, ReadEventOptions};
+use anyhow::{Context, Result, anyhow};
 use azeventhubs::ReceivedEventData;
+use azeventhubs::consumer::{EventPosition, ReadEventOptions};
 use chrono::{DateTime, Local, Utc};
 use common_utils::file_system::resolve_path_with_base;
 use futures_util::StreamExt;
@@ -11,8 +11,8 @@ use shared_eventhub::eventhub_models::{
 use shared_eventhub::utils::get_eventhub_database_path::get_eventhub_database_path;
 use shared_eventhub::utils::message_matches_filter::message_matches_filter;
 use sled::Db;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{error, info, warn};

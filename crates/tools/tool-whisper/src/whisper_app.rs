@@ -10,7 +10,7 @@ use common_cli::tool_exit_helpers::exit_success;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;
-use std::thread::{sleep, JoinHandle};
+use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, SystemTime};
 use tracing::{debug, error, info, warn};
 

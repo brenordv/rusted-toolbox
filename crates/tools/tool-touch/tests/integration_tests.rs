@@ -1,4 +1,4 @@
-use filetime::{set_file_times, FileTime};
+use filetime::{FileTime, set_file_times};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;

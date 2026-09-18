@@ -1,7 +1,7 @@
 use crate::eventhub_reader_app::EventHubReader;
 use anyhow::Result;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tracing::{error, info};
 
 /// Executes graceful shutdown with 15-second timeout.

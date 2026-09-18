@@ -3,7 +3,7 @@ use std::{env, fs, io, path::PathBuf};
 use crate::files::{FileResolver, ResolveError, ResolvedRunContext};
 use crate::models::ToolResult;
 use crate::vars::{
-    parse_dynamic_variables_file, parse_variables_file, DynamicEvalContext, VariableMap,
+    DynamicEvalContext, VariableMap, parse_dynamic_variables_file, parse_variables_file,
 };
 use camino::{Utf8Path, Utf8PathBuf};
 use thiserror::Error;

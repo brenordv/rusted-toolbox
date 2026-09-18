@@ -1,7 +1,7 @@
 use crate::models::{ConnectivityResult, SpeedResult};
 use anyhow::Result;
 use chrono::{Duration as ChronoDuration, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::Path;
 
 const CLEANUP_RETENTION_DAYS: i64 = 365;

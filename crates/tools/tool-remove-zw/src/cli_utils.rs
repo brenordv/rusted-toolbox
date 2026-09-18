@@ -1,6 +1,6 @@
 use crate::models::{InputSource, OutputTarget, RemoveZwArgs};
-use anyhow::{anyhow, Result};
-use clap::{builder::NonEmptyStringValueParser, Parser};
+use anyhow::{Result, anyhow};
+use clap::{Parser, builder::NonEmptyStringValueParser};
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::{format_config_item, format_config_label};
 use common_utils::constants::CONFIG_UL_ITEM_LEVEL_3;

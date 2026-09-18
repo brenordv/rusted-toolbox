@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::ArgMatches;
 use shared_eventhub::eventhub_models::EventHubConfig;
 use std::path::{Path, PathBuf};
@@ -91,7 +91,9 @@ pub fn apply_cli_overrides(
 /// Returns error with a descriptive message if required parameters are missing.
 pub fn validate_config(config: &EventHubConfig) -> Result<()> {
     if config.connection_string.is_empty() {
-        return Err(anyhow!("EventHub connection string is required. Use --connection-string or provide it in config file."));
+        return Err(anyhow!(
+            "EventHub connection string is required. Use --connection-string or provide it in config file."
+        ));
     }
 
     if config.entity_path.is_empty() {

@@ -85,7 +85,7 @@ pub fn initialize_log_with_otel(
                     return Some(OtelGuard {
                         _inner: guard,
                         _private: (),
-                    })
+                    });
                 }
                 Err(e) => {
                     eprintln!("Warning: failed to initialize OpenTelemetry: {e}");
