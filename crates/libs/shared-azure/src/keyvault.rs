@@ -22,11 +22,18 @@ pub async fn fetch_secret(
 
     let vault_uri = url::Url::parse(vault_url).context("Failed to parse Azure Key Vault URL")?;
 
-    let normalized_vault_url = vault_uri.host_str().unwrap().to_ascii_lowercase();
+    let normalized_vault_url = vault_uri
+        .host_str()
+        .context("Failed to extract the host from the Azure Key Vault URL")?
+        .to_ascii_lowercase();
+
+    if vault_uri.scheme() != "https" {
+        return Err(anyhow::anyhow!("Vault URL must use the 'https' scheme"));
+    }
 
     if !AZURE_KEY_VAULT_ALLOWED_URL_SUFFIXES
         .iter()
-        .any(|suffix| normalized_vault_url.ends_with(suffix))
+        .any(|suffix| normalized_vault_url.ends_with(&format!(".{}", suffix)))
     {
         return Err(anyhow::anyhow!(
             "Vault URL must have one of the following suffixes: {:?}",

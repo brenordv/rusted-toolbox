@@ -231,11 +231,11 @@ pub struct NotificationConfig {
 pub struct BotToken(SecretString);
 
 impl BotToken {
-    /// The raw token, for building the Telegram API request URL. The URL must
+    /// The raw token for building the Telegram API request URL. The URL must
     /// never reach a log or error chain; the notifier strips it with
     /// `without_url()`.
     pub fn expose(&self) -> &str {
-        &self.0.expose()
+        self.0.expose()
     }
 }
 
