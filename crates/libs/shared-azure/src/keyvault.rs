@@ -54,8 +54,9 @@ pub async fn fetch_secret(
         .await
         .with_context(|| {
             format!(
-                "Failed to fetch secret '{}' from Azure Key Vault",
-                secret_name
+                "Failed to fetch secret '{}' from Azure Key Vault (host: '{}')",
+                secret_name,
+                normalized_vault_host
             )
         })?
         .into_model()
