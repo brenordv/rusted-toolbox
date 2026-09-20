@@ -7,14 +7,13 @@ use common_utils::string_utils::SecretString;
 use std::sync::Arc;
 
 /// DNS suffixes a vault host must sit under, per Azure cloud: public, China
-/// (21Vianet), US Government, plus the retired Azure Germany cloud. The live
+/// (21Vianet), and US Government. The live
 /// list is the "DNS suffixes for object identifiers" table in
 /// <https://learn.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates>.
-const AZURE_KEY_VAULT_ALLOWED_URL_SUFFIXES: [&str; 4] = [
+const AZURE_KEY_VAULT_ALLOWED_URL_SUFFIXES: [&str; 3] = [
     "vault.azure.net",
     "vault.azure.cn",
     "vault.usgovcloudapi.net",
-    "vault.microsoftazure.de",
 ];
 
 /// Fetches the latest version of `secret_name` from the Key Vault at
