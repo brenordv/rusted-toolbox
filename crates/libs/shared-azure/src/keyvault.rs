@@ -52,14 +52,16 @@ pub async fn fetch_secret(
     let secret: SecretString = client
         .get_secret(secret_name, None)
         .await
-        .context("Failed to fetch secret from Azure Key Vault")?
+        .with_context(|| {
+            format!(
+                "Failed to fetch secret '{}' from Azure Key Vault",
+                secret_name
+            )
+        })?
         .into_model()
         .context("Failed to convert secret response into model (azure_core::credentials::Secret)")?
         .value
-        .context(format!(
-            "Secret '{}' exists, but has no value",
-            secret_name
-        ))?
+        .context(format!("Secret '{}' exists, but has no value", secret_name))?
         .into();
 
     Ok(secret)
