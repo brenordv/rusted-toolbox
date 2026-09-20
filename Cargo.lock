@@ -8094,7 +8094,7 @@ dependencies = [
  "azure_identity",
  "azure_security_keyvault_secrets",
  "common-utils",
- "tokio",
+ "url",
 ]
 
 [[package]]

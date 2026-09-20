@@ -1,6 +1,7 @@
 use common_utils::string_utils::SecretString;
 use std::sync::Arc;
 
+#[derive(Debug, Clone)]
 pub enum CredentialKind {
     DeveloperTools,  // azure_identity::DeveloperToolsCredential
     ManagedIdentity, // azure_identity::ManagedIdentityCredential
@@ -10,9 +11,10 @@ pub enum CredentialKind {
     }, // secret passed separately
 }
 
+#[derive(Debug, Clone)]
 pub enum AuthMethod {
     ConnectionString {
-        connection_string: String,
+        connection_string: SecretString,
     },
     Credential {
         kind: CredentialKind,
@@ -43,11 +45,11 @@ pub fn build_credential(
             tenant_id,
             client_id,
         } => {
-            if !client_secret.is_some() {
+            let Some(client_secret) = client_secret else {
                 return Err(anyhow::anyhow!(
                     "Client secret must be provided for ClientSecret credential"
                 ));
-            }
+            };
 
             if tenant_id.trim().is_empty() {
                 return Err(anyhow::anyhow!(
@@ -61,7 +63,7 @@ pub fn build_credential(
                 ));
             }
 
-            let client_secret_value = client_secret.unwrap().expose().to_owned();
+            let client_secret_value = client_secret.expose().to_owned();
 
             if client_secret_value.trim().is_empty() {
                 return Err(anyhow::anyhow!(

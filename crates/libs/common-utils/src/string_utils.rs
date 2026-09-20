@@ -1,6 +1,6 @@
+use chrono::Duration;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
-use chrono::Duration;
 
 /// Makes `input` safer to use as a filename, by character substitution only:
 /// filesystem-reserved characters (`< > : " | ? * \ /`) and other special

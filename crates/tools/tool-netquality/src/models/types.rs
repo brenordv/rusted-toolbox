@@ -3,11 +3,11 @@ use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use common_cli::tool_path_helpers::get_tool_path;
 use common_serialization_utils::load_json_file_to_object::load_json_file_to_object;
+use common_utils::string_utils::SecretString;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
-use common_utils::string_utils::SecretString;
 
 #[derive(Debug, Clone)]
 pub struct NetQualityConfig {
