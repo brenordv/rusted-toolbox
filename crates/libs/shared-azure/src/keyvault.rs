@@ -22,7 +22,7 @@ pub async fn fetch_secret(
 
     let vault_uri = url::Url::parse(vault_url).context("Failed to parse Azure Key Vault URL")?;
 
-    let normalized_vault_url = vault_uri
+    let normalized_vault_host = vault_uri
         .host_str()
         .context("Failed to extract the host from the Azure Key Vault URL")?
         .to_ascii_lowercase();
@@ -33,10 +33,11 @@ pub async fn fetch_secret(
 
     if !AZURE_KEY_VAULT_ALLOWED_URL_SUFFIXES
         .iter()
-        .any(|suffix| normalized_vault_url.ends_with(&format!(".{}", suffix)))
+        .any(|suffix| normalized_vault_host.ends_with(&format!(".{}", suffix)))
     {
         return Err(anyhow::anyhow!(
-            "Vault URL must have one of the following suffixes: {:?}",
+            "Vault host '{}' does not have one of the required suffixes: {:?}",
+            normalized_vault_host,
             AZURE_KEY_VAULT_ALLOWED_URL_SUFFIXES
         ));
     }
@@ -56,7 +57,7 @@ pub async fn fetch_secret(
         .context("Failed to convert secret response into model (azure_core::credentials::Secret)")?
         .value
         .context(format!(
-            "Secret value is empty. Possibly '{}' exists, but has no value",
+            "Secret '{}' exists, but has no value",
             secret_name
         ))?
         .into();
