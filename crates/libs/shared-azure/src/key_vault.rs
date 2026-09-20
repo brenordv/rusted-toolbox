@@ -1,9 +1,15 @@
+//! Key Vault secret retrieval with vault-host validation.
+
 use anyhow::Context;
 use azure_core::credentials::TokenCredential;
 use azure_security_keyvault_secrets::SecretClient;
 use common_utils::string_utils::SecretString;
 use std::sync::Arc;
 
+/// DNS suffixes a vault host must sit under, per Azure cloud: public, China
+/// (21Vianet), US Government, plus the retired Azure Germany cloud. The live
+/// list is the "DNS suffixes for object identifiers" table in
+/// <https://learn.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates>.
 const AZURE_KEY_VAULT_ALLOWED_URL_SUFFIXES: [&str; 4] = [
     "vault.azure.net",
     "vault.azure.cn",
@@ -11,6 +17,20 @@ const AZURE_KEY_VAULT_ALLOWED_URL_SUFFIXES: [&str; 4] = [
     "vault.microsoftazure.de",
 ];
 
+/// Fetches the latest version of `secret_name` from the Key Vault at
+/// `vault_url`, returning it as a redacting [`SecretString`].
+///
+/// The URL is validated before any network call: it must parse, use the
+/// `https` scheme, and its host must sit under one of the known Key Vault DNS
+/// suffixes. Tools auto-load config from the working directory, so a planted
+/// config could otherwise point the AAD token this call presents at an
+/// arbitrary host. Additional or private suffixes are deliberately not
+/// configurable.
+///
+/// # Errors
+/// Fails on an empty or invalid vault URL, an empty secret name, any Key
+/// Vault error, and a secret that exists but has no value. Error messages
+/// name the secret, never its value.
 pub async fn fetch_secret(
     vault_url: &str,
     secret_name: &str,

@@ -137,10 +137,21 @@ pub fn format_bytes_to_string(bytes: u64) -> String {
     format!("{formatted_with_commas}{decimal_suffix} {unit}")
 }
 
+/// A secret value (connection string, token, key) that cannot leak through
+/// formatting: `Debug` and `Display` both render `<redacted>`. The raw value
+/// is reachable only through [`expose`](Self::expose).
+///
+/// Deliberately implements no serde traits, and `common-utils` carries no
+/// serde dependency: a struct that embeds a `SecretString` and derives
+/// `Serialize` fails to compile, so a secret can never reach serialized
+/// output by accident. A carrier that must deserialize a secret converts at
+/// its own boundary with `#[serde(from = "String")]` and `From<String>`.
 #[derive(Clone, PartialEq)]
 pub struct SecretString(String);
 
 impl SecretString {
+    /// The raw secret. Keep the result out of logs, error messages, and
+    /// serialized output; call sites of this method are the audit surface.
     pub fn expose(&self) -> &str {
         &self.0
     }
