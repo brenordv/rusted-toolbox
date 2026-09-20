@@ -59,7 +59,7 @@ pub async fn fetch_secret(
             )
         })?
         .into_model()
-        .context("Failed to convert secret response into model (azure_core::credentials::Secret)")?
+        .context("Failed to convert secret response into model (azure_security_keyvault_secrets::models::Secret)")?
         .value
         .context(format!("Secret '{}' exists, but has no value", secret_name))?
         .into();
