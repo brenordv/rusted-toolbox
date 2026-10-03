@@ -1,7 +1,7 @@
 [package]
 name = "shared-crypto"
 version = "1.0.0"
-description = "ADD"
+description = "Streaming age encryption engine shared by the seal CLI and GUI"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -18,3 +18,4 @@ chrono = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+tempfile = { workspace = true }

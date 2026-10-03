@@ -1,3 +1,13 @@
+//! The one home for failure wording: public message constants and builders
+//! that the CLI, the GUI, and the tests all quote, plus the `pub(crate)`
+//! helpers the engine routes raw `age` errors through so none of age's own
+//! terse messages reaches a user unwrapped.
+//!
+//! By owner decision this crate exposes no error enum. Internal workspace
+//! libs follow the repo convention of `anyhow::Result` + `.context()`;
+//! consumers react to the wording (and their own call-site checks), never to
+//! error types.
+
 use std::io;
 use std::path::Path;
 
@@ -17,6 +27,24 @@ pub const MSG_CORRUPTED: &str =
     "file is damaged or was tampered with; the output is incomplete and must be discarded";
 
 pub const MSG_RECIPIENTS_REJECTED: &str = "the recipient set was rejected";
+
+/// Context wording for I/O failures on the encrypt path; shared by the
+/// engine's stream stages and [`map_encrypt_error`]'s `Io` arm.
+pub(crate) const CTX_IO_ENCRYPT: &str = "I/O failure while encrypting";
+
+/// Context wording for I/O failures on the decrypt path; shared by
+/// [`map_decrypt_error`]'s `Io` arm and [`map_copy_error`].
+pub(crate) const CTX_IO_DECRYPT: &str = "I/O failure while decrypting";
+
+/// The input path yields no default output name: either it has no file name
+/// at all, or a decrypt input does not end in `.age` (or is nothing but
+/// `.age`). The caller must ask for an explicit output path.
+pub fn no_default_output_name(path: &Path) -> String {
+    format!(
+        "cannot derive an output name from {}; pass -o <output> to choose one",
+        path.display()
+    )
+}
 
 pub fn invalid_recipient_literal(index: usize) -> String {
     format!(
@@ -67,7 +95,7 @@ pub(crate) fn map_encrypt_error(err: age::EncryptError) -> anyhow::Error {
     use age::EncryptError as E;
     match err {
         E::MissingRecipients => anyhow!(MSG_NO_RECIPIENTS),
-        E::Io(e) => anyhow::Error::new(e).context("I/O failure while encrypting"),
+        E::Io(e) => anyhow::Error::new(e).context(CTX_IO_ENCRYPT),
         other => anyhow::Error::msg(other.to_string()).context(MSG_RECIPIENTS_REJECTED),
     }
 }
@@ -85,7 +113,13 @@ pub(crate) fn map_decrypt_error(err: age::DecryptError) -> anyhow::Error {
         // Only scrypt files produce ExcessiveWork, and the is_scrypt gate in
         // the engine fires first; same refusal either way.
         E::ExcessiveWork { .. } => anyhow!(MSG_PASSPHRASE_REFUSED),
-        E::Io(e) => anyhow::Error::new(e).context("I/O failure while decrypting"),
+        // An input that ends before the header does (the armor sniff alone
+        // needs 36 bytes) surfaces as an EOF `Io`, not as `InvalidHeader`;
+        // to the user that is not-age-data, never an I/O failure.
+        E::Io(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+            anyhow::Error::new(e).context(MSG_NOT_AGE_DATA)
+        }
+        E::Io(e) => anyhow::Error::new(e).context(CTX_IO_DECRYPT),
         // The enum is #[non_exhaustive]; this arm also absorbs the plugin
         // variants that only exist with the (unused) `plugin` feature.
         _ => anyhow!(MSG_NOT_AGE_DATA),
@@ -101,7 +135,7 @@ pub(crate) fn map_copy_error(err: io::Error) -> anyhow::Error {
         io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof => {
             anyhow::Error::new(err).context(MSG_CORRUPTED)
         }
-        _ => anyhow::Error::new(err).context("I/O failure while decrypting"),
+        _ => anyhow::Error::new(err).context(CTX_IO_DECRYPT),
     }
 }
 
@@ -126,6 +160,13 @@ mod tests {
     #[case::excessive_work(
         age::DecryptError::ExcessiveWork { required: 22, target: 18 },
         MSG_PASSPHRASE_REFUSED
+    )]
+    #[case::input_shorter_than_a_header(
+        age::DecryptError::Io(IoError::new(
+            ErrorKind::UnexpectedEof,
+            "failed to fill whole buffer"
+        )),
+        MSG_NOT_AGE_DATA
     )]
     fn decrypt_error_maps_to_shared_wording(
         #[case] err: age::DecryptError,
