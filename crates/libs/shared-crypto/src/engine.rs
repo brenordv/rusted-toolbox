@@ -1,8 +1,8 @@
+use crate::errors::{MSG_PASSPHRASE_REFUSED, map_copy_error, map_decrypt_error, map_encrypt_error};
 use age::armor::{ArmoredReader, ArmoredWriter, Format};
 use age::x25519::{Identity, Recipient};
-use std::io;
 use anyhow::bail;
-use crate::errors::{map_decrypt_error, map_encrypt_error, MSG_PASSPHRASE_REFUSED, map_copy_error};
+use std::io;
 
 pub fn encrypt(
     recipients: &[Recipient],
@@ -29,16 +29,18 @@ pub fn encrypt(
 
     let bytes = io::copy(input, &mut writer)?;
 
-    writer
-        .finish()
-        .and_then(|armored| armored.finish())?;
+    writer.finish().and_then(|armored| armored.finish())?;
 
     Ok(bytes)
 }
 
-pub fn decrypt(identities: &[Identity], input: &mut impl io::Read, output: &mut impl io::Write) -> anyhow::Result<u64> {
-    let decryptor = age::Decryptor::new(ArmoredReader::new(&mut *input))
-        .map_err(map_decrypt_error)?;
+pub fn decrypt(
+    identities: &[Identity],
+    input: &mut impl io::Read,
+    output: &mut impl io::Write,
+) -> anyhow::Result<u64> {
+    let decryptor =
+        age::Decryptor::new(ArmoredReader::new(&mut *input)).map_err(map_decrypt_error)?;
 
     if decryptor.is_scrypt() {
         bail!(MSG_PASSPHRASE_REFUSED);
