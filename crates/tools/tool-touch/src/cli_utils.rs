@@ -11,7 +11,7 @@ use std::io;
 /// Mimics the Unix 'touch' command. A FILE argument that does not exist is created empty, unless
 /// -c is supplied. A FILE argument of - is handled specially and refers to standard output.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 struct CliArgs {
     /// Change only the access time
     #[arg(short = 'a')]

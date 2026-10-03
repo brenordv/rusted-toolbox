@@ -7,7 +7,7 @@ use common_cli::header_format::format_config_item;
 ///
 /// This tool receives a Unix timestamp and converts it to a datetime (ISO 8601) or vice versa.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about)]
 struct CliArgs {
     /// Input to process: a Unix timestamp or a datetime string. Only one input is used, and no quotes are needed
     #[arg(num_args = 0.., value_name = "INPUT")]

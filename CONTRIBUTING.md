@@ -72,6 +72,8 @@ Dependency versions live in one place: the root `Cargo.toml`.
 - Avoid `unwrap`/`expect` in library code; return typed errors. Use `?` (from `anyhow`) for propagation and convert to a single error type at the boundary.
 - Use the repo's `edition` from `Cargo.toml`; don't change it without approval.
 - When defining the CLI options, follow the examples of the other tools.
+- `arg_required_else_help = true` belongs only on parsers whose arguments or subcommand are required anyway; it turns an empty argv into help on stderr with exit code 2. Tools where a bare run is the point must not use it: stdin filters read the pipe when given no FILE (`cat`, `head`, `tail`, `b64`, `remove-zw`), some tools have a bare default action (`ts` converts "now", `guid` generates one, `gitignore` scans the current dir), and `http-server` serves `.` on its default port. clap keys the check on argv being empty, not on stdin being a terminal, so `producer | tool` counts as "no args" and the pipe breaks.
+- With that flag set, `try_parse_from(["tool"])` in a test returns an error (kind `DisplayHelpOnMissingArgumentOrSubcommand`); assert the error kind instead of unwrapping a bare parse, and keep validation tests argv-non-empty (for example, pass one harmless flag).
 - Use the default `rustfmt` and `clippy` (there is no custom config); fix all warnings.
 - Forbid `unsafe_code` unless an explicit, justified exception is approved.
 - Before creating a new tool/utility, check if it is already covered by one of the `crates/libs` crates.

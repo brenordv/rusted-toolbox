@@ -1,5 +1,8 @@
 # Workspace Changelog
 
+## v5
+- Normalized CLI configuration for the tools, so they will show help when arguments are required, but were not provided.
+
 ## v4
 - Updated Rust from edition 2021 to 2024.
 

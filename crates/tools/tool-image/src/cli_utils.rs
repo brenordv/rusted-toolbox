@@ -17,7 +17,7 @@ use tracing::{debug, error, info};
 /// CLI tool to perform some quick image edits for simple actions like converting, resizing,
 /// and grayscale conversion.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 pub struct CliArgs {
     /// Input files to process.
     #[arg(num_args = 0.., required = false)]

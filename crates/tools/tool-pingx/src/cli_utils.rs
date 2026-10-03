@@ -10,7 +10,7 @@ use common_cli::header_format::{
 ///
 /// Like ping, but with extra functionalities, for convenience.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 struct CliArgs {
     /// Hostname or IP address to ping
     pub target: String,

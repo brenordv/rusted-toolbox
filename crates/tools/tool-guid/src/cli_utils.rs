@@ -9,7 +9,7 @@ use common_cli::tool_exit_helpers::exit_error;
 /// This tool can generate a single valid guid or an empty guid and copy this to the clipboard.
 /// Alternatively, it can generate N guids and print them one per line.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about)]
 pub struct CliArgs {
     /// If set, will copy the generated guid to the clipboard. Does not work with generate_multiple.
     #[arg(

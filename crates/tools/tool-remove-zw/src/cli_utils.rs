@@ -13,7 +13,7 @@ use std::path::PathBuf;
 /// it reads standard input and works as a filter (for example: cat file | remove-zw). To clean
 /// files on disk, pass a file or directory path.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about)]
 struct CliArgs {
     /// Files or directories to process; with none (or '-') reads stdin as a filter
     #[arg(num_args = 0..)]

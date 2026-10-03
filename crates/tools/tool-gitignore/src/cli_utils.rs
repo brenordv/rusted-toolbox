@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Automatically creates or updates `.gitignore` files based on detected file types in your project.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about)]
 pub struct CliArgs {
     /// Target folder to analyze
     #[arg(num_args = 1, required = false)]

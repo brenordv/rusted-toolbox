@@ -16,7 +16,7 @@ use std::time::Duration;
 ///
 /// Monitor connectivity and speed with notifications, saving the results to an SQLite database, allowing you to analyze them later. Notification to Telegram and/or Open Telemetry is also available.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 pub struct CliArgs {
     /// Path to the configuration file.
     // The conflict entries are clap argument IDs (field names), not the long
