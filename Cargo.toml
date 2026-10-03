@@ -26,6 +26,7 @@ shared-eventhub = { path = "crates/libs/shared-eventhub" }
 shared-head-tail = { path = "crates/libs/shared-head-tail" }
 
 # External
+age = { version = "0.12.1", features = ["armor"] }
 aho-corasick = "1.1.5"
 anyhow = "1.0.104"
 arboard = "3.6.1"

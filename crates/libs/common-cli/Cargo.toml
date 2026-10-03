@@ -1,6 +1,6 @@
 [package]
 name = "common-cli"
-version = "1.7.0"
+version = "1.7.1"
 description = "Common CLI arg parser and basic logging shared across all tools."
 edition.workspace = true
 authors.workspace = true
@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 # Internal
+common-file-utils = { workspace = true }
 common-utils = { workspace = true }
 
 # External

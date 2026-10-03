@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0
+- New `permissions` module: `create_dir_all_owner_only` and `open_owner_only`, extracted from
+  `common-cli`'s log-file helpers so `shared-crypto` can reuse them for identity files. On Unix,
+  created directories are `0o700`, and files open with mode `0o600`, with a pre-existing file
+  tightened to 0o600 through the open handle (the open fails if the tighten fails); on Windows
+  both fall back to default ACL inheritance. The unix permission tests moved over with them.
+
 ## 2.1.0
 - New `binary_sniff` module with `is_probably_binary`, promoted verbatim from tool-lookup's
   3.1.0 sniff so other tools can use it: samples the first 8 KiB and reports binary when the

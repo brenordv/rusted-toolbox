@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.1
+- `create_log_dir` and `open_log_file` now delegate to `common-file-utils` 2.2.0's
+  `permissions` module, which was extracted from them so `shared-crypto` can create identity
+  files with the same owner-only modes. Behavior is unchanged; the unix permission tests moved
+  to `common-file-utils` with the implementation. New `common-file-utils` dependency.
+
 ## 1.7.0
 - Added the `test_writers` module: shared failing `Write` doubles for the tools' test suites
   (`ClosedPipe`, `FailingDisk`, `FailingFlush`, and the byte-budget `FailAfter` with a
