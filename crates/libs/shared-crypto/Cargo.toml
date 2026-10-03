@@ -1,0 +1,17 @@
+[package]
+name = "shared-crypto"
+version = "1.0.0"
+description = "ADD"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-file-utils = { workspace = true }
+
+# External
+age = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
