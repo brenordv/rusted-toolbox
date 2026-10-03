@@ -6140,6 +6140,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "common-file-utils",
+ "rstest",
 ]
 
 [[package]]
