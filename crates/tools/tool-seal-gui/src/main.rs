@@ -22,8 +22,8 @@ fn main() {
         viewport: ViewportBuilder::default()
             .with_title("seal")
             .with_app_id("seal-gui")
-            .with_inner_size(egui::vec2(900.0, 640.0))
-            .with_min_inner_size(egui::vec2(720.0, 480.0)),
+            .with_inner_size(egui::vec2(980.0, 720.0))
+            .with_min_inner_size(egui::vec2(760.0, 520.0)),
         ..Default::default()
     };
 
