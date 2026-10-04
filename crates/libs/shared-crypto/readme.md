@@ -30,8 +30,9 @@ published age format) behind a small API so the consuming tools never import
   Returns the plaintext byte count.
 - `output_name_for(&Path, Direction)`: the default name mapping both tools
   share. Encrypt appends `.age` to the whole file name (`x.tar.gz` becomes
-  `x.tar.gz.age`); decrypt strips exactly one `.age` and fails (asking for
-  an explicit output) on any other name.
+  `x.tar.gz.age`); decrypt strips exactly one trailing `.age` in any ASCII
+  casing (`.AGE` from a case-folding filesystem counts) and fails (asking
+  for an explicit output) on any other name.
 - `errors`: the shared failure wording as message constants and builders.
   No public error enum; everything is `anyhow::Result` with context, per the
   workspace convention for internal libs.

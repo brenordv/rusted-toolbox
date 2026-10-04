@@ -14,8 +14,9 @@ egui host can use it):
   unit-tested); `apply_theme(ctx, &palette)` installs it and pins the dark
   theme. Call it once, in the app constructor.
 - `widgets`: the component recipes views compose: `section`, `form_row`,
-  `primary_button`, `ghost_button`, `status_badge`, `toolbar`, and the toast
-  model (`Toast`, `ToastKind`, `show_toasts`).
+  `primary_button`, `ghost_button`, `danger_button`, `status_badge`,
+  `toolbar`, `drop_target`, and the toast model (`Toast`, `ToastKind`,
+  `show_toasts`).
 
 ## The six styling rules
 

@@ -1,5 +1,6 @@
 mod app;
 mod cli_utils;
+mod config;
 mod state;
 mod views;
 mod worker;

@@ -46,9 +46,10 @@ pub enum Direction {
 /// Maps an input path to its default output path, the one rule the CLI and
 /// the GUI both apply. Encrypt appends `.age` to the whole file name
 /// (`x.tar.gz` becomes `x.tar.gz.age`, never `x.tar.age`); decrypt strips
-/// exactly one trailing `.age`. Fails, asking for an explicit output path,
-/// when the input has no file name or a decrypt input does not end in `.age`
-/// (or is nothing but `.age`).
+/// exactly one trailing `.age`, ASCII case-insensitively (`.AGE` from a
+/// case-folding filesystem counts). Fails, asking for an explicit output
+/// path, when the input has no file name or a decrypt input does not end in
+/// `.age` (or is nothing but `.age`).
 pub fn output_name_for(input: &Path, direction: Direction) -> anyhow::Result<PathBuf> {
     let Some(name) = input.file_name() else {
         bail!(errors::no_default_output_name(input));
@@ -60,11 +61,23 @@ pub fn output_name_for(input: &Path, direction: Direction) -> anyhow::Result<Pat
             output.push(".age");
             Ok(input.with_file_name(output))
         }
-        Direction::Decrypt => match name.to_str().and_then(|n| n.strip_suffix(".age")) {
-            Some(stem) if !stem.is_empty() => Ok(input.with_file_name(stem)),
-            _ => bail!(errors::no_default_output_name(input)),
+        Direction::Decrypt => match name.to_str().and_then(strip_age_suffix) {
+            Some(stem) => Ok(input.with_file_name(stem)),
+            None => bail!(errors::no_default_output_name(input)),
         },
     }
+}
+
+/// Strips one trailing `.age` (any ASCII casing), returning the non-empty
+/// stem. The split point is checked as a char boundary so a multi-byte final
+/// character can never panic the slice.
+fn strip_age_suffix(name: &str) -> Option<&str> {
+    let split = name.len().checked_sub(4)?;
+    if !name.is_char_boundary(split) {
+        return None;
+    }
+    let (stem, suffix) = name.split_at(split);
+    (suffix.eq_ignore_ascii_case(".age") && !stem.is_empty()).then_some(stem)
 }
 
 #[cfg(test)]
@@ -86,6 +99,8 @@ mod tests {
     #[case::plain("file.txt.age", "file.txt")]
     #[case::strips_exactly_one("archive.age.age", "archive.age")]
     #[case::with_parent("dir/file.txt.age", "dir/file.txt")]
+    #[case::uppercase_suffix("file.txt.AGE", "file.txt")]
+    #[case::mixed_case_suffix("file.txt.AgE", "file.txt")]
     fn decrypt_strips_one_age_suffix(#[case] input: &str, #[case] expected: &str) {
         let output = output_name_for(Path::new(input), Direction::Decrypt).unwrap();
         assert_eq!(output, Path::new(expected));
@@ -94,6 +109,8 @@ mod tests {
     #[rstest]
     #[case::no_age_suffix("file.enc")]
     #[case::nothing_but_the_suffix(".age")]
+    #[case::nothing_but_the_uppercase_suffix(".AGE")]
+    #[case::split_lands_inside_a_multibyte_char("x\u{20ac}age")]
     fn decrypt_without_a_strippable_suffix_asks_for_an_explicit_output(#[case] input: &str) {
         let err = output_name_for(Path::new(input), Direction::Decrypt).unwrap_err();
         assert!(format!("{err:#}").contains("-o <output>"));

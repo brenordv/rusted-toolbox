@@ -54,6 +54,17 @@ pub fn ghost_button(ui: &mut Ui, text: &str) -> Response {
     )
 }
 
+/// The destructive-confirm button: ghost-shaped, error-colored. Reserve it
+/// for the confirming click of a two-step destructive action.
+pub fn danger_button(ui: &mut Ui, text: &str) -> Response {
+    let p = Palette::default();
+    ui.add(
+        Button::new(RichText::new(text).color(p.error))
+            .fill(Color32::TRANSPARENT)
+            .stroke(Stroke::new(1.0, p.error)),
+    )
+}
+
 /// Which status color a [`status_badge`] carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BadgeKind {
@@ -80,6 +91,23 @@ pub fn status_badge(ui: &mut Ui, kind: BadgeKind, text: &str) {
         .inner_margin(egui::vec2(SPACE_SM, SPACE_XS))
         .show(ui, |ui| {
             ui.label(RichText::new(text).font(tokens::text_small()).color(color));
+        });
+}
+
+/// A frame that reads as a drop zone: quiet by default, accent-stroked while
+/// `active` (a drag hovering the window). The caller owns the hover signal;
+/// this recipe only styles it.
+pub fn drop_target(ui: &mut Ui, active: bool, add_contents: impl FnOnce(&mut Ui)) {
+    let p = Palette::default();
+    let stroke_color = if active { p.accent } else { p.border };
+    Frame::new()
+        .fill(p.bg_panel)
+        .stroke(Stroke::new(1.0, stroke_color))
+        .corner_radius(6)
+        .inner_margin(SPACE_MD)
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            add_contents(ui);
         });
 }
 
@@ -208,6 +236,13 @@ mod tests {
                 status_badge(ui, BadgeKind::Neutral, "idle");
                 let _ = primary_button(ui, "go");
                 let _ = ghost_button(ui, "cancel");
+                let _ = danger_button(ui, "confirm delete");
+            });
+            drop_target(ui, false, |ui| {
+                ui.label("drop here");
+            });
+            drop_target(ui, true, |ui| {
+                ui.label("hovering");
             });
         });
     }
