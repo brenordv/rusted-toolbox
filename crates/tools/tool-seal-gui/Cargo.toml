@@ -1,7 +1,7 @@
 [package]
 name = "seal-gui"
 version = "1.0.0"
-description = "TODO"
+description = "Desktop GUI for seal: key-based file encryption over the age format"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -9,8 +9,13 @@ license.workspace = true
 
 [dependencies]
 # Internal
+common-cli = { workspace = true }
 common-gui = { workspace = true }
+common-utils = { workspace = true }
 
 # External
-egui = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
 eframe = { workspace = true }
+egui = { workspace = true }
+tracing = { workspace = true }

@@ -1,29 +1,45 @@
-pub mod app;
-pub mod worker;
-pub mod state;
-pub mod views;
+mod app;
+mod cli_utils;
+mod state;
+mod views;
+mod worker;
 
+use crate::app::SealApp;
+use common_cli::tool_exit_helpers::{exit_error, exit_success};
+use egui::ViewportBuilder;
+use tracing::error;
+
+/// Desktop GUI shell for the seal tool family.
+///
+/// Boots logging (file sink on by default), opens the themed window, and
+/// maps the eframe outcome onto the house exit codes: 0 on a clean close, 1
+/// when the window or the app cannot be created.
 fn main() {
-    // common-cli boot first: args (no-verbose variant), AppLogger with file logging
-    // ON by default for the GUI (a windowed app has no visible stderr), flags override.
+    cli_utils::initialize();
 
     let options = eframe::NativeOptions {
-        // Window geometry and app id ride on NativeOptions' ViewportBuilder:
-        // initial 900x640, min 720x480, app id "seal-gui". Lift the exact with_*
-        // builder names from the eframe root page at implementation (names
-        // unverified here; the page is linked in section 7). Leave drag-and-drop
-        // enabled: phase 4's Files tab needs it, and on Windows dropped_files is
-        // documented to stay empty if it is disabled.
+        viewport: ViewportBuilder::default()
+            .with_title("seal")
+            .with_app_id("seal-gui")
+            .with_inner_size(egui::vec2(900.0, 640.0))
+            .with_min_inner_size(egui::vec2(720.0, 480.0)),
         ..Default::default()
     };
 
-    eframe::run_native(
+    let outcome = eframe::run_native(
         "seal",
         options,
         Box::new(|cc| {
             common_gui::theme::apply_theme(&cc.egui_ctx, &common_gui::tokens::Palette::default());
-            Ok(Box::new(SealApp::new(cc)))
+            Ok(Box::new(SealApp::new(cc)?))
         }),
-    )
-    // map the eframe result into the house exit helpers
+    );
+
+    match outcome {
+        Ok(()) => exit_success(),
+        Err(e) => {
+            error!(error = %e, "the window could not be created");
+            exit_error();
+        }
+    }
 }

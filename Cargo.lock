@@ -7508,9 +7508,14 @@ dependencies = [
 name = "seal-gui"
 version = "1.0.0"
 dependencies = [
+ "anyhow",
+ "clap",
+ "common-cli",
  "common-gui",
+ "common-utils",
  "eframe",
  "egui",
+ "tracing",
 ]
 
 [[package]]

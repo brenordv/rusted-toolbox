@@ -29,6 +29,7 @@ We currently have the following tools:
 25. A tool that mimics the [tail](crates/tools/tool-tail/readme.md) command from Unix, including follow mode (also useful on Windows);
 26. A regex value extractor called [rxget](crates/tools/tool-rxget/readme.md) that pulls matched values out of text files, with per-file or per-run uniqueness and optional filename prefixes;
 27. A file encryption tool called [seal](crates/tools/tool-seal/readme.md) that seals files to `age1...` public keys and opens them with identity files (the age format, key-based only).
+28. A desktop companion to seal called [seal-gui](crates/tools/tool-seal-gui/readme.md): the same key-based age encryption in a window (currently the themed shell; the feature tabs land next).
 
 ## Ok, but why?
 Well, three main reasons:
