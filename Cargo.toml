@@ -17,16 +17,20 @@ license = "GPL-3.0-only"
 cli-signal-monitor = { path = "crates/libs/cli-signal-monitor" }
 common-cli = { path = "crates/libs/common-cli" }
 common-file-utils = { path = "crates/libs/common-file-utils" }
+common-gui = { path = "crates/libs/common-gui" }
+common-serialization-utils = { path = "crates/libs/common-serialization-utils" }
 common-utils = { path = "crates/libs/common-utils" }
 common-utils-ext = { path = "crates/libs/common-utils-ext" }
-common-serialization-utils = { path = "crates/libs/common-serialization-utils" }
 logging-otel = { path = "crates/libs/logging-otel" }
 mock-data-utils = { path = "crates/libs/mock-data-utils" }
+shared-crypto = { path = "crates/libs/shared-crypto" }
 shared-eventhub = { path = "crates/libs/shared-eventhub" }
 shared-head-tail = { path = "crates/libs/shared-head-tail" }
-shared-crypto = { path = "crates/libs/shared-crypto" }
 
 # External
+egui = { version = "0.36.2" }
+eframe = { version = "0.36.2" }
+rfd = { version = "0.17.2" }
 age = { version = "0.12.1", features = ["armor"] }
 aho-corasick = "1.1.5"
 anyhow = "1.0.104"

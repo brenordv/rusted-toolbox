@@ -1,0 +1,12 @@
+[package]
+name = "common-gui"
+version = "1.0.0"
+description = "TODO"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# External
+egui = { workspace = true }

@@ -1,0 +1,16 @@
+[package]
+name = "seal-gui"
+version = "1.0.0"
+description = "TODO"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-gui = { workspace = true }
+
+# External
+egui = { workspace = true }
+eframe = { workspace = true }
