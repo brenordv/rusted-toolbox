@@ -1,6 +1,6 @@
 [package]
 name = "common-file-utils"
-version = "2.2.0"
+version = "2.3.0"
 description = "Common file system utils. Designed for more complex/specialized operations "
 edition.workspace = true
 authors.workspace = true
@@ -9,7 +9,7 @@ license.workspace = true
 
 [dependencies]
 # External
-walkdir = { workspace = true }
-
-[dev-dependencies]
+anyhow = { workspace = true }
 tempfile = { workspace = true }
+tracing = { workspace = true }
+walkdir = { workspace = true }

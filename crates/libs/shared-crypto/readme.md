@@ -13,6 +13,9 @@ published age format) behind a small API so the consuming tools never import
   is atomic (`create_new`). Owner-only on Unix (0o600 file, 0o700 created
   parents); on Windows the file inherits the parent's ACL, so keep identity
   files under your user profile.
+- `keys::write_identity(&Identity, &mut Write)`: the same identity-file lines
+  to any writer (the CLI's keygen-to-stdout path). No permission handling;
+  point it at a file only through `save_identity_file`.
 - `keys::load_identities(&[PathBuf])`: parses identity files; blank lines
   and `#` comments are ignored, and a malformed line is reported by file and
   line number, never by content.

@@ -27,7 +27,8 @@ We currently have the following tools:
 23. A tool called [remove-zw](crates/tools/tool-remove-zw/readme.md) that removes zero-width Unicode format characters and a leading byte-order mark (BOM) from text, with a `--dry-run` preview and a `--check` mode for pipelines;
 24. A tool that mimics the [head](crates/tools/tool-head/readme.md) command from Unix (also useful on Windows);
 25. A tool that mimics the [tail](crates/tools/tool-tail/readme.md) command from Unix, including follow mode (also useful on Windows);
-26. A regex value extractor called [rxget](crates/tools/tool-rxget/readme.md) that pulls matched values out of text files, with per-file or per-run uniqueness and optional filename prefixes.
+26. A regex value extractor called [rxget](crates/tools/tool-rxget/readme.md) that pulls matched values out of text files, with per-file or per-run uniqueness and optional filename prefixes;
+27. A file encryption tool called [seal](crates/tools/tool-seal/readme.md) that seals files to `age1...` public keys and opens them with identity files (the age format, key-based only).
 
 ## Ok, but why?
 Well, three main reasons:

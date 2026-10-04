@@ -947,9 +947,11 @@ dependencies = [
 
 [[package]]
 name = "common-file-utils"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
+ "anyhow",
  "tempfile",
+ "tracing",
  "walkdir",
 ]
 
@@ -3144,7 +3146,7 @@ checksum = "6e44b0a4eaa4c82f441d50a963f2d5f05a787240aeee097597033e72accfd22f"
 
 [[package]]
 name = "imgx"
-version = "2.1.4"
+version = "2.1.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -5891,6 +5893,22 @@ dependencies = [
  "pbkdf2",
  "salsa20",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "seal"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cli-signal-monitor",
+ "common-cli",
+ "common-file-utils",
+ "common-utils",
+ "rstest",
+ "shared-crypto",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]

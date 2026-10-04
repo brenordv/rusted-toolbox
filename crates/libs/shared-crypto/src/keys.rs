@@ -1,10 +1,10 @@
 //! Identity and recipient handling: generation, the standard age identity
 //! file (save and load), and recipient parsing from literals and files.
 //! Secret key material only ever exists as `SecretString`; its string form
-//! leaves that wrapper exactly once, inside the identity-file write.
+//! leaves that wrapper exactly once, inside [`write_identity`].
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, ErrorKind, Write};
+use std::fs::{self, OpenOptions};
+use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -58,26 +58,40 @@ pub fn save_identity_file(identity: &Identity, path: &Path, overwrite: bool) -> 
         }
     })?;
 
+    write_identity(identity, &mut file)
+        .with_context(|| format!("failed to write {}", path.display()))?;
+
+    Ok(())
+}
+
+/// Writes `identity` in the standard age identity-file form (a `# created:`
+/// RFC3339 timestamp, the `# public key:` line, then the secret key) to any
+/// writer. [`save_identity_file`] routes the file form through here; the CLI's
+/// keygen-to-stdout path is the other consumer. Only the file form gets
+/// permission handling, so a caller pointing this at a file should use
+/// [`save_identity_file`] instead.
+///
+/// # Errors
+/// Fails with the underlying I/O error when a write fails.
+pub fn write_identity(identity: &Identity, out: &mut impl io::Write) -> anyhow::Result<()> {
     let created = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let public_key = identity.to_public().to_string();
 
-    write_identity_lines(&mut file, &created, &public_key, &identity.to_string())
-        .with_context(|| format!("failed to write {}", path.display()))?;
-
+    write_identity_lines(out, &created, &public_key, &identity.to_string())?;
     Ok(())
 }
 
 /// Writes the three identity-file lines. The secret is written straight from
 /// its `SecretString`; no intermediate `String` ever holds it.
 fn write_identity_lines(
-    file: &mut File,
+    out: &mut impl io::Write,
     created: &str,
     public_key: &str,
     secret_key: &SecretString,
 ) -> io::Result<()> {
-    writeln!(file, "# created: {created}")?;
-    writeln!(file, "# public key: {public_key}")?;
-    writeln!(file, "{}", secret_key.expose_secret())
+    writeln!(out, "# created: {created}")?;
+    writeln!(out, "# public key: {public_key}")?;
+    writeln!(out, "{}", secret_key.expose_secret())
 }
 
 /// Parses each file as an age identity file: blank lines and `#` comments are
@@ -169,6 +183,24 @@ mod tests {
 
         assert_eq!(loaded.len(), 1);
         assert_eq!(public_key_of(&loaded[0]), public_key_of(&identity));
+    }
+
+    #[test]
+    fn write_identity_renders_the_standard_lines_to_any_writer() {
+        let identity = generate_identity();
+        let mut out: Vec<u8> = Vec::new();
+
+        write_identity(&identity, &mut out).unwrap();
+
+        let content = String::from_utf8(out).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].starts_with("# created: "));
+        assert_eq!(
+            lines[1],
+            format!("# public key: {}", public_key_of(&identity))
+        );
+        assert_eq!(lines[2], secret_line(&identity));
     }
 
     #[test]

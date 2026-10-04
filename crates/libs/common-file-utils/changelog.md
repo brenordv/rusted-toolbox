@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.0
+- New `atomic_write` module: `write_via_temp`, promoted from tool-image's private
+  `encode_via_temp` so `seal` can share it. Stages the output in a temp file next to the
+  destination, renames it into place on success, and removes it on failure, so the
+  destination is never half-written. A replaced destination keeps its own permissions;
+  on Unix a fresh output gets the usual `0o666 & !umask` instead of tempfile's 0o600.
+  Its tests moved over with it; tool-image now calls the shared helper.
+
 ## 2.2.0
 - New `permissions` module: `create_dir_all_owner_only` and `open_owner_only`, extracted from
   `common-cli`'s log-file helpers so `shared-crypto` can reuse them for identity files. On Unix,

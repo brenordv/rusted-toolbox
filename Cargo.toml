@@ -24,6 +24,7 @@ logging-otel = { path = "crates/libs/logging-otel" }
 mock-data-utils = { path = "crates/libs/mock-data-utils" }
 shared-eventhub = { path = "crates/libs/shared-eventhub" }
 shared-head-tail = { path = "crates/libs/shared-head-tail" }
+shared-crypto = { path = "crates/libs/shared-crypto" }
 
 # External
 age = { version = "0.12.1", features = ["armor"] }
