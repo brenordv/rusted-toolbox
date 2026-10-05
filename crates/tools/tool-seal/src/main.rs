@@ -1,6 +1,8 @@
 mod cli_utils;
 mod models;
 mod seal_app;
+mod watch_app;
+mod watch_pipeline;
 
 use crate::cli_utils::initialize;
 use crate::seal_app::{RunOutcome, run};

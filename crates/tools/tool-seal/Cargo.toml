@@ -18,8 +18,11 @@ shared-crypto = { workspace = true }
 # External
 anyhow = { workspace = true }
 clap = { workspace = true }
+notify = { workspace = true }
+notify-debouncer-full = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+filetime = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }

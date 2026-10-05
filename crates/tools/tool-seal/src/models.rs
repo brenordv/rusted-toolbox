@@ -16,7 +16,7 @@ pub enum SealCommand {
     Keygen(KeygenJob),
     Encrypt(EncryptJob),
     Decrypt(DecryptJob),
-    Watch,
+    Watch(WatchJob),
 }
 
 /// `seal keygen`: write an identity file (printing the public key), or dump
@@ -47,4 +47,15 @@ pub struct DecryptJob {
     pub input: Option<PathBuf>,
     pub output: OutputSpec,
     pub force: bool,
+}
+
+/// `seal watch`: seal every eligible file that appears or changes in the
+/// watch folder into the safe folder. Recipients stay unparsed here, like
+/// [`EncryptJob`]'s, so their failures flow through the normal error path.
+#[derive(Debug, Clone)]
+pub struct WatchJob {
+    pub recipients: Vec<String>,
+    pub recipient_files: Vec<PathBuf>,
+    pub watch_dir: PathBuf,
+    pub safe_dir: PathBuf,
 }

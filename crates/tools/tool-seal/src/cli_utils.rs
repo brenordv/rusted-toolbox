@@ -1,4 +1,4 @@
-use crate::models::{DecryptJob, EncryptJob, KeygenJob, OutputSpec, SealCommand};
+use crate::models::{DecryptJob, EncryptJob, KeygenJob, OutputSpec, SealCommand, WatchJob};
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use common_cli::common_tool_args::CommonToolArgs;
@@ -43,8 +43,11 @@ enum Commands {
         seal decrypt -i key.txt -o - report.pdf.age | less")]
     Decrypt(DecryptArgs),
 
-    /// Watch a folder and seal files as they appear (planned for a later release)
-    Watch,
+    /// Watch a folder and seal every file that appears or changes in it
+    #[command(after_help = "Examples:\n  \
+        seal watch -r age1example... --watch-dir inbox --safe-dir sealed\n  \
+        seal watch -R team.txt --watch-dir drop --safe-dir vault")]
+    Watch(WatchArgs),
 }
 
 #[derive(Args, Debug)]
@@ -84,6 +87,25 @@ struct EncryptArgs {
     /// File to encrypt; omit to read from stdin
     #[arg(value_name = "INPUT")]
     pub input: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct WatchArgs {
+    /// Recipient public key (age1...); may be given multiple times
+    #[arg(short = 'r', long = "recipient", value_name = "AGE1...")]
+    pub recipients: Vec<String>,
+
+    /// File with one recipient per line (# comments and blank lines ignored); may be given multiple times
+    #[arg(short = 'R', long = "recipients-file", value_name = "FILE")]
+    pub recipient_files: Vec<PathBuf>,
+
+    /// Folder to watch for new and changed files (top level only)
+    #[arg(long = "watch-dir", value_name = "DIR")]
+    pub watch_dir: PathBuf,
+
+    /// Folder that receives the sealed .age outputs
+    #[arg(long = "safe-dir", value_name = "DIR")]
+    pub safe_dir: PathBuf,
 }
 
 #[derive(Args, Debug)]
@@ -145,7 +167,12 @@ fn build_command(command: Commands) -> SealCommand {
             force: args.force,
             input: args.input,
         }),
-        Commands::Watch => SealCommand::Watch,
+        Commands::Watch(args) => SealCommand::Watch(WatchJob {
+            recipients: args.recipients,
+            recipient_files: args.recipient_files,
+            watch_dir: args.watch_dir,
+            safe_dir: args.safe_dir,
+        }),
     }
 }
 
@@ -206,8 +233,27 @@ fn print_header(command: &SealCommand) {
             );
             println!("{}", format_config_item("Overwrite", job.force));
         }
-        SealCommand::Watch => {
-            println!("{}", format_config_item("Mode", "watch (reserved)"));
+        SealCommand::Watch(job) => {
+            println!("{}", format_config_item("Mode", "watch"));
+            println!(
+                "{}",
+                format_config_item("Watch folder", job.watch_dir.display().to_string())
+            );
+            println!(
+                "{}",
+                format_config_item("Safe folder", job.safe_dir.display().to_string())
+            );
+            println!(
+                "{}",
+                format_config_item(
+                    "Recipients",
+                    format!(
+                        "{} literal(s), {} file(s)",
+                        job.recipients.len(),
+                        job.recipient_files.len()
+                    )
+                )
+            );
         }
     }
 }
@@ -322,9 +368,36 @@ mod tests {
     }
 
     #[test]
-    fn watch_parses_bare() {
-        let args = parse(&["seal", "watch"]);
-        assert!(matches!(build_command(args.command), SealCommand::Watch));
+    fn watch_maps_dirs_and_recipients() {
+        let args = parse(&[
+            "seal",
+            "watch",
+            "-r",
+            "age1aaa",
+            "-R",
+            "team.txt",
+            "--watch-dir",
+            "inbox",
+            "--safe-dir",
+            "sealed",
+        ]);
+
+        let SealCommand::Watch(job) = build_command(args.command) else {
+            panic!("expected the watch job");
+        };
+        assert_eq!(job.recipients, ["age1aaa"]);
+        assert_eq!(job.recipient_files, [PathBuf::from("team.txt")]);
+        assert_eq!(job.watch_dir, PathBuf::from("inbox"));
+        assert_eq!(job.safe_dir, PathBuf::from("sealed"));
+    }
+
+    #[test]
+    fn watch_requires_both_directories() {
+        let error = CliArgs::try_parse_from(["seal", "watch", "--watch-dir", "inbox"]).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
     }
 
     #[test]

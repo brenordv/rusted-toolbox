@@ -1,5 +1,6 @@
 use crate::models::{DecryptJob, EncryptJob, KeygenJob, OutputSpec, SealCommand};
-use anyhow::{Context, Result, anyhow, bail};
+use crate::watch_app::run_watch;
+use anyhow::{Context, Result, bail};
 use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
 use common_file_utils::atomic_write::write_via_temp;
 use common_utils::string_utils::format_bytes_to_string;
@@ -9,8 +10,6 @@ use std::io::{self, BufReader, BufWriter, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-const MSG_WATCH_RESERVED: &str = "the watch subcommand is planned for a later release";
 
 const MSG_BINARY_TO_TERMINAL: &str =
     "refusing to write binary ciphertext to a terminal; use --armor or redirect";
@@ -30,7 +29,9 @@ pub fn run(command: SealCommand, shutdown: &Arc<AtomicBool>) -> Result<RunOutcom
         SealCommand::Keygen(job) => run_keygen(&job),
         SealCommand::Encrypt(job) => run_encrypt(&job, shutdown),
         SealCommand::Decrypt(job) => run_decrypt(&job, shutdown),
-        SealCommand::Watch => Err(anyhow!(MSG_WATCH_RESERVED)),
+        // Watch owns its whole lifecycle (it only ends on Ctrl+C or a fatal
+        // watcher failure), so it reports its own outcome.
+        SealCommand::Watch(job) => return run_watch(&job, shutdown),
     };
 
     match result {

@@ -84,14 +84,61 @@ exit 0.
 On failure, any partially decrypted file output has already been removed; discard piped
 output on any non-zero exit.
 
+## Watch mode
+
+`seal watch` keeps a folder sealed: every file that appears or changes in the watch
+folder is encrypted to `<name>.age` in the safe folder, replacing any previous version
+there. It runs until Ctrl+C and needs no secret material; the watching machine only
+ever holds public keys.
+
+```bash
+$ seal watch -r age1example000... --watch-dir inbox --safe-dir sealed
+watching inbox -> sealed (1 recipient(s))
+swept 2 file(s): 1 encrypted, 1 up to date, 0 failed
+sealed report.pdf -> sealed/report.pdf.age (1.20 MB)
+```
+
+`-r` and `-R` work exactly as in `encrypt`. On startup the watcher arms first, then one
+sweep seals every file whose output is missing or older than its source, so files added
+or changed while the tool was down are caught up. After that, change events drive the
+work.
+
+| Rule         | Behavior                                                                                           |
+|--------------|----------------------------------------------------------------------------------------------------|
+| Scope        | Top level of the watch folder only; subfolders, symlinks, and other non-files ignored              |
+| Temp names   | `~$` prefix, or a `.tmp`, `.part`, `.crdownload`, `.swp` suffix: skipped                           |
+| Hidden files | Dotfiles are skipped                                                                               |
+| `.age` files | Skipped, so ciphertext dropped into the watch folder is never re-sealed                            |
+| Overwrites   | An existing output is replaced atomically (temp file + rename), no `--force` needed                |
+| Locked files | The open is retried 5 times with doubling backoff from 100 ms, then left for its next change event |
+
+Events are debounced for 2 seconds so editors' write-then-rename save dances settle
+before sealing; the watcher assumes writers finish within that window. A writer that
+stalls longer can get a partial file sealed, and the next change event replaces it with
+the complete one.
+
+Watcher errors that may have lost events trigger a confinement re-check and a fresh
+sweep. If the watcher itself dies or the watch folder disappears, the run prints the
+reason and the summary, then exits 1: a watcher that watches nothing must not keep
+running. Ctrl+C finishes the in-flight file, prints the summary, and exits 130.
+
+Caveats:
+- The two folders must not contain each other. The check compares resolved
+  (junction/symlink-free) paths, at startup and before every recovery sweep.
+- Plaintext stays in the watch folder; sources are never deleted. Back up or sync the
+  safe folder and treat the watch folder as the sensitive one.
+- Network filesystems may deliver no change events; watch a local folder (for synced
+  folders, watch the local replica).
+- The safe folder is a mirror, not a history: a corrupted source that still triggers an
+  event replaces the last good ciphertext.
+
 ## Notes
 - Passphrase-encrypted age files are refused with a clear message; seal is key-based
   only.
-- `seal watch` is reserved for a later release and currently exits 1 with a note.
 - Failure messages never echo key material; a malformed identity line is reported by
   file and line number only.
 - Shared flags from the common CLI: `--app-header`, `--verbose`, `--log-level <level>`
-  (case insensitive), `--log-to-console`, `--log-to-file`, `--rotate-log-file-by-day`.
+  (case-insensitive), `--log-to-console`, `--log-to-file`, `--rotate-log-file-by-day`.
 
 ## Threat model
 

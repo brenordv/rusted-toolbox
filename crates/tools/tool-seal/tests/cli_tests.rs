@@ -371,11 +371,54 @@ fn recipients_file_encrypts_and_explicit_dash_output_streams_to_stdout() {
 }
 
 #[test]
-fn watch_is_a_reserved_stub_that_exits_one() {
+fn watch_without_required_directories_is_a_usage_error() {
     let output = run_tool(&["watch"]);
 
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr_of(&output).contains("--watch-dir"));
+}
+
+#[test]
+fn watch_refuses_a_missing_watch_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_key_path, public_key) = fixture_identity(dir.path(), "key.txt");
+    let safe = dir.path().join("safe");
+    std::fs::create_dir(&safe).unwrap();
+
+    let output = run_tool(&[
+        "watch",
+        "-r",
+        &public_key,
+        "--watch-dir",
+        dir.path().join("absent").to_str().unwrap(),
+        "--safe-dir",
+        safe.to_str().unwrap(),
+    ]);
+
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr_of(&output).contains("planned for a later release"));
+    assert!(stderr_of(&output).contains("watch folder"));
+}
+
+#[test]
+fn watch_refuses_a_safe_dir_inside_the_watch_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_key_path, public_key) = fixture_identity(dir.path(), "key.txt");
+    let watch = dir.path().join("watch");
+    let safe = watch.join("safe");
+    std::fs::create_dir_all(&safe).unwrap();
+
+    let output = run_tool(&[
+        "watch",
+        "-r",
+        &public_key,
+        "--watch-dir",
+        watch.to_str().unwrap(),
+        "--safe-dir",
+        safe.to_str().unwrap(),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr_of(&output).contains("inside the watch folder"));
 }
 
 #[test]
