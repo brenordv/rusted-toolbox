@@ -15,7 +15,7 @@ use tracing::error;
 /// input; the tool expands wildcards itself, so patterns work the same in shells that do
 /// not (Windows).
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 pub struct CliArgs {
     /// Files and/or wildcard patterns to scan; '-' reads standard input
     #[arg(value_name = "TARGET", required = true, num_args = 1..)]

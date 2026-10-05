@@ -13,7 +13,7 @@ const WIFI_AUTH_TYPES: [&str; 3] = ["WPA", "WEP", "nopass"];
 /// This tool can generate QR codes for text, URLs, Wi-Fi payloads, or other types of data.
 /// The output can be printed to the console and/or saved to a file.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 struct CliArgs {
     /// Text payload for the QR code
     #[arg(short = 't', long = "text", value_name = "TEXT")]
@@ -206,8 +206,17 @@ mod tests {
     }
 
     #[test]
+    fn bare_invocation_is_rejected_with_help() {
+        let error = CliArgs::try_parse_from(["qrcode"]).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+        );
+    }
+
+    #[test]
     fn no_payload_is_rejected() {
-        let args = CliArgs::try_parse_from(["qrcode"]).unwrap();
+        let args = CliArgs::try_parse_from(["qrcode", "--dont-print"]).unwrap();
         assert!(build_config(&args).is_err());
     }
 

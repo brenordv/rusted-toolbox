@@ -1,0 +1,28 @@
+[package]
+name = "seal"
+version = "1.0.0"
+description = "Encrypts and decrypts files with key-based age encryption"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+cli-signal-monitor = { workspace = true }
+common-cli = { workspace = true }
+common-file-utils = { workspace = true }
+common-utils = { workspace = true }
+shared-crypto = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+notify = { workspace = true }
+notify-debouncer-full = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+filetime = { workspace = true }
+rstest = { workspace = true }
+tempfile = { workspace = true }

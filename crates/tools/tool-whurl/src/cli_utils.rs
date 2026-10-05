@@ -9,7 +9,7 @@ use common_cli::tool_log_level::ToolLogLevel;
 ///
 /// This tool enables including one hurl file into another, and chaining their execution.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version, arg_required_else_help = true)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 struct CliArgs {
     #[command(subcommand)]
     pub command: CliCommand,
@@ -18,11 +18,7 @@ struct CliArgs {
 #[derive(Subcommand, Debug)]
 enum CliCommand {
     /// List available APIs or requests
-    List {
-        /// API name to inspect. When omitted, prints all APIs.
-        #[arg(value_name = "API", num_args = 0..=1)]
-        api: Option<String>,
-    },
+    List(ListCliArgs),
     /// Expand includes and execute a request collection
     Run(RunCliArgs),
     /// Expand includes and display the merged Hurl document
@@ -65,6 +61,14 @@ struct ExecutionCliArgs {
 }
 
 #[derive(Args, Debug)]
+struct ListCliArgs {
+    /// API name to inspect. When omitted, prints all APIs.
+    #[arg(value_name = "API", num_args = 0..=1)]
+    api: Option<String>,
+}
+
+#[derive(Args, Debug)]
+#[command(arg_required_else_help = true)]
 struct RunCliArgs {
     #[command(flatten)]
     exec: ExecutionCliArgs,
@@ -98,6 +102,7 @@ impl RunCliArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(arg_required_else_help = true)]
 struct DryRunCliArgs {
     #[command(flatten)]
     exec: ExecutionCliArgs,
@@ -257,7 +262,7 @@ fn dry_run_header_lines(dry_run: &DryRunCliArgs) -> Vec<String> {
 /// Maps the parsed derive-based arguments onto the tool's runtime model.
 fn to_cli(args: CliArgs) -> Cli {
     let command = match args.command {
-        CliCommand::List { api } => Command::List(ListArgs { api }),
+        CliCommand::List(list) => Command::List(ListArgs { api: list.api }),
         CliCommand::Run(run) => Command::Run(RunArgs {
             exec: to_execution_args(run.exec),
             json_output: run.json,

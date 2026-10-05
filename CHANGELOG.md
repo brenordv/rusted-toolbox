@@ -1,5 +1,10 @@
 # Workspace Changelog
 
+## v5
+- Normalized CLI configuration for the tools, so they will show help when arguments are required, but were not provided.
+- Write via temp file routine was promoted from an `imgx` routine to a shared logic in common-file-utils.
+- Updated `imgx` tool to use this new shared routine.
+
 ## v4
 - Updated Rust from edition 2021 to 2024.
 

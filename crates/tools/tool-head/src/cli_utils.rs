@@ -13,7 +13,7 @@ use std::ffi::OsString;
 /// than one FILE, precedes each with a header giving the file name. With no FILE, or when
 /// FILE is -, reads standard input.
 #[derive(Parser, Debug)]
-#[command(name = "head", about, long_about, version)]
+#[command(author, version, about, long_about)]
 pub struct CliArgs {
     #[command(flatten)]
     pub args: HeadArgs,

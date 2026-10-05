@@ -6,7 +6,7 @@ use common_cli::common_tool_args::CommonToolArgs;
 ///
 /// Encode or decode data using Base64. With no FILE, or when FILE is -, read standard input.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about)]
 pub struct CliArgs {
     /// Decode Base64 input to binary
     #[arg(short = 'd', long = "decode", default_value_t = false)]

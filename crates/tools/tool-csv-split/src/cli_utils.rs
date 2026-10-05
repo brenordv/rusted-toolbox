@@ -13,7 +13,7 @@ use tracing::{debug, warn};
 ///
 /// Split large CSV or UTF-8 text files by line count, preserving an optional CSV header in each part.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 struct CliArgs {
     /// Path to the input file
     #[arg(short = 'f', long = "file", value_name = "FILE")]

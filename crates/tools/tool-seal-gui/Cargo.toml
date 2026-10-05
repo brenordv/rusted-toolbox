@@ -1,0 +1,30 @@
+[package]
+name = "seal-gui"
+version = "1.0.0"
+description = "Desktop GUI for seal: key-based file encryption over the age format"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-file-utils = { workspace = true }
+common-gui = { workspace = true }
+common-utils = { workspace = true }
+shared-crypto = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+rfd = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tempfile = { workspace = true }

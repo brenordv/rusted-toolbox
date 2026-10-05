@@ -13,7 +13,7 @@ use tracing::error;
 /// wildcard or regex patterns (`files`), with case-insensitive matching by default, recursive or
 /// current-folder-only scanning, configurable output, and per-subcommand headers.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 pub struct CliArgs {
     #[command(subcommand)]
     command: Commands,
@@ -23,6 +23,7 @@ pub struct CliArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(arg_required_else_help = true)]
 struct TextArgs {
     /// Text to search for
     #[arg(value_name = "TEXT")]
@@ -50,6 +51,7 @@ struct TextArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(arg_required_else_help = true)]
 struct FilesArgs {
     /// Filename pattern(s) to match. Supports wildcard or regex.
     #[arg(

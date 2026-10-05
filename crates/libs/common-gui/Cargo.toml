@@ -1,0 +1,12 @@
+[package]
+name = "common-gui"
+version = "1.0.0"
+description = "Shared egui design system: spacing/typography/color tokens, the dark theme, and widget recipes"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# External
+egui = { workspace = true }

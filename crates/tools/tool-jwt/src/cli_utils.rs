@@ -9,7 +9,7 @@ use tracing::error;
 ///
 /// Decodes all public info in the JWT tokens, and can either pretty-print, print the csv or json format. Optionally, can copy one of the claims to the clipboard.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 pub struct CliArgs {
     /// Defines how to print the decoded data. Valid values: pretty, csv, JSON.
     ///

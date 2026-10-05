@@ -7,7 +7,7 @@ use common_cli::common_tool_args::CommonToolArgs;
 /// Mimics the behavior of CAT (the Linux tool). Concatenate FILE(s) to standard output.
 /// With no FILE, or when FILE is -, read standard input.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about)]
 pub struct CliArgs {
     /// Files to display
     #[arg(num_args = 0..)]

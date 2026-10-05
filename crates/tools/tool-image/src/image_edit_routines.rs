@@ -3,7 +3,8 @@ use crate::image_encoders::{
 };
 use crate::image_format_traits::ImageFormatTraits;
 use crate::models::{DecodedImage, EditJob, ImageMeta, ResizeSpec};
-use anyhow::{Context, Result};
+use anyhow::Result;
+use common_file_utils::atomic_write::write_via_temp;
 use image::ImageReader;
 use image::imageops::FilterType;
 use image::metadata::Orientation;
@@ -101,7 +102,7 @@ fn encode_image(
         );
     }
 
-    encode_via_temp(output_path, |temp_file| match output_format {
+    write_via_temp(output_path, |temp_file| match output_format {
         ImageFormat::Png => encode_png(temp_file, image, metadata),
         ImageFormat::Jpeg => encode_jpeg(temp_file, image, metadata, quality),
         ImageFormat::Gif => encode_gif(temp_file, image),
@@ -124,86 +125,6 @@ fn encode_image(
             Ok(())
         }
     })
-}
-
-/// Builds the temp-file builder used for encoder output. On Unix the mode is
-/// widened to 0o666 before the umask applies, matching what a plain
-/// `File::create` would produce; tempfile's default 0o600 would otherwise
-/// survive the rename and tighten every output.
-#[cfg(unix)]
-fn output_temp_builder() -> tempfile::Builder<'static, 'static> {
-    use std::os::unix::fs::PermissionsExt;
-    let mut builder = tempfile::Builder::new();
-    builder.permissions(std::fs::Permissions::from_mode(0o666));
-    builder
-}
-
-/// Builds the temp-file builder used for encoder output. Windows derives
-/// effective permissions from the directory's ACL, so the default builder is
-/// already right.
-#[cfg(not(unix))]
-fn output_temp_builder() -> tempfile::Builder<'static, 'static> {
-    tempfile::Builder::new()
-}
-
-/// Runs `encode` against a temporary file in the destination's directory,
-/// then renames it over `output_path`. A failed encode leaves the
-/// destination untouched, which matters most when no operation changes the
-/// file name and the destination is the input itself: a truncating write
-/// there would destroy the only copy. The temp file lives next to the
-/// destination because the rename must not cross filesystems.
-fn encode_via_temp(output_path: &Path, encode: impl FnOnce(&PathBuf) -> Result<()>) -> Result<()> {
-    // A bare filename has an empty parent, which tempfile would reject;
-    // only root paths have no parent at all, and the caller already
-    // refused those.
-    let output_dir = match output_path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => Path::new("."),
-    };
-
-    let temp = output_temp_builder()
-        .tempfile_in(output_dir)
-        .with_context(|| {
-            format!(
-                "Cannot create a temporary file in '{}'",
-                output_dir.display()
-            )
-        })?
-        .into_temp_path();
-    let temp_file = temp.to_path_buf();
-
-    if let Err(encode_error) = encode(&temp_file) {
-        if let Err(close_error) = temp.close() {
-            warn!(
-                path = %temp_file.display(),
-                error = %close_error,
-                "Failed to remove the temporary output file"
-            );
-        }
-        return Err(encode_error);
-    }
-
-    // A destination being replaced keeps its own permissions rather than
-    // inheriting the temp file's.
-    if let Ok(existing) = std::fs::metadata(output_path)
-        && let Err(error) = std::fs::set_permissions(&temp_file, existing.permissions())
-    {
-        warn!(
-            path = %output_path.display(),
-            error = %error,
-            "Failed to copy the destination's permissions to the new output"
-        );
-    }
-
-    temp.persist(output_path).with_context(|| {
-        format!(
-            "Cannot move temporary file '{}' over '{}'",
-            temp_file.display(),
-            output_path.display()
-        )
-    })?;
-
-    Ok(())
 }
 
 /// Reports whether a format without a dedicated encoder in this tool still
@@ -540,55 +461,5 @@ mod tests {
         assert_eq!(nearest.width(), gaussian.width());
         assert_eq!(nearest.height(), gaussian.height());
         assert_ne!(nearest.to_rgb8().as_raw(), gaussian.to_rgb8().as_raw());
-    }
-
-    fn directory_entry_count(dir: &Path) -> usize {
-        std::fs::read_dir(dir).unwrap().count()
-    }
-
-    #[test]
-    fn encode_via_temp_failure_leaves_an_existing_destination_untouched() {
-        let dir = tempfile::tempdir().unwrap();
-        let dest = dir.path().join("out.png");
-        std::fs::write(&dest, b"original").unwrap();
-
-        let result = encode_via_temp(&dest, |_| anyhow::bail!("encoder failed"));
-
-        assert!(result.is_err());
-        assert_eq!(std::fs::read(&dest).unwrap(), b"original");
-        assert_eq!(
-            directory_entry_count(dir.path()),
-            1,
-            "the failed encode must not leave a temp file behind"
-        );
-    }
-
-    #[test]
-    fn encode_via_temp_success_replaces_the_destination_without_leftovers() {
-        let dir = tempfile::tempdir().unwrap();
-        let dest = dir.path().join("out.png");
-        std::fs::write(&dest, b"old").unwrap();
-
-        encode_via_temp(&dest, |temp_file| {
-            std::fs::write(temp_file, b"new").map_err(Into::into)
-        })
-        .unwrap();
-
-        assert_eq!(std::fs::read(&dest).unwrap(), b"new");
-        assert_eq!(directory_entry_count(dir.path()), 1);
-    }
-
-    #[test]
-    fn encode_via_temp_creates_a_missing_destination() {
-        let dir = tempfile::tempdir().unwrap();
-        let dest = dir.path().join("fresh.png");
-
-        encode_via_temp(&dest, |temp_file| {
-            std::fs::write(temp_file, b"fresh").map_err(Into::into)
-        })
-        .unwrap();
-
-        assert_eq!(std::fs::read(&dest).unwrap(), b"fresh");
-        assert_eq!(directory_entry_count(dir.path()), 1);
     }
 }

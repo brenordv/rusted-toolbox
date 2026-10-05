@@ -11,7 +11,7 @@ use tracing::{error, warn};
 ///  Generates various types of mock data including personal information,
 ///  internet data, random values, and commerce data.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about, after_long_help = get_help_text())]
+#[command(author, version, about, long_about, after_long_help = get_help_text(), arg_required_else_help = true)]
 pub struct CliArgs {
     /// Type of mock data to generate (e.g., person.first-name, internet.email)
     #[arg(value_name = "DATA_TYPE", index = 1, required = true)]

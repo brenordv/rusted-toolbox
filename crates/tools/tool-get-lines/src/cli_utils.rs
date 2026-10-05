@@ -11,7 +11,7 @@ use std::path::PathBuf;
 /// Searches for one or more terms within a file and writes the matching lines, in input order,
 /// either to the console or to a separate file per term.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 pub struct CliArgs {
     /// Comma-separated list of texts to search for (case-insensitive)
     #[arg(short = 's', long = "search", required = true)]

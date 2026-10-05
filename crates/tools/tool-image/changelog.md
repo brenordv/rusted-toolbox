@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.5
+- The private temp-file-then-rename encode helper moved to `common-file-utils` as
+  `atomic_write::write_via_temp` (its tests went with it); imgx now calls the shared
+  helper. One behavior change rode along: a failed rename over the destination now
+  removes the staged temp file instead of leaving it next to the output.
+
 ## 2.1.4
 - The test suite uses the shared `common_cli::test_writers::FailAfter` double instead of a
   private byte-budget failing-writer copy; the behavior pinned by the tests is unchanged.

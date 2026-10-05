@@ -9,7 +9,7 @@ use common_cli::header_format::{format_config_item, format_config_item_level3};
 ///
 /// Tool that allows posting a message to a MQTT broker or reading from it.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 pub struct CliArgs {
     #[command(subcommand)]
     command: Commands,
@@ -19,12 +19,14 @@ pub struct CliArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(arg_required_else_help = true)]
 struct ReadArgs {
     #[command(flatten)]
     pub common: CommonArgs,
 }
 
 #[derive(Args, Debug)]
+#[command(arg_required_else_help = true)]
 struct PostArgs {
     /// Message to post to the MQTT broker.
     #[arg(short = 'm', long = "message", required = true)]

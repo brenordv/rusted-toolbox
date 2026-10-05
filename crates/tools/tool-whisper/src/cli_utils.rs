@@ -9,7 +9,7 @@ use common_cli::common_tool_args::CommonToolArgs;
 /// Start in host mode with --wait to listen for a connection, or in client mode with --connect to
 /// reach a host. Messages are end-to-end encrypted.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 struct CliArgs {
     /// Host mode: listen for connections on the given port (default: 2428)
     #[arg(
@@ -122,8 +122,17 @@ mod tests {
     }
 
     #[test]
+    fn bare_invocation_is_rejected_with_help() {
+        let error = CliArgs::try_parse_from(["whisper"]).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+        );
+    }
+
+    #[test]
     fn neither_wait_nor_connect_is_rejected() {
-        let args = CliArgs::try_parse_from(["whisper"]).unwrap();
+        let args = CliArgs::try_parse_from(["whisper", "-b"]).unwrap();
         assert!(build_args(&args).is_err());
     }
 }

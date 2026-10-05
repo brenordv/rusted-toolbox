@@ -11,7 +11,7 @@ use std::path::PathBuf;
 ///
 /// Creates a normalized version of a CSV file, with missing fields filled by default values.
 #[derive(Parser, Debug)]
-#[command(about, long_about, version)]
+#[command(author, version, about, long_about, arg_required_else_help = true)]
 pub struct CliArgs {
     /// Path to the input file.
     #[arg(short = 'f', long = "file", required = true)]
