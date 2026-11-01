@@ -1,5 +1,8 @@
 # Workspace Changelog
 
+## v6
+- Updated dependencies.
+
 ## v5
 - Normalized CLI configuration for the tools, so they will show help when arguments are required, but were not provided.
 - Write via temp file routine was promoted from an `imgx` routine to a shared logic in common-file-utils.

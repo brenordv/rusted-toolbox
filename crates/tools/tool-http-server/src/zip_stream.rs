@@ -353,7 +353,10 @@ mod tests {
 
     fn entry_names(bytes: &[u8]) -> Vec<String> {
         let archive = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).unwrap();
-        archive.file_names().map(|name| name.to_string()).collect()
+        archive
+            .file_names()
+            .map(|name| name.unwrap().into_owned())
+            .collect()
     }
 
     #[tokio::test]

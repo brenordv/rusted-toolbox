@@ -7,7 +7,7 @@ use common_gui::tokens::SPACE_XL;
 use common_gui::widgets;
 use common_gui::widgets::{BadgeKind, Toast, ToastKind};
 use common_utils::file_system::get_app_sub_folder;
-use egui::{CentralPanel, Id, Layout, Panel};
+use egui::{CentralPanel, Layout, Panel};
 use std::path::{Path, PathBuf};
 
 /// Upper bound on worker events applied per frame, so a pathological burst
@@ -196,11 +196,11 @@ impl eframe::App for SealApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        Panel::top(Id::new("toolbar")).show(ui, |ui| {
+        Panel::top("toolbar").show(ui, |ui| {
             widgets::toolbar(ui, |ui| self.toolbar_contents(ui));
         });
 
-        Panel::bottom(Id::new("status")).show(ui, |ui| {
+        Panel::bottom("status").show(ui, |ui| {
             ui.horizontal(|ui| self.status_bar_contents(ui));
         });
 

@@ -23,4 +23,10 @@ ignore = [
     # Notice-class advisory with no safe upgrade, reached only through the
     # same on-hold EventHub chain.
     { id = "RUSTSEC-2026-0174", reason = "http-types ASCII notice: no safe upgrade; EventHub chain only, deferred with that rework" },
+    # No age release moves past p256/elliptic-curve 0.13, which pin
+    # crypto-bigint 0.5 (the fix is 0.7.6). age reaches it only through
+    # its p256tag and mlkem768p256tag recipient types; shared-crypto
+    # builds only x25519 recipients and identities, so the affected
+    # arithmetic never runs.
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via age 0.12.1's p256 tag recipients: no safe upgrade; seal uses only x25519" },
 ]

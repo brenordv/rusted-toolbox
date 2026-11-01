@@ -28,13 +28,10 @@ shared-eventhub = { path = "crates/libs/shared-eventhub" }
 shared-head-tail = { path = "crates/libs/shared-head-tail" }
 
 # External
-egui = { version = "0.36.2" }
-eframe = { version = "0.36.2" }
-rfd = { version = "0.17.2" }
 age = { version = "0.12.1", features = ["armor"] }
 aho-corasick = "1.1.5"
 anyhow = "1.0.104"
-arboard = "3.6.1"
+arboard = "3.7.0"
 azeventhubs = "0.20.0"
 base64 = "0.23.1"
 camino = "1.2.6"
@@ -46,20 +43,22 @@ crossterm = "0.29.0"
 csv = "1.4.0"
 ctrlc = "3.5.2"
 dns-lookup = "4.0.2"
+eframe = { version = "0.37.0" }
+egui = { version = "0.37.0" }
 fake = { version = "5.1.0", features = ["derive", "chrono"] }
 filetime = "0.2.29"
 futures-util = "0.3.34"
 gif = "0.14.2"
-globset = "0.4.20"
+globset = "0.4.21"
 httpdate = "1.0.3"
-hurl = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
-hurl_core = { git = "https://github.com/Orange-OpenSource/hurl", tag = "8.0.1" }
+hurl = "8.1.0"
+hurl_core = "8.1.0"
 image = "0.25.10"
 imagequant = "4.4.1"
 indicatif = "0.18.6"
 jsonwebtoken = "11.1.0"
 mime_guess = "2.0.5"
-notify = "8.2.0"
+notify = "8.2.1"
 notify-debouncer-full = "0.7.0"
 num_cpus = "1.17.0"
 once_cell = "1.21.4"
@@ -74,11 +73,12 @@ regex = "1.13.1"
 # Workspace default reqwest (gitignore). netquality pins its
 # own 0.12 to match cfspeedtest; see crates/tools/tool-netquality/Cargo.toml.
 reqwest = { version = "0.13.5", features = ["json"] }
+rfd = { version = "0.17.2" }
 rsa = { version = "0.9.10", features = ["sha2"] }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 # The decoder behind warp's query filter; https parses the raw query string
 # through it so repeated keys survive with warp's decoding semantics.
 serde_urlencoded = "0.7.1"
@@ -86,24 +86,28 @@ sha256 = "1.6.0"
 sled = "0.34.7"
 surge-ping = "0.9.1"
 thiserror = "2.0.21"
-tokio = { version = "1.53.2", features = ["full"] }
-tokio-util = { version = "0.7.19", features = ["io"] }
+tokio = { version = "1.54.1", features = ["full"] }
+# Exact pin: tokio-util 0.7.20 adds a second `Encoder` impl (`&[u8]`) to
+# `LengthDelimitedCodec`, and fe2o3-amqp 0.10, which azeventhubs 0.20
+# requires, fails type inference against it. Lift the pin once azeventhubs
+# moves to a newer fe2o3-amqp.
+tokio-util = { version = "=0.7.19", features = ["io"] }
 tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = "2.5.8"
-uuid = { version = "1.27.0", features = ["v4"] }
+uuid = { version = "1.29.0", features = ["v4"] }
 walkdir = "2.5.0"
 warp = { version = "0.4.3", features = ["server"] }
 # Write/compress path only; the default bzip2/lzma/zstd/aes surface stays off.
 # The zlib-rs flate2 backend is the pure-Rust one zip's own `deflate`
 # meta-feature selects; bare `deflate-flate2` leaves flate2 backend-less
 # and fails to compile.
-zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.2.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # Dev dependencies
 http-body-util = "0.1.5"
-rstest = "0.27.0"
+rstest = "0.28.0"
 tempfile = "3.27.0"
 
 [profile.release]

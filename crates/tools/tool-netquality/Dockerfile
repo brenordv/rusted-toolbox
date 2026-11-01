@@ -1,12 +1,12 @@
-FROM rust:1.98.0-bookworm AS builder
+FROM rust:1.99.1-bookworm AS builder
 
 WORKDIR /workspace
 
 # Dependencies are centralized in the root manifest, so the whole workspace is
 # copied and the single package is built with -p (only its graph compiles).
 # The toolchain pin rides along and --locked keeps the container build on the
-# committed lockfile. The pin names channel "1.98", which rustup resolves to
-# the latest 1.98.x: when that drifts from the base image's toolchain, the
+# committed lockfile. The pin names channel "1.99", which rustup resolves to
+# the latest 1.99.x: when that drifts from the base image's toolchain, the
 # build downloads the pinned one (network-dependent).
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
