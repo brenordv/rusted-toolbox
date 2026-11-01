@@ -166,7 +166,7 @@ pub fn show_toasts(ctx: &Context, toasts: &mut Vec<Toast>) {
     }
 
     let p = Palette::default();
-    Area::new(Id::new("toasts"))
+    Area::new(Id::unique("toasts"))
         .anchor(Align2::RIGHT_BOTTOM, egui::vec2(-SPACE_LG, -SPACE_LG))
         .order(Order::Foreground)
         .interactable(false)

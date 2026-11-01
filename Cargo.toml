@@ -28,9 +28,6 @@ shared-eventhub = { path = "crates/libs/shared-eventhub" }
 shared-head-tail = { path = "crates/libs/shared-head-tail" }
 
 # External
-egui = { version = "0.36.2" }
-eframe = { version = "0.36.2" }
-rfd = { version = "0.17.2" }
 age = { version = "0.12.1", features = ["armor"] }
 aho-corasick = "1.1.5"
 anyhow = "1.0.104"
@@ -46,6 +43,8 @@ crossterm = "0.29.0"
 csv = "1.4.0"
 ctrlc = "3.5.2"
 dns-lookup = "4.0.2"
+eframe = { version = "0.37.0" }
+egui = { version = "0.37.0" }
 fake = { version = "5.1.0", features = ["derive", "chrono"] }
 filetime = "0.2.29"
 futures-util = "0.3.34"
@@ -74,6 +73,7 @@ regex = "1.13.1"
 # Workspace default reqwest (gitignore). netquality pins its
 # own 0.12 to match cfspeedtest; see crates/tools/tool-netquality/Cargo.toml.
 reqwest = { version = "0.13.5", features = ["json"] }
+rfd = { version = "0.17.2" }
 rsa = { version = "0.9.10", features = ["sha2"] }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
