@@ -2144,7 +2144,10 @@ mod tests {
 
     fn zip_entry_names(bytes: &[u8]) -> Vec<String> {
         let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
-        archive.file_names().map(|name| name.to_string()).collect()
+        archive
+            .file_names()
+            .map(|name| name.unwrap().into_owned())
+            .collect()
     }
 
     #[test]

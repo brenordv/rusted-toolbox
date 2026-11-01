@@ -55,7 +55,7 @@ Dependency versions live in one place: the root `Cargo.toml`.
 - `.github/workflows/deps-audit.yml` runs `cargo deny check advisories` (RustSec database, config in `deny.toml`) weekly and whenever a PR or push touches a manifest, `Cargo.lock`, `deny.toml`, or the workflow itself.
 - `.github/dependabot.yml` keeps the SHA-pinned actions in the workflows fresh with weekly PRs.
 - `.github/workflows/release.yml` runs on `v*` tags: it builds release binaries on each OS and attaches archives to a GitHub Release.
-- `rust-toolchain.toml` pins the toolchain to a specific version (currently 1.98, bumped deliberately alongside a clippy/fmt pass) and ensures `rustfmt` and `clippy` are available.
+- `rust-toolchain.toml` pins the toolchain to a specific version (currently 1.99, bumped deliberately alongside a clippy/fmt pass) and ensures `rustfmt` and `clippy` are available.
 
 ## Tool structure
 1. Tools can print/log information, trace, and warnings, but not errors;
