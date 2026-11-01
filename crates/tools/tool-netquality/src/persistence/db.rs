@@ -200,21 +200,13 @@ mod tests {
     use super::*;
     use crate::models::ThresholdCategory;
     use chrono::Utc;
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use tempfile::TempDir;
 
-    fn create_temp_db_path() -> std::path::PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        std::env::temp_dir().join(format!("netquality-test-{}.db", nanos))
-    }
-
-    fn create_test_connection() -> (Connection, std::path::PathBuf) {
-        let path = create_temp_db_path();
-        let conn = create_database(&path).expect("create_database should succeed");
-        (conn, path)
+    fn create_test_connection() -> (Connection, TempDir) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let conn = create_database(&dir.path().join("netquality-test.db"))
+            .expect("create_database should succeed");
+        (conn, dir)
     }
 
     fn build_connectivity_result() -> ConnectivityResult {
@@ -241,7 +233,7 @@ mod tests {
 
     #[test]
     fn insert_activity_rows_roundtrip() {
-        let (conn, path) = create_test_connection();
+        let (conn, _dir) = create_test_connection();
 
         let connectivity = build_connectivity_result();
         let connectivity_id =
@@ -275,12 +267,11 @@ mod tests {
         assert_eq!(stored_success, 1);
 
         drop(conn);
-        let _ = fs::remove_file(path);
     }
 
     #[test]
     fn parent_session_id_is_persisted_and_visible_in_view() {
-        let (conn, path) = create_test_connection();
+        let (conn, _dir) = create_test_connection();
 
         let connectivity_id = insert_connectivity_activity(&conn, &build_connectivity_result())
             .expect("insert connectivity");
@@ -313,6 +304,5 @@ mod tests {
         assert_eq!(view_parent, Some(parent_session_id));
 
         drop(conn);
-        let _ = fs::remove_file(path);
     }
 }
