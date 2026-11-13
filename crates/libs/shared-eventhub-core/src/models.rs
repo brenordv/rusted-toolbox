@@ -1,5 +1,10 @@
+use std::collections::BTreeMap;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+// uniqueness = partition + sequence
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct MessageKey {                 // uniqueness = partition + sequence
+pub struct MessageKey {                 
     pub partition_id: String,
     pub sequence_number: i64,
 }
