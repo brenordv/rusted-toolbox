@@ -25,6 +25,7 @@ logging-otel = { path = "crates/libs/logging-otel" }
 mock-data-utils = { path = "crates/libs/mock-data-utils" }
 shared-azure = { path = "crates/libs/shared-azure" }
 shared-crypto = { path = "crates/libs/shared-crypto" }
+shared-eventhub-core = { path = "crates/libs/shared-eventhub-core" }
 shared-eventhub = { path = "crates/libs/shared-eventhub" }
 shared-head-tail = { path = "crates/libs/shared-head-tail" }
 
@@ -35,8 +36,9 @@ anyhow = "1.0.104"
 arboard = "3.7.0"
 async-trait = "0.1.92"
 azeventhubs = "0.20.0"
-azure_core = "1.1.0"
-azure_identity = "1.0.0"
+azure_core = "1.2.0-beta.1"
+azure_identity = "1.1.0-beta.1"
+azure_messaging_eventhubs = "0.16.0"
 azure_security_keyvault_secrets = "1.0.1"
 base64 = "0.23.1"
 camino = "1.2.6"

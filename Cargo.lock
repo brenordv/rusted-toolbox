@@ -8132,6 +8132,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "shared-eventhub-core"
+version = "1.0.0"
+
+[[package]]
 name = "shared-head-tail"
 version = "1.1.0"
 dependencies = [
