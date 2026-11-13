@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::Deref;
 use chrono::Duration;
 
 /// Makes `input` safer to use as a filename, by character substitution only:
@@ -134,6 +136,33 @@ pub fn format_bytes_to_string(bytes: u64) -> String {
     };
 
     format!("{formatted_with_commas}{decimal_suffix} {unit}")
+}
+
+#[derive(Clone, PartialEq)]
+pub struct SecretString(String);
+
+impl SecretString {
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for SecretString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<redacted>")
+    }
+}
+
+impl Debug for SecretString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<redacted>")
+    }
+}
+
+impl From<String> for SecretString {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
 }
 
 #[cfg(test)]
