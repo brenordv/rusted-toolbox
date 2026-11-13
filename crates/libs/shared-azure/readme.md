@@ -77,8 +77,12 @@ deliberately not configurable.
 
 ## Manual verification (not CI)
 
-The unit tests never contact Azure. To exercise the real path against a dev
-vault:
+The default test suite never contacts Azure. One `#[ignore]`d test proves the
+fetch error names the vault host and secret name by dialing a nonexistent
+vault host; it rides the SDK's retry backoff for over a minute, so it only
+runs on demand: `cargo test -p shared-azure -- --ignored`.
+
+To exercise the real path against a dev vault:
 
 1. `az login`
 2. Build a `DeveloperTools` credential and call `fetch_secret` with the dev

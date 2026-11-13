@@ -227,4 +227,39 @@ mod tests {
     fn format_bytes_cases(#[case] bytes: u64, #[case] expected: &str) {
         assert_eq!(format_bytes_to_string(bytes), expected);
     }
+
+    #[test]
+    fn secret_string_debug_and_display_redact_the_value() {
+        let secret = SecretString::from("super-secret-value".to_string());
+
+        assert_eq!(format!("{secret:?}"), "<redacted>");
+        assert_eq!(format!("{secret}"), "<redacted>");
+    }
+
+    #[test]
+    fn secret_string_redacts_inside_a_derived_debug_carrier() {
+        #[derive(Debug)]
+        struct Carrier {
+            secret: SecretString,
+        }
+
+        let carrier = Carrier {
+            secret: "super-secret-value".to_string().into(),
+        };
+        let rendered = format!("{carrier:?}");
+
+        assert!(
+            !rendered.contains("super-secret-value"),
+            "leaked: {rendered}"
+        );
+        assert!(rendered.contains("<redacted>"));
+        assert_eq!(carrier.secret.expose(), "super-secret-value");
+    }
+
+    #[test]
+    fn secret_string_expose_returns_the_raw_value() {
+        let secret: SecretString = "super-secret-value".to_string().into();
+
+        assert_eq!(secret.expose(), "super-secret-value");
+    }
 }

@@ -33,6 +33,7 @@ age = { version = "0.12.1", features = ["armor"] }
 aho-corasick = "1.1.5"
 anyhow = "1.0.104"
 arboard = "3.7.0"
+async-trait = "0.1.92"
 azeventhubs = "0.20.0"
 azure_core = "1.1.0"
 azure_identity = "1.0.0"

@@ -15,5 +15,10 @@ common-utils = { workspace = true }
 anyhow = { workspace = true }
 azure_core = { workspace = true }
 azure_identity = { workspace = true }
-azure_security_keyvault_secrets = {workspace = true }
+azure_security_keyvault_secrets = { workspace = true }
 url = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+rstest = { workspace = true }
+tokio = { workspace = true }

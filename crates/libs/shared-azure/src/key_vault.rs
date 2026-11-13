@@ -81,8 +81,120 @@ pub async fn fetch_secret(
         .into_model()
         .context("Failed to convert secret response into model (azure_security_keyvault_secrets::models::Secret)")?
         .value
-        .context(format!("Secret '{}' exists, but has no value", secret_name))?
+        .with_context(|| format!("Secret '{}' exists, but has no value", secret_name))?
         .into();
 
     Ok(secret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use azure_core::credentials::{AccessToken, TokenRequestOptions};
+    use azure_core::error::ErrorKind;
+    use rstest::rstest;
+
+    /// Refuses every token request, so tests can drive `fetch_secret` without
+    /// a real credential flow or any network traffic.
+    #[derive(Debug)]
+    struct FakeCredential;
+
+    #[async_trait::async_trait]
+    impl TokenCredential for FakeCredential {
+        async fn get_token(
+            &self,
+            _scopes: &[&str],
+            _options: Option<TokenRequestOptions<'_>>,
+        ) -> azure_core::Result<AccessToken> {
+            Err(azure_core::Error::with_message(
+                ErrorKind::Credential,
+                "fake credential refuses to issue tokens",
+            ))
+        }
+    }
+
+    fn fake_credential() -> Arc<dyn TokenCredential> {
+        Arc::new(FakeCredential)
+    }
+
+    #[rstest]
+    #[case::empty_url("", "Vault URL must be provided")]
+    #[case::whitespace_url("   ", "Vault URL must be provided")]
+    #[case::not_a_url("not a url", "Failed to parse Azure Key Vault URL")]
+    #[case::no_host("file:///tmp/secret-store", "Failed to extract the host")]
+    #[case::http_scheme("http://my-vault.vault.azure.net", "must use the 'https' scheme")]
+    #[case::unknown_host(
+        "https://evil.example.com",
+        "'evil.example.com' does not have one of the required suffixes"
+    )]
+    #[case::no_dot_boundary(
+        "https://evilvault.azure.net",
+        "'evilvault.azure.net' does not have one of the required suffixes"
+    )]
+    #[case::suffix_only_in_query(
+        "https://evil.example.com/?x=.vault.azure.net",
+        "'evil.example.com' does not have one of the required suffixes"
+    )]
+    #[case::bare_suffix_host(
+        "https://vault.azure.net",
+        "'vault.azure.net' does not have one of the required suffixes"
+    )]
+    #[case::userinfo_spoof(
+        "https://my-vault.vault.azure.net@evil.example.com/",
+        "'evil.example.com' does not have one of the required suffixes"
+    )]
+    #[tokio::test]
+    async fn fetch_secret_rejects_invalid_vault_urls(
+        #[case] vault_url: &str,
+        #[case] expected_fragment: &str,
+    ) {
+        let error = fetch_secret(vault_url, "some-secret", fake_credential())
+            .await
+            .expect_err("invalid vault URL should be rejected");
+
+        let rendered = format!("{error:#}");
+        assert!(
+            rendered.contains(expected_fragment),
+            "unexpected error for '{vault_url}': {rendered}"
+        );
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::whitespace("  ")]
+    #[tokio::test]
+    async fn fetch_secret_rejects_a_blank_secret_name(#[case] secret_name: &str) {
+        let error = fetch_secret(
+            "https://my-vault.vault.azure.net",
+            secret_name,
+            fake_credential(),
+        )
+        .await
+        .expect_err("blank secret name should be rejected");
+
+        assert!(
+            error.to_string().contains("Secret name must be provided"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[ignore = "dials a nonexistent vault host and rides the SDK retry backoff (~80s); run with --ignored"]
+    #[tokio::test]
+    async fn fetch_secret_error_names_host_and_secret_but_never_secret_material() {
+        let vault_url = "https://rusted-toolbox-vault-that-does-not-exist.vault.azure.net";
+
+        let error = fetch_secret(vault_url, "my-secret-name", fake_credential())
+            .await
+            .expect_err("a vault the credential refuses should fail");
+
+        let rendered = format!("{error:#}");
+        assert!(
+            rendered.contains("rusted-toolbox-vault-that-does-not-exist.vault.azure.net"),
+            "host missing from error: {rendered}"
+        );
+        assert!(
+            rendered.contains("my-secret-name"),
+            "secret name missing from error: {rendered}"
+        );
+    }
 }

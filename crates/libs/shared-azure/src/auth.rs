@@ -111,3 +111,86 @@ pub fn build_credential(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[test]
+    fn build_credential_constructs_developer_tools_without_a_secret() {
+        let credential = build_credential(&CredentialKind::DeveloperTools, None);
+
+        assert!(credential.is_ok(), "{:?}", credential.err());
+    }
+
+    #[test]
+    fn build_credential_constructs_managed_identity_without_a_secret() {
+        let credential = build_credential(&CredentialKind::ManagedIdentity, None);
+
+        assert!(credential.is_ok(), "{:?}", credential.err());
+    }
+
+    #[test]
+    fn build_credential_constructs_client_secret_with_all_parts() {
+        let kind = CredentialKind::ClientSecret {
+            tenant_id: "11111111-2222-3333-4444-555555555555".to_string(),
+            client_id: "66666666-7777-8888-9999-000000000000".to_string(),
+        };
+
+        let credential = build_credential(&kind, Some("some-client-secret".to_string().into()));
+
+        assert!(credential.is_ok(), "{:?}", credential.err());
+    }
+
+    #[rstest]
+    #[case::missing_secret(None, "tenant", "client", "Client secret must be provided")]
+    #[case::blank_secret(Some("   "), "tenant", "client", "Client secret must be provided")]
+    #[case::blank_tenant(Some("secret"), "  ", "client", "Tenant ID must be provided")]
+    #[case::blank_client(Some("secret"), "tenant", "", "Client ID must be provided")]
+    fn build_credential_client_secret_rejects_missing_parts(
+        #[case] secret: Option<&str>,
+        #[case] tenant_id: &str,
+        #[case] client_id: &str,
+        #[case] expected_fragment: &str,
+    ) {
+        let kind = CredentialKind::ClientSecret {
+            tenant_id: tenant_id.to_string(),
+            client_id: client_id.to_string(),
+        };
+
+        let error = build_credential(&kind, secret.map(|s| s.to_string().into()))
+            .expect_err("construction should fail");
+
+        assert!(
+            error.to_string().contains(expected_fragment),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn auth_method_debug_shows_non_secret_fields_and_redacts_the_connection_string() {
+        let methods = [
+            AuthMethod::ConnectionString {
+                connection_string: "Endpoint=sb://x/;SharedAccessKey=sekret".to_string().into(),
+            },
+            AuthMethod::Credential {
+                kind: CredentialKind::DeveloperTools,
+            },
+            AuthMethod::KeyVaultConnectionString {
+                vault_url: "https://my-vault.vault.azure.net".to_string(),
+                secret_name: "eh-connection-string".to_string(),
+                credential: CredentialKind::ManagedIdentity,
+            },
+        ];
+
+        let rendered = format!("{methods:?}");
+
+        assert!(!rendered.contains("sekret"), "leaked: {rendered}");
+        assert!(!rendered.contains("Endpoint="), "leaked: {rendered}");
+        assert!(rendered.contains("<redacted>"));
+        assert!(rendered.contains("my-vault.vault.azure.net"));
+        assert!(rendered.contains("eh-connection-string"));
+        assert!(rendered.contains("DeveloperTools"));
+    }
+}
