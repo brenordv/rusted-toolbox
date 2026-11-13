@@ -8330,10 +8330,13 @@ name = "shared-eventhub-core"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "azure_core_amqp",
  "azure_messaging_eventhubs",
  "chrono",
+ "common-utils",
  "futures-util",
  "regex",
+ "rstest",
  "serde",
  "serde_json",
  "shared-azure",

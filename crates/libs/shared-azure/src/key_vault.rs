@@ -1,5 +1,6 @@
 //! Key Vault secret retrieval with vault-host validation.
 
+use crate::host::host_has_allowed_suffix;
 use anyhow::Context;
 use azure_core::credentials::TokenCredential;
 use azure_security_keyvault_secrets::SecretClient;
@@ -50,10 +51,10 @@ pub async fn fetch_secret(
         return Err(anyhow::anyhow!("Vault URL must use the 'https' scheme"));
     }
 
-    if !AZURE_KEY_VAULT_ALLOWED_URL_SUFFIXES
-        .iter()
-        .any(|suffix| normalized_vault_host.ends_with(&format!(".{}", suffix)))
-    {
+    if !host_has_allowed_suffix(
+        &normalized_vault_host,
+        &AZURE_KEY_VAULT_ALLOWED_URL_SUFFIXES,
+    ) {
         return Err(anyhow::anyhow!(
             "Vault host '{}' does not have one of the required suffixes: {:?}",
             normalized_vault_host,

@@ -69,8 +69,8 @@ Error messages name the secret, never its value.
 
 `fetch_secret` rejects, before any network call, a vault URL that is not
 `https` or whose host does not sit under a known Key Vault DNS suffix
-(`vault.azure.net`, `vault.azure.cn`, `vault.usgovcloudapi.net`,
-`vault.microsoftazure.de`). Tools auto-load config from the working
+(`vault.azure.net`, `vault.azure.cn`, `vault.usgovcloudapi.net`). Tools
+auto-load config from the working
 directory, so a planted config could otherwise point the tool, and the AAD
 token it acquires, at an arbitrary host. Additional or private suffixes are
 deliberately not configurable.

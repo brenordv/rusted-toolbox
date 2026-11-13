@@ -113,6 +113,7 @@ warp = { version = "0.4.3", features = ["server"] }
 zip = { version = "9.2.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # Dev dependencies
+azure_core_amqp = "1.2.0-beta.3"
 http-body-util = "0.1.5"
 rstest = "0.28.0"
 tempfile = "3.27.0"
