@@ -55,6 +55,7 @@ async fn individual_exports_land_in_dated_folders_named_by_partition_and_sequenc
     let outcome = run(&store, &options(&root, ExportFormat::Txt, false));
 
     assert_eq!(outcome.exported, 1);
+    assert!(!outcome.cancelled);
     assert!(
         root.path()
             .join("export")
@@ -171,6 +172,7 @@ async fn a_cancelled_export_leaves_complete_files(#[case] format: ExportFormat) 
         .unwrap();
 
     assert_eq!(outcome.exported, 2);
+    assert!(outcome.cancelled);
     let written = std::fs::read_to_string(
         root.path()
             .join("export")

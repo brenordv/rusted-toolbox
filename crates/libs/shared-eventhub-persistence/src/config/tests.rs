@@ -197,7 +197,7 @@ async fn a_config_json_that_cannot_be_read_fails() {
 }
 
 #[tokio::test]
-async fn an_unknown_field_fails_naming_the_file() {
+async fn an_unknown_field_fails_naming_the_file_and_the_valid_fields_but_not_the_key() {
     let fixture = Fixture::new();
     std::fs::write(
         fixture.config_path(),
@@ -209,7 +209,81 @@ async fn an_unknown_field_fails_naming_the_file() {
 
     let rendered = format!("{error:#}");
     assert!(rendered.contains("config.json"), "{rendered}");
-    assert!(rendered.contains("surprise"), "{rendered}");
+    assert!(
+        rendered.contains("unknown field `<redacted>`"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("`target`"), "{rendered}");
+    assert!(!rendered.contains("surprise"), "{rendered}");
+}
+
+#[rstest::rstest]
+#[case::as_the_auth_method(format!(
+    r#"{{"tool":"eh","schema_version":1,"target":{{"auth":{{"method":"{CONNECTION_STRING}"}}}}}}"#
+))]
+#[case::as_the_credential_kind(format!(
+    r#"{{"tool":"eh","schema_version":1,"target":{{"auth":{{"method":"credential","credential":{{"kind":"{CONNECTION_STRING}"}}}}}}}}"#
+))]
+#[case::as_the_export_format(format!(
+    r#"{{"tool":"eh","schema_version":1,"target":{{"auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}},"storage":{{"export":{{"format":"{CONNECTION_STRING}"}}}}}}"#
+))]
+#[case::as_the_disk_write_mode(format!(
+    r#"{{"tool":"eh","schema_version":1,"target":{{"auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}},"storage":{{"disk_write":{{"mode":"{CONNECTION_STRING}"}}}}}}"#
+))]
+#[tokio::test]
+async fn a_secret_pasted_as_an_enum_value_is_rejected_without_being_echoed(
+    #[case] document: String,
+) {
+    let fixture = Fixture::new();
+    std::fs::write(fixture.config_path(), document).unwrap();
+
+    let error = load_config(fixture.dir()).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("unknown variant `<redacted>`"),
+        "{error:#}"
+    );
+    assert_no_secret_material(&error);
+}
+
+#[rstest::rstest]
+#[case::containing_expected(
+    "Endpoint=sb://unexpected-ns.servicebus.windows.net/;SharedAccessKey=c2VjcmV0LWtleQ=="
+)]
+#[case::containing_a_backtick("a`b;SharedAccessKey=c2VjcmV0LWtleQ==")]
+#[case::containing_the_boundary("x`, expected y;SharedAccessKey=c2VjcmV0LWtleQ==")]
+#[tokio::test]
+async fn a_pasted_secret_shaped_like_the_message_is_still_redacted(#[case] pasted: &str) {
+    let fixture = Fixture::new();
+    std::fs::write(
+        fixture.config_path(),
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"auth":{{"method":"{pasted}"}}}}}}"#
+        ),
+    )
+    .unwrap();
+
+    let error = load_config(fixture.dir()).await.unwrap_err();
+
+    let rendered = format!("{error:#}");
+    assert!(
+        rendered.contains("unknown variant `<redacted>`, expected one of `connection-string`"),
+        "{rendered}"
+    );
+    assert_no_secret_material(&error);
+}
+
+#[rstest::rstest]
+#[case::no_boundary(
+    "unknown variant `Endpoint=sb://x/;SharedAccessKey=k at line 1",
+    "unknown variant `<redacted>`"
+)]
+#[case::not_an_unknown_name("missing field `target` at line 1", "missing field `target` at line 1")]
+fn redact_unknown_name_handles_messages_without_a_boundary(
+    #[case] message: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(redact_unknown_name(message), expected);
 }
 
 #[tokio::test]
@@ -569,4 +643,87 @@ fn resolve_target_without_the_stored_connection_string_fails_readably() {
     let error = resolve_target(&connection_string_config(), &fixture.secrets()).unwrap_err();
 
     assert!(error.to_string().contains("secrets file"), "{error:#}");
+}
+
+#[test]
+fn resolve_target_with_prefers_a_given_connection_string_over_the_stored_one() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    secrets
+        .put(CONNECTION_STRING_SECRET, &"stored".to_owned().into())
+        .unwrap();
+
+    let target = resolve_target_with(
+        &connection_string_config(),
+        with_connection_string(),
+        Some(&secrets),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        &target.auth,
+        AuthMethod::ConnectionString { connection_string } if connection_string.expose() == CONNECTION_STRING
+    ));
+}
+
+#[test]
+fn resolve_target_with_reads_a_missing_client_secret_from_the_store() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    secrets
+        .put(
+            &client_secret_name("client"),
+            &CLIENT_SECRET.to_owned().into(),
+        )
+        .unwrap();
+    let config = ToolConfig::new(TargetConfig {
+        namespace: Some("orders.servicebus.windows.net".to_owned()),
+        event_hub: Some("orders".to_owned()),
+        consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+        auth: AuthMethodConfig::Credential {
+            credential: client_secret_kind(),
+        },
+    });
+
+    let target = resolve_target_with(&config, SensitiveValues::default(), Some(&secrets)).unwrap();
+
+    assert_eq!(target.client_secret.unwrap().expose(), CLIENT_SECRET);
+}
+
+#[test]
+fn resolve_target_with_no_store_and_no_given_connection_string_fails() {
+    let error = resolve_target_with(
+        &connection_string_config(),
+        SensitiveValues::default(),
+        None,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("secrets file"), "{error:#}");
+}
+
+#[rstest::rstest]
+#[case::connection_string_not_given(connection_string_config(), SensitiveValues::default(), true)]
+#[case::connection_string_given(connection_string_config(), with_connection_string(), false)]
+#[case::client_secret_not_given(
+    key_vault_config(client_secret_kind()),
+    SensitiveValues::default(),
+    true
+)]
+#[case::client_secret_given(
+    key_vault_config(client_secret_kind()),
+    SensitiveValues { connection_string: None, client_secret: Some(CLIENT_SECRET.to_owned().into()) },
+    false
+)]
+#[case::no_secret_used(
+    key_vault_config(CredentialKindConfig::DeveloperTools),
+    SensitiveValues::default(),
+    false
+)]
+fn needs_stored_secret_is_true_only_for_a_used_secret_that_was_not_given(
+    #[case] config: ToolConfig,
+    #[case] given: SensitiveValues,
+    #[case] expected: bool,
+) {
+    assert_eq!(needs_stored_secret(&config, &given), expected);
 }

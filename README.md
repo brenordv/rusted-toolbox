@@ -3,33 +3,32 @@ This is a collection of free command-line tools I made in an attempt to learn Ru
 
 We currently have the following tools:
 1. A tool to read the [public info on JWT tokens](crates/tools/tool-jwt/readme.md);
-2. A high-performance tool to [read messages from EventHub](crates/tools/tool-eventhub-read/readme.md),
-3. and another is to [export the messages](crates/tools/tool-eventhub-export/readme.md);
-4. A [CSV data normalizer](crates/tools/tool-csvn/readme.md) tool;
-5. A tool that [splits large files](crates/tools/tool-csv-split/readme.md) (including CSV) into smaller ones;
-6. A tool [that searches for multiple terms](crates/tools/tool-get-lines/readme.md) inside a text file and creates one output file per search term;
-7. A tool that mimics the [cat](crates/tools/tool-cat/readme.md) command from Unix (useful on Windows);
-8. A tool that mimics the [touch](crates/tools/tool-touch/readme.md) command from Unix (also useful on Windows);
-9. A tool that [generates GUID](crates/tools/tool-guid/readme.md) (uuidv4) in the terminal with some nice options;
-10. A tool that [converts unix timestamp](crates/tools/tool-timestamp/readme.md) to readable format and vice versa;
-11. A lightweight [HTTP server](crates/tools/tool-http-server/readme.md) for serving static files during development;
-12. A [mock data generator](crates/tools/tool-mock/readme.md) for creating test data with various types of realistic information;
-13. A bare-bones, fully private, encrypted P2P chat tool called [Whisper](crates/tools/tool-whisper/readme.md);
-14. A tool called [Gitignore](crates/tools/tool-gitignore/readme.md) that generates/updates the `.gitignore` file of your project automatically;
-15. An image editor called [IMGx](crates/tools/tool-image/readme.md) that allows you to quickly do common operations like resizing, converting to another format, and to greyscale;
-16. An [MQTT cli tool](crates/tools/tool-mqtt/readme.md) that can be used to quickly send or receive messages from a specific topic;
-17. A tool to generate [QRCodes](crates/tools/tool-qrcode/readme.md) that, as the name suggests, can be used to generate QRCodes to file or just print them to the terminal;
-18. A [lookup](crates/tools/tool-lookup/readme.md) tool that can either find text in multiple files or find files where the filename contains a specific text/pattern/regex;
-19. A tool that is like ping, but with extra features. It is called [pingx](crates/tools/tool-pingx/readme.md);
-20. A wrapper tool called [Whurl](crates/tools/tool-whurl/readme.md), that allows referencing one hurl file in another;
-21. A drop-in replacement for base64 called [b64](crates/tools/tool-b64/readme.md) that comes with a few extra features;
-22. A network quality monitor called [netquality](crates/tools/tool-netquality/readme.md) that checks connectivity and speed, and reports when things are not as expected;
-23. A tool called [remove-zw](crates/tools/tool-remove-zw/readme.md) that removes zero-width Unicode format characters and a leading byte-order mark (BOM) from text, with a `--dry-run` preview and a `--check` mode for pipelines;
-24. A tool that mimics the [head](crates/tools/tool-head/readme.md) command from Unix (also useful on Windows);
-25. A tool that mimics the [tail](crates/tools/tool-tail/readme.md) command from Unix, including follow mode (also useful on Windows);
-26. A regex value extractor called [rxget](crates/tools/tool-rxget/readme.md) that pulls matched values out of text files, with per-file or per-run uniqueness and optional filename prefixes;
-27. A file encryption tool called [seal](crates/tools/tool-seal/readme.md) that seals files to `age1...` public keys and opens them with identity files (the age format, key-based only).
-28. A desktop companion to seal called [seal-gui](crates/tools/tool-seal-gui/readme.md): the same key-based age encryption in a window, with text sealing to ASCII armor, drag-and-drop file batches, key generation, and a saved recipient book.
+2. An Azure Event Hubs tool called [eh](crates/tools/tool-eh/readme.md): `eh read` captures events into a local archive (it replaces `eh-read`), and `eh export` writes them to txt, csv, or json (it replaces `eh-export`); a desktop `eh-gui` is planned;
+3. A [CSV data normalizer](crates/tools/tool-csvn/readme.md) tool;
+4. A tool that [splits large files](crates/tools/tool-csv-split/readme.md) (including CSV) into smaller ones;
+5. A tool [that searches for multiple terms](crates/tools/tool-get-lines/readme.md) inside a text file and creates one output file per search term;
+6. A tool that mimics the [cat](crates/tools/tool-cat/readme.md) command from Unix (useful on Windows);
+7. A tool that mimics the [touch](crates/tools/tool-touch/readme.md) command from Unix (also useful on Windows);
+8. A tool that [generates GUID](crates/tools/tool-guid/readme.md) (uuidv4) in the terminal with some nice options;
+9. A tool that [converts unix timestamp](crates/tools/tool-timestamp/readme.md) to readable format and vice versa;
+10. A lightweight [HTTP server](crates/tools/tool-http-server/readme.md) for serving static files during development;
+11. A [mock data generator](crates/tools/tool-mock/readme.md) for creating test data with various types of realistic information;
+12. A bare-bones, fully private, encrypted P2P chat tool called [Whisper](crates/tools/tool-whisper/readme.md);
+13. A tool called [Gitignore](crates/tools/tool-gitignore/readme.md) that generates/updates the `.gitignore` file of your project automatically;
+14. An image editor called [IMGx](crates/tools/tool-image/readme.md) that allows you to quickly do common operations like resizing, converting to another format, and to greyscale;
+15. An [MQTT cli tool](crates/tools/tool-mqtt/readme.md) that can be used to quickly send or receive messages from a specific topic;
+16. A tool to generate [QRCodes](crates/tools/tool-qrcode/readme.md) that, as the name suggests, can be used to generate QRCodes to file or just print them to the terminal;
+17. A [lookup](crates/tools/tool-lookup/readme.md) tool that can either find text in multiple files or find files where the filename contains a specific text/pattern/regex;
+18. A tool that is like ping, but with extra features. It is called [pingx](crates/tools/tool-pingx/readme.md);
+19. A wrapper tool called [Whurl](crates/tools/tool-whurl/readme.md), that allows referencing one hurl file in another;
+20. A drop-in replacement for base64 called [b64](crates/tools/tool-b64/readme.md) that comes with a few extra features;
+21. A network quality monitor called [netquality](crates/tools/tool-netquality/readme.md) that checks connectivity and speed, and reports when things are not as expected;
+22. A tool called [remove-zw](crates/tools/tool-remove-zw/readme.md) that removes zero-width Unicode format characters and a leading byte-order mark (BOM) from text, with a `--dry-run` preview and a `--check` mode for pipelines;
+23. A tool that mimics the [head](crates/tools/tool-head/readme.md) command from Unix (also useful on Windows);
+24. A tool that mimics the [tail](crates/tools/tool-tail/readme.md) command from Unix, including follow mode (also useful on Windows);
+25. A regex value extractor called [rxget](crates/tools/tool-rxget/readme.md) that pulls matched values out of text files, with per-file or per-run uniqueness and optional filename prefixes;
+26. A file encryption tool called [seal](crates/tools/tool-seal/readme.md) that seals files to `age1...` public keys and opens them with identity files (the age format, key-based only).
+27. A desktop companion to seal called [seal-gui](crates/tools/tool-seal-gui/readme.md): the same key-based age encryption in a window, with text sealing to ASCII armor, drag-and-drop file batches, key generation, and a saved recipient book.
 
 ## Ok, but why?
 Well, three main reasons:
@@ -55,7 +54,7 @@ helps a lot when you have to use Linux, MacOS, and Windows machines frequently.
 The list above says what each tool is. This section is about what they are good for: the tricks that are not
 obvious from the flag list, and what happens when you point the tools at each other. Unless a tool says
 otherwise, stdout carries only data and diagnostics go to stderr, so chaining them works the way you'd hope.
-(The EventHub pair has its own readmes and is skipped here.)
+(`eh` has its own readme and is skipped here.)
 
 ### Logs, CSVs, and other big files
 

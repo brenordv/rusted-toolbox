@@ -225,7 +225,7 @@ impl ToolConfig {
 
     /// The client id whose secret the config needs, from the event hub
     /// credential or the Key Vault credential.
-    fn client_secret_id(&self) -> Option<&str> {
+    pub fn client_secret_id(&self) -> Option<&str> {
         let kind = match &self.target.auth {
             AuthMethodConfig::ConnectionString { .. } => return None,
             AuthMethodConfig::Credential { credential }
@@ -317,7 +317,7 @@ pub async fn load_config(dir: &Path) -> anyhow::Result<ConfigLoad> {
         anyhow::anyhow!(
             "'{}' is an eh config, but it is not valid: {}",
             path.display(),
-            redact_quoted(&error.to_string())
+            redact_quoted(&redact_unknown_name(&error.to_string()))
         )
     })?;
     if config.schema_version != CONFIG_SCHEMA_VERSION {
@@ -353,12 +353,45 @@ fn is_ours(text: &str) -> bool {
 /// serde quotes the offending string value in type errors, and in a config a
 /// misplaced string is most often a pasted secret.
 fn redact_quoted(message: &str) -> String {
+    redact_delimited(message, '"')
+}
+
+/// Replaces the name in a serde "unknown field" or "unknown variant" message
+/// with `<redacted>`. That name is whatever the file held (a pasted secret, as
+/// often as not) and can contain anything, backticks and the word "expected"
+/// included, so everything from its opening backtick to the last
+/// `` `, expected `` (or `` `, there are no ``) is replaced. The schema's own
+/// names after that boundary stay, so the message still says what is valid;
+/// with no boundary, the rest of the message goes.
+fn redact_unknown_name(message: &str) -> String {
+    const OPENERS: [&str; 2] = ["unknown variant `", "unknown field `"];
+    const BOUNDARIES: [&str; 2] = ["`, expected", "`, there are no"];
+
+    let Some(name_start) = OPENERS
+        .iter()
+        .filter_map(|opener| message.find(opener).map(|at| at + opener.len()))
+        .min()
+    else {
+        return message.to_owned();
+    };
+    let (before, rest) = message.split_at(name_start);
+    match BOUNDARIES
+        .iter()
+        .filter_map(|boundary| rest.rfind(boundary))
+        .max()
+    {
+        Some(name_end) => format!("{before}<redacted>{}", &rest[name_end..]),
+        None => format!("{before}<redacted>`"),
+    }
+}
+
+fn redact_delimited(message: &str, delimiter: char) -> String {
     message
-        .split('"')
+        .split(delimiter)
         .enumerate()
         .map(|(index, part)| if index % 2 == 0 { part } else { "<redacted>" })
         .collect::<Vec<_>>()
-        .join("\"")
+        .join(&delimiter.to_string())
 }
 
 fn auth_method_name(auth: &AuthMethodConfig) -> &'static str {
@@ -484,12 +517,44 @@ pub fn resolve_target(
     config: &ToolConfig,
     secrets: &SecretsStore,
 ) -> anyhow::Result<EventHubTarget> {
+    resolve_target_with(config, SensitiveValues::default(), Some(secrets))
+}
+
+/// Whether resolving `config` needs the secrets file: it uses a connection
+/// string or a client secret that `given` does not hold.
+pub fn needs_stored_secret(config: &ToolConfig, given: &SensitiveValues) -> bool {
+    let connection_string = match config.target.auth {
+        AuthMethodConfig::ConnectionString { .. } => given.connection_string.is_none(),
+        AuthMethodConfig::Credential { .. } | AuthMethodConfig::KeyVaultConnectionString { .. } => {
+            false
+        }
+    };
+    let client_secret = config.client_secret_id().is_some() && given.client_secret.is_none();
+
+    connection_string || client_secret
+}
+
+/// Rebuilds the event hub target `config` describes. A secret in `given`
+/// wins; a secret the config uses that `given` lacks is read from `secrets`.
+///
+/// # Errors
+/// Fails when the config uses a connection string that is neither given nor
+/// stored, or when the secrets file cannot be read.
+pub fn resolve_target_with(
+    config: &ToolConfig,
+    given: SensitiveValues,
+    secrets: Option<&SecretsStore>,
+) -> anyhow::Result<EventHubTarget> {
     let auth = match &config.target.auth {
         AuthMethodConfig::ConnectionString { .. } => AuthMethod::ConnectionString {
-            connection_string: secrets.get(CONNECTION_STRING_SECRET)?.context(
-                "config.json expects the connection string in the data folder's secrets file, \
-                 but it is not there; save the config again with the connection string",
-            )?,
+            connection_string: match given.connection_string {
+                Some(connection_string) => connection_string,
+                None => stored(secrets, CONNECTION_STRING_SECRET)?.context(
+                    "config.json expects the connection string in the data folder's secrets \
+                     file, but it is not there; save the config again with the connection \
+                     string",
+                )?,
+            },
         },
         AuthMethodConfig::Credential { credential } => AuthMethod::Credential {
             kind: credential.into(),
@@ -504,14 +569,15 @@ pub fn resolve_target(
             credential: credential.into(),
         },
     };
-    let client_secret = match config.client_secret_id() {
-        Some(client_id) => secrets.get(&client_secret_name(client_id))?,
-        None => None,
+    let client_secret = match (config.client_secret_id(), given.client_secret) {
+        (Some(_), Some(client_secret)) => Some(client_secret),
+        (Some(client_id), None) => stored(secrets, &client_secret_name(client_id))?,
+        (None, _) => None,
     };
     info!(
         auth = auth_method_name(&config.target.auth),
-        client_secret_stored = client_secret.is_some(),
-        "Resolved the saved target"
+        client_secret_present = client_secret.is_some(),
+        "Resolved the target"
     );
 
     Ok(EventHubTarget {
@@ -521,6 +587,14 @@ pub fn resolve_target(
         event_hub_name: config.target.event_hub.clone(),
         consumer_group: config.target.consumer_group.clone(),
     })
+}
+
+/// The secret stored under `name`, or `None` when there is no secrets file.
+fn stored(secrets: Option<&SecretsStore>, name: &str) -> anyhow::Result<Option<SecretString>> {
+    match secrets {
+        Some(secrets) => secrets.get(name),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]

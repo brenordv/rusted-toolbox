@@ -27,7 +27,6 @@ shared-azure = { path = "crates/libs/shared-azure" }
 shared-crypto = { path = "crates/libs/shared-crypto" }
 shared-eventhub-core = { path = "crates/libs/shared-eventhub-core" }
 shared-eventhub-persistence = { path = "crates/libs/shared-eventhub-persistence" }
-shared-eventhub = { path = "crates/libs/shared-eventhub" }
 shared-head-tail = { path = "crates/libs/shared-head-tail" }
 
 # External
@@ -36,7 +35,6 @@ aho-corasick = "1.1.5"
 anyhow = "1.0.104"
 arboard = "3.7.0"
 async-trait = "0.1.92"
-azeventhubs = "0.20.0"
 azure_core = "1.2.0-beta.2"
 azure_identity = "1.1.0-beta.2"
 azure_messaging_eventhubs = "0.16.0"
@@ -92,15 +90,10 @@ serde_json = "1.0.154"
 # through it so repeated keys survive with warp's decoding semantics.
 serde_urlencoded = "0.7.1"
 sha256 = "1.6.0"
-sled = "0.34.7"
 surge-ping = "0.9.1"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["full"] }
-# Exact pin: tokio-util 0.7.20 adds a second `Encoder` impl (`&[u8]`) to
-# `LengthDelimitedCodec`, and fe2o3-amqp 0.10, which azeventhubs 0.20
-# requires, fails type inference against it. Lift the pin once azeventhubs
-# moves to a newer fe2o3-amqp.
-tokio-util = { version = "=0.7.19", features = ["io"] }
+tokio-util = { version = "0.7.19", features = ["io"] }
 tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

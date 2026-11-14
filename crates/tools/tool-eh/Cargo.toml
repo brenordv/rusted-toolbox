@@ -1,0 +1,31 @@
+[package]
+name = "eh"
+version = "1.0.0"
+description = "Azure Event Hubs CLI: captures events into a local archive and exports them to txt, csv, or json"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+cli-signal-monitor = { workspace = true }
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+shared-eventhub-core = { workspace = true }
+shared-eventhub-persistence = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+crossterm = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+shared-azure = { workspace = true }
+
+rstest = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
