@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+- Builds on Rune's forks of `winit`, `wgpu-hal`, and `accesskit_windows`: the workspace now
+  depends on Rune (for `eh-gui`), and its `[patch.crates-io]` applies to every crate here.
+  Rune is pinned at rev `c4eda05889c984fff91ccd906e3c00cdfc4cae24`. Each fork was checked to be
+  byte-identical to its crates.io release plus Rune's committed `vendor/<name>.patch`, and each
+  patch was read by hand: no network, file, process, or telemetry code.
+- What seal-gui can notice:
+  - winit 0.30.13: on Wayland, touchpad scroll distances are 12 times larger. On Windows, new
+    windows skip a taskbar COM call and are created at their requested position.
+  - wgpu-hal drops from 30.0.2 to 30.0.1 (Rune's fork). eframe renders with wgpu, so on DX12
+    the swap chain is `FLIP_SEQUENTIAL` instead of `FLIP_DISCARD`, and the shader compiler
+    (FXC) loads on the first shader compile instead of at startup.
+  - accesskit_windows 0.35.2: headings and landmarks report their level and type to UI
+    Automation.
+
 ## 1.0.0
 - Initial release.
 - Text tab: seal text to recipients as ASCII armor, unseal armored text with

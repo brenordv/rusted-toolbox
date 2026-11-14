@@ -1,0 +1,25 @@
+[package]
+name = "eh-gui"
+version = "1.0.0"
+description = "Desktop GUI for Azure Event Hubs: live capture into a local archive, archive search, and export"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+rune = { workspace = true }
+rune-kit = { workspace = true }
+tracing = { workspace = true }
+
+# Phase 5 spike (gate 4): deleted once the tail-holding check passes. `test = true` runs its
+# headless tests under `cargo test`, which is gate 3 on the CI runners.
+[[example]]
+name = "spike_tail"
+test = true
