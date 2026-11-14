@@ -7,19 +7,36 @@ authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[features]
+# Dev-only demo mode: the `eh-gui-demo` binary with a generated event hub. Release builds
+# (`cargo build --release --workspace`) leave it out.
+demo = ["dep:tempfile"]
+
+[[bin]]
+name = "eh-gui-demo"
+path = "src/bin/eh_gui_demo.rs"
+required-features = ["demo"]
+
 [dependencies]
 # Internal
 common-cli = { workspace = true }
+common-utils = { workspace = true }
+shared-eventhub-core = { workspace = true }
+shared-eventhub-persistence = { workspace = true }
 
 # External
 anyhow = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
 rune = { workspace = true }
 rune-kit = { workspace = true }
+tempfile = { workspace = true, optional = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 
-# Phase 5 spike (gate 4): deleted once the tail-holding check passes. `test = true` runs its
-# headless tests under `cargo test`, which is gate 3 on the CI runners.
-[[example]]
-name = "spike_tail"
-test = true
+[dev-dependencies]
+shared-azure = { workspace = true }
+
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }

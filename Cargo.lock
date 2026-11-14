@@ -1490,7 +1490,7 @@ dependencies = [
 
 [[package]]
 name = "common-cli"
-version = "1.7.1"
+version = "1.8.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2437,11 +2437,19 @@ name = "eh-gui"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "common-cli",
+ "common-utils",
  "rune",
  "rune-kit",
+ "shared-azure",
+ "shared-eventhub-core",
+ "shared-eventhub-persistence",
+ "tempfile",
+ "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

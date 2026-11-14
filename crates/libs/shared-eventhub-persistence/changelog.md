@@ -11,5 +11,7 @@
   "unknown variant" messages; `ExportOutcome::cancelled` says whether an
   export stopped early on its cancel flag; `resolve_target_with` and
   `needs_stored_secret` resolve a target from given secrets and read the
-  secrets file only for the ones missing.
+  secrets file only for the ones missing; `ToolConfig::engine_config` maps a
+  config's capture settings and a resolved target to the engine's run
+  settings.
 - Dependency: `redb` 4.6.0.

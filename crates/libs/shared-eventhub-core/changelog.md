@@ -8,6 +8,9 @@
   live statistics with per-partition progress.
 - `MessageSink::bind` ties a sink to the validated event hub (`EventHubIdentity`)
   once per run, before any checkpoint is loaded; a refused bind fails the run.
+- `connection::validated_namespace` and `connection::validated_event_hub_name` are public, so a
+  form can check a namespace or event hub name with the same rules `connect` applies, before
+  connecting. Neither echoes a rejected value.
 - Azure SDK pins: `azure_messaging_eventhubs` 0.16.0 on `azure_core`
   1.2.0-beta.2 (one `azure_core` shared with `shared-azure`'s
   `azure_identity` 1.1.0-beta.2 and `azure_security_keyvault_secrets`

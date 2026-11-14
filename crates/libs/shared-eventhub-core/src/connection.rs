@@ -252,7 +252,11 @@ fn resolve_connection_string(
 /// that is not shaped like a host name is rejected without being echoed,
 /// because a pasted connection string or key would otherwise land in the
 /// error text.
-fn validated_namespace(namespace: &str) -> anyhow::Result<String> {
+///
+/// # Errors
+/// Fails when `namespace` is not a host name, or not under one of
+/// [`EVENT_HUBS_ALLOWED_HOST_SUFFIXES`].
+pub fn validated_namespace(namespace: &str) -> anyhow::Result<String> {
     let looks_like_host = !namespace.is_empty()
         && namespace
             .chars()
@@ -279,7 +283,10 @@ fn validated_namespace(namespace: &str) -> anyhow::Result<String> {
 /// digits, `.`, `-`, `_`, starting and ending with a letter or digit). A
 /// failing value is never echoed, for the same reason as
 /// [`validated_namespace`].
-fn validated_event_hub_name(name: &str) -> anyhow::Result<String> {
+///
+/// # Errors
+/// Fails when `name` breaks the naming rules.
+pub fn validated_event_hub_name(name: &str) -> anyhow::Result<String> {
     let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_');
     let valid = (1..=MAX_EVENT_HUB_NAME_LENGTH).contains(&name.len())
         && name.chars().all(allowed)

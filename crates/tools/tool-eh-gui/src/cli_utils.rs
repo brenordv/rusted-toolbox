@@ -1,4 +1,5 @@
 use clap::Parser;
+use common_cli::app_logger::FileLogging;
 use common_cli::common_tool_args::CommonToolArgsNoVerbose;
 use common_cli::tool_log_level::ToolLogLevel;
 
@@ -16,8 +17,9 @@ struct CliArgs {
 
 /// Parses the CLI flags and boots logging before any window exists. The file sink is forced on
 /// and the default level is info, inverting the house defaults: the log file is the only place a
-/// windowed app's failures land. `--log-level disabled` still silences everything.
-pub fn initialize() {
+/// windowed app's failures land. `--log-level disabled` still silences everything. Returns what
+/// the file sink is doing, for the connection details.
+pub fn initialize() -> FileLogging {
     let mut args = CliArgs::parse();
     args.common.log_to_file = true;
     args.common.app_boot_up_with_level(
@@ -27,7 +29,7 @@ pub fn initialize() {
         "<unused>",
         false,
         None::<fn()>,
-    );
+    )
 }
 
 #[cfg(test)]

@@ -20,6 +20,26 @@ enum TerminalTarget {
     Stderr,
 }
 
+/// What the file sink is doing after [`AppLogger::init`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileLogging {
+    /// No file layer: file logging was not asked for, or logging is off.
+    Off,
+    /// The file layer writes to this path (the one actually opened).
+    Writing(PathBuf),
+    /// File logging was asked for, but the log file at `path` could not be
+    /// opened (or its folder created); `error` is the cause.
+    Failed { path: PathBuf, error: String },
+}
+
+/// The file layer together with what it reports, so [`AppLogger::init`] and
+/// [`AppLogger::file_layer`] share one open path.
+enum FileLayer {
+    Off,
+    Writing { layer: BoxedLayer, path: PathBuf },
+    Failed { path: PathBuf, error: String },
+}
+
 /// The layers to install, derived purely from the [` AppLogger `] state.
 ///
 /// A `Some` plan always has a terminal layer; `file` adds the file layer on top.
@@ -128,29 +148,40 @@ impl AppLogger {
         }
     }
 
-    /// Installs the global tracing subscriber for this logger.
+    /// Installs the global tracing subscriber for this logger and reports what
+    /// the file sink ended up doing.
     ///
-    /// Does nothing when logging is off (`force_disable_log`, or a
-    /// [`ToolLogLevel::Disabled`] level). The terminal layer is always present; the
-    /// file layer is added when `--log-to-file` is set and the file can be opened.
-    pub fn init(&self, force_disable_log: bool) {
+    /// Does nothing and returns [`FileLogging::Off`] when logging is off
+    /// (`force_disable_log`, or a [`ToolLogLevel::Disabled`] level). The terminal
+    /// layer is always present; the file layer is added when `--log-to-file` is
+    /// set and the file can be opened, and [`FileLogging::Failed`] carries the
+    /// path and cause when it cannot.
+    pub fn init(&self, force_disable_log: bool) -> FileLogging {
         let Some(plan) = self.plan(force_disable_log) else {
-            return;
+            return FileLogging::Off;
         };
 
         let mut layers: Vec<BoxedLayer> = vec![Self::terminal_layer(&plan.terminal)];
 
-        if plan.file
-            && let Some(file_layer) = self.file_layer()
-        {
-            layers.push(file_layer);
-        }
+        let file_logging = if plan.file {
+            match self.open_file_layer() {
+                FileLayer::Off => FileLogging::Off,
+                FileLayer::Writing { layer, path } => {
+                    layers.push(layer);
+                    FileLogging::Writing(path)
+                }
+                FileLayer::Failed { path, error } => FileLogging::Failed { path, error },
+            }
+        } else {
+            FileLogging::Off
+        };
 
         let subscriber = tracing_subscriber::registry()
             .with(layers)
             .with(Self::env_filter(&plan.level));
 
         subscriber.init();
+        file_logging
     }
 
     /// The tracing level string this logger was configured with (e.g. `"info"`).
@@ -174,33 +205,49 @@ impl AppLogger {
     /// subscriber owned elsewhere (for example, the OpenTelemetry one) rather
     /// than only the one built by [`AppLogger::init`].
     pub fn file_layer(&self) -> Option<BoxedLayer> {
-        if !self.to_file {
-            return None;
+        match self.open_file_layer() {
+            FileLayer::Writing { layer, .. } => Some(layer),
+            FileLayer::Off | FileLayer::Failed { .. } => None,
         }
+    }
 
-        if let Err(error) = create_log_dir(&self.log_file_folder) {
-            eprintln!(
-                "Warning: could not create log directory {}: {error}",
-                self.log_file_folder.display()
-            );
-            return None;
+    /// Opens the log file and builds the layer over it, reporting the path it
+    /// opened (resolved once, so a date-rotated name is the one in use) or the
+    /// path it tried and the cause. A failure also writes one warning to stderr.
+    fn open_file_layer(&self) -> FileLayer {
+        if !self.to_file {
+            return FileLayer::Off;
         }
 
         let log_file = self.resolve_log_filename();
 
+        if let Err(error) = create_log_dir(&self.log_file_folder) {
+            let error = format!(
+                "could not create log directory {}: {error}",
+                self.log_file_folder.display()
+            );
+            eprintln!("Warning: {error}");
+            return FileLayer::Failed {
+                path: log_file,
+                error,
+            };
+        }
+
         match open_log_file(&log_file) {
-            Ok(file) => Some(
-                tracing_subscriber::fmt::layer()
+            Ok(file) => FileLayer::Writing {
+                layer: tracing_subscriber::fmt::layer()
                     .with_writer(file)
                     .with_ansi(false)
                     .boxed(),
-            ),
+                path: log_file,
+            },
             Err(error) => {
-                eprintln!(
-                    "Warning: could not open log file {}: {error}",
-                    log_file.display()
-                );
-                None
+                let error = format!("could not open log file {}: {error}", log_file.display());
+                eprintln!("Warning: {error}");
+                FileLayer::Failed {
+                    path: log_file,
+                    error,
+                }
             }
         }
     }
@@ -328,9 +375,74 @@ mod tests {
         );
     }
 
-    // Deliberately untested: `init` and `app_boot_up` install the global tracing
-    // subscriber, which can be set only once per process; `file_layer`'s open path
-    // writes into the real user home; the exit helpers terminate the process.
+    // Deliberately untested: an enabled `init` and `app_boot_up` install the global
+    // tracing subscriber, which can be set only once per process; the exit helpers
+    // terminate the process. The file-open path is tested through
+    // `open_file_layer` with the log folder pointed at a temp directory.
+
+    fn file_logger_in(folder: &std::path::Path) -> AppLogger {
+        let mut app_logger = AppLogger::new("t", ToolLogLevel::Info, false, true, false);
+        app_logger.log_file_folder = folder.to_path_buf();
+        app_logger
+    }
+
+    #[test]
+    fn open_file_layer_reports_the_opened_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("logs");
+
+        let outcome = file_logger_in(&folder).open_file_layer();
+
+        let FileLayer::Writing { path, .. } = outcome else {
+            panic!("expected a writing file layer");
+        };
+        assert_eq!(path, folder.join("t.log"));
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn open_file_layer_reports_failure_when_the_log_file_cannot_be_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("logs");
+        std::fs::create_dir_all(folder.join("t.log")).unwrap();
+
+        let outcome = file_logger_in(&folder).open_file_layer();
+
+        let FileLayer::Failed { path, error } = outcome else {
+            panic!("expected a failed file layer");
+        };
+        assert_eq!(path, folder.join("t.log"));
+        assert!(error.contains("could not open log file"), "{error}");
+    }
+
+    #[test]
+    fn open_file_layer_reports_failure_when_the_log_folder_is_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("logs");
+        std::fs::write(&folder, b"not a folder").unwrap();
+
+        let outcome = file_logger_in(&folder).open_file_layer();
+
+        let FileLayer::Failed { path, error } = outcome else {
+            panic!("expected a failed file layer");
+        };
+        assert_eq!(path, folder.join("t.log"));
+        assert!(error.contains("could not create log directory"), "{error}");
+    }
+
+    #[test]
+    fn open_file_layer_is_off_when_not_logging_to_file() {
+        let app_logger = AppLogger::new("t", ToolLogLevel::Info, false, false, false);
+
+        assert!(matches!(app_logger.open_file_layer(), FileLayer::Off));
+    }
+
+    #[test]
+    fn init_with_logging_disabled_reports_file_logging_off() {
+        let app_logger = AppLogger::new("t", ToolLogLevel::Disabled, false, true, false);
+
+        assert_eq!(app_logger.init(false), FileLogging::Off);
+    }
 
     #[test]
     fn resolve_log_filename_non_rotating_uses_plain_name() {

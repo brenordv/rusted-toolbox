@@ -6,7 +6,7 @@ use shared_eventhub_core::engine::RunSummary;
 use shared_eventhub_core::stats::StatsSnapshot;
 use shared_eventhub_persistence::config::{
     AuthMethodConfig, CONFIG_FILE_NAME, CredentialKindConfig, SensitiveValues, StoredSecret,
-    TargetConfig,
+    TargetConfig, ToolConfig,
 };
 use shared_eventhub_persistence::secrets::CONNECTION_STRING_SECRET;
 use std::collections::BTreeMap;

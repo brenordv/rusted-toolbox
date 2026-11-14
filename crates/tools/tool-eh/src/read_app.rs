@@ -7,10 +7,8 @@ use crate::progress::{
 };
 use anyhow::anyhow;
 use shared_eventhub_core::connection::EventHubTarget;
-use shared_eventhub_core::engine::{CaptureEngine, EngineConfig, PartitionEnd, RunEnd};
-use shared_eventhub_persistence::config::{
-    ToolConfig, needs_stored_secret, resolve_target_with, save_config,
-};
+use shared_eventhub_core::engine::{CaptureEngine, PartitionEnd, RunEnd};
+use shared_eventhub_persistence::config::{needs_stored_secret, resolve_target_with, save_config};
 use shared_eventhub_persistence::export::{
     DiskWriteConfig, DiskWriteMode, ExportOutcome, WritingSink,
 };
@@ -20,7 +18,6 @@ use shared_eventhub_persistence::store::MessageStore;
 use std::io::{self, Write};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
 
 /// Runs a capture: resolves the target (saving the config first when asked),
 /// opens the archive, runs the engine until it ends or Ctrl-C stops it,
@@ -49,7 +46,7 @@ pub async fn run(job: ReadJob, shutdown: &AtomicBool) -> anyhow::Result<RunOutco
     );
 
     renderer.notice(&connecting_notice(&job.config.target));
-    let (channels, run) = CaptureEngine::build(engine_config(&job.config, target), sink.clone());
+    let (channels, run) = CaptureEngine::build(job.config.engine_config(target), sink.clone());
     let ended = event_loop::run(channels, run, shutdown, &mut renderer).await;
 
     let finished = finish_disk_writes(&sink, disk_write.mode).await;
@@ -111,18 +108,6 @@ fn saved_notice(job: &ReadJob, paths: &DataPaths) -> String {
         "Saved config.json; {secrets} is stored in {} (not encrypted)",
         display(paths.secrets_db().display().to_string())
     )
-}
-
-fn engine_config(config: &ToolConfig, target: EventHubTarget) -> EngineConfig {
-    let capture = &config.capture;
-    EngineConfig {
-        target,
-        partitions: capture.partitions.clone(),
-        initial_filters: capture.filters.clone(),
-        ignore_checkpoint: capture.ignore_checkpoint,
-        prefetch: capture.prefetch,
-        feedback_interval: Duration::from_secs(capture.feedback_interval_secs),
-    }
 }
 
 /// Writes the at-end message files (nothing to do in the other modes), with
