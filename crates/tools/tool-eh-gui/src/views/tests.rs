@@ -1,17 +1,78 @@
 use super::*;
-use crate::form::ConnectForm;
+use crate::bridge::UiDelivery;
+use crate::bridge::test_support::detached_session;
+use crate::design::tokens::WINDOW_MIN;
+use crate::form::{AuthChoice, ConnectForm, CredentialChoice};
+use crate::state::{Effect, Input};
 use common_cli::app_logger::FileLogging;
-use rune::{Env, Runtime};
+use rune::{Env, Key, KeyEvent, Mods, Runtime};
+use shared_eventhub_core::engine::EngineEvent;
+use shared_eventhub_core::stats::StatsSnapshot;
 
 const MARKER: &str = "SharedAccessKey=marker-55219";
 
 fn runtime(state: AppState) -> Runtime<AppState> {
-    let mut rt = Runtime::new(state, view, (1280.0, 800.0), Env::new(true, 1.0));
+    runtime_at(state, (1280.0, 800.0))
+}
+
+fn runtime_at(state: AppState, size: (f32, f32)) -> Runtime<AppState> {
+    let mut rt = Runtime::new(state, view, size, Env::new(true, 1.0));
     rt.frame(0.0);
     for _ in 0..30 {
         rt.frame(1.0 / 60.0);
     }
     rt
+}
+
+/// `[x, y, width, height]` of the element keyed `key`.
+fn rect(rt: &Runtime<AppState>, key: &str) -> [f32; 4] {
+    rt.elements()
+        .into_iter()
+        .find(|element| element.key.as_deref() == Some(key) && !element.exiting)
+        .unwrap_or_else(|| panic!("no element keyed {key}"))
+        .rect
+}
+
+fn press_key(rt: &mut Runtime<AppState>, key: Key) {
+    rt.key(KeyEvent {
+        key,
+        mods: Mods::default(),
+    });
+    settle(rt);
+}
+
+fn open_sheet(auth: AuthChoice) -> AppState {
+    let mut s = state();
+    s.form.set_auth(auth);
+    s.sheet_open = true;
+    s
+}
+
+/// A state connected to a session over four partitions; the runtime must outlive it.
+fn connected(rt: &tokio::runtime::Runtime) -> AppState {
+    let mut s = state();
+    s.form
+        .connection_string
+        .edit_mut()
+        .replace_text("Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKey=k");
+    let out = s.apply(Input::ConnectPressed);
+    let [Effect::PrepareSession { attempt, .. }] = out.effects.as_slice() else {
+        panic!("expected PrepareSession, got {:?}", out.effects);
+    };
+    let attempt = *attempt;
+    let (session, _) = detached_session(attempt, rt.handle());
+    s.apply(Input::SessionReady {
+        attempt,
+        result: Ok(session),
+    });
+    s.apply(Input::Delivery(UiDelivery {
+        session: attempt,
+        events: vec![EngineEvent::Started {
+            partitions: ["0", "1", "2", "3"].map(str::to_owned).to_vec(),
+        }],
+        stats: None,
+    }));
+    s
 }
 
 fn settle(rt: &mut Runtime<AppState>) {
@@ -101,4 +162,138 @@ fn a_typed_secret_reaches_neither_the_element_tree_nor_accessibility() {
         assert!(!accessibility.contains("marker-55219"));
         assert!(!tree.contains("marker-55219"));
     }
+}
+
+#[rstest::rstest]
+#[case::connection_string(AuthChoice::ConnectionString, "connection-string")]
+#[case::client_secret(AuthChoice::Credential, "client-secret")]
+fn a_closed_sheet_mounts_no_dialog_and_no_secret_field(
+    #[case] auth: AuthChoice,
+    #[case] secret_key: &str,
+) {
+    let mut s = state();
+    s.form.set_auth(auth);
+    s.form.credential = CredentialChoice::ClientSecret;
+    let mut rt = runtime(s);
+    let closed = (has_key(&rt, "connect-dialog"), has_key(&rt, secret_key));
+
+    rt.state.sheet_open = true;
+    rt.invalidate();
+    settle(&mut rt);
+
+    assert_eq!(closed, (false, false));
+    assert!(has_key(&rt, "connect-dialog"));
+    assert!(has_key(&rt, secret_key));
+}
+
+#[test]
+fn the_sheets_buttons_stay_on_screen_in_the_smallest_window() {
+    let rt = runtime_at(open_sheet(AuthChoice::KeyVault), WINDOW_MIN);
+
+    let [_, y, _, height] = rect(&rt, "sheet-connect");
+
+    assert!(
+        y >= 0.0 && y + height <= WINDOW_MIN.1,
+        "Connect at {y}+{height}"
+    );
+}
+
+#[test]
+fn a_form_taller_than_the_sheet_scrolls_inside_it() {
+    let rt = runtime_at(open_sheet(AuthChoice::KeyVault), WINDOW_MIN);
+
+    let viewport = rect(&rt, "connect-scroll")[3];
+    let form = rect(&rt, "connect-form")[3];
+
+    assert!(form > viewport, "form {form} in a {viewport} viewport");
+}
+
+#[test]
+fn escape_closes_the_sheet() {
+    let mut rt = runtime(open_sheet(AuthChoice::ConnectionString));
+
+    press_key(&mut rt, Key::Escape);
+
+    assert!(!rt.state.sheet_open);
+    assert!(!has_key(&rt, "connect-dialog"));
+}
+
+#[test]
+fn a_click_outside_the_sheet_closes_it() {
+    let mut rt = runtime(open_sheet(AuthChoice::ConnectionString));
+
+    rt.pointer_down(20.0, 400.0);
+    rt.pointer_up(20.0, 400.0);
+    settle(&mut rt);
+
+    assert!(!rt.state.sheet_open);
+}
+
+#[test]
+fn tab_keeps_focus_inside_the_sheet() {
+    let mut rt = runtime(open_sheet(AuthChoice::KeyVault));
+    let dialog = rt
+        .elements()
+        .into_iter()
+        .find(|element| element.key.as_deref() == Some("connect-dialog"))
+        .map(|element| element.path)
+        .unwrap();
+
+    let mut outside = Vec::new();
+    for _ in 0..24 {
+        press_key(&mut rt, Key::Tab);
+        let focused = rt.elements().into_iter().find(|element| element.focused);
+        if let Some(element) = focused.filter(|element| !element.path.starts_with(&dialog)) {
+            outside.push(element.path);
+        }
+    }
+
+    assert!(outside.is_empty(), "focus left the sheet: {outside:?}");
+}
+
+#[test]
+fn the_toolbar_fits_the_smallest_window_while_connected() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let rt = runtime_at(connected(&tokio), WINDOW_MIN);
+
+    let [export_x, _, export_width, _] = rect(&rt, "segment1");
+    let [pill_x, ..] = rect(&rt, "pill");
+
+    assert!(
+        export_x + export_width <= pill_x,
+        "Export ends at {} but the pill starts at {pill_x}",
+        export_x + export_width
+    );
+}
+
+#[test]
+fn capturing_shows_the_counts_with_separators() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut s = connected(&tokio);
+    let session = s.connection.session().unwrap().id();
+    s.apply(Input::Delivery(UiDelivery {
+        session,
+        events: Vec::new(),
+        stats: Some(StatsSnapshot {
+            received: 12_403,
+            stored: 12_380,
+            ..StatsSnapshot::default()
+        }),
+    }));
+    s.apply(Input::Tick(chrono::Utc::now()));
+
+    let rt = runtime(s);
+
+    let counts = rt
+        .elements()
+        .into_iter()
+        .find(|element| element.key.as_deref() == Some("capture-counts"))
+        .and_then(|element| element.text);
+    assert_eq!(counts.as_deref(), Some("Received 12,403 · Stored 12,380"));
 }

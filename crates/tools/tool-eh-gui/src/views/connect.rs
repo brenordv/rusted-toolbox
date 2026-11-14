@@ -2,7 +2,7 @@
 
 use crate::app::dispatch;
 use crate::design::parts;
-use crate::design::tokens::{SHEET_WIDTH, SPACE_MD, SPACE_SM, SPACE_XL};
+use crate::design::tokens::{SPACE_MD, SPACE_SM, SPACE_XL};
 use crate::form::{
     AuthChoice, CredentialChoice, DISK_WRITE_LABELS, DISK_WRITE_MODES, FieldIssues, SecretSource,
     disk_write_index,
@@ -10,7 +10,7 @@ use crate::form::{
 use crate::state::{AppState, Input, SaveStatus, ToastKind};
 use rune::{El, FileDialogOptions, ScrollSpec, TextEdit, col, row, spacer};
 use rune_kit::{
-    Button, ButtonVariant, Dialog, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
+    Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
     TextField, TextInput,
 };
 use shared_eventhub_persistence::export::DiskWriteMode;
@@ -18,7 +18,12 @@ use tracing::warn;
 
 type EditAccess = fn(&mut AppState) -> &mut TextEdit;
 
+/// The connection sheet while it is open. A closed sheet builds nothing, so its secret fields
+/// are never mounted, focusable, or exposed to assistive technology.
 pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
+    if !s.sheet_open {
+        return;
+    }
     let issues = if s.show_issues {
         s.form.issues()
     } else {
@@ -28,7 +33,9 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
         .key("connect-form")
         .w_full()
         .gap(SPACE_MD)
-        .padding(SPACE_XL)
+        .px(SPACE_XL)
+        .pt(SPACE_SM)
+        .pb(SPACE_XL)
         .child(
             SegmentedControl::new(&AuthChoice::LABELS, Some(s.form.auth.index()))
                 .label("Sign-in method")
@@ -51,25 +58,27 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
             &issues.consumer_group,
             |s| &mut s.form.consumer_group,
         ))
-        .child(storage(s, k, &issues))
-        .child(footer(s, k));
+        .child(storage(s, k, &issues));
 
     let scroller = col()
         .key("connect-scroll")
         .w_full()
-        .grow(1.0)
+        .shrink()
         .min_h(0.0)
         .scroll(ScrollSpec {
             stick_bottom: false,
         })
         .child(body)
         .scroll_bar(k);
-    Dialog::new("connect", "Connect to an event hub")
-        .width(SHEET_WIDTH)
-        .open(s.sheet_open)
-        .on_close(|s: &mut AppState| dispatch(s, Input::CloseSheet))
-        .child(scroller)
-        .build(k, layer);
+    parts::sheet(
+        k,
+        "connect",
+        "Connect to an event hub",
+        |s: &mut AppState| dispatch(s, Input::CloseSheet),
+        scroller,
+        footer(s, k),
+        layer,
+    );
 }
 
 fn method_fields(s: &AppState, k: &Kit, issues: &FieldIssues, mut body: El) -> El {
@@ -251,7 +260,6 @@ fn footer(s: &AppState, k: &Kit) -> El {
         .gap(SPACE_SM)
         .w_full()
         .center_y()
-        .mt(SPACE_MD)
         .child(
             Button::new("Cancel")
                 .variant(ButtonVariant::Ghost)

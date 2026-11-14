@@ -4,7 +4,8 @@
 use crate::app::dispatch;
 use crate::design::tokens::{SPACE_LG, SPACE_SM};
 use crate::design::{icons, parts};
-use crate::state::{AppState, ConnectionState, FailureStage, Input, Section};
+use crate::state::{AppState, ConnectionState, FailureStage, Input, Section, ShownStats};
+use common_utils::string_utils::format_thousands;
 use rune::{El, col};
 use rune_kit::{Button, ButtonVariant, Kit};
 
@@ -14,6 +15,19 @@ fn connect_button(k: &Kit) -> El {
         .on_press(|s: &mut AppState| dispatch(s, Input::OpenSheet))
         .build(k)
         .key("empty-connect")
+}
+
+/// "Received 12,403 · Stored 12,380".
+fn counts(k: &Kit, shown: ShownStats) -> El {
+    parts::live_numbers(
+        k,
+        &format!(
+            "Received {} · Stored {}",
+            format_thousands(shown.received),
+            format_thousands(shown.stored)
+        ),
+    )
+    .key("capture-counts")
 }
 
 pub fn read(s: &AppState, k: &Kit) -> El {
@@ -34,7 +48,9 @@ pub fn read(s: &AppState, k: &Kit) -> El {
             "Opening the archive and signing in to the event hub.",
             None,
         ),
-        ConnectionState::Connected { partitions, .. } => parts::empty_state(
+        ConnectionState::Connected {
+            partitions, shown, ..
+        } => parts::empty_state_with_note(
             k,
             "connected",
             &icons::ANTENNA,
@@ -43,6 +59,7 @@ pub fn read(s: &AppState, k: &Kit) -> El {
                 "Reading {} partitions into the archive in the data folder.",
                 partitions.len()
             ),
+            Some(counts(k, *shown)),
             None,
         ),
         ConnectionState::Stopping { .. } if s.still_finishing => parts::empty_state(

@@ -3,7 +3,9 @@
 
 use super::sections;
 use crate::app::dispatch;
-use crate::design::tokens::{POPOVER_WIDTH, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE};
+use crate::design::tokens::{
+    POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE,
+};
 use crate::design::{Surface, icons, parts, surface};
 use crate::state::{AppState, ConnectionState, Input, Section, ToastKind};
 use common_cli::app_logger::FileLogging;
@@ -28,10 +30,14 @@ pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, layer: &mut Vec<El>) -> E
         .pr(cx.chrome_insets().trailing)
         .child(pill(s, k, layer))
         .child(connection_button(s, k));
-    let toolbar = Toolbar::new()
-        .leading(text("eh").font(TYPE_HEADLINE).color(k.c.text_base))
-        .center(sections)
-        .trailing(trailing);
+    // The section switch sits in the leading slot: the kit pins a centre slot across the whole
+    // band, where the connection pill would draw over it.
+    let leading = row()
+        .gap(SPACE_LG)
+        .center_y()
+        .child(text("eh").font(TYPE_HEADLINE).color(k.c.text_base))
+        .child(sections);
+    let toolbar = Toolbar::new().leading(leading).trailing(trailing);
 
     let content = match s.section {
         Section::Read => sections::read(s, k).key("read"),

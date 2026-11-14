@@ -4,6 +4,7 @@
 //! binaries and the integration tests share one implementation.
 
 pub mod app;
+pub mod appearance;
 pub mod bridge;
 #[cfg(feature = "demo")]
 pub mod demo;

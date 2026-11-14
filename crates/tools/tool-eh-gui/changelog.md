@@ -1,13 +1,21 @@
 # Changelog
 
 ## 1.0.0
-- Initial release (in progress): the window shell on Rune. A custom titlebar with the Read and
-  Export switch, the connection pill (data folder, log file, version, and the last error in its
+- Initial release (in progress): the window shell on Rune. A toolbar with the Read and Export
+  switch, the connection pill (data folder, log file, version, and the last error in its
   popover), and the connect sheet with the three sign-in methods (connection string, Azure
   credential, Key Vault), config.json recall, Save config, and the Storage settings (data folder,
   message files). Connect opens the data folder's archive, resolves the target as `eh read`
-  does, and runs a capture session whose messages go to the archive; the message list, capture
-  rules, and archive search come in later versions.
+  does, and runs a capture session whose messages go to the archive; while it captures, the
+  Read section shows how many events were received and stored, once a second. The message list,
+  capture rules, and archive search come in later versions.
+- macOS draws the toolbar as the titlebar (traffic lights over it); Windows and Linux keep the
+  system title bar.
+- The connect sheet sits under the toolbar and grows with the window; its fields scroll between
+  a fixed title and a fixed button row, so Connect is always on screen.
+- On Windows the colors follow the system's light or dark setting while the app runs, read once
+  a second through `UISettings`.
+- The window can't be made smaller than 960x600, so the toolbar never overlaps itself.
 - Closing the window during a session stops it and lets the at-end pass finish in the
   background; a failure reopens the window with the error, and a pass still running after 30 s
   reopens it with a Force quit. The archive is closed at quit.

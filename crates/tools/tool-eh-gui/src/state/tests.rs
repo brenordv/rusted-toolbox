@@ -894,3 +894,113 @@ fn run_effects_without_services_reports_an_internal_error() {
     assert_eq!(f.state.toasts.len(), 1);
     assert!(f.state.toasts[0].text.starts_with("Internal error"));
 }
+
+fn stats_delivery(session: u64, received: u64, stored: u64) -> Input {
+    Input::Delivery(UiDelivery {
+        session,
+        events: Vec::new(),
+        stats: Some(StatsSnapshot {
+            received,
+            stored,
+            ..StatsSnapshot::default()
+        }),
+    })
+}
+
+fn shown(received: u64, stored: u64) -> Option<ShownStats> {
+    Some(ShownStats { received, stored })
+}
+
+fn shown_of(state: &AppState) -> Option<ShownStats> {
+    if let ConnectionState::Connected { shown, .. } = &state.connection {
+        Some(*shown)
+    } else {
+        None
+    }
+}
+
+#[test]
+fn a_connected_session_shows_zero_counts_at_once() {
+    let mut f = fixture();
+
+    f.connected();
+
+    assert_eq!(shown_of(&f.state), shown(0, 0));
+}
+
+#[test]
+fn delivered_statistics_wait_for_the_next_tick() {
+    let mut f = fixture();
+    let (id, _) = f.connected();
+
+    let delivered = f.apply(stats_delivery(id, 12, 11));
+
+    assert!(!delivered.changed);
+    assert_eq!(shown_of(&f.state), shown(0, 0));
+}
+
+#[test]
+fn a_tick_shows_new_counts_once() {
+    let mut f = fixture();
+    let (id, _) = f.connected();
+    f.apply(stats_delivery(id, 12_403, 12_380));
+
+    let first = f.apply(Input::Tick(base_time()));
+    let second = f.apply(Input::Tick(base_time()));
+
+    assert!(first.changed);
+    assert!(!second.changed);
+    assert_eq!(shown_of(&f.state), shown(12_403, 12_380));
+}
+
+#[test]
+fn statistics_before_the_session_connects_show_nothing() {
+    let mut f = fixture();
+    let (id, _) = f.with_session();
+    f.apply(stats_delivery(id, 3, 3));
+
+    let tick = f.apply(Input::Tick(base_time()));
+
+    assert!(!tick.changed);
+    assert_eq!(shown_of(&f.state), None);
+}
+
+#[test]
+fn an_ended_session_leaves_no_statistics_or_counts() {
+    let mut f = fixture();
+    let (id, _) = f.connected();
+    f.apply(stats_delivery(id, 7, 7));
+    f.apply(Input::Tick(base_time()));
+    f.apply(Input::DisconnectPressed);
+
+    f.apply(done(id, Ok(summary(RunEnd::Stopped, &[])), clean_finish()));
+
+    assert_eq!((&f.state.stats, shown_of(&f.state)), (&None, None));
+}
+
+#[test]
+fn another_sessions_statistics_are_ignored() {
+    let mut f = fixture();
+    let (id, _) = f.connected();
+
+    f.apply(stats_delivery(id + 1, 9, 9));
+    f.apply(Input::Tick(base_time()));
+
+    assert_eq!(f.state.stats, None);
+    assert_eq!(shown_of(&f.state), shown(0, 0));
+}
+
+#[test]
+fn an_appearance_change_redraws_only_when_it_differs() {
+    let mut f = fixture();
+
+    let first = f.apply(Input::AppearanceChanged(false));
+    let same = f.apply(Input::AppearanceChanged(false));
+    let flipped = f.apply(Input::AppearanceChanged(true));
+
+    assert_eq!(
+        (first.changed, same.changed, flipped.changed),
+        (true, false, true)
+    );
+    assert_eq!(f.state.system_dark, Some(true));
+}

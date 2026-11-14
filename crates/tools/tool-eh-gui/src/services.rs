@@ -2,6 +2,7 @@
 //! runtime, the archive slot, and Rune's `AppHandle`.
 
 use crate::app::run_effects;
+use crate::appearance::SystemAppearance;
 use crate::bridge::{EngineDone, EngineSession, UiDelivery, UiPort, spawn_session};
 use crate::state::{AppState, Input};
 use crate::tasks::StoreSlot;
@@ -140,14 +141,16 @@ pub(crate) fn apply_from_runtime(handle: &AppHandle<AppState>, input: Input) {
     });
 }
 
-/// Posts a tick once a second; ticks that change nothing do not redraw. From the second tick
-/// until the window has been seen on screen, it checks for a window failure: Rune keeps running
+/// Posts a tick once a second; ticks that change nothing do not redraw. Each tick also reads
+/// the system appearance (Windows) and posts it when it changed. From the second tick until
+/// the window has been seen on screen, it checks for a window failure: Rune keeps running
 /// windowless when it cannot create the window (no GPU adapter or device), so that failure is
 /// caught here, logged, flagged in `window_failed`, and ends the app.
 pub(crate) fn spawn_tick(rt: &Handle, handle: AppHandle<AppState>, window_failed: Arc<AtomicBool>) {
     rt.spawn(async move {
         let mut ticker = tokio::time::interval(Duration::from_secs(1));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut appearance = SystemAppearance::default();
         let mut ticks: u64 = 0;
         let mut shown = false;
         loop {
@@ -162,6 +165,9 @@ pub(crate) fn spawn_tick(rt: &Handle, handle: AppHandle<AppState>, window_failed
                 window_failed.store(true, Ordering::Release);
                 handle.quit();
                 return;
+            }
+            if let Some(dark) = appearance.poll() {
+                apply_from_runtime(&handle, Input::AppearanceChanged(dark));
             }
             apply_from_runtime(&handle, Input::Tick(chrono::Utc::now()));
         }

@@ -1411,7 +1411,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "cli-signal-monitor"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "common-cli",
@@ -2441,6 +2441,7 @@ dependencies = [
  "clap",
  "common-cli",
  "common-utils",
+ "rstest",
  "rune",
  "rune-kit",
  "shared-azure",
@@ -2450,6 +2451,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "windows",
 ]
 
 [[package]]

@@ -2,9 +2,9 @@
 
 A desktop window for Azure Event Hubs: connect to an event hub and capture its events into the
 same local archive the `eh` CLI uses. This version is the window shell: connect, disconnect,
-and the archive filling up in the background. The live message list, capture rules, and
-archive search and export come in later versions; until then `eh export` writes the archive
-out.
+and the archive filling up in the background, with the received and stored counts updated
+once a second. The live message list, capture rules, and archive search and export come in
+later versions; until then `eh export` writes the archive out.
 
 Screenshots: to come with the message list.
 
@@ -19,7 +19,9 @@ window.
 
 ## Connecting
 
-Press Connect to open the connection sheet:
+Press Connect to open the connection sheet. Its fields scroll between the title and the
+buttons, so Connect stays on screen in a small window. Escape, the close button, or a click
+outside it closes the sheet. It holds:
 
 - **Sign-in method**: a connection string, an Azure credential (developer tools, managed
   identity, or a client secret) with the namespace and event hub, or a connection string kept in
@@ -61,6 +63,14 @@ eh-gui draws with the GPU: DirectX 12 on Windows, Vulkan on Linux, Metal on macO
 machine without a hardware adapter falls back to the WARP software renderer (slow, but it
 works). When no window can be created at all, eh-gui logs why and exits with code 1; use the
 `eh` CLI there.
+
+## Window
+
+- Windows and Linux keep the system title bar; on macOS the toolbar is the title bar.
+- The window can't be made smaller than 960x600.
+- Colors follow the system's light or dark setting while the app runs. On Windows eh-gui reads
+  the setting itself once a second, so a switch shows within about a second; the title bar's
+  own color is the system's.
 
 ## Logging and diagnosing
 

@@ -15,7 +15,7 @@ use shared_eventhub_persistence::export::{
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::secrets::SecretsStore;
 use shared_eventhub_persistence::store::MessageStore;
-use std::io::{self, Write};
+use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -119,7 +119,7 @@ async fn finish_disk_writes(
     match mode {
         DiskWriteMode::Off | DiskWriteMode::Immediate => sink.finish(|_| {}).await,
         DiskWriteMode::AtEnd => {
-            let line = Arc::new(Mutex::new(ExportProgressLine::new(io::stdout())));
+            let line = Arc::new(Mutex::new(ExportProgressLine::stdout()));
             let drawer = Arc::clone(&line);
             let finished = sink
                 .finish(move |outcome| {
@@ -133,7 +133,7 @@ async fn finish_disk_writes(
             // locked cannot leave anything half-written that matters.
             line.lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .finish(finished.as_ref().ok());
+                .finish(finished.is_ok());
             finished
         }
     }

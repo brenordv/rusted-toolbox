@@ -108,6 +108,9 @@ url = "2.5.8"
 uuid = { version = "1.29.0", features = ["v4"] }
 walkdir = "2.5.0"
 warp = { version = "0.4.3", features = ["server"] }
+# Windows' WinRT bindings (Microsoft's windows-rs); eh-gui reads the system appearance with
+# `UISettings`. Features are chosen per crate.
+windows = { version = "0.62.2", default-features = false }
 # Write/compress path only; the default bzip2/lzma/zstd/aes surface stays off.
 # The zlib-rs flate2 backend is the pure-Rust one zip's own `deflate`
 # meta-feature selects; bare `deflate-flate2` leaves flate2 backend-less

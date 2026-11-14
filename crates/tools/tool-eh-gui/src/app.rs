@@ -1,16 +1,16 @@
 //! Glue between the pure state machine and the running app: the `App` builder both binaries
 //! use, the config preload, and the effect runner.
 
-use crate::design::tokens::{TOOLBAR_HEIGHT, WINDOW_SIZE};
+use crate::design::tokens::{WINDOW_MIN, WINDOW_SIZE};
 use crate::form::ConnectForm;
 use crate::services::Services;
 use crate::state::{AppState, Effect, Input, ToastKind};
 use crate::views;
 use common_cli::app_logger::FileLogging;
-use rune::{App, AppHandle, AppSpec, Titlebar, Tx};
+use rune::{App, AppHandle, AppSpec, Tx};
 use shared_eventhub_persistence::config::{ConfigLoad, load_config};
 use std::path::Path;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 /// What the window starts with: the connect form (recalled from `config.json` when there is
 /// one), the caption saying what happened to that file, and the log file's state.
@@ -34,27 +34,41 @@ impl Preload {
 
 /// Builds the app. Rune reads the arguments in `rune_args` instead of the process's when
 /// given (the shipped app passes none), closing the window keeps the process for a session's
-/// at-end pass, and `make_state` builds the first state, services included, before the first
-/// frame.
+/// at-end pass, the window never gets smaller than [`WINDOW_MIN`], and `make_state` builds the
+/// first state, services included, before the first frame.
 pub fn build_app(
     make_state: impl FnOnce(AppHandle<AppState>) -> AppState + 'static,
     rune_args: Option<Vec<String>>,
 ) -> App<AppState> {
-    let app = App::new(AppSpec::new(
-        "eh",
-        WINDOW_SIZE,
-        AppState::detached,
-        views::view,
-    ));
+    let mut spec = AppSpec::new("eh", WINDOW_SIZE, AppState::detached, views::view);
+    spec.min_size = Some(WINDOW_MIN);
+    let app = App::new(spec);
     let handle = app.handle();
     let app = match rune_args {
         Some(args) => app.args(args),
         None => app,
     };
-    app.titlebar(Titlebar::new(TOOLBAR_HEIGHT))
+    with_frame(app)
         .keep_running()
         .on_close(on_close)
         .init(move || make_state(handle))
+}
+
+/// macOS: the toolbar is the titlebar, with the traffic lights over it.
+#[cfg(target_os = "macos")]
+fn with_frame(app: App<AppState>) -> App<AppState> {
+    use crate::design::tokens::TOOLBAR_HEIGHT;
+    use rune::Titlebar;
+    debug!("window frame: the toolbar is the titlebar");
+    app.titlebar(Titlebar::new(TOOLBAR_HEIGHT))
+}
+
+/// Elsewhere the system title bar stays: on Windows 10, Rune's own titlebar leaves a native
+/// caption above it whose close button does nothing.
+#[cfg(not(target_os = "macos"))]
+fn with_frame(app: App<AppState>) -> App<AppState> {
+    debug!("window frame: the system title bar");
+    app
 }
 
 fn on_close(state: &mut AppState, _: &mut Tx) {

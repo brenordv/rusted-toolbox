@@ -16,7 +16,7 @@ use shared_eventhub_core::models::CapturedMessage;
 use shared_eventhub_core::stats::StatsSnapshot;
 use shared_eventhub_persistence::config::{AuthMethodConfig, CredentialKindConfig, TargetConfig};
 use shared_eventhub_persistence::export::ExportOutcome;
-use std::io::{self, Stderr, Stdout, Write};
+use std::io::{self, IsTerminal, Stderr, Stdout, Write};
 use std::time::{Duration, Instant};
 use tracing::warn;
 
@@ -402,16 +402,28 @@ impl<O: Write, E: Write> Renderer<O, E> {
 /// best-effort, as for [`Renderer`].
 pub(crate) struct ExportProgressLine<W: Write> {
     out: W,
+    /// Whether `out` is a terminal, where a finished line can be erased; a
+    /// file or a pipe keeps every byte, so there the line is ended instead.
+    terminal: bool,
     started: Instant,
     last_draw: Option<Instant>,
     drawn: bool,
     write_failed: bool,
 }
 
+impl ExportProgressLine<Stdout> {
+    pub(crate) fn stdout() -> Self {
+        let out = io::stdout();
+        let terminal = out.is_terminal();
+        Self::new(out, terminal)
+    }
+}
+
 impl<W: Write> ExportProgressLine<W> {
-    pub(crate) fn new(out: W) -> Self {
+    pub(crate) fn new(out: W, terminal: bool) -> Self {
         Self {
             out,
+            terminal,
             started: Instant::now(),
             last_draw: None,
             drawn: false,
@@ -432,18 +444,20 @@ impl<W: Write> ExportProgressLine<W> {
         self.render(outcome);
     }
 
-    /// Draws the final counts and ends the line. Nothing is drawn for a run
-    /// that never drew the line and has nothing to count.
-    pub(crate) fn finish(&mut self, outcome: Option<&ExportOutcome>) {
-        if let Some(outcome) = outcome
-            && (self.drawn || outcome.exported + outcome.skipped + outcome.failed > 0)
-        {
-            self.render(outcome);
+    /// Ends the line. On a terminal, when a summary with the final counts is
+    /// printed next (`summary_follows`), the line is erased so the counts show
+    /// once; otherwise the last counts drawn stay on their own line.
+    pub(crate) fn finish(&mut self, summary_follows: bool) {
+        if !self.drawn {
+            return;
         }
-        if self.drawn {
-            let result = writeln!(self.out).and_then(|()| self.out.flush());
-            self.record(result);
+        let result = if summary_follows && self.terminal {
+            queue!(self.out, MoveToColumn(0), Clear(ClearType::CurrentLine))
+        } else {
+            writeln!(self.out)
         }
+        .and_then(|()| self.out.flush());
+        self.record(result);
     }
 
     fn render(&mut self, outcome: &ExportOutcome) {

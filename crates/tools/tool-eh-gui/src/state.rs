@@ -18,6 +18,7 @@ use common_cli::app_logger::FileLogging;
 use ending::{log_summary, session_failures};
 use rune_kit::PaneState;
 use shared_eventhub_core::engine::{EngineEvent, RunEnd, RunSummary};
+use shared_eventhub_core::stats::StatsSnapshot;
 use shared_eventhub_persistence::paths::DataPaths;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
@@ -61,6 +62,8 @@ pub enum ConnectionState {
     Connected {
         session: EngineSession,
         partitions: Vec<String>,
+        /// The counts on screen: zeros on connecting, then the latest statistics at each tick.
+        shown: ShownStats,
     },
     /// A stop was sent; the session ends once its at-end pass finishes.
     Stopping {
@@ -119,6 +122,13 @@ impl SaveStatus {
     }
 }
 
+/// The capture counts the Read section shows, refreshed at most once a second.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ShownStats {
+    pub received: u64,
+    pub stored: u64,
+}
+
 /// Something that happened: a user action, a background result, or the clock.
 #[derive(Debug)]
 pub enum Input {
@@ -140,6 +150,8 @@ pub enum Input {
     },
     Delivery(UiDelivery),
     EngineDone(EngineDone),
+    /// The system's appearance, read by the app itself (true: dark).
+    AppearanceChanged(bool),
 }
 
 /// Work `apply` asks the runtime glue to do.
@@ -192,6 +204,10 @@ pub struct AppState {
     /// Shown after the window reopened because the at-end pass ran past
     /// [`STILL_FINISHING_AFTER`]; offers Force quit.
     pub still_finishing: bool,
+    /// The latest statistics of the running session; `None` with no session.
+    pub stats: Option<StatsSnapshot>,
+    /// The system's appearance as the app read it; `None` leaves Rune's.
+    pub system_dark: Option<bool>,
     window_closed: bool,
     closed_at: Option<DateTime<Utc>>,
     next_attempt: u64,
@@ -239,6 +255,8 @@ impl AppState {
             file_logging,
             toasts: Vec::new(),
             still_finishing: false,
+            stats: None,
+            system_dark: None,
             window_closed: false,
             closed_at: None,
             next_attempt: 1,
@@ -292,6 +310,7 @@ impl AppState {
             }
             Input::Delivery(delivery) => self.delivery(delivery, &mut out),
             Input::EngineDone(done) => self.engine_done(done, &mut out),
+            Input::AppearanceChanged(dark) => self.appearance_changed(dark, &mut out),
         }
         self.quit_rule(&mut out);
         out
@@ -464,6 +483,7 @@ impl AppState {
         }
         self.toasts.retain(|toast| toast.ticks_left != Some(0));
         out.changed = self.toasts.len() != before;
+        out.changed |= self.refresh_shown();
 
         let overdue = matches!(self.connection, ConnectionState::Stopping { .. })
             && self.window_closed
@@ -478,6 +498,32 @@ impl AppState {
             self.section = Section::Read;
             out.changed = true;
         }
+    }
+
+    /// Copies the latest statistics into the counts a connected session shows; true when the
+    /// counts changed.
+    fn refresh_shown(&mut self) -> bool {
+        let (ConnectionState::Connected { shown, .. }, Some(stats)) =
+            (&mut self.connection, &self.stats)
+        else {
+            return false;
+        };
+        let latest = ShownStats {
+            received: stats.received,
+            stored: stats.stored,
+        };
+        let changed = *shown != latest;
+        *shown = latest;
+        changed
+    }
+
+    fn appearance_changed(&mut self, dark: bool, out: &mut Outcome) {
+        if self.system_dark == Some(dark) {
+            out.changed = false;
+            return;
+        }
+        info!(dark, "using the system appearance");
+        self.system_dark = Some(dark);
     }
 
     /// Quits without waiting for the at-end pass; only offered while a closed window's session
@@ -543,6 +589,9 @@ impl AppState {
             );
             return;
         }
+        if let Some(stats) = delivery.stats {
+            self.stats = Some(stats);
+        }
         for event in delivery.events {
             match event {
                 EngineEvent::Started { partitions } => self.started(partitions, out),
@@ -584,6 +633,7 @@ impl AppState {
                 self.connection = ConnectionState::Connected {
                     session,
                     partitions,
+                    shown: ShownStats::default(),
                 };
                 out.changed = true;
             }
@@ -601,6 +651,7 @@ impl AppState {
             out.changed = false;
             return;
         }
+        self.stats = None;
         let (fatal, stage) = match &mut self.connection {
             ConnectionState::Connecting { fatal, .. } => (fatal.take(), FailureStage::Starting),
             ConnectionState::Connected { .. }

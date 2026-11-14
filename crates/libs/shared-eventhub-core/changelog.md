@@ -11,6 +11,10 @@
 - `connection::validated_namespace` and `connection::validated_event_hub_name` are public, so a
   form can check a namespace or event hub name with the same rules `connect` applies, before
   connecting. Neither echoes a rejected value.
+- A stored checkpoint ahead of its partition's last sequence number (a recreated event hub,
+  empty or not) fails that partition at start with a message naming both numbers, instead of
+  opening a receiver the service rejects with the same comparison. A stream error names the
+  SDK's innermost error once instead of repeating it through the error chain.
 - Azure SDK pins: `azure_messaging_eventhubs` 0.16.0 on `azure_core`
   1.2.0-beta.2 (one `azure_core` shared with `shared-azure`'s
   `azure_identity` 1.1.0-beta.2 and `azure_security_keyvault_secrets`

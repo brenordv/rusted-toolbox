@@ -9,7 +9,7 @@ use rune::{Cx, El};
 
 /// The window's root.
 pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
-    let k = s.ds.kit(cx.system_dark());
+    let k = s.ds.kit(s.system_dark.unwrap_or(cx.system_dark()));
     let mut layer = Vec::new();
     let body = shell::shell(s, cx, k, &mut layer);
     connect::sheet(s, k, &mut layer);

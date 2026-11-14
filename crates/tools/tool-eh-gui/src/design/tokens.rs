@@ -64,9 +64,15 @@ pub const INSPECTOR_MAX: f32 = 560.0;
 pub const ICON_SIZE: f32 = 16.0;
 pub const EMPTY_GLYPH_SIZE: f32 = 48.0;
 pub const LIVE_DOT_SIZE: f32 = 8.0;
+/// Hairlines: one logical point in the kit's weak border color.
+pub const HAIRLINE: f32 = 1.0;
 pub const SHEET_WIDTH: f32 = 520.0;
+/// The sheet's top edge, below the toolbar band with room to spare.
+pub const SHEET_TOP: f32 = 72.0;
 pub const POPOVER_WIDTH: f32 = 360.0;
 pub const WINDOW_SIZE: (f32, f32) = (1280.0, 800.0);
+/// The smallest window: the toolbar's controls fit side by side with the sidebar open.
+pub const WINDOW_MIN: (f32, f32) = (960.0, 600.0);
 
 // Radius by role.
 pub const RADIUS_BADGE: f32 = 4.0;
@@ -86,6 +92,8 @@ pub const TYPE_TITLE: TextStyle = TextStyle::new(15.0, 600.0);
 pub const TYPE_HEADLINE: TextStyle = TextStyle::new(13.0, 600.0);
 /// Form text, descriptions.
 pub const TYPE_BODY: TextStyle = TextStyle::new(13.0, 400.0);
+/// Body text with numbers that change in place: tabular figures keep the line still.
+pub const TYPE_BODY_NUM: TextStyle = TextStyle::new(13.0, 400.0).features(TNUM);
 /// Form labels, buttons.
 pub const TYPE_LABEL: TextStyle = TextStyle::new(12.0, 500.0);
 /// Column headers, stat labels, secondary metadata; muted.

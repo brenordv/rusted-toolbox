@@ -10,6 +10,8 @@
 - `config.json` recall with secrets kept in the data folder's `secrets.redb`;
   `EH_CONNECTION_STRING` and `EH_CLIENT_SECRET` environment variables.
 - Exit codes 0 / 1 / 130; a partition that failed during a stopped run exits 1.
+- The export progress line (and the at-end message file line of `eh read`) is cleared when the
+  summary follows, so the final counts print once; a failed export keeps its last counts.
 - Breaking, from 1.1.0 (the readme has the full table):
   - `eh-read` -> `eh read`, `eh-export` -> `eh export`; shared flags go before the
     subcommand.
