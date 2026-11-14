@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.2.0
+- Added `string_utils::SecretString`: redacting Debug/Display, and allows access to the actual value only via `expose()`. Should be used when dealing with connection strings, tokens, keys, etc. to prevent accidental logging.
+
 ## 2.1.0
 - Added `string_utils::escape_for_terminal_display`: escapes control characters (C0, DEL, C1) and Unicode bidirectional-control characters for safe terminal output. Extracted from the identical hand-rolled escaping in tool-mqtt and tool-pingx, which now use it.
 

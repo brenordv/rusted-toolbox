@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.2.0
+- Internal update making `BotToken` use `common_utils::string_utils::SecretString` instead of `String`.
+
 ## 2.1.4
 - The bot token lives in a `BotToken` newtype whose `Debug` renders `<redacted>`, covering
   the runtime config, the config-file model, and the parsed CLI arguments (all derive Debug

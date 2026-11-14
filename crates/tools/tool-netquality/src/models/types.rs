@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use common_cli::tool_path_helpers::get_tool_path;
 use common_serialization_utils::load_json_file_to_object::load_json_file_to_object;
+use common_utils::string_utils::SecretString;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
@@ -226,15 +227,21 @@ pub struct NotificationConfig {
 /// config, the config-file model, and the parsed CLI arguments all do); the
 /// send path reads the raw value through [`expose`](Self::expose).
 #[derive(Clone, PartialEq, Deserialize)]
-#[serde(transparent)]
-pub struct BotToken(String);
+#[serde(from = "String")]
+pub struct BotToken(SecretString);
 
 impl BotToken {
-    /// The raw token, for building the Telegram API request URL. The URL must
+    /// The raw token for building the Telegram API request URL. The URL must
     /// never reach a log or error chain; the notifier strips it with
     /// `without_url()`.
     pub fn expose(&self) -> &str {
-        &self.0
+        self.0.expose()
+    }
+}
+
+impl From<String> for BotToken {
+    fn from(value: String) -> Self {
+        Self(value.into())
     }
 }
 
@@ -248,7 +255,7 @@ impl std::str::FromStr for BotToken {
     type Err = std::convert::Infallible;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Ok(Self(value.to_string()))
+        Ok(Self(value.to_string().into()))
     }
 }
 
