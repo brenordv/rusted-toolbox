@@ -1,6 +1,7 @@
 //! The disk layout of a data folder.
 
 use anyhow::Context;
+use common_file_utils::atomic_write::write_via_temp;
 use common_file_utils::permissions::create_dir_all_owner_only;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -45,11 +46,14 @@ impl DataPaths {
 
     /// Creates the data folder (owner-only on Unix) when missing and, while
     /// it is empty, writes a `.gitignore` that ignores everything in it. A
-    /// folder that already holds files is left as it is.
+    /// folder that already holds files must carry that same `.gitignore`, so
+    /// the archive and the secrets file never land where git would pick them
+    /// up (a repository root, or a source folder with its own `.gitignore`).
     ///
     /// # Errors
-    /// Fails when the folder cannot be created or listed, or the `.gitignore`
-    /// cannot be written.
+    /// Fails when the folder cannot be created or listed, when the
+    /// `.gitignore` cannot be read or written, and when the folder already
+    /// holds files but its `.gitignore` is missing or is not eh's own.
     pub fn ensure_base(&self) -> anyhow::Result<()> {
         create_dir_all_owner_only(&self.base).with_context(|| {
             format!("Failed to create the data folder '{}'", self.base.display())
@@ -58,14 +62,38 @@ impl DataPaths {
             .with_context(|| format!("Failed to list the data folder '{}'", self.base.display()))?
             .next()
             .is_none();
+        let gitignore = self.base.join(GITIGNORE_FILE_NAME);
         if is_empty {
-            let gitignore = self.base.join(GITIGNORE_FILE_NAME);
-            std::fs::write(&gitignore, GITIGNORE_CONTENT)
-                .with_context(|| format!("Failed to write '{}'", gitignore.display()))?;
+            // Written whole or not at all: an empty `.gitignore` left by a
+            // failed write would make the guard below refuse this folder.
+            write_via_temp(&gitignore, |temp| {
+                std::fs::write(temp, GITIGNORE_CONTENT).context("Failed to write the file")
+            })
+            .with_context(|| format!("Failed to write '{}'", gitignore.display()))?;
             info!(path = %self.base.display(), "Created the data folder");
+            return Ok(());
         }
 
+        if !Self::has_eh_gitignore(&gitignore)? {
+            anyhow::bail!(
+                "The data folder '{}' already holds files and is not an eh data folder (its \
+                 .gitignore must contain only '*'); eh keeps its archive and secrets only in a \
+                 folder git ignores. Use a new or empty folder.",
+                self.base.display()
+            );
+        }
         Ok(())
+    }
+
+    /// Whether `gitignore` exists and holds exactly [`GITIGNORE_CONTENT`],
+    /// ignoring surrounding whitespace.
+    fn has_eh_gitignore(gitignore: &Path) -> anyhow::Result<bool> {
+        match std::fs::read(gitignore) {
+            Ok(content) => Ok(String::from_utf8_lossy(&content).trim() == GITIGNORE_CONTENT.trim()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(anyhow::Error::new(error)
+                .context(format!("Failed to read '{}'", gitignore.display()))),
+        }
     }
 }
 
@@ -104,6 +132,8 @@ mod tests {
 
         let gitignore = std::fs::read_to_string(paths.base().join(".gitignore")).unwrap();
         assert_eq!(gitignore, "*\n");
+        let entries = std::fs::read_dir(paths.base()).unwrap().count();
+        assert_eq!(entries, 1, "only the .gitignore, no staging file");
     }
 
     #[test]
@@ -117,14 +147,53 @@ mod tests {
     }
 
     #[test]
-    fn ensure_base_leaves_a_folder_that_holds_files_alone() {
+    fn ensure_base_refuses_a_folder_that_holds_files_without_a_gitignore() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("notes.txt"), "mine").unwrap();
         let paths = DataPaths::new(root.path());
 
-        paths.ensure_base().unwrap();
+        let error = paths.ensure_base().unwrap_err();
 
+        assert!(
+            error.to_string().contains("not an eh data folder"),
+            "{error:#}"
+        );
         assert!(!root.path().join(".gitignore").exists());
+    }
+
+    #[test]
+    fn ensure_base_refuses_a_folder_whose_gitignore_is_not_ehs() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join(".gitignore"), "target/\n").unwrap();
+        std::fs::write(root.path().join("Cargo.toml"), "[package]").unwrap();
+
+        let error = DataPaths::new(root.path()).ensure_base().unwrap_err();
+
+        assert!(
+            error.to_string().contains("not an eh data folder"),
+            "{error:#}"
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::exact("*\n")]
+    #[case::crlf_and_spaces("  *\r\n")]
+    fn ensure_base_accepts_an_existing_eh_folder(#[case] gitignore: &str) {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join(".gitignore"), gitignore).unwrap();
+        std::fs::write(root.path().join("archive.redb"), "").unwrap();
+
+        DataPaths::new(root.path()).ensure_base().unwrap();
+    }
+
+    #[test]
+    fn ensure_base_fails_when_the_gitignore_cannot_be_read() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join(".gitignore")).unwrap();
+
+        let error = DataPaths::new(root.path()).ensure_base().unwrap_err();
+
+        assert!(error.to_string().contains("Failed to read"), "{error:#}");
     }
 
     #[test]

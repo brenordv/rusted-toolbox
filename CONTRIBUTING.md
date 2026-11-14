@@ -30,7 +30,9 @@ The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
    - `crates/libs/cli-signal-monitor`: watches for Ctrl+C and runs the tool's graceful-shutdown path.
    - `crates/libs/logging-otel`: OpenTelemetry extension for the logging in `common-cli`.
    - `crates/libs/mock-data-utils`: the mock-data generators behind `tool-mock`.
-   - `crates/libs/shared-eventhub`: EventHub-specific shared code.
+   - `crates/libs/shared-azure`: Azure credentials, Key Vault secret fetching, and host suffix checks.
+   - `crates/libs/shared-eventhub-core`: the Event Hubs capture engine, message model, filters, and statistics behind `eh`.
+   - `crates/libs/shared-eventhub-persistence`: the message archive, search, exporters, and `config.json` handling behind `eh`.
    - `crates/libs/shared-head-tail`: the shared engine machinery behind `tool-head` and `tool-tail`.
    - If more than one tool needs it, it belongs in one of these crates rather than duplicating logic.
 3. **Root `README.md`**: add a reference to any new tool here, and keep the links pointing at `crates/tools/<crate>/readme.md`.

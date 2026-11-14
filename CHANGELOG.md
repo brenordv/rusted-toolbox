@@ -1,5 +1,8 @@
 # Workspace Changelog
 
+## v7
+TODO: Add after phase-7
+
 ## v6
 - Updated dependencies.
 

@@ -454,6 +454,7 @@ fn write_raw_database(path: &Path, table: &str, key: &str, value: &str) {
 fn an_archive_with_an_unknown_schema_version_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let paths = DataPaths::new(root.path());
+    paths.ensure_base().unwrap();
     write_raw_database(&paths.archive_db(), "meta", "schema_version", "99");
 
     let error = MessageStore::open(&paths).err().unwrap();
@@ -465,6 +466,7 @@ fn an_archive_with_an_unknown_schema_version_is_refused() {
 fn a_meta_table_without_a_schema_version_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let paths = DataPaths::new(root.path());
+    paths.ensure_base().unwrap();
     write_raw_database(&paths.archive_db(), "meta", "something", "else");
 
     let error = MessageStore::open(&paths).err().unwrap();
@@ -476,6 +478,7 @@ fn a_meta_table_without_a_schema_version_is_refused() {
 fn a_foreign_redb_file_is_refused_and_not_stamped() {
     let root = tempfile::tempdir().unwrap();
     let paths = DataPaths::new(root.path());
+    paths.ensure_base().unwrap();
     write_raw_database(&paths.archive_db(), "other", "key", "value");
 
     let error = MessageStore::open(&paths).err().unwrap();
@@ -496,6 +499,7 @@ fn a_foreign_redb_file_is_refused_and_not_stamped() {
 fn a_redb_file_holding_only_multimap_tables_is_refused_and_not_stamped() {
     let root = tempfile::tempdir().unwrap();
     let paths = DataPaths::new(root.path());
+    paths.ensure_base().unwrap();
     let definition: redb::MultimapTableDefinition<&str, &str> =
         redb::MultimapTableDefinition::new("other");
     {
@@ -544,6 +548,7 @@ async fn closing_while_a_read_still_holds_the_database_succeeds_and_the_lock_fol
 fn a_file_that_is_not_a_redb_database_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let paths = DataPaths::new(root.path());
+    paths.ensure_base().unwrap();
     std::fs::write(
         paths.archive_db(),
         b"definitely not a database, but long enough to look like one at first glance......",

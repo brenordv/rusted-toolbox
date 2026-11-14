@@ -76,6 +76,9 @@ pub struct ExportOutcome {
     pub failed: u64,
     /// The first failure, with its file path, when any file failed.
     pub first_error: Option<String>,
+    /// The run stopped early because its cancel flag was set; matching
+    /// messages after that point were not exported.
+    pub cancelled: bool,
 }
 
 impl ExportOutcome {
@@ -154,6 +157,7 @@ impl MessageStore {
             }
             self.record_exports(&exported)?;
 
+            outcome.cancelled = cancelled;
             match page.next {
                 Some(next) if !cancelled => page_query.after = Some(next),
                 _ => break,

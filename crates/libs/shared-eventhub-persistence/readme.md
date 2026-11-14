@@ -20,8 +20,11 @@ themselves.
 created 0o700 and both redb files and every dump file 0o600 (an existing file
 is tightened when opened). On Windows the files inherit the parent folder's
 ACL, which on some drives grants other local users access. The `.gitignore`
-keeps `git add .` from ever picking up the archive or the secrets file; a
-folder that already holds other files is left alone.
+keeps `git add .` from ever picking up the archive or the secrets file, so a
+folder that already holds files is used only when its `.gitignore` is that
+same `*`; any other folder (a repository root, a source folder with a
+`.gitignore` of its own) is refused with a message asking for a new or empty
+folder.
 
 ### One event hub per data folder
 
@@ -144,6 +147,9 @@ store and the dump) is still in the archive; `eh export` writes it.
 `config.json` in the working directory recalls a run's settings. It is only
 read when it carries `"tool": "eh"`; any other `config.json` (including one
 that is not JSON) is reported as `Foreign`, ignored, and never overwritten.
+A load error never quotes what the file held: quoted values and the name in
+an "unknown field" or "unknown variant" message are redacted, while the
+valid names serde lists after "expected" stay.
 Secrets never go into it:
 
 ```json

@@ -16,13 +16,6 @@ ignore = [
     # local terminals; exploiting it needs an oracle timing many
     # decryptions, which that usage does not expose.
     { id = "RUSTSEC-2023-0071", reason = "rsa: no safe upgrade exists; whisper's local peer-to-peer usage exposes no timing oracle" },
-    # The fix is azure_core >= 0.22, a manifest migration in the on-hold
-    # EventHub crates (shared-eventhub, eh-read, eh-export); it lands with
-    # that rework, not before.
-    { id = "RUSTSEC-2026-0275", reason = "azure_core header logging: remediation belongs to the deferred EventHub rework" },
-    # Notice-class advisory with no safe upgrade, reached only through the
-    # same on-hold EventHub chain.
-    { id = "RUSTSEC-2026-0174", reason = "http-types ASCII notice: no safe upgrade; EventHub chain only, deferred with that rework" },
     # No age release moves past p256/elliptic-curve 0.13, which pin
     # crypto-bigint 0.5 (the fix is 0.7.6). age reaches it only through
     # its p256tag and mlkem768p256tag recipient types; shared-crypto
