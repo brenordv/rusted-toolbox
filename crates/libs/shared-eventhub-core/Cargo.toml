@@ -1,0 +1,28 @@
+[package]
+name = "shared-eventhub-core"
+version = "1.0.0"
+description = "Shared EventHub core: message model, capture filters, capture engine, and live statistics."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-utils = { workspace = true }
+shared-azure = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+azure_messaging_eventhubs = { workspace = true }
+chrono = { workspace = true }
+futures-util = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+azure_core_amqp = { workspace = true }
+rstest = { workspace = true }
+serde_json = { workspace = true }
