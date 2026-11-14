@@ -99,7 +99,10 @@ every message without a timeout.
 `CaptureEngine::build(config, sink)` returns the consumer's channels and the
 run future. Run the future on a tokio runtime; it resolves once a `Stop`
 command arrives or no partition task remains, and returns an error only when
-the run cannot start (connection or partition selection). The summary's
+the run cannot start (connection, partition selection, or the sink refusing
+`MessageSink::bind`). After connecting, the engine calls `bind` once with the
+validated namespace and hub, before any partition loads a checkpoint, so a
+sink can refuse to mix two event hubs' data. The summary's
 `RunEnd` is `Stopped` after a stop, `Failed` (naming the partitions) when any
 partition failed, and `Completed` otherwise.
 

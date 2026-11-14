@@ -26,6 +26,7 @@ mock-data-utils = { path = "crates/libs/mock-data-utils" }
 shared-azure = { path = "crates/libs/shared-azure" }
 shared-crypto = { path = "crates/libs/shared-crypto" }
 shared-eventhub-core = { path = "crates/libs/shared-eventhub-core" }
+shared-eventhub-persistence = { path = "crates/libs/shared-eventhub-persistence" }
 shared-eventhub = { path = "crates/libs/shared-eventhub" }
 shared-head-tail = { path = "crates/libs/shared-head-tail" }
 
@@ -76,6 +77,7 @@ rand = "0.10.3"
 rand06-compat = "0.2.0"
 ratatui = "0.30.2"
 rayon = "1.12.0"
+redb = "4.6.0"
 regex = "1.13.1"
 # Workspace default reqwest (gitignore). netquality pins its
 # own 0.12 to match cfspeedtest; see crates/tools/tool-netquality/Cargo.toml.

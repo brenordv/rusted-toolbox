@@ -1,0 +1,572 @@
+use super::*;
+use crate::paths::DataPaths;
+
+const CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=listen;SharedAccessKey=c2VjcmV0LWtleQ==";
+const CLIENT_SECRET: &str = "client-secret-value-never-on-disk";
+
+struct Fixture {
+    root: tempfile::TempDir,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        Self {
+            root: tempfile::tempdir().unwrap(),
+        }
+    }
+
+    fn dir(&self) -> &Path {
+        self.root.path()
+    }
+
+    fn config_path(&self) -> std::path::PathBuf {
+        self.dir().join(CONFIG_FILE_NAME)
+    }
+
+    fn secrets(&self) -> SecretsStore {
+        SecretsStore::open(&DataPaths::new(self.dir().join(".eh-data"))).unwrap()
+    }
+}
+
+fn connection_string_config() -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        namespace: None,
+        event_hub: Some("orders".to_owned()),
+        consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+        auth: AuthMethodConfig::ConnectionString {
+            stored: StoredSecret::LocalDb,
+        },
+    })
+}
+
+fn client_secret_kind() -> CredentialKindConfig {
+    CredentialKindConfig::ClientSecret {
+        tenant_id: "tenant".to_owned(),
+        client_id: "client".to_owned(),
+    }
+}
+
+fn key_vault_config(credential: CredentialKindConfig) -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        namespace: None,
+        event_hub: None,
+        consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+        auth: AuthMethodConfig::KeyVaultConnectionString {
+            vault_url: "https://my-vault.vault.azure.net".to_owned(),
+            secret_name: "eh-connection".to_owned(),
+            credential,
+        },
+    })
+}
+
+fn with_connection_string() -> SensitiveValues {
+    SensitiveValues {
+        connection_string: Some(CONNECTION_STRING.to_owned().into()),
+        client_secret: None,
+    }
+}
+
+fn assert_no_secret_material(error: &anyhow::Error) {
+    for rendered in [
+        format!("{error}"),
+        format!("{error:#}"),
+        format!("{error:?}"),
+    ] {
+        assert!(!rendered.contains("SharedAccessKey"), "leaked: {rendered}");
+        assert!(!rendered.contains("c2VjcmV0LWtleQ=="), "leaked: {rendered}");
+    }
+}
+
+fn data_folder_contains(fixture: &Fixture, needle: &str) -> bool {
+    walk(fixture.dir())
+        .into_iter()
+        .any(|file| String::from_utf8_lossy(&std::fs::read(file).unwrap()).contains(needle))
+}
+
+fn walk(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(walk(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
+#[tokio::test]
+async fn a_saved_config_loads_back_equal() {
+    let fixture = Fixture::new();
+    let mut config = connection_string_config();
+    config.capture.filters = CaptureFilters {
+        time: None,
+        text: Some(shared_eventhub_core::filters::TextFilter::regex("order-\\d+").unwrap()),
+    };
+    config.storage.disk_write.mode = DiskWriteMode::AtEnd;
+
+    save_config(
+        fixture.dir(),
+        &config,
+        &fixture.secrets(),
+        &with_connection_string(),
+    )
+    .unwrap();
+    let loaded = load_config(fixture.dir()).await.unwrap();
+
+    assert_eq!(loaded, ConfigLoad::Loaded(Box::new(config)));
+}
+
+#[tokio::test]
+async fn the_connection_string_goes_to_the_secrets_file_and_only_a_marker_to_config_json() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+
+    save_config(
+        fixture.dir(),
+        &connection_string_config(),
+        &secrets,
+        &with_connection_string(),
+    )
+    .unwrap();
+
+    let saved = std::fs::read_to_string(fixture.config_path()).unwrap();
+    assert!(!saved.contains("SharedAccessKey"), "{saved}");
+    assert!(saved.contains("\"stored\": \"local-db\""), "{saved}");
+    assert!(saved.ends_with('\n'));
+    assert_eq!(
+        secrets
+            .get(CONNECTION_STRING_SECRET)
+            .unwrap()
+            .unwrap()
+            .expose(),
+        CONNECTION_STRING
+    );
+}
+
+#[tokio::test]
+async fn a_missing_config_json_is_missing() {
+    let fixture = Fixture::new();
+
+    assert_eq!(
+        load_config(fixture.dir()).await.unwrap(),
+        ConfigLoad::Missing
+    );
+}
+
+#[rstest::rstest]
+#[case::other_tool("{\"tool\": \"other\", \"port\": 8080}")]
+#[case::no_marker("{\"port\": 8080}")]
+#[case::jsonc("{\n  // comment\n  \"tool\": \"eh\"\n}")]
+#[case::not_an_object("[1, 2, 3]")]
+#[tokio::test]
+async fn a_config_json_that_is_not_ours_is_foreign_and_never_overwritten(#[case] existing: &str) {
+    let fixture = Fixture::new();
+    std::fs::write(fixture.config_path(), existing).unwrap();
+
+    let loaded = load_config(fixture.dir()).await.unwrap();
+    let saved = save_config(
+        fixture.dir(),
+        &connection_string_config(),
+        &fixture.secrets(),
+        &with_connection_string(),
+    );
+
+    assert_eq!(loaded, ConfigLoad::Foreign);
+    assert!(
+        saved
+            .unwrap_err()
+            .to_string()
+            .contains("belongs to another tool")
+    );
+    assert_eq!(
+        std::fs::read_to_string(fixture.config_path()).unwrap(),
+        existing
+    );
+}
+
+#[tokio::test]
+async fn a_config_json_that_cannot_be_read_fails() {
+    let fixture = Fixture::new();
+    std::fs::create_dir(fixture.config_path()).unwrap();
+
+    let error = load_config(fixture.dir()).await.unwrap_err();
+
+    assert!(error.to_string().contains("Failed to read"), "{error:#}");
+}
+
+#[tokio::test]
+async fn an_unknown_field_fails_naming_the_file() {
+    let fixture = Fixture::new();
+    std::fs::write(
+        fixture.config_path(),
+        r#"{"tool":"eh","schema_version":1,"surprise":true,"target":{"auth":{"method":"credential","credential":{"kind":"developer-tools"}}}}"#,
+    )
+    .unwrap();
+
+    let error = load_config(fixture.dir()).await.unwrap_err();
+
+    let rendered = format!("{error:#}");
+    assert!(rendered.contains("config.json"), "{rendered}");
+    assert!(rendered.contains("surprise"), "{rendered}");
+}
+
+#[tokio::test]
+async fn another_schema_version_fails() {
+    let fixture = Fixture::new();
+    std::fs::write(
+        fixture.config_path(),
+        r#"{"tool":"eh","schema_version":2,"target":{"auth":{"method":"credential","credential":{"kind":"managed-identity"}}}}"#,
+    )
+    .unwrap();
+
+    let error = load_config(fixture.dir()).await.unwrap_err();
+
+    assert!(error.to_string().contains("schema version 2"), "{error:#}");
+}
+
+#[tokio::test]
+async fn a_secret_pasted_into_stored_is_rejected_without_being_echoed() {
+    let fixture = Fixture::new();
+    let document = format!(
+        r#"{{"tool":"eh","schema_version":1,"target":{{"auth":{{"method":"connection-string","stored":"{CONNECTION_STRING}"}}}}}}"#
+    );
+    std::fs::write(fixture.config_path(), document).unwrap();
+
+    let error = load_config(fixture.dir()).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("must be `local-db`"),
+        "{error:#}"
+    );
+    assert_no_secret_material(&error);
+}
+
+#[rstest::rstest]
+#[case::as_the_auth_value(format!(
+    r#"{{"tool":"eh","schema_version":1,"target":{{"auth":"{CONNECTION_STRING}"}}}}"#
+))]
+#[case::as_the_credential(format!(
+    r#"{{"tool":"eh","schema_version":1,"target":{{"auth":{{"method":"credential","credential":"{CONNECTION_STRING}"}}}}}}"#
+))]
+#[case::as_the_namespace(format!(
+    r#"{{"tool":"eh","schema_version":1,"target":{{"namespace":["{CONNECTION_STRING}"],"auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}}}}"#
+))]
+#[tokio::test]
+async fn a_secret_pasted_anywhere_is_rejected_without_being_echoed(#[case] document: String) {
+    let fixture = Fixture::new();
+    std::fs::write(fixture.config_path(), document).unwrap();
+
+    let error = load_config(fixture.dir()).await.unwrap_err();
+
+    assert!(format!("{error:#}").contains("line 1"), "{error:#}");
+    assert_no_secret_material(&error);
+}
+
+#[tokio::test]
+async fn a_utf16_config_json_is_foreign_and_never_overwritten() {
+    let fixture = Fixture::new();
+    let utf16: Vec<u8> = "{\"tool\":\"eh\"}"
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    let mut bytes = vec![0xFF, 0xFE];
+    bytes.extend(utf16);
+    std::fs::write(fixture.config_path(), &bytes).unwrap();
+
+    let loaded = load_config(fixture.dir()).await.unwrap();
+    let saved = save_config(
+        fixture.dir(),
+        &connection_string_config(),
+        &fixture.secrets(),
+        &with_connection_string(),
+    );
+
+    assert_eq!(loaded, ConfigLoad::Foreign);
+    assert!(saved.is_err());
+    assert_eq!(std::fs::read(fixture.config_path()).unwrap(), bytes);
+}
+
+#[test]
+fn saving_over_a_config_json_that_cannot_be_read_fails() {
+    let fixture = Fixture::new();
+    std::fs::create_dir(fixture.config_path()).unwrap();
+
+    let error = save_config(
+        fixture.dir(),
+        &connection_string_config(),
+        &fixture.secrets(),
+        &with_connection_string(),
+    )
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("Failed to read the existing"),
+        "{error:#}"
+    );
+}
+
+#[tokio::test]
+async fn a_bom_prefixed_config_loads() {
+    let fixture = Fixture::new();
+    std::fs::write(
+        fixture.config_path(),
+        "\u{FEFF}{\"tool\":\"eh\",\"schema_version\":1,\"target\":{\"auth\":{\"method\":\"credential\",\"credential\":{\"kind\":\"developer-tools\"}}}}",
+    )
+    .unwrap();
+
+    let loaded = load_config(fixture.dir()).await.unwrap();
+
+    assert!(matches!(loaded, ConfigLoad::Loaded(_)));
+}
+
+#[test]
+fn saving_again_without_a_connection_string_keeps_the_stored_one() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    save_config(
+        fixture.dir(),
+        &connection_string_config(),
+        &secrets,
+        &with_connection_string(),
+    )
+    .unwrap();
+
+    save_config(
+        fixture.dir(),
+        &connection_string_config(),
+        &secrets,
+        &SensitiveValues::default(),
+    )
+    .unwrap();
+
+    assert!(secrets.get(CONNECTION_STRING_SECRET).unwrap().is_some());
+}
+
+#[test]
+fn saving_connection_string_auth_with_no_connection_string_anywhere_fails() {
+    let fixture = Fixture::new();
+
+    let error = save_config(
+        fixture.dir(),
+        &connection_string_config(),
+        &fixture.secrets(),
+        &SensitiveValues::default(),
+    )
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("no connection string"),
+        "{error:#}"
+    );
+    assert!(!fixture.config_path().exists());
+}
+
+#[test]
+fn switching_to_key_vault_removes_the_stored_connection_string() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    save_config(
+        fixture.dir(),
+        &connection_string_config(),
+        &secrets,
+        &with_connection_string(),
+    )
+    .unwrap();
+
+    save_config(
+        fixture.dir(),
+        &key_vault_config(CredentialKindConfig::DeveloperTools),
+        &secrets,
+        &SensitiveValues::default(),
+    )
+    .unwrap();
+
+    assert!(secrets.get(CONNECTION_STRING_SECRET).unwrap().is_none());
+}
+
+#[test]
+fn a_key_vault_save_with_a_connection_string_is_rejected_and_writes_nothing() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+
+    let error = save_config(
+        fixture.dir(),
+        &key_vault_config(CredentialKindConfig::DeveloperTools),
+        &secrets,
+        &with_connection_string(),
+    )
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("only the vault reference"),
+        "{error:#}"
+    );
+    assert!(!fixture.config_path().exists());
+    assert!(secrets.names().unwrap().is_empty());
+}
+
+#[test]
+fn a_client_secret_is_stored_under_its_client_id_and_never_in_config_json() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    let sensitive = SensitiveValues {
+        connection_string: None,
+        client_secret: Some(CLIENT_SECRET.to_owned().into()),
+    };
+
+    save_config(
+        fixture.dir(),
+        &key_vault_config(client_secret_kind()),
+        &secrets,
+        &sensitive,
+    )
+    .unwrap();
+
+    assert_eq!(
+        secrets
+            .get("client_secret:client")
+            .unwrap()
+            .unwrap()
+            .expose(),
+        CLIENT_SECRET
+    );
+    assert!(
+        !std::fs::read_to_string(fixture.config_path())
+            .unwrap()
+            .contains(CLIENT_SECRET)
+    );
+}
+
+#[test]
+fn a_client_secret_without_a_client_secret_credential_is_rejected() {
+    let fixture = Fixture::new();
+    let sensitive = SensitiveValues {
+        connection_string: None,
+        client_secret: Some(CLIENT_SECRET.to_owned().into()),
+    };
+
+    let error = save_config(
+        fixture.dir(),
+        &key_vault_config(CredentialKindConfig::ManagedIdentity),
+        &fixture.secrets(),
+        &sensitive,
+    )
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("no client-secret credential"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn saving_a_config_without_the_marker_is_refused() {
+    let fixture = Fixture::new();
+    let mut config = connection_string_config();
+    config.tool = "other".to_owned();
+
+    let error = save_config(
+        fixture.dir(),
+        &config,
+        &fixture.secrets(),
+        &with_connection_string(),
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("Refusing to save"), "{error:#}");
+}
+
+#[test]
+fn a_key_vault_config_never_puts_a_connection_string_on_disk() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+
+    save_config(
+        fixture.dir(),
+        &key_vault_config(CredentialKindConfig::DeveloperTools),
+        &secrets,
+        &SensitiveValues::default(),
+    )
+    .unwrap();
+    drop(secrets);
+
+    assert!(!data_folder_contains(&fixture, "SharedAccessKey"));
+}
+
+#[test]
+fn resolve_target_rebuilds_a_connection_string_target() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    save_config(
+        fixture.dir(),
+        &connection_string_config(),
+        &secrets,
+        &with_connection_string(),
+    )
+    .unwrap();
+
+    let target = resolve_target(&connection_string_config(), &secrets).unwrap();
+
+    assert!(matches!(
+        &target.auth,
+        AuthMethod::ConnectionString { connection_string } if connection_string.expose() == CONNECTION_STRING
+    ));
+    assert_eq!(target.event_hub_name.as_deref(), Some("orders"));
+    assert_eq!(target.consumer_group, DEFAULT_CONSUMER_GROUP);
+}
+
+#[test]
+fn resolve_target_rebuilds_a_key_vault_target_with_its_client_secret() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    secrets
+        .put("client_secret:client", &CLIENT_SECRET.to_owned().into())
+        .unwrap();
+
+    let target = resolve_target(&key_vault_config(client_secret_kind()), &secrets).unwrap();
+
+    assert!(matches!(
+        &target.auth,
+        AuthMethod::KeyVaultConnectionString {
+            secret_name,
+            credential: CredentialKind::ClientSecret { client_id, .. },
+            ..
+        } if secret_name == "eh-connection" && client_id == "client"
+    ));
+    assert_eq!(target.client_secret.unwrap().expose(), CLIENT_SECRET);
+}
+
+#[test]
+fn resolve_target_rebuilds_a_credential_target() {
+    let fixture = Fixture::new();
+    let config = ToolConfig::new(TargetConfig {
+        namespace: Some("orders.servicebus.windows.net".to_owned()),
+        event_hub: Some("orders".to_owned()),
+        consumer_group: "eh-tool".to_owned(),
+        auth: AuthMethodConfig::Credential {
+            credential: CredentialKindConfig::ManagedIdentity,
+        },
+    });
+
+    let target = resolve_target(&config, &fixture.secrets()).unwrap();
+
+    assert!(matches!(
+        target.auth,
+        AuthMethod::Credential {
+            kind: CredentialKind::ManagedIdentity
+        }
+    ));
+    assert!(target.client_secret.is_none());
+    assert_eq!(target.consumer_group, "eh-tool");
+}
+
+#[test]
+fn resolve_target_without_the_stored_connection_string_fails_readably() {
+    let fixture = Fixture::new();
+
+    let error = resolve_target(&connection_string_config(), &fixture.secrets()).unwrap_err();
+
+    assert!(error.to_string().contains("secrets file"), "{error:#}");
+}

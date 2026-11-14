@@ -7373,6 +7373,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "redb"
+version = "4.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "096b1dd5ec053c9c2a5a26a93aafeadf73ebcb710ea54dc3151f17a8e20535ef"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8342,6 +8351,27 @@ dependencies = [
  "shared-azure",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "shared-eventhub-persistence"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "common-file-utils",
+ "common-utils",
+ "csv",
+ "redb",
+ "rstest",
+ "serde",
+ "serde_json",
+ "shared-azure",
+ "shared-eventhub-core",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
