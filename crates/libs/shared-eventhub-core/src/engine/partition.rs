@@ -439,6 +439,10 @@ mod tests {
     }
 
     impl MessageSink for FakeSink {
+        async fn bind(&self, _hub: &crate::connection::EventHubIdentity) -> anyhow::Result<()> {
+            Ok(())
+        }
+
         async fn store(
             &self,
             message: &CapturedMessage,

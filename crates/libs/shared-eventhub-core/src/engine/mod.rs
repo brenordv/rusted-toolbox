@@ -5,10 +5,13 @@
 mod partition;
 mod start;
 
-use crate::connection::{EventHubConnection, EventHubTarget, close_client_quietly, connect};
+use crate::connection::{
+    EventHubConnection, EventHubIdentity, EventHubTarget, close_client_quietly, connect,
+};
 use crate::filters::CaptureFilters;
 use crate::models::CapturedMessage;
 use crate::stats::{StatsSnapshot, StatsTracker};
+use anyhow::Context;
 use azure_messaging_eventhubs::ConsumerClient;
 use chrono::{DateTime, Utc};
 use partition::{PartitionContext, run_partition};
@@ -130,6 +133,11 @@ pub struct StoreOutcome {
 
 /// Durable storage for captured events and their checkpoints.
 pub trait MessageSink: Send + Sync + 'static {
+    /// Ties the sink to the event hub a run reads, before any checkpoint is
+    /// loaded. Must succeed again for the same hub, and must fail when the
+    /// sink already holds another event hub's data.
+    fn bind(&self, hub: &EventHubIdentity) -> impl Future<Output = anyhow::Result<()>> + Send;
+
     /// Stores `message` and `checkpoint` as one durable unit. With `dedup`
     /// on, a message whose key is already stored is left alone and reported
     /// as not newly stored; with it off, the message is written again.
@@ -247,7 +255,7 @@ async fn run<S: MessageSink>(
     stats: Arc<StatsTracker>,
     stats_tx: watch::Sender<StatsSnapshot>,
 ) -> anyhow::Result<RunSummary> {
-    let (connection, partitions) = match start_run(&config).await {
+    let (connection, partitions) = match start_run(&config, sink.as_ref()).await {
         Ok(started) => started,
         Err(error) => {
             send_control(
@@ -310,21 +318,47 @@ async fn run<S: MessageSink>(
     })
 }
 
-/// Connects and selects the partitions to read. When the selection is
-/// rejected, the client opened for it is closed before the error returns.
-async fn start_run(config: &EngineConfig) -> anyhow::Result<(EventHubConnection, Vec<String>)> {
+/// Connects, selects the partitions to read, and binds the sink to the event
+/// hub. When the selection or the bind is rejected, the client opened for it
+/// is closed before the error returns.
+async fn start_run<S: MessageSink>(
+    config: &EngineConfig,
+    sink: &S,
+) -> anyhow::Result<(EventHubConnection, Vec<String>)> {
     let connection = connect(&config.target).await?;
-    match select_partitions(&connection.partition_ids, config.partitions.as_deref()) {
-        Ok(partitions) => Ok((connection, partitions)),
-        Err(error) => {
-            let context = format!(
-                "Invalid partition selection for '{}/{}'",
-                connection.fully_qualified_namespace, connection.event_hub_name
-            );
-            close_client_quietly(connection.client).await;
-            Err(error.context(context))
-        }
+    let partitions =
+        match select_partitions(&connection.partition_ids, config.partitions.as_deref()) {
+            Ok(partitions) => partitions,
+            Err(error) => {
+                let context = format!(
+                    "Invalid partition selection for '{}/{}'",
+                    connection.fully_qualified_namespace, connection.event_hub_name
+                );
+                close_client_quietly(connection.client).await;
+                return Err(error.context(context));
+            }
+        };
+
+    let identity = EventHubIdentity {
+        fully_qualified_namespace: connection.fully_qualified_namespace.clone(),
+        event_hub_name: connection.event_hub_name.clone(),
+    };
+    if let Err(error) = bind_sink(sink, &identity).await {
+        close_client_quietly(connection.client).await;
+        return Err(error);
     }
+
+    Ok((connection, partitions))
+}
+
+/// Binds `sink` to `hub`, naming the hub in the error when the sink refuses.
+async fn bind_sink<S: MessageSink>(sink: &S, hub: &EventHubIdentity) -> anyhow::Result<()> {
+    sink.bind(hub).await.with_context(|| {
+        format!(
+            "Failed to bind the archive to '{}/{}'",
+            hub.fully_qualified_namespace, hub.event_hub_name
+        )
+    })
 }
 
 /// Picks the partitions to read: all of `available`, or the requested ones in
@@ -828,6 +862,10 @@ mod tests {
     struct NeverUsedSink;
 
     impl MessageSink for NeverUsedSink {
+        async fn bind(&self, _hub: &EventHubIdentity) -> anyhow::Result<()> {
+            anyhow::bail!("a run that cannot start never binds")
+        }
+
         async fn store(
             &self,
             _message: &CapturedMessage,
@@ -840,6 +878,69 @@ mod tests {
         async fn load_checkpoint(&self, _partition_id: &str) -> anyhow::Result<Option<Checkpoint>> {
             anyhow::bail!("a run that cannot start never loads checkpoints")
         }
+    }
+
+    #[derive(Default)]
+    struct BindingSink {
+        bound: std::sync::Mutex<Vec<EventHubIdentity>>,
+        refuse: bool,
+    }
+
+    impl MessageSink for BindingSink {
+        async fn bind(&self, hub: &EventHubIdentity) -> anyhow::Result<()> {
+            if self.refuse {
+                anyhow::bail!("this archive belongs to another event hub");
+            }
+            self.bound.lock().unwrap().push(hub.clone());
+            Ok(())
+        }
+
+        async fn store(
+            &self,
+            _message: &CapturedMessage,
+            _checkpoint: &Checkpoint,
+            _dedup: bool,
+        ) -> anyhow::Result<StoreOutcome> {
+            anyhow::bail!("binding never stores")
+        }
+
+        async fn load_checkpoint(&self, _partition_id: &str) -> anyhow::Result<Option<Checkpoint>> {
+            anyhow::bail!("binding never loads checkpoints")
+        }
+    }
+
+    fn orders_hub() -> EventHubIdentity {
+        EventHubIdentity {
+            fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
+            event_hub_name: "orders".to_owned(),
+        }
+    }
+
+    #[tokio::test]
+    async fn bind_sink_hands_the_identity_to_the_sink() {
+        let sink = BindingSink::default();
+
+        bind_sink(&sink, &orders_hub()).await.unwrap();
+
+        assert_eq!(*sink.bound.lock().unwrap(), vec![orders_hub()]);
+    }
+
+    #[tokio::test]
+    async fn bind_sink_names_the_event_hub_when_the_sink_refuses() {
+        let sink = BindingSink {
+            refuse: true,
+            ..BindingSink::default()
+        };
+
+        let error = bind_sink(&sink, &orders_hub()).await.unwrap_err();
+
+        let rendered = format!("{error:#}");
+        assert!(
+            rendered.contains("'orders.servicebus.windows.net/orders'"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("another event hub"), "{rendered}");
+        assert!(sink.bound.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

@@ -46,6 +46,13 @@ pub struct EventHubTarget {
     pub consumer_group: String,
 }
 
+/// A validated event hub: the lowercased namespace host and the hub name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventHubIdentity {
+    pub fully_qualified_namespace: String,
+    pub event_hub_name: String,
+}
+
 /// An open consumer client whose credential has been exercised once (the
 /// event hub properties were read with it).
 pub struct EventHubConnection {
