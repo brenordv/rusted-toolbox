@@ -6,7 +6,19 @@
 //! failed expectation, which fails the test that called them.
 
 pub mod builders;
+pub mod journeys;
 pub mod services;
+
+#[cfg(test)]
+mod a11y_tests;
+#[cfg(test)]
+mod journey_tests;
+#[cfg(test)]
+mod sequence_tests;
+#[cfg(test)]
+mod sweep_tests;
+#[cfg(test)]
+mod worst_cases;
 
 use crate::bridge::UiDelivery;
 use crate::bridge::test_support::detached_session;

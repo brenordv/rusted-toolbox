@@ -249,6 +249,40 @@ EH_GUI_DEMO=seeded-failed cargo run -p eh-gui --features demo --bin eh-gui-demo 
 
 Release builds of the workspace leave the demo out.
 
+## Headless tests
+
+The view tests, journeys, accessibility and layout sweeps, and seeded input sequences run the
+real view in Rune's headless runtime (no window, GPU, or network) with recording services, under
+`cargo test -p eh-gui`. Frames, ticks, and deliveries run on a test clock, so a slow machine runs
+the same steps; only copy and export feedback stamps the real time, which changes a label, never
+what a step presses.
+A failing sequence prints `seed=<s> step=<i>` and its last ten actions; it replays from the seed.
+One more binary checks that typed secrets reach no log, toast, `Debug` output, or
+accessibility tree; it needs the dev-only `test-harness` feature:
+
+```
+cargo test -p eh-gui --features demo,test-harness
+```
+
+## Visual checks (per release)
+
+Pixel output differs across GPUs and font rasterizers, so screenshots are checked by eye, not in
+CI. Snapshot every demo scenario at the smallest window and at the default size, and once at
+scale 1.5 for truncated text (a snapshot renders at scale 2 unless `--scale` says otherwise):
+
+```
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/send-960.png
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --snap target/eh-gui-demo/send.png
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --scale 1.5 --snap target/eh-gui-demo/send-1.5x.png
+```
+
+Snapshots are dark: the app reads the system appearance itself, so `--theme light` changes
+nothing. With the system set to light, check in the real window: the sheet and popover scrims,
+the pane fills, the shadow and rim on the sheet, popovers, new-messages pill, and bulk bar, the
+frosted pill and bar, the Template switch's label, danger and warning text in the send action
+row, and the list's selection highlight. A failed send has no demo scenario; check it on a live
+hub.
+
 ## Exit codes
 
 | Code | Meaning |

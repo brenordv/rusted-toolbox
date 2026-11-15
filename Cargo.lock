@@ -2443,6 +2443,7 @@ dependencies = [
  "common-cli",
  "common-utils",
  "mock-data-utils",
+ "rand 0.10.3",
  "regex",
  "rstest",
  "rune",

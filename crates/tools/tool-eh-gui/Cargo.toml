@@ -20,6 +20,11 @@ name = "eh-gui-demo"
 path = "src/bin/eh_gui_demo.rs"
 required-features = ["demo"]
 
+[[test]]
+name = "secret_hygiene"
+path = "tests/secret_hygiene.rs"
+required-features = ["test-harness"]
+
 [dependencies]
 # Internal
 common-cli = { workspace = true }
@@ -46,6 +51,7 @@ windows = { workspace = true, features = ["UI_ViewManagement"] }
 [dev-dependencies]
 shared-azure = { workspace = true }
 
+rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
