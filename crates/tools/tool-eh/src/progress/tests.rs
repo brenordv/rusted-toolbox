@@ -342,7 +342,34 @@ fn the_progress_line_shows_the_counters() {
     "Connecting (connection string from Key Vault, consumer group $Default)..."
 )]
 fn the_connecting_notice_names_what_is_known(#[case] target: TargetConfig, #[case] expected: &str) {
-    assert_eq!(connecting_notice(&target), expected);
+    assert_eq!(connecting_notice(&target, Some("$Default")), expected);
+}
+
+#[rstest::rstest]
+#[case::credential(
+    target(AuthMethodConfig::Credential { credential: CredentialKindConfig::DeveloperTools }, Some("ns.servicebus.windows.net")),
+    "Connecting to namespace ns.servicebus.windows.net, event hub orders..."
+)]
+#[case::connection_string(
+    target(connection_string_auth(), None),
+    "Connecting to namespace (from the connection string), event hub orders..."
+)]
+#[case::key_vault(
+    target(
+        AuthMethodConfig::KeyVaultConnectionString {
+            vault_url: "https://v.vault.azure.net".to_owned(),
+            secret_name: "s".to_owned(),
+            credential: CredentialKindConfig::DeveloperTools,
+        },
+        None,
+    ),
+    "Connecting (connection string from Key Vault)..."
+)]
+fn the_connecting_notice_without_a_consumer_group_leaves_it_out(
+    #[case] target: TargetConfig,
+    #[case] expected: &str,
+) {
+    assert_eq!(connecting_notice(&target, None), expected);
 }
 
 #[test]

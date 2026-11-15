@@ -1,21 +1,18 @@
 //! `eh read`: captures events into the data folder's archive.
 
 use crate::event_loop::{self, LoopEnd};
-use crate::models::{CLIENT_SECRET_ENV, ReadJob, RunOutcome};
+use crate::models::{ReadJob, RunOutcome};
 use crate::progress::{
     ExportProgressLine, Renderer, connecting_notice, display, read_summary_block,
 };
+use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
-use shared_eventhub_core::connection::EventHubTarget;
 use shared_eventhub_core::engine::{CaptureEngine, PartitionEnd, RunEnd};
-use shared_eventhub_persistence::config::{needs_stored_secret, resolve_target_with, save_config};
 use shared_eventhub_persistence::export::{
     DiskWriteConfig, DiskWriteMode, ExportOutcome, WritingSink,
 };
 use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::secrets::SecretsStore;
 use shared_eventhub_persistence::store::MessageStore;
-use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -31,7 +28,16 @@ use std::sync::{Arc, Mutex, PoisonError};
 pub async fn run(job: ReadJob, shutdown: &AtomicBool) -> anyhow::Result<RunOutcome> {
     let paths = DataPaths::new(&job.config.storage.base_data_folder);
     let mut renderer = Renderer::terminal(job.verbose);
-    let target = prepare_target(&job, &paths, &mut renderer)?;
+    let target = prepare_target(
+        &TargetSetup {
+            config: &job.config,
+            given: &job.secrets,
+            paths: &paths,
+            save_config: job.save_config,
+            working_dir: &job.working_dir,
+        },
+        &mut renderer,
+    )?;
 
     let store = MessageStore::open(&paths)?;
     let disk_write = &job.config.storage.disk_write;
@@ -45,7 +51,10 @@ pub async fn run(job: ReadJob, shutdown: &AtomicBool) -> anyhow::Result<RunOutco
         job.config.capture.filters.clone(),
     );
 
-    renderer.notice(&connecting_notice(&job.config.target));
+    renderer.notice(&connecting_notice(
+        &job.config.target,
+        Some(&job.config.target.consumer_group),
+    ));
     let (channels, run) = CaptureEngine::build(job.config.engine_config(target), sink.clone());
     let ended = event_loop::run(channels, run, shutdown, &mut renderer).await;
 
@@ -62,52 +71,6 @@ pub async fn run(job: ReadJob, shutdown: &AtomicBool) -> anyhow::Result<RunOutco
     }
 
     run_outcome(ended, finished, closed)
-}
-
-/// Builds the event hub target, reading the secrets file only when a secret
-/// the auth method uses was not given, and saves the config first when
-/// `--save-config` was given.
-fn prepare_target<O: Write, E: Write>(
-    job: &ReadJob,
-    paths: &DataPaths,
-    renderer: &mut Renderer<O, E>,
-) -> anyhow::Result<EventHubTarget> {
-    let config = &job.config;
-    if !job.save_config && !needs_stored_secret(config, &job.secrets) {
-        return resolve_target_with(config, job.secrets.clone(), None);
-    }
-
-    let secrets = SecretsStore::open(paths)?;
-    if job.save_config {
-        save_config(&job.working_dir, config, &secrets, &job.secrets)?;
-        renderer.notice(&saved_notice(job, paths));
-    }
-    let target = resolve_target_with(config, job.secrets.clone(), Some(&secrets))?;
-    drop(secrets);
-
-    if let (Some(client_id), None) = (config.client_secret_id(), &target.client_secret) {
-        anyhow::bail!(
-            "No client secret for client '{}': set {CLIENT_SECRET_ENV}, or set it once and save \
-             it with --save-config",
-            display(client_id)
-        );
-    }
-    Ok(target)
-}
-
-fn saved_notice(job: &ReadJob, paths: &DataPaths) -> String {
-    let secrets = match (
-        job.secrets.connection_string.is_some(),
-        job.secrets.client_secret.is_some(),
-    ) {
-        (true, _) => "the connection string",
-        (false, true) => "the client secret",
-        (false, false) => return "Saved config.json".to_owned(),
-    };
-    format!(
-        "Saved config.json; {secrets} is stored in {} (not encrypted)",
-        display(paths.secrets_db().display().to_string())
-    )
 }
 
 /// Writes the at-end message files (nothing to do in the other modes), with

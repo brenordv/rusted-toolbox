@@ -134,6 +134,158 @@ fn help_exits_zero_and_lists_the_subcommands_and_key_flags() {
 }
 
 #[test]
+fn send_help_lists_the_body_count_routing_and_pacing_flags() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["send", "--help"]);
+
+    assert!(output.status.success(), "{}", stderr_of(&output));
+    let help = stdout_of(&output);
+    for flag in [
+        "--body ",
+        "--body-file",
+        "--count",
+        "--partition-key",
+        "--content-type",
+        "--interval-ms",
+        "--yes",
+    ] {
+        assert!(help.contains(flag), "{flag} missing: {help}");
+    }
+    assert!(!help.contains("--consumer-group"), "{help}");
+}
+
+#[test]
+fn send_without_a_target_fails_before_touching_anything() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["send", "--body", "x"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("No event hub given"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+}
+
+#[test]
+fn a_missing_body_file_fails_before_the_target_or_config_is_touched() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--body-file",
+            "missing.json",
+            "-s",
+            &connection_string(),
+            "-e",
+            HUB,
+            "--save-config",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("Failed to read the body file 'missing.json'"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+    assert!(!stderr_of(&output).contains(SECRET_KEY));
+}
+
+#[test]
+fn a_body_file_over_the_cap_fails_naming_the_cap_and_creates_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let body = root.path().join("big.bin");
+    std::fs::File::create(&body)
+        .unwrap()
+        .set_len(20 * 1024 * 1024 + 1)
+        .unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--body-file",
+            "big.bin",
+            "-s",
+            &connection_string(),
+            "--save-config",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("over the 20971520-byte limit"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert_eq!(files_under(root.path()), [body]);
+}
+
+#[test]
+fn a_body_piped_on_stdin_is_read_before_the_target_is_checked() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let root = tempfile::tempdir().unwrap();
+    let mut child = Command::new(EXE)
+        .args(["--app-header", "send", "--body-file", "-"])
+        .current_dir(root.path())
+        .env_remove("EH_CONNECTION_STRING")
+        .env_remove("EH_CLIENT_SECRET")
+        .env_remove("RUST_LOG")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"{\"orderId\": 1}")
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("No event hub given"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+}
+
+#[test]
+fn a_recalled_target_is_refused_until_it_is_named_or_confirmed() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("config.json"),
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"event_hub":"{HUB}","auth":{{"method":"connection-string","stored":"local-db"}}}}}}"#
+        ),
+    )
+    .unwrap();
+
+    let output = eh(root.path(), &["send", "--body", "x"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("This run would send to namespace (from the connection string), event hub orders, taken from this folder's config.json. Name it with --namespace and -e, or pass --yes."),
+        "{stderr}"
+    );
+    assert!(!root.path().join(".eh-data").exists());
+}
+
+#[test]
 fn read_without_a_target_fails_before_touching_anything() {
     let root = tempfile::tempdir().unwrap();
 
@@ -141,7 +293,7 @@ fn read_without_a_target_fails_before_touching_anything() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        stderr_of(&output).contains("No event hub to read"),
+        stderr_of(&output).contains("No event hub given"),
         "{}",
         stderr_of(&output)
     );
@@ -473,7 +625,7 @@ fn a_foreign_config_json_is_ignored_with_a_notice_and_never_overwritten() {
         "{}",
         stderr_of(&reading)
     );
-    assert!(stderr_of(&reading).contains("No event hub to read"));
+    assert!(stderr_of(&reading).contains("No event hub given"));
     assert_eq!(saving.status.code(), Some(1));
     assert!(
         stderr_of(&saving).contains("belongs to another tool"),

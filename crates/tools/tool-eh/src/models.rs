@@ -3,6 +3,7 @@
 
 use common_utils::string_utils::SecretString;
 use shared_eventhub_core::filters::CaptureFilters;
+use shared_eventhub_core::producer::{OutgoingEvent, SendPlan};
 use shared_eventhub_persistence::config::{ExportSettings, SensitiveValues, ToolConfig};
 use std::env::VarError;
 use std::path::PathBuf;
@@ -66,6 +67,34 @@ pub enum ConfigSource {
 pub enum EhCommand {
     Read(Box<ReadJob>),
     Export(Box<ExportJob>),
+    Send(Box<SendJob>),
+}
+
+/// Where the body of `eh send` came from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BodySource {
+    /// `--body`.
+    Inline,
+    /// `--body-file <path>`.
+    File(PathBuf),
+    /// `--body-file -`.
+    Stdin,
+}
+
+/// A send run: the merged configuration, the secrets given for it, and what
+/// to send. `Debug` never shows the body or a secret.
+#[derive(Clone, Debug)]
+pub struct SendJob {
+    /// The target merged as for `read`; every other setting is the recalled
+    /// config's (only the data folder can change).
+    pub config: ToolConfig,
+    pub secrets: SensitiveValues,
+    pub save_config: bool,
+    pub working_dir: PathBuf,
+    pub config_source: ConfigSource,
+    pub plan: SendPlan,
+    pub event: OutgoingEvent,
+    pub body_source: BodySource,
 }
 
 /// A capture run: the merged configuration (flags over `config.json` over

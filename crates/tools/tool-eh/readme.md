@@ -1,6 +1,7 @@
 # eh
 
-`eh` reads events from an Azure Event Hub into a local archive and exports them to files.
+`eh` reads events from an Azure Event Hub into a local archive, exports them to files, and
+sends test events.
 
 - `eh read` captures events from one event hub (every partition, or the ones you pick),
   stores each one in the data folder's archive, and resumes from where it stopped on the
@@ -8,6 +9,8 @@
   to files as they arrive or when the run ends.
 - `eh export` writes archived events to txt, csv, or json files, with the same filters. It
   never connects to Azure.
+- `eh send` publishes one body to an event hub a given number of times, as fast as batches
+  go or one event every N milliseconds.
 
 `eh` replaces `eh-read` and `eh-export` 1.1.0 (see "Coming from eh-read and eh-export").
 
@@ -153,8 +156,9 @@ the 1.1.0 binaries still read it.
 
 ## Saving settings: config.json
 
-`eh read --save-config ...` writes the run's settings to `config.json` in the current
-folder, then runs. The next `eh read` or `eh export` in that folder recalls them, and says
+`eh read --save-config ...` (or `eh send --save-config ...`) writes the run's settings to
+`config.json` in the current folder, then runs. The next `eh read`, `eh export`, or `eh send`
+in that folder recalls them, and says
 so on stderr ("Using config.json: ..."); flags given on the command line win. `--no-config`
 ignores the file.
 
@@ -213,12 +217,102 @@ later exports unless `-i/--ignore-export-log` is given (a deleted single file is
 again). Ctrl-C stops between messages; every file written is complete. Export settings come
 from flags, then the recalled `storage.export`; the recalled capture filters do not apply.
 
+## Sending
+
+```bash
+eh send -e orders --body '{"orderId": 1}' --content-type application/json
+eh send --body-file order.json -n 500
+eh send --body-file - --partition-key customer-17 < event.json
+eh send -e orders --body ping -n 600 --interval-ms 1000
+```
+
+`eh send` takes the same target and auth flags as `read` (and `--save-config`, `-b`,
+`--no-config`), but no consumer group.
+
+| Flag | Meaning |
+|---|---|
+| `--body TEXT` | the body, sent as UTF-8 |
+| `--body-file PATH` | the body read from a file, byte for byte; `-` reads stdin. 20 MiB at most |
+| `-n, --count N` | how many events, 1 (default) to 1,000,000 |
+| `--partition-key KEY` | every event carries KEY: all land in one partition, in order. Without it, the service spreads events over partitions |
+| `--content-type TYPE` | the content type of every event |
+| `--interval-ms MS` | one event every MS milliseconds (1 to 3,600,000) instead of full batches |
+| `--yes` | send to a target recalled from `config.json` without naming it again |
+
+The run prints where it sends before the first event ("Sending 500 event(s) to
+my-ns.servicebus.windows.net/orders, automatic routing..."), a progress line, and a summary.
+`--count` and `--interval-ms` are never saved to `config.json`.
+
+**A recalled target must be named.** A cloned repository can ship a `config.json` that points
+at someone else's event hub, and with Entra ID auth your own identity would write there. So in
+a folder with a `config.json`, `send` refuses to run until the destination comes from you or
+`--yes` confirms it: a connection string you give (`-s` or `EH_CONNECTION_STRING`), a vault you
+name (`--keyvault-url`), or `--namespace` and `-e` together. A saved connection string or Key
+Vault secret must then match both, so a string without an `EntityPath` can't keep its own
+namespace under an `-e` you typed.
+
+**Rights, least privilege first.** Give an Entra ID identity the Azure Event Hubs Data Sender
+role at event hub scope, or use a SAS rule with only the Send right on the event hub. Never use
+the namespace's `RootManageSharedAccessKey`. A Listen-only rule saved for `read` fails at the
+first batch. One `config.json` serves both subcommands, so a folder that both reads and sends
+is better served by Entra ID (Data Sender plus Data Receiver) or two data folders than by a
+broader key: `secrets.redb` is not encrypted. Role assignments can take up to five minutes to
+apply.
+
+**Sizes and throughput.** The SDK sizes a batch's first event twice, so one event can use about
+half the publish limit: about 128 KB on Basic and 512 KB on Standard and Premium (whose limits
+are 256 KB and 1 MB). A larger body fails with that explanation. Basic and Standard take 1 MB/s
+or 1,000 events/s per throughput unit; past that the service throttles, the SDK retries a
+batch for up to about a minute, and the "Send rejected by remote" warnings are those retries.
+
+**What "sent" means.** `Sent` counts events the service accepted or did not refuse (the SDK
+treats a "modified" or "released" outcome as success and warns "not durably accepted"; such
+events may be missing). A retry after a lost acknowledgement can store an event twice, with the
+same message id, and `eh read` then archives both. Sent events are not written to the archive;
+`eh read` captures them like any other event.
+
+**Pacing.** `--interval-ms N` sends one event per batch, each send starting N ms after the
+previous one started. A slow send delays the next event and never causes a burst to catch up.
+The interval is a floor: throttling, SDK retries, and a reconnect after a long idle wait stretch
+it. The progress line updates once per event.
+
+**Stopping.** Ctrl-C stops before the next batch, or within about 100 ms during a paced wait. A
+batch already handed to the SDK finishes first, which can take about a minute while it retries;
+`eh` then says "Stopping after the batch in flight". Ctrl-C while connecting ends the run at
+once ("Interrupted while connecting; nothing was sent").
+
+**Network.** AMQP over TCP, port 5671. The SDK version in use has no WebSocket transport, so a
+network that blocks 5671 blocks `eh send` (and `eh read`). A connection string with a pre-formed
+`SharedAccessSignature` cannot be renewed and stops working when its token expires.
+
+Troubleshooting throttling or slow sends:
+`RUST_LOG=warn,azure_messaging_eventhubs=debug,shared_eventhub_core=debug eh send ...`.
+
+### Live checks (manual, against a dev event hub)
+
+The test suite never contacts Azure. Before relying on `send`:
+
+1. One event, then `eh read` shows it; `--content-type application/json` shows in
+   `eh export -f json`.
+2. `-n 1000`: count, batches, and rate in the summary.
+3. `-n 20000` against one throughput unit: note the "Send rejected by remote" warnings, the
+   backoffs with the `RUST_LOG` line above, and how long Ctrl-C takes mid-batch.
+4. `--partition-key k`: every event lands in one partition.
+5. `-n 10 --interval-ms 1000 --partition-key k` arrives about one a second, in order, in a
+   running `eh read`; Ctrl-C during it stops within a second.
+6. A Listen-only connection string fails at the first batch (note the text).
+7. A 150 KB body on Basic and a 600 KB body on Standard fail with the about-half message; a
+   120 KB body on Basic is sent.
+8. `eh read` with a Send-only connection string: whether reading the event hub properties
+   succeeds tells whether a Send-only rule can read them (note the result here).
+9. The time from "Connecting" to the "First batch created" log line (`--log-level info`).
+
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | completed (`export` wrote everything; `read` reached the end of a time window) |
-| 1 | any failure: bad arguments or config, connection, a partition that failed (even in a run stopped with Ctrl-C), message files that could not be written, the archive in use or failing to close |
+| 0 | completed (`export` wrote everything; `read` reached the end of a time window; `send` sent every event) |
+| 1 | any failure: bad arguments or config, connection, a partition that failed (even in a run stopped with Ctrl-C), message files that could not be written, the archive in use or failing to close, a send that failed or a producer that failed to close |
 | 2 | a usage error caught while parsing the flags |
 | 130 | stopped with Ctrl-C, with nothing failed |
 

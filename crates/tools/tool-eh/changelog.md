@@ -12,6 +12,9 @@
 - `config.json` recall with secrets kept in the data folder's `secrets.redb`;
   `EH_CONNECTION_STRING` and `EH_CLIENT_SECRET` environment variables.
 - Exit codes 0 / 1 / 130; a partition that failed during a stopped run exits 1.
+- `eh send` publishes one body (`--body`, `--body-file`, or stdin) `-n` times, batched or one
+  every `--interval-ms`, with `--partition-key` and `--content-type`. A target recalled from
+  `config.json` must be named again (`--namespace` and `-e`) or confirmed with `--yes`. `-g/--consumer-group` is a `read` flag only.
 - The export progress line (and the at-end message file line of `eh read`) is cleared when the
   summary follows, so the final counts print once; a failed export keeps its last counts.
 - Breaking, from 1.1.0 (the readme has the full table):

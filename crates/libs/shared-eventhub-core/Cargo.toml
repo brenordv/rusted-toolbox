@@ -14,6 +14,7 @@ shared-azure = { workspace = true }
 
 # External
 anyhow = { workspace = true }
+azure_core = { workspace = true }
 azure_messaging_eventhubs = { workspace = true }
 chrono = { workspace = true }
 futures-util = { workspace = true }
@@ -26,3 +27,4 @@ tracing = { workspace = true }
 azure_core_amqp = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

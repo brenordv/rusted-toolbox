@@ -4,6 +4,7 @@ use shared_eventhub_core::stats::StatsSnapshot;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
 
 type TestRenderer = Renderer<Vec<u8>, Vec<u8>>;

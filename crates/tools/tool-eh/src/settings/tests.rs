@@ -1,5 +1,6 @@
 use super::*;
 use crate::cli_utils::{DataArgs, DiskModeArg, FormatArg};
+use crate::send_cli::BodyText;
 use chrono::{DateTime, TimeZone, Utc};
 use common_utils::string_utils::SecretString;
 use rstest::rstest;
@@ -244,9 +245,9 @@ fn flags_beat_the_recalled_config_field_by_field() {
     let args = ReadArgs {
         target: TargetArgs {
             event_hub: Some("flag-hub".to_owned()),
-            consumer_group: Some("flag-group".to_owned()),
             ..TargetArgs::default()
         },
+        consumer_group: Some("flag-group".to_owned()),
         data: DataArgs {
             base_data_folder: Some("flag-data".to_owned()),
             no_config: false,
@@ -330,17 +331,17 @@ fn defaults_apply_with_neither_flags_nor_config() {
 fn nothing_to_read_fails_with_guidance() {
     let message = error_of(ReadArgs::default(), None, &Environment::default());
 
-    assert!(message.contains("No event hub to read"), "{message}");
+    assert!(message.contains("No event hub given"), "{message}");
 }
 
 #[rstest]
 #[case::empty("")]
 #[case::spaces("   ")]
 fn an_empty_consumer_group_is_refused(#[case] group: &str) {
-    let args = with_target(TargetArgs {
+    let args = ReadArgs {
         consumer_group: Some(group.to_owned()),
-        ..developer()
-    });
+        ..with_target(developer())
+    };
 
     let message = error_of(args, None, &Environment::default());
 
@@ -534,6 +535,340 @@ fn export_defaults_apply_without_config() {
 
     assert_eq!(job.export, ExportSettings::default());
     assert_eq!(job.base_data_folder, PathBuf::from(".eh-data"));
+}
+
+fn send_args(target: TargetArgs) -> SendArgs {
+    SendArgs {
+        target,
+        data: DataArgs::default(),
+        body: Some(BodyText("x".to_owned())),
+        body_file: None,
+        count: 3,
+        partition_key: None,
+        content_type: None,
+        interval_ms: None,
+        yes: false,
+    }
+}
+
+fn send(
+    args: SendArgs,
+    recalled: Option<&ToolConfig>,
+    environment: &Environment,
+) -> Result<SendJob> {
+    send_job(
+        args,
+        (b"x".to_vec(), BodySource::Inline),
+        recalled,
+        environment,
+        PathBuf::from("."),
+        ConfigSource::Loaded,
+    )
+}
+
+fn recalled_key_vault_config() -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        namespace: None,
+        event_hub: Some("recalled-hub".to_owned()),
+        consumer_group: "recalled-group".to_owned(),
+        auth: AuthMethodConfig::KeyVaultConnectionString {
+            vault_url: "https://v.vault.azure.net".to_owned(),
+            secret_name: "s".to_owned(),
+            credential: CredentialKindConfig::DeveloperTools,
+        },
+    })
+}
+
+fn recalled_connection_string_config() -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        namespace: None,
+        event_hub: Some("recalled-hub".to_owned()),
+        consumer_group: "recalled-group".to_owned(),
+        auth: AuthMethodConfig::ConnectionString {
+            stored: StoredSecret::LocalDb,
+        },
+    })
+}
+
+#[rstest]
+#[case::flag_auth_without_config(developer(), None)]
+#[case::flag_auth_over_config(
+    TargetArgs { connection_string: secret(CONNECTION_STRING), ..TargetArgs::default() },
+    Some(recalled_developer_config())
+)]
+#[case::recalled_auth_with_flag_names(
+    TargetArgs {
+        namespace: Some("flag.servicebus.windows.net".to_owned()),
+        event_hub: Some("flag-hub".to_owned()),
+        ..TargetArgs::default()
+    },
+    Some(recalled_developer_config())
+)]
+#[case::environment_connection_string(TargetArgs::default(), None)]
+fn send_merges_the_target_exactly_as_read_does(
+    #[case] target: TargetArgs,
+    #[case] recalled: Option<ToolConfig>,
+) {
+    let environment = Environment {
+        connection_string: secret(ENV_CONNECTION_STRING),
+        client_secret: None,
+    };
+    let read = job(
+        with_target(target_copy(&target)),
+        recalled.as_ref(),
+        &environment,
+    )
+    .unwrap();
+    let send = send(send_args(target), recalled.as_ref(), &environment).unwrap();
+
+    assert_eq!(send.config.target, read.config.target);
+    assert_eq!(
+        send.secrets
+            .connection_string
+            .map(|value| value.expose().to_owned()),
+        read.secrets
+            .connection_string
+            .map(|value| value.expose().to_owned())
+    );
+}
+
+fn target_copy(target: &TargetArgs) -> TargetArgs {
+    TargetArgs {
+        connection_string: target.connection_string.clone(),
+        namespace: target.namespace.clone(),
+        event_hub: target.event_hub.clone(),
+        auth: target.auth,
+        tenant_id: target.tenant_id.clone(),
+        client_id: target.client_id.clone(),
+        keyvault_url: target.keyvault_url.clone(),
+        keyvault_secret: target.keyvault_secret.clone(),
+        save_config: target.save_config,
+    }
+}
+
+#[test]
+fn send_keeps_the_recalled_settings_except_the_data_folder() {
+    let recalled = recalled_developer_config();
+    let mut args = send_args(TargetArgs {
+        namespace: Some("recalled.servicebus.windows.net".to_owned()),
+        event_hub: Some("recalled-hub".to_owned()),
+        ..TargetArgs::default()
+    });
+    args.data.base_data_folder = Some("flag-data".to_owned());
+
+    let job = send(args, Some(&recalled), &Environment::default()).unwrap();
+
+    assert_eq!(job.config.target.consumer_group, "recalled-group");
+    assert_eq!(job.config.capture, recalled.capture);
+    assert_eq!(job.config.storage.disk_write, recalled.storage.disk_write);
+    assert_eq!(job.config.storage.export, recalled.storage.export);
+    assert_eq!(job.config.storage.base_data_folder, "flag-data");
+}
+
+#[test]
+fn send_takes_the_count_routing_pacing_and_event_from_the_flags() {
+    let mut args = send_args(developer());
+    args.partition_key = Some("customer-17".to_owned());
+    args.content_type = Some("application/json".to_owned());
+    args.interval_ms = Some(250);
+
+    let job = send(args, None, &Environment::default()).unwrap();
+
+    assert_eq!(job.plan.count(), 3);
+    assert_eq!(job.plan.routing().key(), Some("customer-17"));
+    assert_eq!(job.plan.pacing().get(), Some(Duration::from_millis(250)));
+    assert_eq!(job.event.body, b"x");
+    assert_eq!(job.event.content_type.as_deref(), Some("application/json"));
+    assert_eq!(job.body_source, BodySource::Inline);
+}
+
+#[test]
+fn send_without_an_interval_is_batched() {
+    let job = send(send_args(developer()), None, &Environment::default()).unwrap();
+
+    assert_eq!(job.plan.pacing(), Pacing::batched());
+    assert_eq!(job.plan.routing().key(), None);
+}
+
+#[test]
+fn a_blank_partition_key_is_refused() {
+    let mut args = send_args(developer());
+    args.partition_key = Some(" ".to_owned());
+
+    let error = send(args, None, &Environment::default()).unwrap_err();
+
+    assert!(
+        error.to_string().contains("partition key is empty"),
+        "{error:#}"
+    );
+}
+
+#[rstest]
+#[case::connection_string_unnamed(recalled_connection_string_config(), TargetArgs::default())]
+#[case::connection_string_hub_only(
+    recalled_connection_string_config(),
+    TargetArgs { event_hub: Some("recalled-hub".to_owned()), ..TargetArgs::default() }
+)]
+#[case::key_vault_hub_only(
+    recalled_key_vault_config(),
+    TargetArgs { event_hub: Some("recalled-hub".to_owned()), ..TargetArgs::default() }
+)]
+#[case::credential_unnamed(recalled_developer_config(), TargetArgs::default())]
+#[case::credential_hub_only(
+    recalled_developer_config(),
+    TargetArgs { event_hub: Some("recalled-hub".to_owned()), ..TargetArgs::default() }
+)]
+#[case::credential_namespace_only(
+    recalled_developer_config(),
+    TargetArgs {
+        namespace: Some("recalled.servicebus.windows.net".to_owned()),
+        ..TargetArgs::default()
+    }
+)]
+fn a_recalled_target_must_be_named_or_confirmed(
+    #[case] recalled: ToolConfig,
+    #[case] target: TargetArgs,
+) {
+    let error = send(send_args(target), Some(&recalled), &Environment::default()).unwrap_err();
+
+    let message = error.to_string();
+    assert!(
+        message.contains("Name it with --namespace and -e"),
+        "{message}"
+    );
+    assert!(message.contains("event hub recalled-hub"), "{message}");
+    assert!(
+        message.contains("taken from this folder's config.json"),
+        "{message}"
+    );
+    assert!(message.contains("or pass --yes"), "{message}");
+}
+
+#[test]
+fn connection_string_auth_by_flag_without_a_string_still_needs_the_destination_named() {
+    let args = send_args(TargetArgs {
+        auth: Some(AuthArg::ConnectionString),
+        ..TargetArgs::default()
+    });
+
+    let error = send(
+        args,
+        Some(&recalled_connection_string_config()),
+        &Environment::default(),
+    )
+    .unwrap_err();
+
+    let message = error.to_string();
+    assert!(
+        message.contains("taken from the connection string saved in the data folder"),
+        "{message}"
+    );
+    assert!(
+        message.contains("Name it with --namespace and -e"),
+        "{message}"
+    );
+}
+
+#[rstest]
+#[case::connection_string_with_namespace_and_hub(
+    recalled_connection_string_config(),
+    TargetArgs {
+        namespace: Some("orders.servicebus.windows.net".to_owned()),
+        event_hub: Some("recalled-hub".to_owned()),
+        ..TargetArgs::default()
+    },
+    false
+)]
+#[case::credential_with_namespace_and_hub(
+    recalled_developer_config(),
+    TargetArgs {
+        namespace: Some("recalled.servicebus.windows.net".to_owned()),
+        event_hub: Some("recalled-hub".to_owned()),
+        ..TargetArgs::default()
+    },
+    false
+)]
+#[case::connection_string_confirmed(
+    recalled_connection_string_config(),
+    TargetArgs::default(),
+    true
+)]
+#[case::credential_confirmed(recalled_developer_config(), TargetArgs::default(), true)]
+#[case::flag_credential(recalled_developer_config(), developer(), false)]
+#[case::flag_connection_string(
+    recalled_developer_config(),
+    TargetArgs { connection_string: secret(CONNECTION_STRING), ..TargetArgs::default() },
+    false
+)]
+#[case::flag_key_vault(
+    recalled_connection_string_config(),
+    TargetArgs {
+        auth: Some(AuthArg::Developer),
+        keyvault_url: Some("https://v.vault.azure.net".to_owned()),
+        keyvault_secret: Some("s".to_owned()),
+        ..TargetArgs::default()
+    },
+    false
+)]
+fn a_named_confirmed_or_flag_target_passes_the_guard(
+    #[case] recalled: ToolConfig,
+    #[case] target: TargetArgs,
+    #[case] yes: bool,
+) {
+    let mut args = send_args(target);
+    args.yes = yes;
+
+    assert!(send(args, Some(&recalled), &Environment::default()).is_ok());
+}
+
+#[test]
+fn a_connection_string_from_the_environment_names_the_destination() {
+    let environment = Environment {
+        connection_string: secret(ENV_CONNECTION_STRING),
+        client_secret: None,
+    };
+
+    let job = send(
+        send_args(TargetArgs::default()),
+        Some(&recalled_connection_string_config()),
+        &environment,
+    )
+    .unwrap();
+
+    assert_eq!(
+        job.secrets.connection_string.unwrap().expose(),
+        ENV_CONNECTION_STRING
+    );
+}
+
+#[test]
+fn the_guard_escapes_a_hostile_recalled_namespace() {
+    let mut recalled = recalled_developer_config();
+    recalled.target.namespace = Some("evil\u{1b}]52;c;x\u{7}".to_owned());
+
+    let error = send(
+        send_args(TargetArgs::default()),
+        Some(&recalled),
+        &Environment::default(),
+    )
+    .unwrap_err();
+
+    assert!(!error.to_string().contains('\u{1b}'), "{error:?}");
+}
+
+#[test]
+fn debug_of_the_send_job_never_shows_a_secret() {
+    let args = send_args(TargetArgs {
+        connection_string: secret(CONNECTION_STRING),
+        ..TargetArgs::default()
+    });
+    let rendered_args = format!("{args:?}");
+
+    let job = send(args, None, &Environment::default()).unwrap();
+
+    for rendered in [rendered_args, format!("{job:?}")] {
+        assert!(!rendered.contains("SharedAccessKey"), "{rendered}");
+    }
 }
 
 #[test]

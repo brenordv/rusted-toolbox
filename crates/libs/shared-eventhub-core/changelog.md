@@ -22,6 +22,10 @@
   `TIME_SHAPES` parse capture-rule timestamps (an RFC3339 timestamp or a date; During needs a
   full timestamp; a window's start may not follow its end), so the CLI and the GUI accept the
   same input.
+- `producer`: `open_producer` on the same target validation and auth dispatch as `connect`,
+  `EventHubProducer::send` (batched or paced with `Pacing::interval`, partition-key routing,
+  cancel before a batch, during its creation, or during a paced wait, counts and end reason
+  in `SendSummary`), and `close`. `cancel::flag_set` and `CANCEL_POLL` wait on a cancel flag.
 - Azure SDK pins: `azure_messaging_eventhubs` 0.16.0 on `azure_core`
   1.2.0-beta.2 (one `azure_core` shared with `shared-azure`'s
   `azure_identity` 1.1.0-beta.2 and `azure_security_keyvault_secrets`

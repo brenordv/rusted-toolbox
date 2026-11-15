@@ -2,16 +2,12 @@
 //! turns Ctrl-C into a graceful stop.
 
 use crate::progress::Renderer;
+use shared_eventhub_core::cancel::CANCEL_POLL;
 use shared_eventhub_core::engine::{EngineChannels, EngineCommand, EngineEvent, RunSummary};
 use std::future::Future;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 use tracing::debug;
-
-/// How often the loop wakes to look at the shutdown flag when nothing else
-/// happens.
-const SHUTDOWN_POLL: Duration = Duration::from_millis(100);
 
 /// How the loop ended.
 #[derive(Debug)]
@@ -48,7 +44,10 @@ where
     let mut run = std::pin::pin!(run);
     let mut started = false;
     let mut stop_sent = false;
-    let mut poll = tokio::time::interval(SHUTDOWN_POLL);
+    // A tick rather than `flag_set`: the loop keeps running after the flag
+    // flips (it waits for the stopped run), and `flag_set` would then resolve
+    // on every iteration.
+    let mut poll = tokio::time::interval(CANCEL_POLL);
 
     loop {
         if shutdown.load(Ordering::Relaxed) && !stop_sent {

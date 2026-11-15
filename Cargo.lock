@@ -8256,6 +8256,7 @@ name = "shared-eventhub-core"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "azure_core",
  "azure_core_amqp",
  "azure_messaging_eventhubs",
  "chrono",

@@ -1,17 +1,7 @@
 use super::*;
-use crate::models::ConfigSource;
-use shared_azure::auth::AuthMethod;
-use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
 use shared_eventhub_core::engine::RunSummary;
 use shared_eventhub_core::stats::StatsSnapshot;
-use shared_eventhub_persistence::config::{
-    AuthMethodConfig, CONFIG_FILE_NAME, CredentialKindConfig, SensitiveValues, StoredSecret,
-    TargetConfig, ToolConfig,
-};
-use shared_eventhub_persistence::secrets::CONNECTION_STRING_SECRET;
 use std::collections::BTreeMap;
-
-const CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=listen;SharedAccessKey=c2VjcmV0";
 
 fn summary(end: RunEnd, partitions: &[(&str, PartitionEnd)]) -> LoopEnd {
     LoopEnd::Finished(Ok(RunSummary {
@@ -155,124 +145,6 @@ impl Fixture {
     fn paths(&self) -> DataPaths {
         DataPaths::new(self.root.path().join(".eh-data"))
     }
-
-    fn job(&self, auth: AuthMethodConfig, secrets: SensitiveValues, save_config: bool) -> ReadJob {
-        let mut config = ToolConfig::new(TargetConfig {
-            namespace: Some("orders.servicebus.windows.net".to_owned()),
-            event_hub: Some("orders".to_owned()),
-            consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
-            auth,
-        });
-        config.storage.base_data_folder = self.paths().base().display().to_string();
-        ReadJob {
-            config,
-            secrets,
-            save_config,
-            verbose: false,
-            working_dir: self.root.path().to_path_buf(),
-            config_source: ConfigSource::Missing,
-        }
-    }
-}
-
-fn renderer() -> Renderer<Vec<u8>, Vec<u8>> {
-    Renderer::new(Vec::new(), Vec::new(), false, 200)
-}
-
-fn connection_string_given() -> SensitiveValues {
-    SensitiveValues {
-        connection_string: Some(CONNECTION_STRING.to_owned().into()),
-        client_secret: None,
-    }
-}
-
-fn connection_string_auth() -> AuthMethodConfig {
-    AuthMethodConfig::ConnectionString {
-        stored: StoredSecret::LocalDb,
-    }
-}
-
-#[test]
-fn a_given_secret_resolves_without_touching_the_data_folder() {
-    let fixture = Fixture::new();
-    let job = fixture.job(connection_string_auth(), connection_string_given(), false);
-
-    let target = prepare_target(&job, &fixture.paths(), &mut renderer()).unwrap();
-
-    assert!(matches!(target.auth, AuthMethod::ConnectionString { .. }));
-    assert!(!fixture.paths().base().exists());
-}
-
-#[test]
-fn save_config_writes_config_json_and_the_secret_and_says_where() {
-    let fixture = Fixture::new();
-    let job = fixture.job(connection_string_auth(), connection_string_given(), true);
-    let mut renderer = renderer();
-
-    prepare_target(&job, &fixture.paths(), &mut renderer).unwrap();
-
-    let saved = std::fs::read_to_string(fixture.root.path().join(CONFIG_FILE_NAME)).unwrap();
-    assert!(!saved.contains("SharedAccessKey"), "{saved}");
-    let secrets = SecretsStore::open(&fixture.paths()).unwrap();
-    assert_eq!(
-        secrets
-            .get(CONNECTION_STRING_SECRET)
-            .unwrap()
-            .unwrap()
-            .expose(),
-        CONNECTION_STRING
-    );
-    let notice = String::from_utf8(renderer.into_parts().1).unwrap();
-    assert!(
-        notice.contains("Saved config.json; the connection string is stored in"),
-        "{notice}"
-    );
-    assert!(notice.contains("(not encrypted)"), "{notice}");
-}
-
-#[test]
-fn a_client_secret_neither_given_nor_stored_fails_with_guidance() {
-    let fixture = Fixture::new();
-    let job = fixture.job(
-        AuthMethodConfig::Credential {
-            credential: CredentialKindConfig::ClientSecret {
-                tenant_id: "tenant".to_owned(),
-                client_id: "client".to_owned(),
-            },
-        },
-        SensitiveValues::default(),
-        false,
-    );
-
-    let error = prepare_target(&job, &fixture.paths(), &mut renderer()).unwrap_err();
-
-    assert!(
-        error
-            .to_string()
-            .contains("No client secret for client 'client'"),
-        "{error:#}"
-    );
-    assert!(error.to_string().contains(CLIENT_SECRET_ENV), "{error:#}");
-}
-
-#[test]
-fn a_stored_connection_string_is_read_when_none_was_given() {
-    let fixture = Fixture::new();
-    SecretsStore::open(&fixture.paths())
-        .unwrap()
-        .put(
-            CONNECTION_STRING_SECRET,
-            &CONNECTION_STRING.to_owned().into(),
-        )
-        .unwrap();
-    let job = fixture.job(connection_string_auth(), SensitiveValues::default(), false);
-
-    let target = prepare_target(&job, &fixture.paths(), &mut renderer()).unwrap();
-
-    assert!(matches!(
-        &target.auth,
-        AuthMethod::ConnectionString { connection_string } if connection_string.expose() == CONNECTION_STRING
-    ));
 }
 
 #[tokio::test]
@@ -363,18 +235,4 @@ async fn the_other_disk_modes_have_nothing_to_finish() {
     sink.close().await.unwrap();
 
     assert_eq!(outcome, ExportOutcome::default());
-}
-
-#[test]
-fn saving_without_a_secret_says_so_plainly() {
-    let fixture = Fixture::new();
-    let job = fixture.job(
-        AuthMethodConfig::Credential {
-            credential: CredentialKindConfig::DeveloperTools,
-        },
-        SensitiveValues::default(),
-        true,
-    );
-
-    assert_eq!(saved_notice(&job, &fixture.paths()), "Saved config.json");
 }
