@@ -4956,7 +4956,7 @@ dependencies = [
 
 [[package]]
 name = "mock"
-version = "3.0.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4967,7 +4967,7 @@ dependencies = [
 
 [[package]]
 name = "mock-data-utils"
-version = "4.0.0"
+version = "3.1.0"
 dependencies = [
  "anyhow",
  "chrono",

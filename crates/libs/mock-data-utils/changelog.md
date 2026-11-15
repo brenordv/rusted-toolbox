@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.0.0
+## 3.1.0
 - New `template` module: `Template::compile` turns text with `{{type option=value}}`
   placeholders (`\{{` for a literal `{{`) into a template, checking every placeholder's type and
   options up front; errors start with the placeholder's line and column and quote at most 40
@@ -12,10 +12,9 @@
   with its UTC offset (`2026-11-15T14:03:07.123-03:00`), or UTC ending in `Z`. They take no
   options, and every one in a render shows the same instant. `placeholder_groups()` lists them as
   the `clock` group.
-- BREAKING: `length` is capped at 1 MiB (`MAX_LENGTH`) for `internet.password` and
-  `commerce.product-description`. A larger value is refused: values big enough to abort the
-  process on the allocation now fail cleanly, and values between the cap and that point, which
-  3.0.0 generated, now return an error. `mock internet.password -n 2000000` now exits 1.
+- Fixed: `length` for `internet.password` and `commerce.product-description` is capped at 1 MiB
+  (`MAX_LENGTH`), and a larger value returns an error. Before, a large value could abort the
+  process on the allocation or exhaust memory. `mock internet.password -n 2000000` now exits 1.
 - `DataType::ALL`, `DataType::command()` (the dotted name), and `PartialEq`/`Eq` on `DataType`;
   `from_command` looks names up in `ALL`.
 - `locale_is_inert`, moved here from tool-mock.
