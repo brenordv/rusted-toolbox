@@ -7,6 +7,7 @@ mod message_list;
 mod read;
 mod rules_form;
 mod sections;
+mod send;
 mod shell;
 
 use crate::state::AppState;
@@ -23,8 +24,12 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
     rune_kit::root(body, layer)
 }
 
-/// Keys no focused control took: `mod+f` focuses the Read list's quick search.
-pub fn window_key(_: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
+/// Keys no focused control took: the Send shortcuts (`mod+enter` while the Send section shows,
+/// `mod+1..3` to pick a section), and `mod+f`, which focuses the Read list's quick search.
+pub fn window_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
+    if send::send_keys(s, key, tx) {
+        return true;
+    }
     let focus_search = Chord::parse("mod+f").is_ok_and(|chord| chord.matches_tx(key, tx));
     if focus_search {
         tx.focus(read::SEARCH_KEY, true);

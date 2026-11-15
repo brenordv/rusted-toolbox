@@ -42,6 +42,10 @@ Validation rules:
 - Errors name the namespace and hub; none carries the connection string or a
   key.
 
+`target_names` applies the same rules without any network call and returns the
+namespace and hub a target resolves to (`None` for Key Vault auth, whose string
+is only known once fetched), for showing the destination before a send.
+
 SAS tokens: a connection string with `SharedAccessKeyName`/`SharedAccessKey`
 signs and refreshes its own tokens. One that carries a pre-formed
 `SharedAccessSignature` cannot be renewed, so a long capture ends when that

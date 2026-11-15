@@ -6,7 +6,7 @@ use crate::design::parts;
 use crate::design::tokens::{SPACE_LG, SPACE_MD, SPACE_SM};
 use crate::read::rules::rule_count;
 use crate::read::{ReadInput, rules_editable};
-use crate::state::{AppState, ConnectionState, Input, Section};
+use crate::state::{AppState, ConnectionState, Input, ListSection};
 use crate::views::rules_form;
 use rune::{El, col, row};
 use rune_kit::{Badge, BadgeVariant, Button, ButtonVariant, Kit};
@@ -40,7 +40,7 @@ pub fn sidebar(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
             k,
             "Rules apply to messages captured from now on. Rows already in the list stay.",
         ));
-    let mut form = rules_form::fields(s, k, layer, Section::Read, &issues, form).child(
+    let mut form = rules_form::fields(s, k, layer, ListSection::Read, &issues, form).child(
         row()
             .gap(SPACE_SM)
             .child(

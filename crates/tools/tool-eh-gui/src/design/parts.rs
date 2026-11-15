@@ -3,15 +3,18 @@
 
 use super::tokens::{
     COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT, FORM_POPOVER_WIDTH,
-    HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE, PRESS_SCALE, RADIUS_BADGE,
-    RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE, SELECTION_INSET, SHEET_TOP, SHEET_WIDTH, SPACE_LG,
-    SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY,
-    TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO,
-    TYPE_TITLE,
+    HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE, PRESS_SCALE, RADIUS_BADGE, RADIUS_CONTROL,
+    RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE, REVEAL_OFFSET, SELECTION_INSET, SHEET_TOP,
+    SHEET_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH,
+    TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL,
+    TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
 };
 use super::{Surface, floating_tint, motion, selected_secondary_text, selection_fill, surface};
-use rune::{Color, El, Icon, SpringPair, Transition, col, el, icon, row, text};
-use rune_kit::{IconButton, IconButtonVariant, Kit, RollingText};
+use rune::{
+    Color, El, Icon, KeyEvent, ScrollSpec, SpringPair, TextEdit, Transition, Tx, col, el, icon,
+    row, text, text_input,
+};
+use rune_kit::{IconButton, IconButtonVariant, Kit, RollingText, ScrollBar};
 
 /// The centered empty state that replaces a content area: glyph, title, one muted line, and at
 /// most one action. Enters once with a fade and a small rise.
@@ -445,6 +448,81 @@ pub fn metadata_card(k: &Kit, rows: Vec<El>) -> El {
         .fill(surface(k, Surface::Raised))
         .border(HAIRLINE, k.c.border_weak)
         .children(rows)
+}
+
+/// The fewest lines the body editor shows.
+const BODY_EDITOR_MIN_LINES: f32 = 8.0;
+
+/// A multi-line monospace editor for an event body: the kit field's look, at least
+/// [`BODY_EDITOR_MIN_LINES`] tall, growing to the space it is given and scrolling past it. The
+/// box never springs as lines are typed. There is no `on_submit`, and `on_key` sees every key
+/// first: a plain Return reaches it untyped, so `on_key` inserts the newline.
+///
+/// The kit's `TextArea` sets its own UI type with no way to change it, so it cannot be mono.
+pub fn body_editor<S: 'static>(
+    k: &Kit,
+    key: &str,
+    edit: &TextEdit,
+    invalid: bool,
+    access: fn(&mut S) -> &mut TextEdit,
+    on_key: impl Fn(&mut S, &KeyEvent, &mut Tx) -> bool + 'static,
+) -> El {
+    let c = &k.c;
+    let field = text_input(edit, TYPE_MONO)
+        .key("input")
+        .w_full()
+        .color(c.text_base)
+        .placeholder("Event body", c.text_faint)
+        .caret(c.text_base, k.selection())
+        .label("Event body")
+        .invalid(invalid)
+        .on_edit(access)
+        .on_input_key(on_key);
+    let viewport = col()
+        .key("scroll")
+        .w_full()
+        .grow(1.0)
+        .min_h(BODY_EDITOR_MIN_LINES * TYPE_MONO.line_px())
+        .scroll(ScrollSpec {
+            stick_bottom: false,
+        })
+        .child(field)
+        .scroll_bar(k);
+    let mut shell = col()
+        .key(key)
+        .role("textbox")
+        .w_full()
+        .grow(1.0)
+        .min_h(0.0)
+        .padding(SPACE_SM)
+        .radius(RADIUS_CONTROL)
+        .fill(c.bg_base)
+        .child(viewport);
+    if invalid {
+        shell = shell.outline(HAIRLINE, -HAIRLINE, c.danger.fg);
+    } else if edit.focused {
+        shell = shell.outline(HAIRLINE, -HAIRLINE, c.border_focus);
+    } else {
+        for shadow in k.shadow_layers(k.elevation.input()) {
+            shell = shell.box_shadow(shadow);
+        }
+    }
+    shell
+}
+
+/// A field's issue under it, in the danger color.
+pub fn issue(k: &Kit, line: &str) -> El {
+    text(line).font(TYPE_CAPTION).color(k.c.danger.fg).wrap()
+}
+
+/// `content` entering and leaving with the field-reveal treatment: a fade and a 6 pt rise on
+/// the control spring.
+pub fn reveal(content: El) -> El {
+    content.transition(
+        Transition::opacity()
+            .combined(Transition::offset(0.0, REVEAL_OFFSET))
+            .springs(SpringPair::new(motion::CONTROL, motion::CONTROL_EXIT)),
+    )
 }
 
 /// A block of selectable monospace text, for a message body.

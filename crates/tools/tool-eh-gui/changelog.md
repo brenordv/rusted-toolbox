@@ -1,6 +1,17 @@
 # Changelog
 
 ## 1.0.0
+- The Send section: a monospace body editor, content type, count, routing (automatic or a
+  partition key), and pacing (batched, or one event every 1 to 3,600,000 ms, start to start),
+  checked through core's own constructors. The destination is named from the connection sheet
+  the way the open resolves it; Edit… opens the sheet with a Done footer that never connects. A
+  fixed action row shows the run (connecting, the sent count, the pacing, the elapsed time),
+  Cancel (also during a paced wait), and the outcome. Ctrl/Cmd+Enter sends from any Send field;
+  Ctrl/Cmd+1..3 pick a section. One producer per send, closed at the end; a send that does not
+  stop within 30 s of a cancel is reported. Closing the window cancels a send and waits for it;
+  a failed one reopens the window. Demo scenarios `send` and `send-paced`.
+- Every opening of the secrets file goes through one gate, so Save config, Connect, and Send
+  never collide on its lock (Connect during a save is no longer refused).
 - Initial release (in progress): the window shell on Rune. A toolbar with the Read and Export
   switch, the connection pill (data folder, log file, version, and the last error in its
   popover), and the connect sheet with the three sign-in methods (connection string, Azure

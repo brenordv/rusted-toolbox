@@ -427,3 +427,55 @@ async fn a_crafted_connection_string_reaches_no_error_surface() {
             .all(|toast| !toast.text.contains(MARKER))
     );
 }
+
+#[test]
+fn two_raw_opens_of_one_secrets_file_collide() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = DataPaths::new(root.path().join("data"));
+    let first = SecretsStore::open(&paths).unwrap();
+
+    let second = SecretsStore::open(&paths);
+
+    assert!(second.is_err());
+    drop(first);
+}
+
+#[test]
+fn overlapping_gated_opens_both_succeed() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = DataPaths::new(root.path().join("data"));
+    let other = paths.clone();
+
+    let results = std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            open_secrets(&paths, |_| {
+                std::thread::sleep(Duration::from_millis(100));
+                Ok(())
+            })
+        });
+        let second = scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(20));
+            open_secrets(&other, |_| Ok(()))
+        });
+        (first.join().unwrap(), second.join().unwrap())
+    });
+
+    assert!(results.0.is_ok() && results.1.is_ok(), "{results:?}");
+}
+
+#[test]
+fn a_panic_inside_a_gated_open_does_not_lock_the_next_one_out() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = DataPaths::new(root.path().join("data"));
+    let panicked = std::thread::scope(|scope| {
+        scope
+            .spawn(|| open_secrets(&paths, |_| -> anyhow::Result<()> { panic!("inside") }))
+            .join()
+            .is_err()
+    });
+
+    let next = open_secrets(&paths, |_| Ok(()));
+
+    assert!(panicked);
+    assert!(next.is_ok(), "{next:?}");
+}

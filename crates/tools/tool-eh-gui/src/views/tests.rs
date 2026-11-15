@@ -54,7 +54,7 @@ fn press_key(rt: &mut Runtime<AppState>, key: Key) {
 fn open_sheet(auth: AuthChoice) -> AppState {
     let mut s = state();
     s.form.set_auth(auth);
-    s.sheet_open = true;
+    s.sheet = Some(crate::state::SheetPurpose::Connect);
     s
 }
 
@@ -127,14 +127,14 @@ fn a_disconnected_window_offers_connect_and_opens_the_sheet() {
 
     press(&mut rt, "empty-connect");
 
-    assert!(rt.state.sheet_open);
+    assert!(rt.state.sheet.is_some());
     assert!(has_key(&rt, "connect-form"));
 }
 
 #[test]
 fn the_sheet_shows_only_the_chosen_methods_secret_field() {
     let mut s = state();
-    s.sheet_open = true;
+    s.sheet = Some(crate::state::SheetPurpose::Connect);
     let mut rt = runtime(s);
     let connection_string_first = has_key(&rt, "connection-string");
 
@@ -149,7 +149,7 @@ fn the_sheet_shows_only_the_chosen_methods_secret_field() {
 #[test]
 fn a_typed_secret_reaches_neither_the_element_tree_nor_accessibility() {
     let mut s = state();
-    s.sheet_open = true;
+    s.sheet = Some(crate::state::SheetPurpose::Connect);
     s.form.connection_string.edit_mut().replace_text(MARKER);
     let mut rt = runtime(s);
     let hidden = (
@@ -188,7 +188,7 @@ fn a_closed_sheet_mounts_no_dialog_and_no_secret_field(
     let mut rt = runtime(s);
     let closed = (has_key(&rt, "connect-dialog"), has_key(&rt, secret_key));
 
-    rt.state.sheet_open = true;
+    rt.state.sheet = Some(crate::state::SheetPurpose::Connect);
     rt.invalidate();
     settle(&mut rt);
 
@@ -225,7 +225,7 @@ fn escape_closes_the_sheet() {
 
     press_key(&mut rt, Key::Escape);
 
-    assert!(!rt.state.sheet_open);
+    assert!(rt.state.sheet.is_none());
     assert!(!has_key(&rt, "connect-dialog"));
 }
 
@@ -237,7 +237,7 @@ fn a_click_outside_the_sheet_closes_it() {
     rt.pointer_up(20.0, 400.0);
     settle(&mut rt);
 
-    assert!(!rt.state.sheet_open);
+    assert!(rt.state.sheet.is_none());
 }
 
 #[test]
@@ -518,6 +518,7 @@ impl Services for PageCounter {
         self.0.fetch_add(1, AtomicOrdering::SeqCst);
     }
     fn bulk_export(&self, _: crate::archive::bulk::BulkRequest) {}
+    fn start_send(&self, _: crate::send::SendRequest) {}
 }
 
 /// The Export section with a search whose first page showed `count` rows, more to come when
@@ -687,7 +688,7 @@ fn a_failed_export_points_at_the_log_only_when_one_is_written(
 fn the_sheet_says_why_the_data_folder_cannot_change_during_a_bulk_export() {
     let (mut s, _) = export_results(3, false);
     s.apply(Input::Archive(ArchiveInput::BulkExportPressed));
-    s.sheet_open = true;
+    s.sheet = Some(crate::state::SheetPurpose::Connect);
 
     let rt = runtime(s);
 
@@ -736,6 +737,316 @@ fn the_search_button_searches_the_archive() {
 
     assert_eq!(pages.load(AtomicOrdering::SeqCst), 1);
     assert!(matches!(rt.state.archive.results, Results::Loading { .. }));
+}
+
+/// Services that count the sends asked for and do nothing else.
+#[derive(Default)]
+struct SendCounter(Arc<AtomicUsize>);
+
+impl Services for SendCounter {
+    fn prepare_session(&self, _: u64, _: crate::services::ConnectRequest) {}
+    fn save_config(&self, _: crate::services::SaveRequest) {}
+    fn switch_data_folder(&self, _: shared_eventhub_persistence::paths::DataPaths) {}
+    fn reopen_window(&self) {}
+    fn quit(&self) {}
+    fn rebuild_search(&self, _: crate::read::search::RebuildRequest) {}
+    fn export_one(&self, _: crate::read::ExportOneRequest) {}
+    fn search_archive(&self, _: PageRequest) {}
+    fn bulk_export(&self, _: crate::archive::bulk::BulkRequest) {}
+    fn start_send(&self, _: crate::send::SendRequest) {
+        self.0.fetch_add(1, AtomicOrdering::SeqCst);
+    }
+}
+
+const SEND_CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;\
+    SharedAccessKeyName=send;SharedAccessKey=c2VjcmV0;EntityPath=orders";
+
+/// The Send section with a usable destination; the counter sees each send started.
+fn send_state() -> (AppState, Arc<AtomicUsize>) {
+    let sends = Arc::new(AtomicUsize::new(0));
+    let mut form = ConnectForm::default();
+    form.connection_string
+        .edit_mut()
+        .replace_text(SEND_CONNECTION_STRING);
+    let mut s = AppState::new(
+        Some(Box::new(SendCounter(Arc::clone(&sends)))),
+        form,
+        None,
+        FileLogging::Off,
+    );
+    s.section = crate::state::Section::Send;
+    (s, sends)
+}
+
+fn command(rt: &mut Runtime<AppState>, key: Key) {
+    rt.key(KeyEvent {
+        key,
+        mods: Mods {
+            cmd: true,
+            ctrl: !cfg!(target_os = "macos"),
+            logo: cfg!(target_os = "macos"),
+            ..Mods::default()
+        },
+    });
+    settle(rt);
+}
+
+fn send_runtime(s: AppState, size: (f32, f32)) -> Runtime<AppState> {
+    let mut rt = runtime_at(s, size);
+    rt.on_key = Some(window_key);
+    rt
+}
+
+fn focused_key(rt: &Runtime<AppState>) -> Option<String> {
+    rt.elements()
+        .into_iter()
+        .filter(|element| element.focused)
+        .find_map(|element| element.key)
+}
+
+#[test]
+fn the_third_segment_shows_the_send_section_with_send_on_screen_at_the_smallest_size() {
+    let mut rt = runtime_at(state(), WINDOW_MIN);
+
+    press(&mut rt, "segment2");
+
+    let [_, y, _, height] = rect(&rt, crate::views::send::SEND_BUTTON_KEY);
+    assert_eq!(rt.state.section, crate::state::Section::Send);
+    assert!(
+        y >= 0.0 && y + height <= WINDOW_MIN.1,
+        "Send at {y}+{height}"
+    );
+}
+
+#[test]
+fn mod_3_shows_the_send_section_with_nothing_focused() {
+    let mut rt = send_runtime(state(), (1280.0, 800.0));
+
+    command(&mut rt, Key::Command('3'));
+
+    assert_eq!(rt.state.section, crate::state::Section::Send);
+}
+
+#[test]
+fn return_in_the_body_types_a_newline_and_sends_nothing() {
+    let (s, sends) = send_state();
+    let mut rt = send_runtime(s, (1280.0, 800.0));
+    press(&mut rt, crate::views::send::BODY_KEY);
+
+    press_key(&mut rt, Key::Enter);
+
+    assert_eq!(rt.state.send.composer.body.text, "\n");
+    assert_eq!(sends.load(AtomicOrdering::SeqCst), 0);
+}
+
+#[test]
+fn return_in_the_count_sends_nothing() {
+    let (s, sends) = send_state();
+    let mut rt = send_runtime(s, (1280.0, 800.0));
+    press(&mut rt, crate::views::send::sidebar::COUNT_KEY);
+
+    press_key(&mut rt, Key::Enter);
+
+    assert_eq!(sends.load(AtomicOrdering::SeqCst), 0);
+}
+
+#[rstest::rstest]
+#[case::body(Some(crate::views::send::BODY_KEY))]
+#[case::count(Some(crate::views::send::sidebar::COUNT_KEY))]
+#[case::nothing_focused(None)]
+fn mod_enter_sends_from_a_focused_field_and_with_nothing_focused(#[case] field: Option<&str>) {
+    let (s, sends) = send_state();
+    let mut rt = send_runtime(s, (1280.0, 800.0));
+    if let Some(field) = field {
+        press(&mut rt, field);
+        assert!(focused_key(&rt).is_some(), "{field} did not take focus");
+    }
+
+    command(&mut rt, Key::Enter);
+
+    assert_eq!(sends.load(AtomicOrdering::SeqCst), 1);
+}
+
+#[test]
+fn mod_enter_with_the_sheet_open_sends_nothing() {
+    let (mut s, sends) = send_state();
+    s.sheet = Some(crate::state::SheetPurpose::SendTarget);
+    let mut rt = send_runtime(s, (1280.0, 800.0));
+
+    command(&mut rt, Key::Enter);
+
+    assert_eq!(sends.load(AtomicOrdering::SeqCst), 0);
+}
+
+#[rstest::rstest]
+#[case::body(crate::views::send::BODY_KEY)]
+#[case::count(crate::views::send::sidebar::COUNT_KEY)]
+fn mod_1_switches_sections_while_a_send_field_has_focus(#[case] field: &str) {
+    let (s, _) = send_state();
+    let mut rt = send_runtime(s, (1280.0, 800.0));
+    press(&mut rt, field);
+
+    command(&mut rt, Key::Command('1'));
+
+    assert_eq!(rt.state.section, crate::state::Section::Read);
+}
+
+/// The live region's phrase: the label of the status block.
+fn status_label(rt: &Runtime<AppState>) -> String {
+    rt.elements()
+        .into_iter()
+        .find(|element| {
+            !element.exiting
+                && element
+                    .key
+                    .as_deref()
+                    .is_some_and(|key| key.starts_with(crate::views::send::STATUS_KEY))
+        })
+        .and_then(|element| element.label)
+        .unwrap_or_default()
+}
+
+fn send_running(s: &mut AppState, paced: bool) -> u64 {
+    if paced {
+        s.send.composer.pacing = crate::send::compose::PacingChoice::Paced;
+    }
+    s.send.composer.count.replace_text("1000");
+    let out = s.apply(Input::Send(crate::send::SendInput::SendPressed));
+    let [Effect::Send(crate::send::SendEffect::StartSend(request))] = out.effects.as_slice() else {
+        panic!("expected StartSend, got {:?}", out.effects);
+    };
+    let run = request.run;
+    let at = chrono::Utc::now();
+    s.apply(Input::Send(crate::send::SendInput::Started {
+        run,
+        target: crate::send::run::Names {
+            namespace: "orders.servicebus.windows.net".to_owned(),
+            event_hub: "orders".to_owned(),
+        },
+        at,
+    }));
+    s.apply(Input::Send(crate::send::SendInput::Progress {
+        run,
+        sent: 340,
+    }));
+    s.apply(Input::Tick(at + chrono::TimeDelta::seconds(4)));
+    run
+}
+
+#[test]
+fn a_running_send_shows_its_count_and_cancel_keeps_the_line() {
+    let (mut s, _) = send_state();
+    send_running(&mut s, false);
+    let mut rt = runtime(s);
+    let counted = has_text(&rt, "of 1,000 to orders");
+
+    press(&mut rt, "send-cancel");
+
+    assert!(counted);
+    assert!(rt.state.send.run.cancel_requested());
+    assert!(has_text(&rt, "Canceling"));
+    assert!(has_text(&rt, "of 1,000 to orders"));
+}
+
+#[test]
+fn a_paced_send_names_its_pacing_and_its_elapsed_time() {
+    let (mut s, _) = send_state();
+    send_running(&mut s, true);
+
+    let rt = runtime(s);
+
+    assert!(has_text(&rt, "one every 1,000 ms"));
+    assert!(has_text(&rt, "· 4s"));
+}
+
+#[test]
+fn the_status_announces_words_never_digits_while_sending() {
+    let (mut s, _) = send_state();
+    send_running(&mut s, true);
+
+    let rt = runtime(s);
+
+    let label = status_label(&rt);
+    assert_eq!(label, "Sending to orders");
+    assert!(!label.chars().any(|c| c.is_ascii_digit()));
+}
+
+#[test]
+fn picking_paced_reveals_the_interval_and_batched_removes_it() {
+    let (s, _) = send_state();
+    let mut rt = runtime(s);
+    let hidden = has_key(&rt, crate::views::send::sidebar::INTERVAL_KEY);
+
+    rt.state.send.composer.pacing = crate::send::compose::PacingChoice::Paced;
+    rt.invalidate();
+    settle(&mut rt);
+    let shown = has_key(&rt, crate::views::send::sidebar::INTERVAL_KEY);
+    rt.state.send.composer.pacing = crate::send::compose::PacingChoice::Batched;
+    rt.invalidate();
+    settle(&mut rt);
+
+    assert!(!hidden && shown);
+    assert!(!row_visible(&rt, crate::views::send::sidebar::INTERVAL_KEY));
+}
+
+#[test]
+fn an_invalid_interval_shows_its_issue_reachable_in_the_smallest_window() {
+    let (mut s, _) = send_state();
+    s.send.composer.pacing = crate::send::compose::PacingChoice::Paced;
+    s.send.composer.routing = crate::send::compose::RoutingChoice::PartitionKey;
+    s.send.composer.interval.replace_text("0");
+    s.apply(Input::Send(crate::send::SendInput::SendPressed));
+
+    let mut rt = runtime_at(s, WINDOW_MIN);
+    let issue = "Enter an interval from 1 to 3,600,000 ms (one hour)";
+    let shown_at_first = text_visible(&rt, issue);
+
+    for _ in 0..20 {
+        rt.wheel(120.0, 400.0, -2_000.0);
+        rt.frame(1.0 / 60.0);
+    }
+    settle(&mut rt);
+
+    assert!(has_text(&rt, "Fix 2 fields to send"));
+    assert!(!shown_at_first, "the issue starts below the fold");
+    assert!(
+        text_visible(&rt, issue),
+        "scrolling the sidebar reaches the issue"
+    );
+}
+
+/// Whether an element holding `needle` shows on screen.
+fn text_visible(rt: &Runtime<AppState>, needle: &str) -> bool {
+    rt.elements().iter().any(|element| {
+        element
+            .text
+            .as_deref()
+            .is_some_and(|text| text.contains(needle))
+            && element.visible[3] > 0.0
+    })
+}
+
+#[test]
+fn a_send_with_issues_moves_focus_into_the_first_invalid_field() {
+    let (mut s, sends) = send_state();
+    s.send.composer.count.replace_text("0");
+    let mut rt = send_runtime(s, (1280.0, 800.0));
+
+    press(&mut rt, crate::views::send::SEND_BUTTON_KEY);
+
+    assert_eq!(sends.load(AtomicOrdering::SeqCst), 0);
+    assert!(rt.state.send.composer.count.focused);
+}
+
+#[test]
+fn the_edit_button_opens_the_target_only_sheet() {
+    let (s, _) = send_state();
+    let mut rt = runtime(s);
+
+    press(&mut rt, crate::views::send::sidebar::EDIT_TARGET_KEY);
+
+    assert_eq!(rt.state.sheet, Some(crate::state::SheetPurpose::SendTarget));
+    assert!(has_key(&rt, "sheet-done") && !has_key(&rt, "sheet-connect"));
 }
 
 #[test]

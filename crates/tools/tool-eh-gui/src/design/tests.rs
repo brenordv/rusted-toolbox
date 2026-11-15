@@ -92,6 +92,26 @@ fn every_contract_pair_meets_its_minimum_in_both_appearances() {
         }
 
         let content = surface(k, Surface::Content);
+        for level in [Surface::Window, Surface::Content] {
+            contract.check(
+                &format!("{mode} danger caption on {level:?}"),
+                k.c.danger.fg,
+                surface(k, level),
+                TEXT,
+            );
+        }
+        contract.check(
+            &format!("{mode} warning caption on Content"),
+            k.c.warning.fg,
+            content,
+            TEXT,
+        );
+        contract.check(
+            &format!("{mode} success check on Content"),
+            k.c.success.fg,
+            content,
+            NON_TEXT,
+        );
         let selected = over(k.selection(), content);
         contract.check(
             &format!("{mode} fg on selection"),

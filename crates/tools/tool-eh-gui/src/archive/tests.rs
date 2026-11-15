@@ -353,7 +353,7 @@ fn a_picked_file_exports_the_selected_result_back_to_the_export_section() {
     let [ArchiveEffect::ExportOne(request)] = out.effects.as_slice() else {
         panic!("expected an export, got {:?}", out.effects);
     };
-    assert_eq!(request.section, Section::Export);
+    assert_eq!(request.section, ListSection::Export);
     assert_eq!(request.key, key);
     assert!(archive.busy());
 }

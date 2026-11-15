@@ -3,7 +3,8 @@
 A desktop window for Azure Event Hubs: connect to an event hub and capture its events into the
 same local archive the `eh` CLI uses, watch them arrive in a live list, filter them, inspect
 one, copy it, or export it to a file. The Export section searches the archive by time and
-text and exports one message or every match, with or without a connection.
+text and exports one message or every match, with or without a connection. The Send section
+publishes test events to an event hub, batched or one every N milliseconds.
 
 Screenshots come in a later version.
 
@@ -109,6 +110,52 @@ captures into it.
 The CSV injection warning and how the archive grows (there is no purge yet) are covered in
 `shared-eventhub-persistence`'s readme.
 
+## Sending
+
+The Send section publishes one body a given number of times to the event hub the connection
+sheet names, with or without a capture session, so you can capture in Read and watch your own
+test events arrive. Sending writes to a real event hub: the sidebar and the line next to Send
+name it.
+
+- **Destination** (sidebar): the namespace and event hub the sheet resolves to, the same way the
+  open will (a connection string's `EntityPath` or the hub typed in the sheet; a mismatch reads
+  "Not a valid connection string"). A saved connection string or a Key Vault secret shows "the
+  hub in the saved connection string" until a send resolves it. Edit… opens the sheet to choose
+  where to send: its footer has Save config and Done, never Connect. While a session captures,
+  Send goes to the hub being read and Edit… waits for Disconnect; while a send runs, the hub
+  can't change.
+- **Routing**: Automatic (the service spreads events over partitions) or Partition key (every
+  event carries the key, so they land in one partition, in order).
+- **Message**: content type (optional), count (1 to 1,000,000), and pacing. Batched packs as
+  many events per batch as fit and sends batch after batch. Paced sends one event per batch,
+  each send starting the interval (1 to 3,600,000 ms) after the previous one started; a slow
+  send delays the next one, never a burst to catch up, and throttling or SDK retries stretch the
+  interval. The first paced event goes at once. Count and pacing are per send and never saved to
+  `config.json`, as with `eh send --interval-ms`.
+- **Event body**: a monospace editor; Return types a newline. Bodies over 1 MiB don't fit the
+  editor (use `eh send --body-file`). A body that fits the editor can still be too large for one
+  batch: the SDK limits a single event to about half the event hub's publish limit (about 128 KB
+  on Basic, 512 KB on Standard and Premium), and the send then fails with that message.
+- **Send** (Ctrl+Enter or Cmd+Enter from any Send field). The line beside it shows the run:
+  connecting, then the sent count, the pacing, and the elapsed time; Cancel stops before the next
+  batch or during a paced wait within about a tenth of a second. A batch already handed to the
+  SDK finishes first, which can take up to about a minute while the SDK retries a throttled
+  batch; the window gives it 30 seconds after a cancel, then reports that the last batch may or
+  may not have been stored. The line keeps the outcome until the next send. Ctrl+1, 2, and 3
+  (Cmd on macOS) switch sections.
+- "Sent" counts events the service accepted or did not refuse. The SDK's warning that some
+  events were "not durably accepted" goes to the log only. A retried batch keeps its message
+  ids, so a lost acknowledgement can show as a duplicate in `eh read`. Sent events are not
+  written to the archive; Read captures them like any other event.
+- Each send opens its own connection and closes it at the end. A failed close shows as a warning
+  under the outcome.
+- Rights: an Entra ID identity with the Azure Event Hubs Data Sender role, or a SAS rule with the
+  Send right on the event hub. A Listen-only rule fails at the first batch. The `eh` readme has
+  the full rights, size, and throttling notes.
+- A typed connection string that was never saved is wiped once Connect starts a session, so
+  sending while capturing needs a saved secret or Entra ID; otherwise the Send section asks you
+  to set up the connection first.
+
 ## Config
 
 At launch eh-gui reads `config.json` from the working directory, exactly as `eh` does, and fills
@@ -124,7 +171,7 @@ one `config.json` per data folder.
 - The archive is locked while eh-gui uses it: from the first Connect until the app quits (or the
   data folder changes), `eh read` and `eh export` on the same folder report it as in use. One
   process at a time per data folder.
-- The data folder can change only while no session and no bulk export runs. A new data folder
+- The data folder can change only while no session, bulk export, or send runs. A new data folder
   clears the Export section's results.
 - Secrets saved with Save config go to the data folder's secrets file, which is obfuscated, not
   encrypted; protect the folder like the secrets themselves.
@@ -141,6 +188,9 @@ it is still running after 30 seconds, the window comes back with a Force quit bu
 Closing the window during a bulk export cancels it; the app quits once the files being written
 are complete. If the export failed (some files could not be written, or the archive could not
 be read), the window comes back to show it.
+
+Closing the window during a send cancels it; the app quits once the batch in flight and the
+connection close end, within about 30 seconds. A send that failed brings the window back.
 
 ## GPU
 
@@ -175,7 +225,9 @@ A dev-only binary runs the real window against a generated event hub and a tempo
 `seeded-empty`, `seeded-failed`, `seeded-connect`, `seeded-read` (a full list with a message
 selected), `seeded-search` (the same with a regex filter), `seeded-export` (the Export section
 over an archive of 6,000 generated messages, searched for everything; paging and bulk exports
-are real). The seeded Read states run no engine, so Disconnect there never finishes. Demo mode
+are real), `send` (the Send section with a JSON body, idle), `send-paced` (10 events one a
+second, already sending). Demo sends reach no event hub: they count up following the pacing and
+Cancel. The seeded Read states run no engine, so Disconnect there never finishes. Demo mode
 reads and writes only under its temporary folder: bulk exports go to its `data/exports`,
 whatever folder is picked. Debug builds accept Rune's agent flags
 (`--snap`, `--script`, `--tree`, `--trace`, `--scene`); write their output under
@@ -223,3 +275,8 @@ Release builds of the workspace leave the demo out.
   pages, bulk export a few thousand messages and cancel halfway (the partial files parse), run
   it again with Skip already exported on (the skips show), and run a bulk export while a live
   capture writes into the same archive.
+- Send section on a live hub: send one event while Read captures the same hub and see it
+  arrive; send 1,000 and Cancel midway; send with a partition key and see one partition in
+  Read's partition column; send 10 Paced at 1,000 ms (about one a second in Read) and Cancel
+  during a wait (stops within a second); close the window during a long send (the app quits
+  after the batch in flight).

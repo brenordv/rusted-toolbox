@@ -13,7 +13,7 @@ use crate::design::tokens::{
 use crate::read::inspector::{FeedbackKind, InspectorInput};
 use crate::read::rows::{RowSource, RowSummary};
 use crate::read::{ReadInput, Step};
-use crate::state::{AppState, Input, Section};
+use crate::state::{AppState, Input, ListSection};
 use common_utils::string_utils::{format_bytes_to_string, format_thousands};
 use rune::{El, GrowthSpec, Key, KeyEvent, ScrollSpec, Tx, col, row};
 use rune_kit::{Kit, ScrollBar};
@@ -30,58 +30,58 @@ pub const ARCHIVE_LIST_KEY: &str = "archive-list";
 pub const ARCHIVE_MESSAGE_LIST_KEY: &str = "archive-message-list";
 
 /// The rows `section` shows.
-fn rows_of(s: &AppState, section: Section) -> &dyn RowSource {
+fn rows_of(s: &AppState, section: ListSection) -> &dyn RowSource {
     match section {
-        Section::Read => &s.read,
-        Section::Export => &s.archive,
+        ListSection::Read => &s.read,
+        ListSection::Export => &s.archive,
     }
 }
 
 /// The scroll viewport key of `section`'s list.
-pub fn scroll_key(section: Section) -> &'static str {
+pub fn scroll_key(section: ListSection) -> &'static str {
     match section {
-        Section::Read => LIST_KEY,
-        Section::Export => ARCHIVE_LIST_KEY,
+        ListSection::Read => LIST_KEY,
+        ListSection::Export => ARCHIVE_LIST_KEY,
     }
 }
 
-fn focus_key(section: Section) -> &'static str {
+fn focus_key(section: ListSection) -> &'static str {
     match section {
-        Section::Read => MESSAGE_LIST_KEY,
-        Section::Export => ARCHIVE_MESSAGE_LIST_KEY,
+        ListSection::Read => MESSAGE_LIST_KEY,
+        ListSection::Export => ARCHIVE_MESSAGE_LIST_KEY,
     }
 }
 
-fn select_input(section: Section, key_str: String) -> Input {
+fn select_input(section: ListSection, key_str: String) -> Input {
     match section {
-        Section::Read => Input::Read(ReadInput::Select(key_str)),
-        Section::Export => Input::Archive(ArchiveInput::Select(key_str)),
+        ListSection::Read => Input::Read(ReadInput::Select(key_str)),
+        ListSection::Export => Input::Archive(ArchiveInput::Select(key_str)),
     }
 }
 
-fn move_input(section: Section, step: Step) -> Input {
+fn move_input(section: ListSection, step: Step) -> Input {
     match section {
-        Section::Read => Input::Read(ReadInput::Move(step)),
-        Section::Export => Input::Archive(ArchiveInput::Move(step)),
+        ListSection::Read => Input::Read(ReadInput::Move(step)),
+        ListSection::Export => Input::Archive(ArchiveInput::Move(step)),
     }
 }
 
 /// The input that clears `section`'s selection.
-pub fn clear_selection_input(section: Section) -> Input {
+pub fn clear_selection_input(section: ListSection) -> Input {
     match section {
-        Section::Read => Input::Read(ReadInput::ClearSelection),
-        Section::Export => Input::Archive(ArchiveInput::ClearSelection),
+        ListSection::Read => Input::Read(ReadInput::ClearSelection),
+        ListSection::Export => Input::Archive(ArchiveInput::ClearSelection),
     }
 }
 
 /// The list's visible rows changed; returns whether anything shown changed.
-fn visible_rows(s: &mut AppState, section: Section, range: Range<usize>) -> bool {
+fn visible_rows(s: &mut AppState, section: ListSection, range: Range<usize>) -> bool {
     match section {
-        Section::Read => {
+        ListSection::Read => {
             let count = RowSource::count(&s.read);
             s.read.visible_rows(range.end, count)
         }
-        Section::Export => {
+        ListSection::Export => {
             let outcome = s.apply(Input::Archive(ArchiveInput::VisibleRows { end: range.end }));
             run_effects(s, outcome.effects);
             outcome.changed
@@ -90,7 +90,7 @@ fn visible_rows(s: &mut AppState, section: Section, range: Range<usize>) -> bool
 }
 
 /// `section`'s list, with `footer` after its rows.
-pub fn list(s: &AppState, k: &Kit, dark: bool, section: Section, footer: Option<El>) -> El {
+pub fn list(s: &AppState, k: &Kit, dark: bool, section: ListSection, footer: Option<El>) -> El {
     let header = row()
         .key("list-header")
         .w_full()
@@ -106,8 +106,8 @@ pub fn list(s: &AppState, k: &Kit, dark: bool, section: Section, footer: Option<
     let source = rows_of(s, section);
     let rows = col()
         .key(match section {
-            Section::Read => "read-rows",
-            Section::Export => "archive-rows",
+            ListSection::Read => "read-rows",
+            ListSection::Export => "archive-rows",
         })
         .w_full()
         .growth(GrowthSpec::default())
@@ -128,7 +128,7 @@ pub fn list(s: &AppState, k: &Kit, dark: bool, section: Section, footer: Option<
         .grow(1.0)
         .min_h(0.0)
         .scroll(ScrollSpec {
-            stick_bottom: section == Section::Read,
+            stick_bottom: section == ListSection::Read,
         })
         .scroll_edge_fade(EDGE_FADE)
         .child(rows);
@@ -149,7 +149,7 @@ pub fn list(s: &AppState, k: &Kit, dark: bool, section: Section, footer: Option<
         .child(header)
         .child(parts::hairline(k))
         .child(viewport);
-    if section == Section::Read && s.read.tail.pill_shows() {
+    if section == ListSection::Read && s.read.tail.pill_shows() {
         list = list.child(new_messages_pill(s, k));
     }
     list
@@ -170,7 +170,7 @@ fn new_messages_pill(s: &AppState, k: &Kit) -> El {
         )
 }
 
-fn list_row(s: &AppState, dark: bool, section: Section, summary: Option<&RowSummary>) -> El {
+fn list_row(s: &AppState, dark: bool, section: ListSection, summary: Option<&RowSummary>) -> El {
     let k = s.ds.kit(dark);
     let Some(summary) = summary else {
         return row().h(LIST_ROW_HEIGHT);
@@ -210,7 +210,7 @@ fn list_row(s: &AppState, dark: bool, section: Section, summary: Option<&RowSumm
 
 /// Keys while the list has focus. `Key` gains variants over time, so keys the list does not
 /// use are declined and go on to the window's handler.
-fn list_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx, section: Section) -> bool {
+fn list_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx, section: ListSection) -> bool {
     if key.is_command('c') {
         return copy_selected_body(s, tx, section);
     }
@@ -231,7 +231,7 @@ fn list_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx, section: Section) -> 
 }
 
 /// Copies `section`'s selected message's whole body; false when nothing is selected.
-pub fn copy_selected_body(s: &mut AppState, tx: &mut Tx, section: Section) -> bool {
+pub fn copy_selected_body(s: &mut AppState, tx: &mut Tx, section: ListSection) -> bool {
     let Some(selected) = &inspector_of(s, section).selected else {
         return false;
     };

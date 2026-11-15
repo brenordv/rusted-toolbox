@@ -11,7 +11,7 @@ use crate::read::inspector::{
     shown_body,
 };
 use crate::read::rows::display_line;
-use crate::state::{AppState, Input, Section};
+use crate::state::{AppState, Input, ListSection};
 use chrono::Local;
 use rune::{El, FileDialogOptions, ScrollSpec, Tx, col, el, row, text};
 use rune_kit::{
@@ -28,23 +28,23 @@ pub const CSV_CAPTION: &str =
     "Spreadsheet apps may run cells that start with =, +, - or @ as formulas.";
 
 /// `section`'s inspector.
-pub fn inspector_of(s: &AppState, section: Section) -> &InspectorState {
+pub fn inspector_of(s: &AppState, section: ListSection) -> &InspectorState {
     match section {
-        Section::Read => &s.read.inspector,
-        Section::Export => &s.archive.inspector,
+        ListSection::Read => &s.read.inspector,
+        ListSection::Export => &s.archive.inspector,
     }
 }
 
-fn inspector_of_mut(s: &mut AppState, section: Section) -> &mut InspectorState {
+fn inspector_of_mut(s: &mut AppState, section: ListSection) -> &mut InspectorState {
     match section {
-        Section::Read => &mut s.read.inspector,
-        Section::Export => &mut s.archive.inspector,
+        ListSection::Read => &mut s.read.inspector,
+        ListSection::Export => &mut s.archive.inspector,
     }
 }
 
 /// The inspector pane's content: `section`'s selected message, or nothing while none is
 /// selected (the pane is closed then).
-pub fn inspector(s: &AppState, k: &Kit, section: Section) -> El {
+pub fn inspector(s: &AppState, k: &Kit, section: ListSection) -> El {
     let state = inspector_of(s, section);
     let Some(selected) = &state.selected else {
         return el().key("inspector-empty");
@@ -152,7 +152,7 @@ fn metadata(k: &Kit, selected: &Selected) -> El {
     parts::metadata_card(k, rows)
 }
 
-fn actions(state: &InspectorState, k: &Kit, selected: &Selected, section: Section) -> El {
+fn actions(state: &InspectorState, k: &Kit, selected: &Selected, section: ListSection) -> El {
     let shows = |kind| {
         state
             .feedback
@@ -186,7 +186,7 @@ fn actions(state: &InspectorState, k: &Kit, selected: &Selected, section: Sectio
         )
 }
 
-fn copy_json(s: &mut AppState, tx: &mut Tx, section: Section) {
+fn copy_json(s: &mut AppState, tx: &mut Tx, section: ListSection) {
     let Some(selected) = &inspector_of(s, section).selected else {
         return;
     };
@@ -203,7 +203,7 @@ fn copy_json(s: &mut AppState, tx: &mut Tx, section: Section) {
     dispatch(s, Input::inspector(section, input));
 }
 
-fn export(state: &InspectorState, k: &Kit, section: Section) -> El {
+fn export(state: &InspectorState, k: &Kit, section: ListSection) -> El {
     let index = FORMATS.iter().position(|format| *format == state.format);
     let exported = state.selected.as_ref().is_some_and(|selected| {
         state
@@ -263,7 +263,7 @@ fn export(state: &InspectorState, k: &Kit, section: Section) -> El {
 
 /// Starts an export of the selection and opens the save dialog for it; does nothing while an
 /// export is already picking or writing.
-fn open_export_dialog(s: &mut AppState, tx: &mut Tx, section: Section) {
+fn open_export_dialog(s: &mut AppState, tx: &mut Tx, section: ListSection) {
     if !inspector_of(s, section).export.is_idle() {
         return;
     }

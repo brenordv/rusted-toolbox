@@ -7,7 +7,7 @@ use crate::form::{
     AuthChoice, CredentialChoice, DISK_WRITE_LABELS, DISK_WRITE_MODES, FieldIssues, SecretSource,
     disk_write_index,
 };
-use crate::state::{AppState, Input, SaveStatus, ToastKind};
+use crate::state::{AppState, Input, SaveStatus, SheetPurpose, ToastKind};
 use rune::{El, FileDialogOptions, ScrollSpec, TextEdit, col, row, spacer};
 use rune_kit::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
@@ -21,9 +21,9 @@ type EditAccess = fn(&mut AppState) -> &mut TextEdit;
 /// The connection sheet while it is open. A closed sheet builds nothing, so its secret fields
 /// are never mounted, focusable, or exposed to assistive technology.
 pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
-    if !s.sheet_open {
+    let Some(purpose) = s.sheet else {
         return;
-    }
+    };
     let issues = if s.show_issues {
         s.form.issues()
     } else {
@@ -70,13 +70,17 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
         })
         .child(body)
         .scroll_bar(k);
+    let title = match purpose {
+        SheetPurpose::Connect => "Connect to an event hub",
+        SheetPurpose::SendTarget => "Choose where to send",
+    };
     parts::sheet(
         k,
         "connect",
-        "Connect to an event hub",
+        title,
         |s: &mut AppState| dispatch(s, Input::CloseSheet),
         scroller,
-        footer(s, k),
+        footer(s, k, purpose),
         layer,
     );
 }
@@ -253,7 +257,7 @@ fn choose_data_folder(_: &mut AppState, tx: &mut rune::Tx) {
     });
 }
 
-fn footer(s: &AppState, k: &Kit) -> El {
+fn footer(s: &AppState, k: &Kit, purpose: SheetPurpose) -> El {
     let caption = match &s.save_status {
         SaveStatus::Idle => None,
         SaveStatus::Saving(_) => Some("Saving config.json".to_owned()),
@@ -284,13 +288,18 @@ fn footer(s: &AppState, k: &Kit) -> El {
             .build(k)
             .key("save-config"),
     )
-    .child(
-        Button::new("Connect")
+    .child(match purpose {
+        SheetPurpose::Connect => Button::new("Connect")
             .variant(ButtonVariant::Submit)
             .on_press(|s: &mut AppState| dispatch(s, Input::ConnectPressed))
             .build(k)
             .key("sheet-connect"),
-    )
+        SheetPurpose::SendTarget => Button::new("Done")
+            .variant(ButtonVariant::Submit)
+            .on_press(|s: &mut AppState| dispatch(s, Input::CloseSheet))
+            .build(k)
+            .key("sheet-done"),
+    })
 }
 
 fn field(k: &Kit, label: &str, edit: &TextEdit, issue: &Option<String>, access: EditAccess) -> El {

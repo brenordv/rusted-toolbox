@@ -57,6 +57,7 @@ impl Services for NoServices {
     fn export_one(&self, _request: ExportOneRequest) {}
     fn search_archive(&self, _request: PageRequest) {}
     fn bulk_export(&self, _request: BulkRequest) {}
+    fn start_send(&self, _request: SendRequest) {}
 }
 
 fn bulk_request(folder: PathBuf, paths: DataPaths) -> BulkRequest {
@@ -277,7 +278,7 @@ fn seeded_scenarios_reach_their_states_through_apply_and_render() {
     let search = seeded(Scenario::SeededSearch, root.path(), &rt);
 
     assert!(matches!(failed.connection, ConnectionState::Failed(_)));
-    assert!(connect.sheet_open && connect.show_issues);
+    assert!(connect.sheet.is_some() && connect.show_issues);
     assert!(matches!(empty.connection, ConnectionState::Disconnected));
     assert!(matches!(read.connection, ConnectionState::Connected { .. }));
     assert_eq!(read.read.rows.displayed().len(), 5_000);
@@ -316,4 +317,151 @@ fn the_demo_data_folder_lies_under_its_root() {
     assert!(paths.base().starts_with(root.path()));
     assert!(paths.inbound_dir(DEMO_INBOUND).starts_with(root.path()));
     assert!(state.form.data_paths().base().starts_with(root.path()));
+}
+
+fn send_request(count: u64, pacing: shared_eventhub_core::producer::Pacing) -> SendRequest {
+    let form = crate::form::ConnectForm::default();
+    let (config, given) = form.to_config();
+    SendRequest {
+        run: 1,
+        target: ConnectRequest {
+            config,
+            given,
+            paths: form.data_paths(),
+        },
+        event: shared_eventhub_core::producer::OutgoingEvent {
+            body: b"ping".to_vec(),
+            content_type: None,
+        },
+        plan: shared_eventhub_core::producer::SendPlan::new(
+            count,
+            shared_eventhub_core::producer::Routing::automatic(),
+            pacing,
+        )
+        .unwrap(),
+        cancel: Arc::new(AtomicBool::new(false)),
+    }
+}
+
+/// What the demo send posted, with the virtual time each arrived at.
+#[derive(Clone, Default)]
+struct SendPosts(Arc<Mutex<Vec<(Duration, SendInput)>>>);
+
+impl SendPosts {
+    fn sink(&self, started: tokio::time::Instant) -> impl Fn(SendInput) + Send + use<> {
+        let posts = self.clone();
+        move |input| posts.0.lock().unwrap().push((started.elapsed(), input))
+    }
+
+    fn progress_times(&self) -> Vec<(u64, Duration)> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(at, input)| match input {
+                SendInput::Progress { sent, .. } => Some((*sent, *at)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn finished(&self) -> Option<(shared_eventhub_core::producer::SendEnd, u64, Duration)> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .find_map(|(at, input)| match input {
+                SendInput::Finished { summary, .. } => {
+                    Some((summary.end.clone(), summary.sent, *at))
+                }
+                _ => None,
+            })
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_paced_demo_send_posts_one_event_per_interval_the_first_at_once() {
+    let posts = SendPosts::default();
+    let started = tokio::time::Instant::now();
+    let pacing = shared_eventhub_core::producer::Pacing::interval(Duration::from_secs(1)).unwrap();
+
+    send::demo_send(send_request(3, pacing), posts.sink(started)).await;
+
+    assert_eq!(
+        posts.progress_times(),
+        vec![
+            (1, Duration::ZERO),
+            (2, Duration::from_secs(1)),
+            (3, Duration::from_secs(2))
+        ]
+    );
+    assert!(matches!(
+        posts.finished(),
+        Some((shared_eventhub_core::producer::SendEnd::Completed, 3, _))
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cancel_during_a_paced_wait_ends_the_demo_send_within_a_poll() {
+    let posts = SendPosts::default();
+    let started = tokio::time::Instant::now();
+    let pacing = shared_eventhub_core::producer::Pacing::interval(Duration::from_secs(1)).unwrap();
+    let request = send_request(3, pacing);
+    let cancel = Arc::clone(&request.cancel);
+    let running = tokio::spawn(send::demo_send(request, posts.sink(started)));
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+
+    cancel.store(true, std::sync::atomic::Ordering::Release);
+    running.await.unwrap();
+
+    let (end, sent, at) = posts.finished().unwrap();
+    assert_eq!(end, shared_eventhub_core::producer::SendEnd::Cancelled);
+    assert_eq!(sent, 2);
+    assert!(
+        at <= Duration::from_millis(1_500) + shared_eventhub_core::cancel::CANCEL_POLL,
+        "{at:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_batched_demo_send_of_one_event_ends_after_one_step() {
+    let posts = SendPosts::default();
+    let started = tokio::time::Instant::now();
+
+    send::demo_send(
+        send_request(1, shared_eventhub_core::producer::Pacing::batched()),
+        posts.sink(started),
+    )
+    .await;
+
+    assert!(matches!(
+        posts.finished(),
+        Some((shared_eventhub_core::producer::SendEnd::Completed, 1, _))
+    ));
+}
+
+#[test]
+fn the_send_scenarios_open_the_send_section() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = runtime();
+
+    let idle = seeded(Scenario::Send, root.path(), &rt);
+    let paced = seeded(Scenario::SendPaced, root.path(), &rt);
+
+    assert_eq!(idle.section, Section::Send);
+    assert!(matches!(idle.send.run, crate::send::run::SendRun::Idle));
+    assert!(matches!(
+        paced.send.run,
+        crate::send::run::SendRun::Preparing { requested: 10, .. }
+    ));
+    for state in [idle, paced] {
+        let mut rt = rune::Runtime::new(
+            state,
+            crate::views::view,
+            (1280.0, 800.0),
+            rune::Env::new(true, 1.0),
+        );
+        rt.frame(0.0);
+        assert!(!rt.elements().is_empty());
+    }
 }

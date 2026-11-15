@@ -1,6 +1,8 @@
 //! What the UI asks of the outside world, and the production implementation over the tokio
 //! runtime, the archive slot, and Rune's `AppHandle`.
 
+pub mod sending;
+
 use crate::app::{apply_motion, run_effects};
 use crate::appearance::SystemAppearance;
 use crate::archive::bulk::{BulkRequest, progress_due};
@@ -11,6 +13,7 @@ use crate::bridge::{
 use crate::read::inspector::InspectorInput;
 use crate::read::search::{REBUILD_DEBOUNCE, RebuildRequest, Rebuilt};
 use crate::read::{ExportOneRequest, ReadInput};
+use crate::send::SendRequest;
 use crate::state::{AppState, Input};
 use crate::tasks::StoreSlot;
 use anyhow::Context;
@@ -28,8 +31,8 @@ use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::search::{SearchPage, SearchQuery};
 use shared_eventhub_persistence::secrets::SecretsStore;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
@@ -76,6 +79,32 @@ pub trait Services {
     /// Exports every match of a search; reports [`ArchiveInput::BulkProgress`] while it runs
     /// and [`ArchiveInput::BulkDone`] at the end.
     fn bulk_export(&self, request: BulkRequest);
+    /// Sends a run's events; reports [`crate::send::SendInput::Started`] once the producer is
+    /// open, [`crate::send::SendInput::Progress`] while it sends, and at least one
+    /// [`crate::send::SendInput::Finished`].
+    fn start_send(&self, request: SendRequest);
+}
+
+/// Every opening of a data folder's secrets file goes through this gate, so two openings in
+/// this process never collide on the file's lock. The guarded value is `()`, so a panic inside
+/// one opening does not lock the next ones out.
+static SECRETS_GATE: Mutex<()> = Mutex::new(());
+
+/// Opens the secrets file of `paths` and hands it to `use_store`, holding the gate until the
+/// file is closed again. Blocking: call it from a blocking task.
+///
+/// # Errors
+/// Fails when the secrets file cannot be opened, or with `use_store`'s error.
+pub fn open_secrets<T>(
+    paths: &DataPaths,
+    use_store: impl FnOnce(&SecretsStore) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    let gate = SECRETS_GATE.lock().unwrap_or_else(PoisonError::into_inner);
+    let store = SecretsStore::open(paths)?;
+    let result = use_store(&store);
+    drop(store);
+    drop(gate);
+    result
 }
 
 /// The production services.
@@ -125,8 +154,9 @@ impl Services for ProdServices {
         let dir = self.working_dir.clone();
         self.rt.spawn(async move {
             let saved = tokio::task::spawn_blocking(move || {
-                let secrets = SecretsStore::open(&request.paths)?;
-                save_config(&dir, &request.config, &secrets, &request.given)
+                open_secrets(&request.paths, |secrets| {
+                    save_config(&dir, &request.config, secrets, &request.given)
+                })
             })
             .await
             .context("Saving the config stopped unexpectedly")
@@ -183,6 +213,10 @@ impl Services for ProdServices {
             Arc::clone(&self.slot),
             request,
         );
+    }
+
+    fn start_send(&self, request: SendRequest) {
+        sending::spawn_send(&self.rt, self.handle.clone(), request);
     }
 }
 
@@ -560,8 +594,9 @@ pub async fn resolve_target(request: &ConnectRequest) -> anyhow::Result<EventHub
 
     let (owned, given, paths) = (config.clone(), request.given.clone(), request.paths.clone());
     let target = tokio::task::spawn_blocking(move || {
-        let secrets = SecretsStore::open(&paths)?;
-        resolve_target_with(&owned, given, Some(&secrets))
+        open_secrets(&paths, |secrets| {
+            resolve_target_with(&owned, given, Some(secrets))
+        })
     })
     .await
     .context("Reading the secrets file stopped unexpectedly")??;

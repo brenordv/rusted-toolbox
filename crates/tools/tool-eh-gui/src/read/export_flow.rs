@@ -6,7 +6,7 @@ use super::inspector::{
     InspectorState, export_options,
 };
 use super::rows::key_string;
-use crate::state::{Section, ToastKind};
+use crate::state::{ListSection, ToastKind};
 use chrono::{DateTime, Utc};
 use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_persistence::paths::DataPaths;
@@ -19,7 +19,7 @@ use tracing::{debug, info, warn};
 /// dropped.
 #[derive(Clone, Copy, Debug)]
 pub struct InspectorContext<'a> {
-    pub section: Section,
+    pub section: ListSection,
     pub owner: Option<u64>,
     pub paths: &'a DataPaths,
     pub dropped_answer: &'static str,

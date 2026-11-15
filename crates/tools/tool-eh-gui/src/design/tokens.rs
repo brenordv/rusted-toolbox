@@ -104,6 +104,8 @@ pub const SIDEBAR_FIELD_WIDTH: f32 = 220.0;
 pub const COUNT_BADGE_HEIGHT: f32 = 16.0;
 /// The press scale of floating controls.
 pub const PRESS_SCALE: f32 = 0.97;
+/// How far a revealed field rises as it enters.
+pub const REVEAL_OFFSET: f32 = 6.0;
 pub const WINDOW_SIZE: (f32, f32) = (1280.0, 800.0);
 /// The smallest window: the toolbar's controls fit side by side with the sidebar open.
 pub const WINDOW_MIN: (f32, f32) = (960.0, 600.0);

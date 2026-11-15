@@ -12,7 +12,7 @@ pub mod search;
 pub use inspector::ExportOneRequest;
 
 use crate::bridge::EngineSession;
-use crate::state::{ConnectionState, Section, ToastKind};
+use crate::state::{ConnectionState, ListSection, ToastKind};
 use chrono::{DateTime, TimeDelta, Utc};
 use export_flow::InspectorContext;
 use inspector::{InspectorInput, InspectorState};
@@ -388,7 +388,7 @@ impl ReadState {
             ReadInput::ClearSelection => self.clear_selection(),
             ReadInput::Inspector(input) => {
                 let cx = InspectorContext {
-                    section: Section::Read,
+                    section: ListSection::Read,
                     owner: connection.session().map(EngineSession::id),
                     paths: &paths,
                     dropped_answer: DROPPED_ANSWER,

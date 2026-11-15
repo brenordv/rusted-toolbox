@@ -10,7 +10,7 @@ use crate::archive::ArchiveInput;
 use crate::archive::results::{More, Results};
 use crate::design::tokens::{SPACE_LG, SPACE_SM};
 use crate::design::{icons, parts};
-use crate::state::{AppState, Input, Section};
+use crate::state::{AppState, Input, ListSection};
 use common_utils::string_utils::format_thousands;
 use rune::{El, col, row, spacer};
 use rune_kit::{Button, ButtonVariant, Kit, Spinner};
@@ -102,7 +102,7 @@ fn results(s: &AppState, k: &Kit, dark: bool, rows: usize, more: &More) -> El {
             s,
             k,
             dark,
-            Section::Export,
+            ListSection::Export,
             footer(k, rows, more),
         ))
 }
