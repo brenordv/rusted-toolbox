@@ -11,7 +11,7 @@ use crate::read::list_flow::{position_of, step_target};
 use crate::read::rows::{RowSource, RowSummary};
 use crate::read::rules::{RulesForm, rule_count};
 use crate::read::{Selected, Step};
-use crate::state::{Section, ToastKind};
+use crate::state::{ListSection, ToastKind};
 use bulk::{BulkExport, BulkOptions, BulkRequest, CancelReason};
 use chrono::{DateTime, Utc};
 use results::{ARCHIVE_PAGE, ArchiveRows, LOAD_AHEAD, More, Results, more_after};
@@ -491,7 +491,7 @@ impl ArchiveState {
 
     fn inspector_input(&mut self, input: InspectorInput, paths: &DataPaths) -> ArchiveOutcome {
         let cx = InspectorContext {
-            section: Section::Export,
+            section: ListSection::Export,
             owner: Some(self.folder_epoch),
             paths,
             dropped_answer: DROPPED_ANSWER,

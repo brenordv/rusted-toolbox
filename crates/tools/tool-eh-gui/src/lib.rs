@@ -12,6 +12,7 @@ pub mod demo;
 pub mod design;
 pub mod form;
 pub mod read;
+pub mod send;
 pub mod services;
 pub mod state;
 pub mod tasks;

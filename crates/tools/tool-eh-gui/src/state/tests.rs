@@ -833,14 +833,16 @@ fn closing_the_window_during_a_save_quits_once_the_save_lands() {
 }
 
 #[test]
-fn connect_is_refused_while_a_save_runs() {
+fn connect_during_a_save_prepares_a_session() {
     let mut f = fixture();
     f.apply(Input::SavePressed);
 
     let out = f.apply(Input::ConnectPressed);
 
-    assert!(out.effects.is_empty());
-    assert!(matches!(f.state.connection, ConnectionState::Disconnected));
+    assert!(matches!(
+        out.effects.as_slice(),
+        [Effect::PrepareSession { .. }]
+    ));
 }
 
 #[test]
@@ -877,12 +879,12 @@ fn a_failed_save_keeps_the_secret_and_shows_why() {
 #[test]
 fn closing_the_sheet_hides_a_revealed_secret() {
     let mut f = fixture();
-    f.apply(Input::OpenSheet);
+    f.apply(Input::OpenSheet(SheetPurpose::Connect));
     f.state.form.connection_string.edit_mut().set_revealed(true);
 
     f.apply(Input::CloseSheet);
 
-    assert!(!f.state.sheet_open);
+    assert!(f.state.sheet.is_none());
     assert!(!f.state.form.connection_string.edit().is_revealed());
 }
 
@@ -1121,7 +1123,7 @@ fn a_closed_window_waits_for_a_running_export_before_quitting() {
 
     let closed = f.apply(Input::WindowClosed(base_time()));
     let finished = f.apply(Input::inspector(
-        Section::Read,
+        ListSection::Read,
         InspectorInput::ExportDone {
             owner: 1,
             key,
@@ -1143,7 +1145,7 @@ fn a_failed_message_export_shows_a_danger_toast() {
     };
 
     f.apply(Input::inspector(
-        Section::Read,
+        ListSection::Read,
         InspectorInput::ExportDone {
             owner: 1,
             key,
@@ -1333,7 +1335,7 @@ fn a_closed_window_waits_for_an_export_section_message_export() {
 
     let closed = f.apply(Input::WindowClosed(base_time()));
     let finished = f.apply(Input::inspector(
-        Section::Export,
+        ListSection::Export,
         InspectorInput::ExportDone {
             owner: 0,
             key,
@@ -1360,7 +1362,7 @@ fn an_export_section_result_never_ends_a_read_export_with_the_same_owner() {
     };
 
     f.apply(Input::inspector(
-        Section::Export,
+        ListSection::Export,
         InspectorInput::ExportDone {
             owner: 1,
             key,
@@ -1379,7 +1381,7 @@ fn a_tick_ends_export_section_feedback() {
     f.apply(Input::Archive(ArchiveInput::Select("p0-s0".to_owned())));
     let now = base_time();
     f.apply(Input::inspector(
-        Section::Export,
+        ListSection::Export,
         InspectorInput::Copied {
             kind: crate::read::inspector::FeedbackKind::CopiedBody,
             now,
@@ -1390,4 +1392,282 @@ fn a_tick_ends_export_section_feedback() {
 
     assert!(tick.changed);
     assert!(f.state.archive.inspector.feedback.is_none());
+}
+
+impl Fixture {
+    /// The form holds a namespace-scoped connection string and names the hub `orders`, so a
+    /// Send press can start.
+    fn with_hub(&mut self) {
+        self.state
+            .form
+            .connection_string
+            .edit_mut()
+            .replace_text(SEND_STRING);
+        self.state.form.event_hub.replace_text("orders");
+        self.state.send.refresh_destination(&self.state.form);
+    }
+
+    /// Send pressed in the Send section; returns the run.
+    fn send_preparing(&mut self) -> u64 {
+        self.with_hub();
+        self.state.section = Section::Send;
+        let out = self.apply(Input::Send(SendInput::SendPressed));
+        match out.effects.as_slice() {
+            [Effect::Send(crate::send::SendEffect::StartSend(request))] => request.run,
+            other => panic!("expected StartSend, got {other:?}"),
+        }
+    }
+
+    /// Send pressed and the producer open; returns the run.
+    fn send_running(&mut self) -> u64 {
+        let run = self.send_preparing();
+        self.apply(Input::Send(SendInput::Started {
+            run,
+            target: crate::send::run::Names {
+                namespace: "orders.servicebus.windows.net".to_owned(),
+                event_hub: "orders".to_owned(),
+            },
+            at: base_time(),
+        }));
+        run
+    }
+}
+
+const SEND_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=send;SharedAccessKey=c2VjcmV0";
+
+fn send_finished(run: u64, end: shared_eventhub_core::producer::SendEnd) -> Input {
+    Input::Send(SendInput::Finished {
+        run,
+        summary: shared_eventhub_core::producer::SendSummary {
+            sent: 1,
+            batches: 1,
+            elapsed: Duration::from_secs(1),
+            end,
+        },
+        close_error: None,
+    })
+}
+
+#[test]
+fn a_closed_window_cancels_a_send_and_quits_once_it_ends() {
+    let mut f = fixture();
+    let run = f.send_running();
+
+    let closed = f.apply(Input::WindowClosed(base_time()));
+    let requested = f.state.send.run.cancel_requested();
+    let finished = f.apply(send_finished(
+        run,
+        shared_eventhub_core::producer::SendEnd::Cancelled,
+    ));
+
+    assert!(requested);
+    assert!(!has_quit(&closed));
+    assert!(has_quit(&finished));
+}
+
+#[rstest::rstest]
+#[case::send_first(true)]
+#[case::session_first(false)]
+fn a_closed_window_with_a_send_and_a_session_quits_after_both(#[case] send_first: bool) {
+    let mut f = fixture();
+    let run = f.send_running();
+    let (session, _) = f.connected();
+    f.apply(Input::WindowClosed(base_time()));
+    let send_end = || send_finished(run, shared_eventhub_core::producer::SendEnd::Cancelled);
+    let session_end = || done(session, Ok(summary(RunEnd::Stopped, &[])), clean_finish());
+
+    let (first, second) = if send_first {
+        (f.apply(send_end()), f.apply(session_end()))
+    } else {
+        (f.apply(session_end()), f.apply(send_end()))
+    };
+
+    assert!(!has_quit(&first));
+    assert!(has_quit(&second));
+}
+
+#[test]
+fn a_failed_send_with_the_window_closed_reopens_it_with_a_danger_toast() {
+    let mut f = fixture();
+    let run = f.send_running();
+    f.apply(Input::WindowClosed(base_time()));
+
+    let out = f.apply(send_finished(
+        run,
+        shared_eventhub_core::producer::SendEnd::Failed("unauthorized".to_owned()),
+    ));
+
+    assert!(has_reopen(&out) && !has_quit(&out));
+    assert_eq!(
+        f.state.toasts.last().map(|toast| toast.kind),
+        Some(ToastKind::Danger)
+    );
+}
+
+#[test]
+fn a_completed_send_with_the_window_closed_lets_the_quit_proceed() {
+    let mut f = fixture();
+    let run = f.send_running();
+    f.apply(Input::WindowClosed(base_time()));
+
+    let out = f.apply(send_finished(
+        run,
+        shared_eventhub_core::producer::SendEnd::Completed,
+    ));
+
+    assert!(has_quit(&out) && !has_reopen(&out));
+}
+
+#[test]
+fn the_data_folder_lock_names_a_running_send() {
+    let mut f = fixture();
+    f.send_running();
+
+    let reason = f.state.data_folder_lock();
+    let out = f.apply(Input::DataFolderPicked(PathBuf::from("elsewhere")));
+
+    assert!(reason.is_some_and(|reason| reason.contains("send")));
+    assert!(out.effects.is_empty() && !out.changed);
+}
+
+#[rstest::rstest]
+#[case::connect(SheetPurpose::Connect)]
+#[case::send_target(SheetPurpose::SendTarget)]
+fn no_sheet_opens_while_a_send_runs(#[case] purpose: SheetPurpose) {
+    let mut f = fixture();
+    f.send_preparing();
+
+    f.apply(Input::OpenSheet(purpose));
+
+    assert!(f.state.sheet.is_none());
+}
+
+#[test]
+fn the_send_target_sheet_does_not_open_during_a_session() {
+    let mut f = fixture();
+    f.connected();
+
+    f.apply(Input::OpenSheet(SheetPurpose::SendTarget));
+
+    assert!(f.state.sheet.is_none());
+}
+
+#[test]
+fn connect_does_nothing_while_the_send_target_sheet_is_open() {
+    let mut f = fixture();
+    f.apply(Input::OpenSheet(SheetPurpose::SendTarget));
+
+    let out = f.apply(Input::ConnectPressed);
+
+    assert!(out.effects.is_empty());
+    assert!(matches!(f.state.connection, ConnectionState::Disconnected));
+}
+
+#[test]
+fn a_form_edited_during_a_send_leaves_the_runs_destination() {
+    let mut f = fixture();
+    f.send_preparing();
+
+    f.state.form.event_hub.replace_text("payments");
+
+    assert!(matches!(
+        &f.state.send.run,
+        crate::send::run::SendRun::Preparing { target: Some(target), .. } if target.event_hub == "orders"
+    ));
+}
+
+#[test]
+fn a_hub_typed_in_the_sheet_shows_once_the_sheet_closes() {
+    let mut f = fixture();
+    f.apply(Input::OpenSheet(SheetPurpose::SendTarget));
+    f.state
+        .form
+        .connection_string
+        .edit_mut()
+        .replace_text(SEND_STRING);
+    f.state.form.event_hub.replace_text("orders");
+    let before = f.state.send.destination.clone();
+
+    f.apply(Input::CloseSheet);
+
+    assert_eq!(before, crate::send::Destination::Invalid);
+    assert_eq!(
+        f.state
+            .send
+            .destination
+            .names()
+            .map(|names| names.event_hub.as_str()),
+        Some("orders")
+    );
+}
+
+#[test]
+fn force_quit_cancels_a_running_send_without_waiting_for_it() {
+    let mut f = fixture();
+    f.with_hub();
+    let session = f.stopping();
+    f.apply(Input::WindowClosed(base_time()));
+    f.apply(Input::Tick(
+        base_time() + STILL_FINISHING_AFTER + TimeDelta::seconds(1),
+    ));
+    f.send_running();
+
+    let out = f.apply(Input::ForceQuit);
+
+    assert!(f.state.send.run.cancel_requested());
+    assert!(has_quit(&out));
+    assert!(f.state.connection.session().map(EngineSession::id) == Some(session));
+}
+
+#[test]
+fn a_save_that_stores_a_typed_string_moves_the_destination_to_stored() {
+    let mut f = fixture();
+    f.with_hub();
+    f.apply(Input::SavePressed);
+
+    f.apply(Input::ConfigSaved(Ok(())));
+
+    assert_eq!(f.state.send.destination, crate::send::Destination::Stored);
+}
+
+#[test]
+fn a_new_data_folder_forgets_a_stored_secret_and_its_destination() {
+    let mut f = fixture();
+    f.state.form.connection_string = SecretSource::stored();
+    f.state.send.refresh_destination(&f.state.form);
+    let before = f.state.send.destination.clone();
+
+    f.apply(Input::DataFolderPicked(PathBuf::from("elsewhere")));
+
+    assert_eq!(before, crate::send::Destination::Stored);
+    assert_eq!(f.state.send.destination, crate::send::Destination::Missing);
+}
+
+#[test]
+fn a_session_start_that_clears_a_typed_string_leaves_no_destination() {
+    let mut f = fixture();
+    f.with_hub();
+
+    f.with_session();
+
+    assert_eq!(f.state.send.destination, crate::send::Destination::Missing);
+}
+
+#[rstest::rstest]
+#[case::send_shows(Section::Send, 0)]
+#[case::read_shows(Section::Read, 1)]
+fn a_send_outcome_toasts_only_when_its_row_cannot_be_seen(
+    #[case] section: Section,
+    #[case] toasts: usize,
+) {
+    let mut f = fixture();
+    let run = f.send_running();
+    f.state.section = section;
+
+    f.apply(send_finished(
+        run,
+        shared_eventhub_core::producer::SendEnd::Completed,
+    ));
+
+    assert_eq!(f.state.toasts.len(), toasts);
 }

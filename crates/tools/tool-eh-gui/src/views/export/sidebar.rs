@@ -4,7 +4,7 @@ use crate::app::dispatch;
 use crate::archive::ArchiveInput;
 use crate::design::parts;
 use crate::design::tokens::{SPACE_LG, SPACE_MD, SPACE_SM};
-use crate::state::{AppState, Input, Section};
+use crate::state::{AppState, Input, ListSection};
 use crate::views::rules_form;
 use rune::{El, col, row};
 use rune_kit::{Button, ButtonVariant, Kit};
@@ -36,7 +36,7 @@ pub fn sidebar(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
         .on_press(|s: &mut AppState| dispatch(s, Input::Archive(ArchiveInput::ClearForm)))
         .build(k)
         .key("archive-clear");
-    rules_form::fields(s, k, layer, Section::Export, &issues, form)
+    rules_form::fields(s, k, layer, ListSection::Export, &issues, form)
         .child(row().gap(SPACE_SM).child(search).child(clear))
         .child(parts::caption(k, "Works without a connection."))
 }

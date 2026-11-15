@@ -277,6 +277,26 @@ pub(crate) async fn resolve_target(target: &EventHubTarget) -> anyhow::Result<Re
     }
 }
 
+/// The namespace and event hub `target` resolves to, worked out without any
+/// network call or secret fetch, by the same rules [`connect`] applies.
+/// `None` for Key Vault auth, whose connection string is only known once it
+/// is fetched.
+///
+/// # Errors
+/// The inner result fails as [`connect`] does for an incomplete or
+/// inconsistent target; errors never contain connection-string or secret
+/// material.
+pub fn target_names(target: &EventHubTarget) -> Option<anyhow::Result<(String, String)>> {
+    let resolved = match &target.auth {
+        AuthMethod::ConnectionString { connection_string } => {
+            resolve_connection_string(target, connection_string.clone())
+        }
+        AuthMethod::Credential { kind } => resolve_credential(target, kind),
+        AuthMethod::KeyVaultConnectionString { .. } => return None,
+    };
+    Some(resolved.map(|resolved| (resolved.fully_qualified_namespace, resolved.event_hub_name)))
+}
+
 fn resolve_credential(
     target: &EventHubTarget,
     kind: &CredentialKind,
@@ -465,6 +485,103 @@ mod tests {
             Ok(_) => panic!("expected the target to be rejected"),
             Err(error) => error,
         }
+    }
+
+    fn names_error(target: &EventHubTarget) -> anyhow::Error {
+        match target_names(target) {
+            Some(Err(error)) => error,
+            other => panic!("expected the names to be refused, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn target_names_takes_the_hub_from_the_target_for_a_namespace_scoped_string() {
+        let target = connection_string_target(
+            connection_string("orders.servicebus.windows.net", None),
+            None,
+            Some("orders"),
+        );
+
+        let names = target_names(&target).unwrap().unwrap();
+
+        assert_eq!(
+            names,
+            (
+                "orders.servicebus.windows.net".to_owned(),
+                "orders".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn target_names_takes_the_hub_from_the_entity_path() {
+        let target = connection_string_target(
+            connection_string("Orders.servicebus.windows.net", Some("orders")),
+            None,
+            None,
+        );
+
+        let names = target_names(&target).unwrap().unwrap();
+
+        assert_eq!(
+            names,
+            (
+                "orders.servicebus.windows.net".to_owned(),
+                "orders".to_owned()
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::other_hub(None, Some("payments"), Some("orders"))]
+    #[case::other_namespace(Some("billing.servicebus.windows.net"), None, Some("orders"))]
+    #[case::no_hub_anywhere(None, None, None)]
+    fn target_names_refuses_what_the_open_would_refuse(
+        #[case] namespace: Option<&str>,
+        #[case] hub: Option<&str>,
+        #[case] entity_path: Option<&str>,
+    ) {
+        let target = connection_string_target(
+            connection_string("orders.servicebus.windows.net", entity_path),
+            namespace,
+            hub,
+        );
+
+        let error = names_error(&target);
+
+        assert_no_secret_material(&error);
+    }
+
+    #[test]
+    fn target_names_validates_credential_names() {
+        let target = credential_target(Some("Orders.servicebus.windows.net"), Some("orders"));
+
+        let names = target_names(&target).unwrap().unwrap();
+
+        assert_eq!(
+            names,
+            (
+                "orders.servicebus.windows.net".to_owned(),
+                "orders".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn target_names_is_none_for_key_vault_auth() {
+        let target = EventHubTarget {
+            auth: AuthMethod::KeyVaultConnectionString {
+                vault_url: "https://my-vault.vault.azure.net".to_owned(),
+                secret_name: "eh-connection".to_owned(),
+                credential: CredentialKind::DeveloperTools,
+            },
+            client_secret: None,
+            fully_qualified_namespace: None,
+            event_hub_name: None,
+            consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+        };
+
+        assert!(target_names(&target).is_none());
     }
 
     #[tokio::test]

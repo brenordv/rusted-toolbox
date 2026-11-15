@@ -4,13 +4,15 @@
 pub mod rules;
 mod strip;
 
+pub(crate) use strip::short_duration;
+
 use super::message_list;
 use crate::app::dispatch;
 use crate::design::tokens::{SEARCH_WIDTH, SPACE_LG, SPACE_SM};
 use crate::design::{icons, parts};
 use crate::read::ReadInput;
 use crate::read::search::SearchState;
-use crate::state::{AppState, Input, Section};
+use crate::state::{AppState, Input, ListSection};
 use common_utils::string_utils::format_thousands;
 use rune::{El, Key, Tx, col, row, spacer};
 use rune_kit::{Button, ButtonVariant, Kit, TextInput};
@@ -55,7 +57,7 @@ pub fn content(s: &AppState, k: &Kit, dark: bool, partitions: usize, layer: &mut
             None,
         ));
     }
-    area.child(message_list::list(s, k, dark, Section::Read, None))
+    area.child(message_list::list(s, k, dark, ListSection::Read, None))
 }
 
 fn toolbar(s: &AppState, k: &Kit) -> El {

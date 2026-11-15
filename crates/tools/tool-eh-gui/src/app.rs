@@ -5,6 +5,7 @@ use crate::archive::{ArchiveEffect, ArchiveState};
 use crate::design::tokens::{WINDOW_MIN, WINDOW_SIZE};
 use crate::form::ConnectForm;
 use crate::read::{ReadEffect, ReadState};
+use crate::send::SendEffect;
 use crate::services::Services;
 use crate::state::{AppState, Effect, Input, Motion, Outcome, ToastKind};
 use crate::views;
@@ -190,6 +191,10 @@ pub fn run_effects(state: &mut AppState, effects: Vec<Effect>) {
             Effect::Archive(ArchiveEffect::BulkExport(request)) => match &state.services {
                 Some(services) => services.bulk_export(request),
                 None => services_missing(state, "export the matches"),
+            },
+            Effect::Send(SendEffect::StartSend(request)) => match &state.services {
+                Some(services) => services.start_send(request),
+                None => services_missing(state, "send the events"),
             },
         }
     }

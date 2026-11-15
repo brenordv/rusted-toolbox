@@ -5,9 +5,11 @@
 //! transition is testable without a window.
 
 mod ending;
+mod send;
 
 pub use ending::{Failure, FailureStage};
 
+use crate::archive::bulk::CancelReason;
 use crate::archive::{ArchiveEffect, ArchiveInput, ArchiveState};
 use crate::bridge::{EngineDone, EngineSession, UiDelivery};
 use crate::design::Ds;
@@ -15,6 +17,7 @@ use crate::design::tokens::{SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH};
 use crate::form::{ConnectForm, PendingSave};
 use crate::read::inspector::InspectorInput;
 use crate::read::{LogKind, LogLine, ReadEffect, ReadInput, ReadState};
+use crate::send::{SendEffect, SendInput, SendState};
 use crate::services::{ConnectRequest, SaveRequest, Services};
 use chrono::{DateTime, TimeDelta, Utc};
 use common_cli::app_logger::FileLogging;
@@ -30,25 +33,54 @@ use tracing::{debug, info, warn};
 /// How long a closed window waits for a session's at-end pass before it reopens with a
 /// "Still finishing" notice.
 pub const STILL_FINISHING_AFTER: TimeDelta = TimeDelta::seconds(30);
+/// How long a send may take to stop after a cancel, and to close its producer.
+pub const SEND_STOP_BOUND: Duration = Duration::from_secs(30);
 
-/// The two sections of the window.
+/// What the connection sheet is open for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SheetPurpose {
+    /// Connect to capture; the footer's primary action is Connect.
+    Connect,
+    /// Choose where the Send section sends; the footer's primary action is Done.
+    SendTarget,
+}
+
+/// The three sections of the window.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Section {
     #[default]
     Read,
     Export,
+    Send,
 }
 
 impl Section {
-    pub const ALL: [Section; 2] = [Self::Read, Self::Export];
-    pub const LABELS: [&'static str; 2] = ["Read", "Export"];
+    pub const ALL: [Section; 3] = [Self::Read, Self::Export, Self::Send];
+    pub const LABELS: [&'static str; 3] = ["Read", "Export", "Send"];
 
     pub fn index(self) -> usize {
         match self {
             Self::Read => 0,
             Self::Export => 1,
+            Self::Send => 2,
         }
     }
+
+    /// The message list this section shows, when it shows one.
+    pub fn list(self) -> Option<ListSection> {
+        match self {
+            Self::Read => Some(ListSection::Read),
+            Self::Export => Some(ListSection::Export),
+            Self::Send => None,
+        }
+    }
+}
+
+/// The sections that show a message list and an inspector.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListSection {
+    Read,
+    Export,
 }
 
 /// Where the capture connection is. No state is final: the app can always reconnect.
@@ -81,6 +113,14 @@ impl ConnectionState {
             Self::Connecting { session, .. } => session.as_ref(),
             Self::Connected { session, .. } | Self::Stopping { session } => Some(session),
             Self::Disconnected | Self::Failed(_) => None,
+        }
+    }
+
+    /// Whether a session is preparing, running, or finishing: the form's target is in use.
+    pub fn is_active(&self) -> bool {
+        match self {
+            Self::Connecting { .. } | Self::Connected { .. } | Self::Stopping { .. } => true,
+            Self::Disconnected | Self::Failed(_) => false,
         }
     }
 }
@@ -128,7 +168,7 @@ impl SaveStatus {
 #[derive(Debug)]
 pub enum Input {
     SectionPicked(Section),
-    OpenSheet,
+    OpenSheet(SheetPurpose),
     CloseSheet,
     ConnectPressed,
     DisconnectPressed,
@@ -149,14 +189,15 @@ pub enum Input {
     AppearanceChanged(bool),
     Read(ReadInput),
     Archive(ArchiveInput),
+    Send(SendInput),
 }
 
 impl Input {
     /// `input` for the inspector of `section`.
-    pub fn inspector(section: Section, input: InspectorInput) -> Self {
+    pub fn inspector(section: ListSection, input: InspectorInput) -> Self {
         match section {
-            Section::Read => Self::Read(ReadInput::Inspector(input)),
-            Section::Export => Self::Archive(ArchiveInput::Inspector(input)),
+            ListSection::Read => Self::Read(ReadInput::Inspector(input)),
+            ListSection::Export => Self::Archive(ArchiveInput::Inspector(input)),
         }
     }
 }
@@ -182,6 +223,7 @@ pub enum Effect {
     Quit,
     Read(ReadEffect),
     Archive(ArchiveEffect),
+    Send(SendEffect),
 }
 
 /// What a transition did: the effects to run, whether anything the view reads changed, and
@@ -216,7 +258,8 @@ pub struct AppState {
     pub section: Section,
     pub connection: ConnectionState,
     pub form: ConnectForm,
-    pub sheet_open: bool,
+    /// The open connection sheet's purpose; `None` while it is closed.
+    pub sheet: Option<SheetPurpose>,
     /// Set by the first Connect or Save with form issues, so an untouched form shows none.
     pub show_issues: bool,
     pub save_status: SaveStatus,
@@ -229,6 +272,7 @@ pub struct AppState {
     pub still_finishing: bool,
     pub read: ReadState,
     pub archive: ArchiveState,
+    pub send: SendState,
     /// The system's appearance as the app read it; `None` leaves Rune's.
     pub system_dark: Option<bool>,
     window_closed: bool,
@@ -263,6 +307,8 @@ impl AppState {
         config_caption: Option<String>,
         file_logging: FileLogging,
     ) -> Self {
+        let mut send = SendState::default();
+        send.refresh_destination(&form);
         Self {
             services,
             ds: Ds::new(),
@@ -271,7 +317,7 @@ impl AppState {
             section: Section::Read,
             connection: ConnectionState::Disconnected,
             form,
-            sheet_open: false,
+            sheet: None,
             show_issues: false,
             save_status: SaveStatus::Idle,
             config_caption,
@@ -280,6 +326,7 @@ impl AppState {
             still_finishing: false,
             read: ReadState::default(),
             archive: ArchiveState::default(),
+            send,
             system_dark: None,
             window_closed: false,
             closed_at: None,
@@ -315,11 +362,8 @@ impl AppState {
         };
         match input {
             Input::SectionPicked(section) => self.section = section,
-            Input::OpenSheet => self.sheet_open = true,
-            Input::CloseSheet => {
-                self.sheet_open = false;
-                self.form.hide_secrets();
-            }
+            Input::OpenSheet(purpose) => self.open_sheet(purpose, &mut out),
+            Input::CloseSheet => self.close_sheet(),
             Input::ConnectPressed => self.connect_pressed(&mut out),
             Input::DisconnectPressed => self.disconnect_pressed(&mut out),
             Input::SavePressed => self.save_pressed(&mut out),
@@ -337,6 +381,7 @@ impl AppState {
             Input::AppearanceChanged(dark) => self.appearance_changed(dark, &mut out),
             Input::Read(input) => self.read_input(input, &mut out),
             Input::Archive(input) => self.archive_input(input, &mut out),
+            Input::Send(input) => self.send_input(input, &mut out),
         }
         self.quit_rule(&mut out);
         out
@@ -353,10 +398,13 @@ impl AppState {
                 return;
             }
         }
-        if self.save_status.is_saving() {
-            debug!("Connect ignored: a save holds the secrets file");
-            out.changed = false;
-            return;
+        match self.sheet {
+            None | Some(SheetPurpose::Connect) => {}
+            Some(SheetPurpose::SendTarget) => {
+                debug!("Connect ignored: the sheet is open to choose where to send");
+                out.changed = false;
+                return;
+            }
         }
         if !self.form.issues().is_empty() {
             debug!("Connect ignored: the form has issues");
@@ -378,8 +426,7 @@ impl AppState {
             session: None,
             fatal: None,
         };
-        self.sheet_open = false;
-        self.form.hide_secrets();
+        self.close_sheet();
         out.effects.push(Effect::PrepareSession {
             attempt,
             request: ConnectRequest {
@@ -480,6 +527,7 @@ impl AppState {
                     None => debug!("a save finished that this state did not start"),
                 }
                 self.save_status = SaveStatus::Saved;
+                self.send.refresh_destination(&self.form);
             }
             Err(text) => {
                 warn!(error = %text, "saving config.json failed");
@@ -509,6 +557,9 @@ impl AppState {
         if self.archive.bulk.is_running() {
             return Some("The data folder can change once the bulk export ends.");
         }
+        if self.send.is_running() {
+            return Some("The data folder can change once the send ends.");
+        }
         None
     }
 
@@ -520,6 +571,7 @@ impl AppState {
         }
         self.form.data_folder = folder.display().to_string();
         self.form.forget_stored_secrets();
+        self.send.refresh_destination(&self.form);
         self.archive.folder_changed();
         let paths = self.form.data_paths();
         info!(folder = %paths.base().display(), "data folder changed");
@@ -529,9 +581,9 @@ impl AppState {
     fn window_closed(&mut self, at: DateTime<Utc>, out: &mut Outcome) {
         self.window_closed = true;
         self.closed_at = Some(at);
-        self.sheet_open = false;
-        self.form.hide_secrets();
+        self.close_sheet();
         self.archive.window_closed();
+        self.send.request_cancel(CancelReason::WindowClosed);
         match std::mem::take(&mut self.connection) {
             ConnectionState::Connecting { session: None, .. } => {
                 info!("window closed while preparing; the attempt is abandoned");
@@ -570,6 +622,7 @@ impl AppState {
         };
         out.changed |= self.read.tick(now, connected);
         out.changed |= self.archive.tick(now);
+        out.changed |= self.send.tick(now);
         if out.changed {
             out.motion = Motion::Animated;
         }
@@ -608,7 +661,12 @@ impl AppState {
             out.changed = false;
             return;
         }
-        warn!("force quit: the session's at-end pass was abandoned");
+        let send_running = self.send.is_running();
+        self.send.request_cancel(CancelReason::WindowClosed);
+        warn!(
+            send_running,
+            "force quit: the session's at-end pass was abandoned, and a running send is not awaited"
+        );
         self.request_quit(out);
     }
 
@@ -626,6 +684,7 @@ impl AppState {
             (true, Ok(session)) => {
                 info!(attempt, "session started");
                 self.form.clear_secrets();
+                self.send.refresh_destination(&self.form);
                 self.connection = ConnectionState::Connecting {
                     attempt,
                     session: Some(session),
@@ -785,8 +844,8 @@ impl AppState {
         out.effects.push(Effect::ReopenWindow);
     }
 
-    /// Quits once the window is closed and neither a session, a save, nor an export is left
-    /// running. Asks for the quit once; the quit path then runs to the end on its own.
+    /// Quits once the window is closed and neither a session, a save, an export, nor a send is
+    /// left running. Asks for the quit once; the quit path then runs to the end on its own.
     fn quit_rule(&mut self, out: &mut Outcome) {
         if self.quit_requested
             || !self.window_closed
@@ -794,6 +853,7 @@ impl AppState {
             || self.save_status.is_saving()
             || self.read.export_running()
             || self.archive.busy()
+            || self.send.is_running()
         {
             return;
         }

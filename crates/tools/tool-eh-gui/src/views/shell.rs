@@ -1,7 +1,7 @@
 //! The window frame: toolbar with the section switch and the connection controls, the sidebar,
 //! the content area, and toasts.
 
-use super::{export, inspector, sections};
+use super::{export, inspector, sections, send};
 use crate::app::dispatch;
 use crate::design::tokens::{
     POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE,
@@ -9,7 +9,9 @@ use crate::design::tokens::{
 use crate::design::{Surface, icons, parts, surface};
 use crate::read::LogKind;
 use crate::read::rows::display_line;
-use crate::state::{AppState, ConnectionState, Input, Section, ToastKind};
+use crate::state::{
+    AppState, ConnectionState, Input, ListSection, Section, SheetPurpose, ToastKind,
+};
 use common_cli::app_logger::FileLogging;
 use rune::{Color, Cx, El, col, row, text};
 use rune_kit::{
@@ -44,6 +46,7 @@ pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut V
     let content = match s.section {
         Section::Read => sections::read(s, k, dark, layer).key("read"),
         Section::Export => export::content(s, k, dark, layer).key("export"),
+        Section::Send => send::content(s, k).key("send"),
     };
     let main = col()
         .key("content")
@@ -59,17 +62,18 @@ pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut V
         .toolbar(toolbar)
         .titlebar_inset(cx.titlebar_inset())
         .reduced_motion(cx.is_reduced_motion());
-    let split = match s.section {
-        Section::Read => split.inspector(
+    let split = match s.section.list() {
+        Some(ListSection::Read) => split.inspector(
             &s.read.inspector.pane,
             |s: &mut AppState| &mut s.read.inspector.pane,
-            inspector::inspector(s, k, Section::Read),
+            inspector::inspector(s, k, ListSection::Read),
         ),
-        Section::Export => split.inspector(
+        Some(ListSection::Export) => split.inspector(
             &s.archive.inspector.pane,
             |s: &mut AppState| &mut s.archive.inspector.pane,
-            inspector::inspector(s, k, Section::Export),
+            inspector::inspector(s, k, ListSection::Export),
         ),
+        None => split,
     };
     split.build(k)
 }
@@ -185,13 +189,15 @@ fn log_detail(k: &Kit, logging: &FileLogging) -> El {
     }
 }
 
-/// Connect opens the sheet; Disconnect stops the session; nothing is pressable while finishing.
+/// Connect opens the sheet (not while a send runs, which keeps every sheet closed); Disconnect
+/// stops the session; nothing is pressable while finishing.
 fn connection_button(s: &AppState, k: &Kit) -> El {
     match &s.connection {
         ConnectionState::Disconnected | ConnectionState::Failed(_) => Button::new("Connect")
             .variant(ButtonVariant::Neutral)
             .icon(&icons::CONNECT)
-            .on_press(|s: &mut AppState| dispatch(s, Input::OpenSheet))
+            .disabled(s.send.is_running())
+            .on_press(|s: &mut AppState| dispatch(s, Input::OpenSheet(SheetPurpose::Connect)))
             .build(k)
             .key("connect"),
         ConnectionState::Connecting { .. } | ConnectionState::Connected { .. } => {

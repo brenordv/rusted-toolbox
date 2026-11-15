@@ -53,7 +53,7 @@ pub enum CancelReason {
 }
 
 impl CancelReason {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Button => "button",
             Self::WindowClosed => "window_closed",

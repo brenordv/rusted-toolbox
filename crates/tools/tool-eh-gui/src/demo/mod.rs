@@ -4,6 +4,7 @@
 
 pub mod hub;
 mod seed;
+pub mod send;
 
 pub use seed::seed_archive;
 
@@ -14,12 +15,14 @@ use crate::bridge::{EngineSession, SessionSink, UiPort, spawn_session};
 use crate::form::ConnectForm;
 use crate::read::ExportOneRequest;
 use crate::read::search::RebuildRequest;
+use crate::send::compose::PacingChoice;
+use crate::send::{SendInput, SendRequest};
 use crate::services::{
     AppPort, ConnectRequest, SaveRequest, Services, apply_from_runtime, filter_hook, gate,
-    report_ready, spawn_bulk_export, spawn_export_one, spawn_list_flush, spawn_rebuild,
-    spawn_search_archive, spawn_tick,
+    open_secrets, report_ready, spawn_bulk_export, spawn_export_one, spawn_list_flush,
+    spawn_rebuild, spawn_search_archive, spawn_tick,
 };
-use crate::state::{AppState, Input, Section};
+use crate::state::{AppState, Input, Section, SheetPurpose};
 use crate::tasks::StoreSlot;
 use anyhow::Context;
 use common_cli::app_logger::FileLogging;
@@ -27,7 +30,6 @@ use rune::AppHandle;
 use shared_eventhub_persistence::config::save_config;
 use shared_eventhub_persistence::export::{DiskWriteConfig, ExportOptions, WritingSink};
 use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::secrets::SecretsStore;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -70,6 +72,10 @@ pub enum Scenario {
     SeededSearch,
     /// The Export section over an archive of 6,000 messages, searched for everything.
     SeededExport,
+    /// The Send section with a JSON body and a count of 1,000, batched, idle.
+    Send,
+    /// The Send section sending 10 events one a second.
+    SendPaced,
 }
 
 /// How fast a scenario's hub produces messages.
@@ -92,7 +98,7 @@ impl Pace {
 }
 
 impl Scenario {
-    const NAMES: [(&'static str, Scenario); 12] = [
+    const NAMES: [(&'static str, Scenario); 14] = [
         ("live", Self::Live),
         ("burst", Self::Burst),
         ("quiet", Self::Quiet),
@@ -105,6 +111,8 @@ impl Scenario {
         ("seeded-read", Self::SeededRead),
         ("seeded-search", Self::SeededSearch),
         ("seeded-export", Self::SeededExport),
+        ("send", Self::Send),
+        ("send-paced", Self::SendPaced),
     ];
 
     /// The scenario named `name`.
@@ -151,14 +159,30 @@ impl Scenario {
             | Self::SeededConnect
             | Self::SeededRead
             | Self::SeededSearch
-            | Self::SeededExport => false,
+            | Self::SeededExport
+            | Self::Send
+            | Self::SendPaced => false,
         }
     }
 
-    /// Whether the once-a-second tick and the list flush run: every live scenario, and the
-    /// seeded Export state, whose search, paging, and exports are real.
+    /// Whether the once-a-second tick and the list flush run: every live scenario, the seeded
+    /// Export state, whose search, paging, and exports are real, and the Send states, whose
+    /// sends count up.
     pub fn ticks(self) -> bool {
-        self.is_live() || self == Self::SeededExport
+        match self {
+            Self::SeededExport | Self::Send | Self::SendPaced => true,
+            Self::Live
+            | Self::Burst
+            | Self::Quiet
+            | Self::PartitionFail
+            | Self::StartFail
+            | Self::SlowFinish
+            | Self::SeededEmpty
+            | Self::SeededFailed
+            | Self::SeededConnect
+            | Self::SeededRead
+            | Self::SeededSearch => self.is_live(),
+        }
     }
 
     /// Whether the archive is seeded before the window opens.
@@ -192,7 +216,9 @@ impl Scenario {
             | Self::SeededConnect
             | Self::SeededRead
             | Self::SeededSearch
-            | Self::SeededExport => steady,
+            | Self::SeededExport
+            | Self::Send
+            | Self::SendPaced => steady,
         }
     }
 
@@ -247,7 +273,7 @@ pub fn initial_state(
         Scenario::SeededConnect => {
             state.form.set_auth(crate::form::AuthChoice::KeyVault);
             state.form.credential = crate::form::CredentialChoice::ClientSecret;
-            drop(state.apply(Input::OpenSheet));
+            drop(state.apply(Input::OpenSheet(SheetPurpose::Connect)));
             drop(state.apply(Input::ConnectPressed));
         }
         Scenario::SeededRead => seed::read(&mut state, rt, false),
@@ -255,6 +281,14 @@ pub fn initial_state(
         Scenario::SeededExport => {
             state.section = Section::Export;
             dispatch(&mut state, Input::Archive(ArchiveInput::SearchPressed));
+        }
+        Scenario::Send => {
+            compose_demo_send(&mut state, "1000");
+        }
+        Scenario::SendPaced => {
+            compose_demo_send(&mut state, "10");
+            state.send.composer.pacing = PacingChoice::Paced;
+            dispatch(&mut state, Input::Send(SendInput::SendPressed));
         }
         Scenario::Live
         | Scenario::Burst
@@ -265,6 +299,17 @@ pub fn initial_state(
         | Scenario::SeededEmpty => {}
     }
     state
+}
+
+/// The Send section with a JSON order body and `count` events.
+fn compose_demo_send(state: &mut AppState, count: &str) {
+    state.section = Section::Send;
+    let composer = &mut state.send.composer;
+    composer
+        .body
+        .replace_text("{\n  \"orderId\": 1,\n  \"sku\": \"A-17\",\n  \"quantity\": 2\n}");
+    composer.content_type.replace_text("application/json");
+    composer.count.replace_text(count);
 }
 
 /// Services that keep everything under the demo's temporary root and never touch the network:
@@ -325,8 +370,9 @@ impl Services for DemoServices {
         let root = self.root.clone();
         self.rt.spawn(async move {
             let saved = tokio::task::spawn_blocking(move || {
-                let secrets = SecretsStore::open(&data_paths(&root))?;
-                save_config(&root, &request.config, &secrets, &request.given)
+                open_secrets(&data_paths(&root), |secrets| {
+                    save_config(&root, &request.config, secrets, &request.given)
+                })
             })
             .await
             .context("Saving the config stopped unexpectedly")
@@ -395,6 +441,14 @@ impl Services for DemoServices {
             Arc::clone(&self.slot),
             rooted_bulk(&self.root, request),
         );
+    }
+
+    /// Counts the request's events up without a hub, following its pacing and cancel flag.
+    fn start_send(&self, request: SendRequest) {
+        let handle = self.handle.clone();
+        self.rt.spawn(send::demo_send(request, move |input| {
+            apply_from_runtime(&handle, Input::Send(input));
+        }));
     }
 }
 

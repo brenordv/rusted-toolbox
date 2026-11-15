@@ -4,7 +4,7 @@
 use crate::design::parts;
 use crate::design::tokens::{SIDEBAR_FIELD_WIDTH, SPACE_SM};
 use crate::read::rules::{RulesForm, RulesIssues, TextMode, TimeMode, stamp};
-use crate::state::{AppState, Section};
+use crate::state::{AppState, ListSection};
 use rune::{El, TextEdit, col};
 use rune_kit::{Button, ButtonVariant, Kit, Select, SelectAppearance, TextField};
 
@@ -19,28 +19,28 @@ enum Field {
 }
 
 /// `section`'s form.
-pub fn form_of(s: &AppState, section: Section) -> &RulesForm {
+pub fn form_of(s: &AppState, section: ListSection) -> &RulesForm {
     match section {
-        Section::Read => &s.read.rules,
-        Section::Export => &s.archive.form,
+        ListSection::Read => &s.read.rules,
+        ListSection::Export => &s.archive.form,
     }
 }
 
-fn form_of_mut(s: &mut AppState, section: Section) -> &mut RulesForm {
+fn form_of_mut(s: &mut AppState, section: ListSection) -> &mut RulesForm {
     match section {
-        Section::Read => &mut s.read.rules,
-        Section::Export => &mut s.archive.form,
+        ListSection::Read => &mut s.read.rules,
+        ListSection::Export => &mut s.archive.form,
     }
 }
 
-fn access(section: Section, field: Field) -> EditAccess {
+fn access(section: ListSection, field: Field) -> EditAccess {
     match (section, field) {
-        (Section::Read, Field::Start) => |s| &mut s.read.rules.time_start,
-        (Section::Read, Field::End) => |s| &mut s.read.rules.time_end,
-        (Section::Read, Field::Text) => |s| &mut s.read.rules.text,
-        (Section::Export, Field::Start) => |s| &mut s.archive.form.time_start,
-        (Section::Export, Field::End) => |s| &mut s.archive.form.time_end,
-        (Section::Export, Field::Text) => |s| &mut s.archive.form.text,
+        (ListSection::Read, Field::Start) => |s| &mut s.read.rules.time_start,
+        (ListSection::Read, Field::End) => |s| &mut s.read.rules.time_end,
+        (ListSection::Read, Field::Text) => |s| &mut s.read.rules.text,
+        (ListSection::Export, Field::Start) => |s| &mut s.archive.form.time_start,
+        (ListSection::Export, Field::End) => |s| &mut s.archive.form.time_end,
+        (ListSection::Export, Field::Text) => |s| &mut s.archive.form.text,
     }
 }
 
@@ -50,7 +50,7 @@ pub fn fields(
     s: &AppState,
     k: &Kit,
     layer: &mut Vec<El>,
-    section: Section,
+    section: ListSection,
     issues: &RulesIssues,
     form: El,
 ) -> El {
@@ -73,7 +73,7 @@ pub fn fields(
     form
 }
 
-fn time_select(s: &AppState, k: &Kit, layer: &mut Vec<El>, section: Section) -> El {
+fn time_select(s: &AppState, k: &Kit, layer: &mut Vec<El>, section: ListSection) -> El {
     let labels = TimeMode::ALL.map(TimeMode::label);
     let rules = form_of(s, section);
     Select::new("time-mode", &labels)
@@ -97,7 +97,7 @@ fn time_select(s: &AppState, k: &Kit, layer: &mut Vec<El>, section: Section) -> 
         .build(k, layer)
 }
 
-fn text_select(s: &AppState, k: &Kit, layer: &mut Vec<El>, section: Section) -> El {
+fn text_select(s: &AppState, k: &Kit, layer: &mut Vec<El>, section: ListSection) -> El {
     let labels = TextMode::ALL.map(TextMode::label);
     let rules = form_of(s, section);
     Select::new("text-mode", &labels)
@@ -121,7 +121,13 @@ fn text_select(s: &AppState, k: &Kit, layer: &mut Vec<El>, section: Section) -> 
         .build(k, layer)
 }
 
-fn time_fields(rules: &RulesForm, k: &Kit, issues: &RulesIssues, section: Section, form: El) -> El {
+fn time_fields(
+    rules: &RulesForm,
+    k: &Kit,
+    issues: &RulesIssues,
+    section: ListSection,
+    form: El,
+) -> El {
     let start_label = match rules.time_mode {
         TimeMode::None => return form,
         TimeMode::Between => "Start",

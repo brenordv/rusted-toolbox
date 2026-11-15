@@ -4,7 +4,7 @@
 use super::Selected;
 use super::rows::key_string;
 use crate::design::tokens::{INSPECTOR_MAX, INSPECTOR_MIN, INSPECTOR_WIDTH};
-use crate::state::{Section, ToastKind};
+use crate::state::{ListSection, ToastKind};
 use chrono::{DateTime, TimeDelta, Utc};
 use common_utils::string_utils::format_bytes_to_string;
 use rune_kit::PaneState;
@@ -114,7 +114,7 @@ pub enum InspectorInput {
 /// Write one archived message to a file the user chose; the result goes back to `section`.
 #[derive(Debug)]
 pub struct ExportOneRequest {
-    pub section: Section,
+    pub section: ListSection,
     pub owner: u64,
     pub key: MessageKey,
     pub key_str: String,
