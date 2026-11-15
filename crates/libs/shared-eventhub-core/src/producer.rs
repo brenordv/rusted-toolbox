@@ -1,5 +1,6 @@
-//! Publishing events to an event hub: what to send, how often, and the
-//! producer that sends it in batches.
+//! Publishing events to an event hub: what to send (a fixed body or a fresh
+//! template render per event), how often, and the producer that sends it in
+//! batches.
 
 mod send_loop;
 
@@ -9,6 +10,7 @@ use azure_core::credentials::TokenCredential;
 use azure_messaging_eventhubs::builders::ProducerClientBuilder;
 use azure_messaging_eventhubs::models::EventData;
 use azure_messaging_eventhubs::{EventDataBatch, EventDataBatchOptions, ProducerClient};
+use mock_data_utils::template::Template;
 use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
@@ -49,6 +51,26 @@ impl OutgoingEvent {
             Some(content_type) => builder.with_content_type(content_type.clone()).build(),
             None => builder.build(),
         }
+    }
+}
+
+/// The event to send: `event` as given, or with `template` a fresh render
+/// of it (at most `cap` bytes) under `event`'s content type.
+///
+/// # Errors
+/// Fails when the render fails; the error names the placeholder by its
+/// position and type, never the template's text.
+pub fn next_event(
+    event: &OutgoingEvent,
+    template: Option<&Template>,
+    cap: usize,
+) -> anyhow::Result<OutgoingEvent> {
+    match template {
+        Some(template) => Ok(OutgoingEvent {
+            body: template.render(cap)?.into_bytes(),
+            content_type: event.content_type.clone(),
+        }),
+        None => Ok(event.clone()),
     }
 }
 

@@ -1,6 +1,6 @@
 //! How a session ends: whether it failed, why, and when.
 
-use shared_eventhub_core::engine::{PartitionEnd, RunEnd, RunSummary};
+use shared_eventhub_core::engine::{RunEnd, RunSummary};
 use shared_eventhub_persistence::export::ExportOutcome;
 use tracing::info;
 
@@ -44,7 +44,7 @@ pub(super) fn session_failures(
         Ok(summary) => match &summary.end {
             RunEnd::Completed => None,
             RunEnd::Stopped => {
-                let failed = failed_partitions(summary);
+                let failed = summary.failed_partitions();
                 (!failed.is_empty())
                     .then(|| format!("Partitions {} failed before the stop", failed.join(", ")))
             }
@@ -77,17 +77,8 @@ pub(super) fn log_summary(
         received = summary.stats.received,
         stored = summary.stats.stored,
         ui_dropped = summary.stats.ui_dropped,
-        failed_partitions = ?failed_partitions(summary),
+        failed_partitions = ?summary.failed_partitions(),
         finish = ?finish.as_ref().map(|outcome| outcome.exported),
         "session ended"
     );
-}
-
-fn failed_partitions(summary: &RunSummary) -> Vec<&str> {
-    summary
-        .partitions
-        .iter()
-        .filter(|(_, end)| matches!(end, PartitionEnd::Failed(_)))
-        .map(|(partition_id, _)| partition_id.as_str())
-        .collect()
 }

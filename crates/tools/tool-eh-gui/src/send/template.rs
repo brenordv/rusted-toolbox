@@ -3,7 +3,6 @@
 use super::compose::BODY_CAP;
 use crate::read::rows::{cut_at_char_boundary, sentence};
 use mock_data_utils::template::Template;
-use shared_eventhub_core::producer::OutgoingEvent;
 use std::fmt;
 use std::sync::Arc;
 
@@ -120,26 +119,6 @@ fn sample_of(template: &Template) -> Result<String, String> {
 pub fn shown_sample(sample: &str) -> (&str, bool) {
     let shown = cut_at_char_boundary(sample, SAMPLE_SHOWN_BYTES);
     (shown, shown.len() < sample.len())
-}
-
-/// The event to send: `event` as given, or with `template` a fresh render of it (at most `cap`
-/// bytes) under `event`'s content type.
-///
-/// # Errors
-/// Fails when the render fails; the error names the placeholder by its position and type,
-/// never the template's text.
-pub fn next_event(
-    event: &OutgoingEvent,
-    template: Option<&Template>,
-    cap: usize,
-) -> anyhow::Result<OutgoingEvent> {
-    match template {
-        Some(template) => Ok(OutgoingEvent {
-            body: template.render(cap)?.into_bytes(),
-            content_type: event.content_type.clone(),
-        }),
-        None => Ok(event.clone()),
-    }
 }
 
 #[cfg(test)]

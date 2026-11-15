@@ -37,7 +37,7 @@ pub async fn run(job: ExportJob, shutdown: &Arc<AtomicBool>) -> anyhow::Result<R
         include_metadata: job.export.include_metadata,
         condense_output: job.export.condense_output,
         use_local_time: job.export.use_local_time,
-        export_folder: paths.base().join(&job.export.export_folder),
+        export_folder: paths.export_dir(&job.export.export_folder),
         skip_already_exported: job.export.skip_already_exported,
     };
     let worker = store.clone();

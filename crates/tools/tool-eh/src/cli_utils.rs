@@ -557,7 +557,9 @@ pub(crate) fn export_header(job: &ExportJob) -> Vec<String> {
         item("Data folder", job.base_data_folder.display()),
         item(
             "Export folder",
-            job.base_data_folder.join(&export.export_folder).display(),
+            DataPaths::new(&job.base_data_folder)
+                .export_dir(&export.export_folder)
+                .display(),
         ),
         item("Format", format_name(export.format)),
         item("Include metadata", export.include_metadata),

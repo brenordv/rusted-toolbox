@@ -20,4 +20,8 @@
   more than a minute after the archive's earliest event (a deleted and
   recreated hub). Archives bound earlier record the time on their next bind;
   older builds ignore it and bind by name.
+- `ToolConfig::missing_client_secret` names the client whose secret a resolved target lacks,
+  `ToolConfig::disk_write_config` builds a capture run's disk-write settings for a data folder,
+  and `DataPaths::export_dir` places the export folder in the data folder (an absolute one as
+  given).
 - Dependency: `redb` 4.6.0.

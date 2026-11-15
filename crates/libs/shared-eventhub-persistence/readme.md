@@ -16,15 +16,16 @@ themselves.
 └── <received_msg_path>/<YYYY-MM-DD>/...   # disk-write dumps
 ```
 
-`DataPaths` is the only code that knows this layout. On Unix the folder is
-created 0o700 and both redb files and every dump file 0o600 (an existing file
-is tightened when opened). On Windows the files inherit the parent folder's
-ACL, which on some drives grants other local users access. The `.gitignore`
-keeps `git add .` from ever picking up the archive or the secrets file, so a
-folder that already holds files is used only when its `.gitignore` is that
-same `*`; any other folder (a repository root, a source folder with a
-`.gitignore` of its own) is refused with a message asking for a new or empty
-folder.
+`DataPaths` is the only code that knows this layout; `inbound_dir` and
+`export_dir` place a configured folder in it (an absolute one as given). On
+Unix the folder is created 0o700 and both redb files and every dump file
+0o600 (an existing file is tightened when opened). On Windows the files
+inherit the parent folder's ACL, which on some drives grants other local
+users access. The `.gitignore` keeps `git add .` from ever picking up the
+archive or the secrets file, so a folder that already holds files is used
+only when its `.gitignore` is that same `*`; any other folder (a repository
+root, a source folder with a `.gitignore` of its own) is refused with a
+message asking for a new or empty folder.
 
 ### One event hub per data folder
 
@@ -187,6 +188,13 @@ other's secrets.
 
 This keeps secrets out of plain sight and out of git, but it is not
 encryption: anyone who can read the data folder can read them.
+
+`needs_stored_secret` says whether resolving a config needs the secrets file
+at all, `resolve_target_with` rebuilds the target from the given secrets and
+the file, and `ToolConfig::missing_client_secret` then names the client whose
+secret is still missing, as data rather than an error.
+`ToolConfig::disk_write_config` and `engine_config` map a config to a capture
+run's sink and engine settings.
 
 Treat `config.json` and the data folder like a script: a cloned repo that
 ships both could point `eh read` at someone else's event hub and dump folders.

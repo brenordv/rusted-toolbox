@@ -472,7 +472,7 @@ impl Services for DemoServices {
 /// it names.
 pub fn rooted_bulk(root: &Path, request: BulkRequest) -> BulkRequest {
     let paths = data_paths(root);
-    let folder = paths.base().join(DEMO_EXPORTS);
+    let folder = paths.export_dir(DEMO_EXPORTS);
     if request.options.export_folder != folder {
         debug!("demo mode writes bulk exports into its own data folder");
     }

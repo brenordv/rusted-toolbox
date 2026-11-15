@@ -10,6 +10,7 @@ license.workspace = true
 [dependencies]
 # Internal
 common-utils = { workspace = true }
+mock-data-utils = { workspace = true }
 shared-azure = { workspace = true }
 
 # External

@@ -728,6 +728,59 @@ fn needs_stored_secret_is_true_only_for_a_used_secret_that_was_not_given(
     assert_eq!(needs_stored_secret(&config, &given), expected);
 }
 
+fn credential_config(credential: CredentialKindConfig) -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        namespace: Some("orders.servicebus.windows.net".to_owned()),
+        event_hub: Some("orders".to_owned()),
+        consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+        auth: AuthMethodConfig::Credential { credential },
+    })
+}
+
+#[rstest::rstest]
+#[case::connection_string(connection_string_config(), with_connection_string(), None)]
+#[case::developer_tools(
+    credential_config(CredentialKindConfig::DeveloperTools),
+    SensitiveValues::default(),
+    None
+)]
+#[case::client_secret_given(
+    credential_config(client_secret_kind()),
+    SensitiveValues { connection_string: None, client_secret: Some(CLIENT_SECRET.to_owned().into()) },
+    None
+)]
+#[case::client_secret_missing(
+    credential_config(client_secret_kind()),
+    SensitiveValues::default(),
+    Some("client")
+)]
+fn missing_client_secret_names_the_client_only_when_its_secret_was_not_resolved(
+    #[case] config: ToolConfig,
+    #[case] given: SensitiveValues,
+    #[case] expected: Option<&str>,
+) {
+    let target = resolve_target_with(&config, given, None).unwrap();
+
+    assert_eq!(config.missing_client_secret(&target), expected);
+}
+
+#[test]
+fn disk_write_config_places_the_inbound_folder_in_the_data_folder() {
+    let mut config = connection_string_config();
+    config.storage.disk_write = DiskWriteSettings {
+        mode: DiskWriteMode::AtEnd,
+        received_msg_path: "inbound".to_owned(),
+        content_only: true,
+    };
+    let paths = DataPaths::new("data");
+
+    let disk_write = config.disk_write_config(&paths);
+
+    assert_eq!(disk_write.mode, DiskWriteMode::AtEnd);
+    assert_eq!(disk_write.inbound_dir, Path::new("data").join("inbound"));
+    assert!(disk_write.content_only);
+}
+
 #[test]
 fn engine_config_carries_the_capture_settings_and_the_target() {
     let mut config = connection_string_config();
