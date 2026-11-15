@@ -1,7 +1,7 @@
 //! The list's flow: arrived rows landing on screen, the quick search, the tail, and the
 //! selection.
 
-use super::rows::RowSummary;
+use super::rows::{RowSource, RowSummary};
 use super::search::{
     Landing, Matcher, RebuildRequest, Rebuilt, SearchState, UI_MATCH_BYTES, snapshot,
 };
@@ -224,44 +224,58 @@ impl ReadState {
             debug!(key = %key_str, "a pressed row is no longer in the list");
             return ReadOutcome::default();
         };
-        self.selected = Some(Selected {
-            key: row.message.key.clone(),
-            key_str: row.key_str.clone(),
-            message: Arc::clone(&row.message),
-        });
-        self.inspector.set_open(true);
+        self.inspector.select(Selected::of(row));
         ReadOutcome::changed()
     }
 
     pub(super) fn clear_selection(&mut self) -> ReadOutcome {
-        self.selected = None;
-        self.inspector.set_open(false);
+        self.inspector.clear_selection();
         ReadOutcome::changed()
-    }
-
-    fn position_of_selection(&self) -> Option<usize> {
-        let selected = self.selected.as_ref()?;
-        (0..self.list_len()).find(|position| {
-            self.list_row(*position)
-                .is_some_and(|row| row.key_str == selected.key_str)
-        })
     }
 
     /// Up, Down, Home, or End in the list. With nothing selected, Up and Down select the
     /// newest row.
     pub(super) fn step(&mut self, step: Step) -> ReadOutcome {
-        let Some(last) = self.list_len().checked_sub(1) else {
-            return ReadOutcome::default();
-        };
-        let target = match (step, self.position_of_selection()) {
-            (Step::First, _) => 0,
-            (Step::Last, _) | (Step::Up | Step::Down, None) => last,
-            (Step::Up, Some(position)) => position.saturating_sub(1),
-            (Step::Down, Some(position)) => (position + 1).min(last),
-        };
-        match self.list_row(target).map(|row| row.key_str.clone()) {
+        let position = position_of(self, self.inspector.selected.as_ref());
+        let target = step_target(step, position, self.list_len());
+        match target
+            .and_then(|target| self.list_row(target))
+            .map(|row| row.key_str.clone())
+        {
             Some(key_str) => self.select(&key_str),
             None => ReadOutcome::default(),
         }
     }
+}
+
+impl Selected {
+    /// The selection of `row`.
+    pub fn of(row: &RowSummary) -> Self {
+        Self {
+            key: row.message.key.clone(),
+            key_str: row.key_str.clone(),
+            message: Arc::clone(&row.message),
+        }
+    }
+}
+
+/// The list position of `selected` in `rows`.
+pub(crate) fn position_of(rows: &dyn RowSource, selected: Option<&Selected>) -> Option<usize> {
+    let selected = selected?;
+    (0..rows.count()).find(|position| {
+        rows.row(*position)
+            .is_some_and(|row| row.key_str == selected.key_str)
+    })
+}
+
+/// Where `step` moves the selection at `position` in a list of `len` rows; `None` for an empty
+/// list. With nothing selected, Up and Down go to the last row.
+pub(crate) fn step_target(step: Step, position: Option<usize>, len: usize) -> Option<usize> {
+    let last = len.checked_sub(1)?;
+    Some(match (step, position) {
+        (Step::First, _) => 0,
+        (Step::Last, _) | (Step::Up | Step::Down, None) => last,
+        (Step::Up, Some(position)) => position.saturating_sub(1),
+        (Step::Down, Some(position)) => (position + 1).min(last),
+    })
 }

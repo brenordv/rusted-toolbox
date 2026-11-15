@@ -70,6 +70,8 @@ pub const SHEET_WIDTH: f32 = 520.0;
 /// The sheet's top edge, below the toolbar band with room to spare.
 pub const SHEET_TOP: f32 = 72.0;
 pub const POPOVER_WIDTH: f32 = 360.0;
+/// A popover holding a form (pickers, switches, a folder with its Change button).
+pub const FORM_POPOVER_WIDTH: f32 = 460.0;
 /// Message list rows and its header (rune-kit's table sizes).
 pub const LIST_ROW_HEIGHT: f32 = 28.0;
 pub const LIST_HEADER_HEIGHT: f32 = 30.0;

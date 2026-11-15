@@ -5,21 +5,27 @@
 pub mod hub;
 mod seed;
 
+pub use seed::seed_archive;
+
+use crate::app::dispatch;
+use crate::archive::bulk::BulkRequest;
+use crate::archive::{ArchiveInput, PageRequest};
 use crate::bridge::{EngineSession, SessionSink, UiPort, spawn_session};
 use crate::form::ConnectForm;
 use crate::read::ExportOneRequest;
 use crate::read::search::RebuildRequest;
 use crate::services::{
     AppPort, ConnectRequest, SaveRequest, Services, apply_from_runtime, filter_hook, gate,
-    report_ready, spawn_export_one, spawn_list_flush, spawn_rebuild, spawn_tick,
+    report_ready, spawn_bulk_export, spawn_export_one, spawn_list_flush, spawn_rebuild,
+    spawn_search_archive, spawn_tick,
 };
-use crate::state::{AppState, Input};
+use crate::state::{AppState, Input, Section};
 use crate::tasks::StoreSlot;
 use anyhow::Context;
 use common_cli::app_logger::FileLogging;
 use rune::AppHandle;
 use shared_eventhub_persistence::config::save_config;
-use shared_eventhub_persistence::export::{DiskWriteConfig, WritingSink};
+use shared_eventhub_persistence::export::{DiskWriteConfig, ExportOptions, WritingSink};
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::secrets::SecretsStore;
 use std::path::{Path, PathBuf};
@@ -62,6 +68,8 @@ pub enum Scenario {
     SeededRead,
     /// [`Scenario::SeededRead`] with a regex quick search.
     SeededSearch,
+    /// The Export section over an archive of 6,000 messages, searched for everything.
+    SeededExport,
 }
 
 /// How fast a scenario's hub produces messages.
@@ -84,7 +92,7 @@ impl Pace {
 }
 
 impl Scenario {
-    const NAMES: [(&'static str, Scenario); 11] = [
+    const NAMES: [(&'static str, Scenario); 12] = [
         ("live", Self::Live),
         ("burst", Self::Burst),
         ("quiet", Self::Quiet),
@@ -96,6 +104,7 @@ impl Scenario {
         ("seeded-connect", Self::SeededConnect),
         ("seeded-read", Self::SeededRead),
         ("seeded-search", Self::SeededSearch),
+        ("seeded-export", Self::SeededExport),
     ];
 
     /// The scenario named `name`.
@@ -141,8 +150,20 @@ impl Scenario {
             | Self::SeededFailed
             | Self::SeededConnect
             | Self::SeededRead
-            | Self::SeededSearch => false,
+            | Self::SeededSearch
+            | Self::SeededExport => false,
         }
+    }
+
+    /// Whether the once-a-second tick and the list flush run: every live scenario, and the
+    /// seeded Export state, whose search, paging, and exports are real.
+    pub fn ticks(self) -> bool {
+        self.is_live() || self == Self::SeededExport
+    }
+
+    /// Whether the archive is seeded before the window opens.
+    pub fn seeds_archive(self) -> bool {
+        self == Self::SeededExport
     }
 
     pub fn pace(self) -> Pace {
@@ -170,7 +191,8 @@ impl Scenario {
             | Self::SeededFailed
             | Self::SeededConnect
             | Self::SeededRead
-            | Self::SeededSearch => steady,
+            | Self::SeededSearch
+            | Self::SeededExport => steady,
         }
     }
 
@@ -230,6 +252,10 @@ pub fn initial_state(
         }
         Scenario::SeededRead => seed::read(&mut state, rt, false),
         Scenario::SeededSearch => seed::read(&mut state, rt, true),
+        Scenario::SeededExport => {
+            state.section = Section::Export;
+            dispatch(&mut state, Input::Archive(ArchiveInput::SearchPressed));
+        }
         Scenario::Live
         | Scenario::Burst
         | Scenario::Quiet
@@ -260,7 +286,7 @@ impl DemoServices {
         root: PathBuf,
         scenario: Scenario,
     ) -> Self {
-        if scenario.is_live() {
+        if scenario.ticks() {
             spawn_tick(&rt, handle.clone(), Arc::new(AtomicBool::new(false)));
             spawn_list_flush(&rt, handle.clone());
         }
@@ -347,11 +373,54 @@ impl Services for DemoServices {
             request,
         );
     }
+
+    /// Reads the demo's own archive whatever the request names.
+    fn search_archive(&self, request: PageRequest) {
+        let request = PageRequest {
+            paths: data_paths(&self.root),
+            ..request
+        };
+        spawn_search_archive(
+            &self.rt,
+            self.handle.clone(),
+            Arc::clone(&self.slot),
+            request,
+        );
+    }
+
+    fn bulk_export(&self, request: BulkRequest) {
+        spawn_bulk_export(
+            &self.rt,
+            self.handle.clone(),
+            Arc::clone(&self.slot),
+            rooted_bulk(&self.root, request),
+        );
+    }
+}
+
+/// `request` reading the demo's archive and writing under the demo's root, whatever folders
+/// it names.
+pub fn rooted_bulk(root: &Path, request: BulkRequest) -> BulkRequest {
+    let paths = data_paths(root);
+    let folder = paths.base().join(DEMO_EXPORTS);
+    if request.options.export_folder != folder {
+        debug!("demo mode writes bulk exports into its own data folder");
+    }
+    BulkRequest {
+        options: ExportOptions {
+            export_folder: folder,
+            ..request.options
+        },
+        paths,
+        ..request
+    }
 }
 
 /// Message files go here inside the demo data folder, whatever the form says: a typed path
 /// could point outside the temporary root.
 const DEMO_INBOUND: &str = "inbound";
+/// Bulk exports go here inside the demo data folder, whatever folder was picked.
+const DEMO_EXPORTS: &str = "exports";
 
 /// What starting a demo session needs, owned so it can move into a runtime task.
 struct DemoSession {

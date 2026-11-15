@@ -5,6 +5,7 @@
 
 pub mod app;
 pub mod appearance;
+pub mod archive;
 pub mod bridge;
 #[cfg(feature = "demo")]
 pub mod demo;

@@ -1,33 +1,40 @@
-//! The inspector's model: what the body area shows, copy feedback, and exporting one message.
+//! The inspector's model: the selected message, what the body area shows, copy feedback, and
+//! exporting one message. Each section owns one [`InspectorState`].
 
+use super::Selected;
 use super::rows::key_string;
+use crate::design::tokens::{INSPECTOR_MAX, INSPECTOR_MIN, INSPECTOR_WIDTH};
+use crate::state::{Section, ToastKind};
 use chrono::{DateTime, TimeDelta, Utc};
 use common_utils::string_utils::format_bytes_to_string;
+use rune_kit::PaneState;
 use shared_eventhub_core::models::{CapturedMessage, MessageKey};
 use shared_eventhub_persistence::export::{ExportFormat, ExportOptions};
 use shared_eventhub_persistence::paths::DataPaths;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The most body bytes the inspector shows; copying takes the whole body.
 pub const BODY_DISPLAY_CAP: usize = 256 * 1024;
 /// How long a "Copied" or "Exported" label stays.
 pub const FEEDBACK_FOR: TimeDelta = TimeDelta::milliseconds(1_500);
 
-/// Where exporting the selected message is.
+/// Where exporting the selected message is. `owner` is the token of the rows the message came
+/// from (a session in the Read section, a data folder in the Export section); a dialog answer
+/// or a result for another owner is not this export's.
 #[derive(Debug, Default)]
 pub enum ExportPhase {
     #[default]
     Idle,
-    /// The save dialog is open for `key` of `session`.
+    /// The save dialog is open for `key`.
     Picking {
-        session: u64,
+        owner: u64,
         key: MessageKey,
         key_str: String,
         paths: DataPaths,
     },
     /// The file is being written.
     Running {
-        session: u64,
+        owner: u64,
         key: MessageKey,
         key_str: String,
     },
@@ -77,6 +84,130 @@ impl Feedback {
     /// Whether the label shows `kind` for `key`.
     pub fn shows(&self, key: &MessageKey, kind: FeedbackKind) -> bool {
         self.key == *key && self.kind == kind
+    }
+}
+
+/// Something that happened in an inspector.
+#[derive(Debug)]
+pub enum InspectorInput {
+    /// The selected message's body or JSON reached the clipboard.
+    Copied {
+        kind: FeedbackKind,
+        now: DateTime<Utc>,
+    },
+    CopyFailed(String),
+    ExportPressed,
+    /// The save dialog opened for `key` of `owner` answered.
+    ExportAnswered {
+        owner: u64,
+        key: MessageKey,
+        answer: Result<Option<PathBuf>, String>,
+    },
+    ExportDone {
+        owner: u64,
+        key: MessageKey,
+        result: Result<(), String>,
+        now: DateTime<Utc>,
+    },
+}
+
+/// Write one archived message to a file the user chose; the result goes back to `section`.
+#[derive(Debug)]
+pub struct ExportOneRequest {
+    pub section: Section,
+    pub owner: u64,
+    pub key: MessageKey,
+    pub key_str: String,
+    pub options: ExportOptions,
+    pub destination: PathBuf,
+    pub paths: DataPaths,
+}
+
+/// What an inspector transition did.
+#[derive(Debug, Default)]
+pub struct InspectorOutcome {
+    pub export: Option<ExportOneRequest>,
+    pub changed: bool,
+    pub toasts: Vec<(ToastKind, String)>,
+}
+
+impl InspectorOutcome {
+    pub(crate) fn changed() -> Self {
+        Self {
+            changed: true,
+            ..Self::default()
+        }
+    }
+}
+
+/// One section's inspector: the selected message, its copy feedback, exporting it, the export
+/// picks, and the pane.
+#[derive(Debug)]
+pub struct InspectorState {
+    pub selected: Option<Selected>,
+    pub feedback: Option<Feedback>,
+    pub export: ExportPhase,
+    pub format: ExportFormat,
+    pub metadata: bool,
+    pub pane: PaneState,
+}
+
+impl Default for InspectorState {
+    fn default() -> Self {
+        Self::with_export(ExportFormat::Txt, true)
+    }
+}
+
+impl InspectorState {
+    /// A closed inspector whose exports start as `format`, with or without metadata.
+    pub fn with_export(format: ExportFormat, metadata: bool) -> Self {
+        Self {
+            selected: None,
+            feedback: None,
+            export: ExportPhase::Idle,
+            format,
+            metadata,
+            pane: PaneState::new(INSPECTOR_WIDTH)
+                .range(INSPECTOR_MIN, INSPECTOR_MAX)
+                .collapsed(),
+        }
+    }
+
+    /// The rows it showed are gone: no selection or feedback, the pane closed, an open save
+    /// dialog dropped. An export still writing a file stays, and so do the picks and the pane's
+    /// width.
+    pub fn reset(&mut self) {
+        self.selected = None;
+        self.feedback = None;
+        self.export = running_only(std::mem::take(&mut self.export));
+        self.pane.set_open(false);
+    }
+
+    pub fn select(&mut self, selected: Selected) {
+        self.selected = Some(selected);
+        self.pane.set_open(true);
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selected = None;
+        self.pane.set_open(false);
+    }
+
+    /// Ends feedback whose time is up; true when something shown changed.
+    pub fn tick(&mut self, now: DateTime<Utc>) -> bool {
+        if self.feedback.as_ref().is_some_and(|f| now >= f.until) {
+            self.feedback = None;
+            return true;
+        }
+        false
+    }
+}
+
+/// `phase` if it is still writing a file, `Idle` otherwise.
+pub(crate) fn running_only(phase: ExportPhase) -> ExportPhase {
+    match phase {
+        running @ ExportPhase::Running { .. } => running,
+        ExportPhase::Idle | ExportPhase::Picking { .. } => ExportPhase::Idle,
     }
 }
 

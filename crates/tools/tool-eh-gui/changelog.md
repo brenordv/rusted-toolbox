@@ -6,8 +6,20 @@
   popover), and the connect sheet with the three sign-in methods (connection string, Azure
   credential, Key Vault), config.json recall, Save config, and the Storage settings (data folder,
   message files). Connect opens the data folder's archive, resolves the target as `eh read`
-  does, and runs a capture session whose messages go to the archive. Archive search comes in a
-  later version.
+  does, and runs a capture session whose messages go to the archive.
+- The Export section, with or without a connection: archive search by time window and text or
+  regex in the sidebar (the same fields as the capture rules); results in the same list and
+  inspector as the Read section, loaded 250 at a time as you scroll, up to 5,000 rows or 256 MB
+  of bodies, with each message once even when it moves between pages; a footer for loading, a
+  failed page (Retry), and the cap; empty states for not searched, searching, no matches, and an
+  archive that cannot be opened; and a floating bar that exports every match of the last search
+  (format, metadata, one file per month, local time, skip already exported, destination folder)
+  with live counts every 250 ms, Cancel between messages, and the result with the first failure.
+  One bulk export at a time; the data folder cannot change while one runs; closing the window
+  cancels it, and a failed one brings the window back. The Read and Export sections share one
+  list, inspector, and rules-field implementation.
+- Demo scenario `seeded-export`: an archive of 6,000 generated messages and the Export section
+  searched for everything. Demo searches and bulk exports stay inside the temporary folder.
 - The Read section: a stats strip refreshed once a second (rolling digits; per-partition
   counts behind Received; a UI-dropped tile; quiet-hub and "Not receiving updates" states), a
   virtualized list of the newest 5,000 messages (and at most 256 MB of bodies) that follows the
@@ -40,8 +52,8 @@
   selected rows in the primary text color.
 - Icons from Lucide 1.73.0 (ISC; license in `assets/icons/LICENSE`).
 - Dev-only demo mode (`--features demo`, binary `eh-gui-demo`): a generated event hub and a
-  temporary data folder, scenarios chosen with `EH_GUI_DEMO` (including `seeded-read` and
-  `seeded-search`), and Rune's agent flags in debug builds. Release builds leave it out.
+  temporary data folder, scenarios chosen with `EH_GUI_DEMO` (including `seeded-read`,
+  `seeded-search`, and `seeded-export`), and Rune's agent flags in debug builds. Release builds leave it out.
 - Built on Rune, pinned at rev `c4eda05889c984fff91ccd906e3c00cdfc4cae24` (pre-release, not on
   crates.io). Rune's `[patch.crates-io]` forks apply to the whole workspace:
   - winit 0.30.13: Windows window creation without a taskbar COM call and at the requested

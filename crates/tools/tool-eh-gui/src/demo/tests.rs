@@ -55,6 +55,82 @@ impl Services for NoServices {
     fn quit(&self) {}
     fn rebuild_search(&self, _request: RebuildRequest) {}
     fn export_one(&self, _request: ExportOneRequest) {}
+    fn search_archive(&self, _request: PageRequest) {}
+    fn bulk_export(&self, _request: BulkRequest) {}
+}
+
+fn bulk_request(folder: PathBuf, paths: DataPaths) -> BulkRequest {
+    BulkRequest {
+        export: 1,
+        query: shared_eventhub_persistence::search::SearchQuery::default(),
+        options: ExportOptions {
+            format: shared_eventhub_persistence::export::ExportFormat::Txt,
+            include_metadata: true,
+            condense_output: false,
+            use_local_time: false,
+            export_folder: folder,
+            skip_already_exported: false,
+        },
+        cancel: Arc::new(AtomicBool::new(false)),
+        paths,
+    }
+}
+
+#[test]
+fn a_demo_bulk_export_reads_and_writes_only_under_its_root() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let request = bulk_request(
+        outside.path().join("picked"),
+        DataPaths::new(outside.path().join("data")),
+    );
+
+    let rooted = rooted_bulk(root.path(), request);
+
+    assert_eq!(rooted.paths, data_paths(root.path()));
+    assert!(rooted.options.export_folder.starts_with(root.path()));
+}
+
+#[test]
+fn the_seeded_export_scenario_starts_searching_the_archive() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let state = initial_state(
+        Scenario::SeededExport,
+        root.path(),
+        Box::new(NoServices),
+        rt.handle(),
+    );
+
+    assert_eq!(state.section, Section::Export);
+    assert!(matches!(
+        state.archive.results,
+        crate::archive::results::Results::Loading { .. }
+    ));
+    assert!(Scenario::SeededExport.ticks() && Scenario::SeededExport.seeds_archive());
+}
+
+#[test]
+fn seeding_fills_the_demo_archive_past_the_export_cap() {
+    let root = tempfile::tempdir().unwrap();
+    let slot = StoreSlot::new(data_paths(root.path()));
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    rt.block_on(seed_archive(&slot, root.path())).unwrap();
+
+    let store = rt.block_on(slot.acquire(&data_paths(root.path()))).unwrap();
+    let page = store
+        .search(&shared_eventhub_persistence::search::SearchQuery::default())
+        .unwrap();
+    assert!(page.items.len() > crate::read::rows::ROW_CAP);
 }
 
 #[test]
@@ -207,6 +283,7 @@ fn seeded_scenarios_reach_their_states_through_apply_and_render() {
     assert_eq!(read.read.rows.displayed().len(), 5_000);
     assert!(
         read.read
+            .inspector
             .selected
             .as_ref()
             .unwrap()

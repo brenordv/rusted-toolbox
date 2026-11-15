@@ -27,7 +27,7 @@ pub struct RowSummary {
 }
 
 impl RowSummary {
-    fn new(index: u64, message: Arc<CapturedMessage>) -> Self {
+    pub(crate) fn new(index: u64, message: Arc<CapturedMessage>) -> Self {
         Self {
             index,
             key_str: key_string(&message.key),

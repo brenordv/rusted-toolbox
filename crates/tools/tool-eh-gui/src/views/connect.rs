@@ -181,6 +181,7 @@ fn credential(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {
 
 fn storage(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {
     let form = &s.form;
+    let lock = s.data_folder_lock();
     let mut group = col()
         .gap(SPACE_MD)
         .w_full()
@@ -194,16 +195,20 @@ fn storage(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {
                 .child(
                     Button::new("Change")
                         .variant(ButtonVariant::Outline)
+                        .disabled(lock.is_some())
                         .on_press_tx(choose_data_folder)
                         .build(k)
                         .key("change-folder"),
                 ),
-        )
-        .child(parts::caption(
-            k,
-            "One data folder holds the archive of one event hub. Keep one config.json per data \
-             folder.",
-        ));
+        );
+    if let Some(reason) = lock {
+        group = group.child(parts::caption(k, reason));
+    }
+    group = group.child(parts::caption(
+        k,
+        "One data folder holds the archive of one event hub. Keep one config.json per data \
+         folder.",
+    ));
     if let Some(issue) = &issues.data_folder {
         group = group.child(parts::caption(k, issue));
     }

@@ -1,4 +1,7 @@
 use super::*;
+use crate::archive::results::{More, Results};
+use crate::archive::test_support::{cursor, messages, page};
+use crate::archive::{ArchiveEffect, ArchiveInput, PageRequest};
 use crate::bridge::UiDelivery;
 use crate::bridge::test_support::detached_session;
 use crate::design::tokens::WINDOW_MIN;
@@ -6,11 +9,15 @@ use crate::form::{AuthChoice, ConnectForm, CredentialChoice};
 use crate::read::ReadInput;
 use crate::read::rows::ROW_CAP;
 use crate::read::test_support::captured;
+use crate::services::Services;
 use crate::state::{Effect, Input};
 use common_cli::app_logger::FileLogging;
 use rune::{Env, Key, KeyEvent, Mods, Runtime};
 use shared_eventhub_core::engine::EngineEvent;
 use shared_eventhub_core::stats::StatsSnapshot;
+use shared_eventhub_persistence::export::ExportOutcome;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
 const MARKER: &str = "SharedAccessKey=marker-55219";
 
@@ -472,8 +479,8 @@ fn the_inspector_close_button_clears_the_selection() {
 
     press(&mut rt, "inspector-close");
 
-    assert!(rt.state.read.selected.is_none());
-    assert!(!rt.state.read.inspector.is_open());
+    assert!(rt.state.read.inspector.selected.is_none());
+    assert!(!rt.state.read.inspector.pane.is_open());
 }
 
 #[test]
@@ -491,6 +498,262 @@ fn clicking_a_row_opens_the_inspector_and_escape_closes_it() {
 
     press_key(&mut rt, Key::Escape);
 
-    assert!(rt.state.read.selected.is_none());
+    assert!(rt.state.read.inspector.selected.is_none());
     assert!(!has_key(&rt, "inspector"));
+}
+
+/// Services that count the archive pages asked for and do nothing else.
+#[derive(Default)]
+struct PageCounter(Arc<AtomicUsize>);
+
+impl Services for PageCounter {
+    fn prepare_session(&self, _: u64, _: crate::services::ConnectRequest) {}
+    fn save_config(&self, _: crate::services::SaveRequest) {}
+    fn switch_data_folder(&self, _: shared_eventhub_persistence::paths::DataPaths) {}
+    fn reopen_window(&self) {}
+    fn quit(&self) {}
+    fn rebuild_search(&self, _: crate::read::search::RebuildRequest) {}
+    fn export_one(&self, _: crate::read::ExportOneRequest) {}
+    fn search_archive(&self, _: PageRequest) {
+        self.0.fetch_add(1, AtomicOrdering::SeqCst);
+    }
+    fn bulk_export(&self, _: crate::archive::bulk::BulkRequest) {}
+}
+
+/// The Export section with a search whose first page showed `count` rows, more to come when
+/// `more`; the counter sees the pages asked for after that.
+fn export_results(count: usize, more: bool) -> (AppState, Arc<AtomicUsize>) {
+    let pages = Arc::new(AtomicUsize::new(0));
+    let mut s = state();
+    s.services = Some(Box::new(PageCounter(Arc::clone(&pages))));
+    s.section = crate::state::Section::Export;
+    let out = s.apply(Input::Archive(ArchiveInput::SearchPressed));
+    let [Effect::Archive(ArchiveEffect::Search(request))] = out.effects.as_slice() else {
+        panic!("expected a page request, got {:?}", out.effects);
+    };
+    let generation = request.generation;
+    s.apply(Input::Archive(ArchiveInput::PageLoaded {
+        generation,
+        elapsed_ms: 1,
+        result: Ok(page(messages(count), more.then(cursor))),
+    }));
+    (s, pages)
+}
+
+fn export_state(results: Results) -> AppState {
+    let mut s = state();
+    s.section = crate::state::Section::Export;
+    s.archive.results = results;
+    s
+}
+
+#[rstest::rstest]
+#[case::not_searched(Results::NotSearched, "export-empty")]
+#[case::searching(Results::Loading { generation: 1 }, "export-searching")]
+#[case::unavailable(
+    Results::Unavailable { generation: 1, error: "in use by another eh".to_owned() },
+    "export-unavailable"
+)]
+#[case::no_matches(
+    Results::Shown {
+        generation: 1,
+        rows: crate::archive::results::ArchiveRows::default(),
+        more: More::End,
+    },
+    "export-no-matches"
+)]
+fn each_export_state_shows_its_empty_state(#[case] results: Results, #[case] key: &str) {
+    let rt = runtime(export_state(results));
+
+    assert!(has_key(&rt, key));
+    assert!(!has_key(&rt, "bulk-bar"));
+}
+
+#[test]
+fn results_show_in_the_list_with_the_export_bar() {
+    let (s, _) = export_results(3, false);
+
+    let rt = runtime(s);
+
+    assert!(row_visible(&rt, "p0-s0"));
+    assert!(has_key(&rt, "bulk-bar") && has_key(&rt, "bulk-export"));
+}
+
+#[test]
+fn scrolling_near_the_end_asks_for_one_page_and_shows_the_footer_spinner() {
+    let (s, pages) = export_results(300, true);
+    let mut rt = runtime(s);
+    let before = pages.load(AtomicOrdering::SeqCst);
+
+    for _ in 0..40 {
+        rt.wheel(640.0, 500.0, -2_000.0);
+        rt.frame(1.0 / 60.0);
+    }
+    settle(&mut rt);
+
+    assert_eq!(before, 0);
+    assert_eq!(pages.load(AtomicOrdering::SeqCst), 1);
+    assert!(matches!(
+        &rt.state.archive.results,
+        Results::Shown {
+            more: More::Loading(_),
+            ..
+        }
+    ));
+    assert!(has_key(&rt, "results-footer"));
+}
+
+#[test]
+fn a_running_export_shows_its_counts_and_cancel() {
+    let (mut s, _) = export_results(3, false);
+    s.apply(Input::Archive(ArchiveInput::BulkExportPressed));
+
+    let mut rt = runtime(s);
+    press(&mut rt, "bulk-cancel");
+
+    assert!(matches!(
+        rt.state.archive.bulk,
+        crate::archive::bulk::BulkExport::Running {
+            cancel_requested: true,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_finished_export_shows_done_which_returns_to_idle() {
+    let (mut s, _) = export_results(3, false);
+    let out = s.apply(Input::Archive(ArchiveInput::BulkExportPressed));
+    let [Effect::Archive(ArchiveEffect::BulkExport(request))] = out.effects.as_slice() else {
+        panic!("expected a bulk export, got {:?}", out.effects);
+    };
+    let export = request.export;
+    s.apply(Input::Archive(ArchiveInput::BulkDone {
+        export,
+        elapsed_ms: 1,
+        result: Ok(ExportOutcome::default()),
+    }));
+    let mut rt = runtime(s);
+
+    press(&mut rt, "bulk-done");
+
+    assert!(matches!(
+        rt.state.archive.bulk,
+        crate::archive::bulk::BulkExport::Idle
+    ));
+    assert!(has_key(&rt, "bulk-export"));
+}
+
+fn has_text(rt: &Runtime<AppState>, needle: &str) -> bool {
+    rt.elements().iter().any(|element| {
+        element
+            .text
+            .as_deref()
+            .is_some_and(|text| text.contains(needle))
+    })
+}
+
+#[rstest::rstest]
+#[case::logging_off(FileLogging::Off, false)]
+#[case::writing(FileLogging::Writing("eh-gui.log".into()), true)]
+fn a_failed_export_points_at_the_log_only_when_one_is_written(
+    #[case] logging: FileLogging,
+    #[case] points: bool,
+) {
+    let (mut s, _) = export_results(3, false);
+    s.file_logging = logging;
+    let out = s.apply(Input::Archive(ArchiveInput::BulkExportPressed));
+    let [Effect::Archive(ArchiveEffect::BulkExport(request))] = out.effects.as_slice() else {
+        panic!("expected a bulk export, got {:?}", out.effects);
+    };
+    let export = request.export;
+    s.apply(Input::Archive(ArchiveInput::BulkDone {
+        export,
+        elapsed_ms: 1,
+        result: Ok(ExportOutcome {
+            failed: 1,
+            first_error: Some("x.txt: disk full".to_owned()),
+            ..ExportOutcome::default()
+        }),
+    }));
+
+    let rt = runtime(s);
+
+    assert!(has_text(&rt, "x.txt: disk full"));
+    assert_eq!(has_text(&rt, "Details are in the log file."), points);
+}
+
+#[test]
+fn the_sheet_says_why_the_data_folder_cannot_change_during_a_bulk_export() {
+    let (mut s, _) = export_results(3, false);
+    s.apply(Input::Archive(ArchiveInput::BulkExportPressed));
+    s.sheet_open = true;
+
+    let rt = runtime(s);
+
+    assert!(has_key(&rt, "change-folder"));
+    assert!(has_text(&rt, "once the bulk export ends"));
+}
+
+#[test]
+fn the_export_options_fit_inside_their_popover() {
+    let (s, _) = export_results(3, false);
+    let mut rt = runtime(s);
+
+    press(&mut rt, "bulk-options");
+
+    let [x, y, w, h] = rect(&rt, "bulk-options-trigger-content");
+    let inside = |key: &str| {
+        let [cx, cy, cw, ch] = rect(&rt, key);
+        cx >= x && cy >= y && cx + cw <= x + w + 0.5 && cy + ch <= y + h + 0.5
+    };
+    assert!(rt.state.archive.options_open);
+    assert!(w >= crate::design::tokens::FORM_POPOVER_WIDTH);
+    assert!(inside("bulk-options-panel"));
+    assert!(inside("bulk-destination"));
+}
+
+#[test]
+fn pressing_outside_the_export_options_closes_them() {
+    let (mut s, _) = export_results(3, false);
+    s.archive.options_open = true;
+    let mut rt = runtime(s);
+
+    press(&mut rt, "bulk-options-scrim");
+
+    assert!(!rt.state.archive.options_open);
+}
+
+#[test]
+fn the_search_button_searches_the_archive() {
+    let pages = Arc::new(AtomicUsize::new(0));
+    let mut s = state();
+    s.services = Some(Box::new(PageCounter(Arc::clone(&pages))));
+    s.section = crate::state::Section::Export;
+    let mut rt = runtime(s);
+
+    press(&mut rt, "archive-search-button");
+
+    assert_eq!(pages.load(AtomicOrdering::SeqCst), 1);
+    assert!(matches!(rt.state.archive.results, Results::Loading { .. }));
+}
+
+#[test]
+fn selecting_a_result_opens_the_export_inspector() {
+    let (s, _) = export_results(3, false);
+    let mut rt = runtime(s);
+
+    press(&mut rt, "p0-s1");
+
+    assert!(has_key(&rt, "inspector"));
+    assert_eq!(
+        rt.state
+            .archive
+            .inspector
+            .selected
+            .as_ref()
+            .unwrap()
+            .key_str,
+        "p0-s1"
+    );
 }

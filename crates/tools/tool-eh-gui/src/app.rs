@@ -1,6 +1,7 @@
 //! Glue between the pure state machine and the running app: the `App` builder both binaries
 //! use, the config preload, and the effect runner.
 
+use crate::archive::{ArchiveEffect, ArchiveState};
 use crate::design::tokens::{WINDOW_MIN, WINDOW_SIZE};
 use crate::form::ConnectForm;
 use crate::read::{ReadEffect, ReadState};
@@ -19,6 +20,7 @@ use tracing::{debug, error, warn};
 pub struct Preload {
     pub form: ConnectForm,
     pub read: ReadState,
+    pub archive: ArchiveState,
     pub config_caption: Option<String>,
     pub file_logging: FileLogging,
 }
@@ -33,6 +35,7 @@ impl Preload {
             self.file_logging,
         );
         state.read = self.read;
+        state.archive = self.archive;
         state
     }
 }
@@ -83,11 +86,17 @@ fn on_close(state: &mut AppState, _: &mut Tx) {
 
 /// Reads `config.json` from `dir` into the form, with a caption that never quotes a value.
 pub async fn preload_config(dir: &Path, file_logging: FileLogging) -> Preload {
-    let (form, read, config_caption) = match load_config(dir).await {
-        Ok(ConfigLoad::Missing) => (ConnectForm::default(), ReadState::default(), None),
+    let (form, read, archive, config_caption) = match load_config(dir).await {
+        Ok(ConfigLoad::Missing) => (
+            ConnectForm::default(),
+            ReadState::default(),
+            ArchiveState::default(),
+            None,
+        ),
         Ok(ConfigLoad::Foreign) => (
             ConnectForm::default(),
             ReadState::default(),
+            ArchiveState::default(),
             Some("A config.json here belongs to another tool; it was not loaded".to_owned()),
         ),
         Ok(ConfigLoad::Loaded(config)) => {
@@ -101,6 +110,7 @@ pub async fn preload_config(dir: &Path, file_logging: FileLogging) -> Preload {
             (
                 form,
                 read,
+                ArchiveState::with_settings(export),
                 Some(format!("Loaded from config.json: {}", loaded.join(", "))),
             )
         }
@@ -109,6 +119,7 @@ pub async fn preload_config(dir: &Path, file_logging: FileLogging) -> Preload {
             (
                 ConnectForm::default(),
                 ReadState::default(),
+                ArchiveState::default(),
                 Some(format!("config.json was not loaded: {error:#}")),
             )
         }
@@ -116,6 +127,7 @@ pub async fn preload_config(dir: &Path, file_logging: FileLogging) -> Preload {
     Preload {
         form,
         read,
+        archive,
         config_caption,
         file_logging,
     }
@@ -166,9 +178,18 @@ pub fn run_effects(state: &mut AppState, effects: Vec<Effect>) {
                 Some(services) => services.rebuild_search(request),
                 None => services_missing(state, "filter the list"),
             },
-            Effect::Read(ReadEffect::ExportOne(request)) => match &state.services {
+            Effect::Read(ReadEffect::ExportOne(request))
+            | Effect::Archive(ArchiveEffect::ExportOne(request)) => match &state.services {
                 Some(services) => services.export_one(request),
                 None => services_missing(state, "export the message"),
+            },
+            Effect::Archive(ArchiveEffect::Search(request)) => match &state.services {
+                Some(services) => services.search_archive(request),
+                None => services_missing(state, "search the archive"),
+            },
+            Effect::Archive(ArchiveEffect::BulkExport(request)) => match &state.services {
+                Some(services) => services.bulk_export(request),
+                None => services_missing(state, "export the matches"),
             },
         }
     }

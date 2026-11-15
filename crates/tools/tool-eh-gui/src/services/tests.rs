@@ -178,6 +178,134 @@ async fn an_export_task_that_dies_is_reported_as_a_failure() {
 }
 
 #[tokio::test]
+async fn a_blocking_task_that_dies_is_reported_with_what_stopped() {
+    let joined =
+        tokio::task::spawn_blocking(|| -> anyhow::Result<SearchPage> { panic!("search bug") })
+            .await;
+
+    let error = blocking_result(joined, "Searching the archive stopped unexpectedly").unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Searching the archive stopped unexpectedly"),
+        "{error:#}"
+    );
+}
+
+/// A slot whose current folder under `root` holds `count` stored messages ("order 0", ...).
+async fn seeded_slot(root: &std::path::Path, count: i64) -> (StoreSlot, DataPaths) {
+    use shared_eventhub_core::connection::EventHubIdentity;
+    use shared_eventhub_core::engine::{Checkpoint, MessageSink};
+
+    let paths = DataPaths::new(root.join("data"));
+    let slot = StoreSlot::new(paths.clone());
+    let store = slot.acquire(&paths).await.unwrap();
+    store
+        .bind(&EventHubIdentity {
+            fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
+            event_hub_name: "orders".to_owned(),
+            created_on: None,
+        })
+        .await
+        .unwrap();
+    for sequence in 0..count {
+        let message =
+            crate::read::test_support::captured("0", sequence, &format!("order {sequence}"));
+        let checkpoint = Checkpoint {
+            partition_id: "0".to_owned(),
+            sequence_number: sequence,
+            offset: None,
+            enqueued_time: message.enqueued_time,
+            updated_at: message.processed_at,
+        };
+        store.store(&message, &checkpoint, true).await.unwrap();
+    }
+    (slot, paths)
+}
+
+fn bulk_request(paths: DataPaths, folder: std::path::PathBuf) -> BulkRequest {
+    BulkRequest {
+        export: 1,
+        query: SearchQuery::default(),
+        options: ExportOptions {
+            format: shared_eventhub_persistence::export::ExportFormat::Txt,
+            include_metadata: false,
+            condense_output: false,
+            use_local_time: false,
+            export_folder: folder,
+            skip_already_exported: false,
+        },
+        cancel: Arc::new(AtomicBool::new(false)),
+        paths,
+    }
+}
+
+#[tokio::test]
+async fn a_page_search_reads_the_current_folders_archive() {
+    let root = tempfile::tempdir().unwrap();
+    let (slot, paths) = seeded_slot(root.path(), 1).await;
+
+    let page = search_page(&slot, &paths, SearchQuery::default())
+        .await
+        .unwrap();
+
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].body, "order 0");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_bulk_export_writes_every_match_and_reports_progress() {
+    let root = tempfile::tempdir().unwrap();
+    let (slot, paths) = seeded_slot(root.path(), 3).await;
+    let folder = root.path().join("exports");
+    let posted = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = Arc::clone(&posted);
+
+    let outcome = bulk_export(&slot, bulk_request(paths, folder.clone()), move |counts| {
+        sink.lock().unwrap().push(counts);
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(outcome.exported, 3);
+    assert!(!posted.lock().unwrap().is_empty());
+    assert!(folder.exists());
+}
+
+#[tokio::test]
+async fn exporting_matches_from_a_previous_data_folder_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let old = DataPaths::new(root.path().join("old"));
+    let slot = StoreSlot::new(DataPaths::new(root.path().join("new")));
+    let folder = root.path().join("exports");
+
+    let error = bulk_export(&slot, bulk_request(old, folder.clone()), |_| {})
+        .await
+        .unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("data folder changed"),
+        "{error:#}"
+    );
+    assert!(!folder.exists());
+}
+
+#[tokio::test]
+async fn searching_a_previous_data_folder_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let old = DataPaths::new(root.path().join("old"));
+    let slot = StoreSlot::new(DataPaths::new(root.path().join("new")));
+
+    let error = search_page(&slot, &old, SearchQuery::default())
+        .await
+        .unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("data folder changed"),
+        "{error:#}"
+    );
+}
+
+#[tokio::test]
 async fn exporting_from_a_previous_data_folder_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let old = DataPaths::new(root.path().join("old"));

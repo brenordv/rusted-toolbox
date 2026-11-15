@@ -1,12 +1,11 @@
 //! The Read and Export content areas and the sidebar. While a session captures, the Read area
 //! is the live list; otherwise each area shows the empty state its connection state calls for.
 
-use super::read;
+use super::{export, read};
 use crate::app::dispatch;
-use crate::design::tokens::{SPACE_LG, SPACE_SM};
 use crate::design::{icons, parts};
 use crate::state::{AppState, ConnectionState, FailureStage, Input, Section};
-use rune::{El, col};
+use rune::El;
 use rune_kit::{Button, ButtonVariant, Kit};
 
 fn connect_button(k: &Kit) -> El {
@@ -86,25 +85,9 @@ pub fn read(s: &AppState, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
     }
 }
 
-pub fn export(k: &Kit) -> El {
-    parts::empty_state(
-        k,
-        "export-empty",
-        &icons::ARCHIVE,
-        "Archive",
-        "Searching and exporting the archive come in a later version. Until then, eh export \
-         writes it from the command line.",
-        None,
-    )
-}
-
 pub fn sidebar(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
     match s.section {
         Section::Read => read::rules::sidebar(s, k, layer),
-        Section::Export => col()
-            .gap(SPACE_SM)
-            .px(SPACE_LG)
-            .child(parts::section_header(k, "Archive search"))
-            .child(parts::caption(k, "Search comes in a later version.")),
+        Section::Export => export::sidebar::sidebar(s, k, layer),
     }
 }

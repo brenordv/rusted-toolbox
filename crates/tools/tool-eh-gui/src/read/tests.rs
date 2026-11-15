@@ -1,9 +1,10 @@
 use super::*;
 use crate::bridge::test_support::detached_session;
+use crate::read::inspector::{ExportPhase, FeedbackKind, InspectorInput};
 use crate::read::search::Matcher;
 use crate::read::test_support::captured;
 use shared_eventhub_core::filters::TextFilter;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 struct Fixture {
     rt: tokio::runtime::Runtime,
@@ -115,8 +116,11 @@ fn a_selection_keeps_its_message_after_its_row_is_evicted() {
     f.arrive_and_flush(&["third"]);
 
     assert!(f.read.rows.by_key("p0-s0").is_none());
-    assert_eq!(f.read.selected.as_ref().unwrap().message.body, "first");
-    assert!(f.read.inspector.is_open());
+    assert_eq!(
+        f.read.inspector.selected.as_ref().unwrap().message.body,
+        "first"
+    );
+    assert!(f.read.inspector.pane.is_open());
 }
 
 #[test]
@@ -239,17 +243,17 @@ fn moving_the_selection_walks_the_list_and_stops_at_its_ends() {
     f.arrive_and_flush(&["a", "b", "c"]);
 
     f.apply(ReadInput::Move(Step::Up));
-    let first = f.read.selected.as_ref().unwrap().key_str.clone();
+    let first = f.read.inspector.selected.as_ref().unwrap().key_str.clone();
     f.apply(ReadInput::Move(Step::Up));
     f.apply(ReadInput::Move(Step::First));
     f.apply(ReadInput::Move(Step::Up));
-    let top = f.read.selected.as_ref().unwrap().key_str.clone();
+    let top = f.read.inspector.selected.as_ref().unwrap().key_str.clone();
     f.apply(ReadInput::ClearSelection);
 
     assert_eq!(first, "p0-s2");
     assert_eq!(top, "p0-s0");
-    assert!(f.read.selected.is_none());
-    assert!(!f.read.inspector.is_open());
+    assert!(f.read.inspector.selected.is_none());
+    assert!(!f.read.inspector.pane.is_open());
 }
 
 #[test]
@@ -509,28 +513,30 @@ fn copied_feedback_shows_on_its_message_and_clears_after_its_time() {
     f.arrive_and_flush(&["a", "b"]);
     f.apply(ReadInput::Select("p0-s0".to_owned()));
     let now = Utc::now();
-    f.apply(ReadInput::Copied {
+    f.apply(ReadInput::Inspector(InspectorInput::Copied {
         kind: FeedbackKind::CopiedBody,
         now,
-    });
-    let feedback = f.read.feedback.clone().unwrap();
+    }));
+    let feedback = f.read.inspector.feedback.clone().unwrap();
     let other = f.read.rows.by_key("p0-s1").unwrap().message.key.clone();
 
     f.read.tick(now + inspector::FEEDBACK_FOR, true);
 
     assert!(feedback.shows(
-        &f.read.selected.as_ref().unwrap().key,
+        &f.read.inspector.selected.as_ref().unwrap().key,
         FeedbackKind::CopiedBody
     ));
     assert!(!feedback.shows(&other, FeedbackKind::CopiedBody));
-    assert!(f.read.feedback.is_none());
+    assert!(f.read.inspector.feedback.is_none());
 }
 
 #[test]
 fn a_copy_failure_is_a_danger_toast() {
     let mut f = fixture();
 
-    let out = f.apply(ReadInput::CopyFailed("no json".to_owned()));
+    let out = f.apply(ReadInput::Inspector(InspectorInput::CopyFailed(
+        "no json".to_owned(),
+    )));
 
     assert!(matches!(out.toasts.as_slice(), [(ToastKind::Danger, text)] if text == "no json"));
 }
@@ -538,16 +544,16 @@ fn a_copy_failure_is_a_danger_toast() {
 fn picking(f: &mut Fixture) -> MessageKey {
     f.arrive_and_flush(&["a"]);
     f.apply(ReadInput::Select("p0-s0".to_owned()));
-    f.apply(ReadInput::ExportPressed);
-    f.read.selected.as_ref().unwrap().key.clone()
+    f.apply(ReadInput::Inspector(InspectorInput::ExportPressed));
+    f.read.inspector.selected.as_ref().unwrap().key.clone()
 }
 
 fn answer(key: &MessageKey, answer: Result<Option<PathBuf>, String>) -> ReadInput {
-    ReadInput::ExportAnswered {
-        session: 1,
+    ReadInput::Inspector(InspectorInput::ExportAnswered {
+        owner: 1,
         key: key.clone(),
         answer,
-    }
+    })
 }
 
 #[test]
@@ -556,14 +562,16 @@ fn export_pressed_opens_the_dialog_for_the_selection() {
 
     let key = picking(&mut f);
 
-    assert!(matches!(&f.read.export, ExportPhase::Picking { session: 1, key: k, .. } if *k == key));
+    assert!(
+        matches!(&f.read.inspector.export, ExportPhase::Picking { owner: 1, key: k, .. } if *k == key)
+    );
 }
 
 #[test]
 fn a_picked_destination_starts_one_export_with_single_file_options() {
     let mut f = fixture();
     let key = picking(&mut f);
-    f.read.export_format = ExportFormat::Json;
+    f.read.inspector.format = ExportFormat::Json;
     let destination = Path::new("out").join("one.json");
 
     let out = f.apply(answer(&key, Ok(Some(destination.clone()))));
@@ -584,7 +592,7 @@ fn a_cancelled_dialog_returns_to_idle() {
 
     f.apply(answer(&key, Ok(None)));
 
-    assert!(f.read.export.is_idle());
+    assert!(f.read.inspector.export.is_idle());
 }
 
 #[test]
@@ -594,7 +602,7 @@ fn a_failed_dialog_returns_to_idle_with_a_toast() {
 
     let out = f.apply(answer(&key, Err("no portal".to_owned())));
 
-    assert!(f.read.export.is_idle());
+    assert!(f.read.inspector.export.is_idle());
     assert_eq!(out.toasts.len(), 1);
 }
 
@@ -610,7 +618,7 @@ fn an_answer_for_another_message_is_dropped() {
     let out = f.apply(answer(&other, Ok(Some(PathBuf::from("x.txt")))));
 
     assert!(out.effects.is_empty());
-    assert!(matches!(&f.read.export, ExportPhase::Picking { key: k, .. } if *k == key));
+    assert!(matches!(&f.read.inspector.export, ExportPhase::Picking { key: k, .. } if *k == key));
 }
 
 fn running(f: &mut Fixture) -> MessageKey {
@@ -619,13 +627,13 @@ fn running(f: &mut Fixture) -> MessageKey {
     key
 }
 
-fn done(session: u64, key: &MessageKey, result: Result<(), String>) -> ReadInput {
-    ReadInput::ExportDone {
-        session,
+fn done(owner: u64, key: &MessageKey, result: Result<(), String>) -> ReadInput {
+    ReadInput::Inspector(InspectorInput::ExportDone {
+        owner,
         key: key.clone(),
         result,
         now: Utc::now(),
-    }
+    })
 }
 
 #[test]
@@ -635,9 +643,10 @@ fn a_finished_export_shows_exported_on_its_message() {
 
     f.apply(done(1, &key, Ok(())));
 
-    assert!(f.read.export.is_idle());
+    assert!(f.read.inspector.export.is_idle());
     assert!(
         f.read
+            .inspector
             .feedback
             .as_ref()
             .unwrap()
@@ -653,7 +662,7 @@ fn a_failed_export_toasts_even_for_another_session() {
     let out = f.apply(done(7, &key, Err("disk full".to_owned())));
 
     assert_eq!(out.toasts.len(), 1);
-    assert!(f.read.feedback.is_none());
+    assert!(f.read.inspector.feedback.is_none());
     assert!(f.read.export_running());
 }
 
@@ -675,7 +684,7 @@ fn an_open_dialog_is_dropped_when_the_session_ends() {
 
     f.read.end_session();
 
-    assert!(f.read.export.is_idle());
+    assert!(f.read.inspector.export.is_idle());
 }
 
 #[test]
@@ -771,7 +780,7 @@ fn an_ended_session_drops_its_rows_and_keeps_its_log() {
     f.read.end_session();
 
     assert!(f.read.rows.displayed().is_empty());
-    assert!(f.read.selected.is_none());
+    assert!(f.read.inspector.selected.is_none());
     assert!(f.read.search_edit.text.is_empty());
     assert_eq!(f.read.session_log.len(), 1);
 }
