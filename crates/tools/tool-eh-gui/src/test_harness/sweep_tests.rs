@@ -12,6 +12,7 @@ use crate::read::test_support::captured;
 use crate::send::SendInput;
 use crate::state::{AppState, Input, SheetPurpose};
 use crate::views::SEND_BUTTON_KEY;
+use crate::views::details::{COPY_KEY, DONE_KEY, FAILURE_KEY};
 use rune::Runtime;
 use rune::accesskit::Action;
 use serde_json::Value;
@@ -102,7 +103,7 @@ fn export_searching(size: (f32, f32)) -> Harness {
 }
 
 /// The newest recorded call `pick` accepts, taken out of the log.
-fn taken<T>(h: &mut Harness, pick: impl Fn(&ServiceCall) -> Option<T>) -> T {
+pub(super) fn taken<T>(h: &mut Harness, pick: impl Fn(&ServiceCall) -> Option<T>) -> T {
     let calls = h.take_calls();
     let Some(found) = calls.iter().rev().find_map(&pick) else {
         panic!("no such call in {calls:?}");
@@ -124,7 +125,7 @@ fn export_results(size: (f32, f32)) -> Harness {
     h
 }
 
-fn export_bulk_running(size: (f32, f32)) -> Harness {
+pub(super) fn export_bulk_running(size: (f32, f32)) -> Harness {
     let mut h = export_results(size);
     h.press("bulk-export");
     h
@@ -444,7 +445,20 @@ const ROWS: &[Row] = &[
         disabled: &[],
         covered: &["empty-connect"],
     },
+    Row {
+        name: "error details open",
+        build: details_open,
+        reachable: &[COPY_KEY, DONE_KEY],
+        disabled: &[],
+        covered: &["empty-connect", "connect"],
+    },
 ];
+
+fn details_open(size: (f32, f32)) -> Harness {
+    let mut h = long_connect_failure(size);
+    h.press(FAILURE_KEY);
+    h
+}
 
 /// The element `spec` names: a key, or `<path part>/<key>` for a key that repeats.
 fn element(rt: &Runtime<AppState>, spec: &str) -> Option<rune::ElementInfo> {
@@ -528,10 +542,10 @@ fn accessibility_problems(row: &Row, h: &mut Harness) -> Vec<String> {
             None => problems.push(format!("{spec} is not in the tree")),
         }
     }
-    if h.state().sheet.is_some() {
+    if h.state().sheet.is_some() || h.state().details.is_some() {
         for hidden in ["content", "pill", "send-content", "read-rows"] {
             if a11y_node(&tree, hidden).is_some() {
-                problems.push(format!("{hidden} is in the tree behind the sheet"));
+                problems.push(format!("{hidden} is in the tree behind the modal"));
             }
         }
     }
@@ -600,14 +614,11 @@ fn every_state_names_its_controls_and_marks_what_it_disables(#[values(0, 1, 2, 3
 #[rstest::rstest]
 #[case::smallest(WINDOW_MIN)]
 #[case::default_size(WINDOW_SIZE)]
-#[ignore = "product gap: a long failure text grows the danger toast past the window top, over \
-            the toolbar's Connect, and pushes the empty state's Connect below a 960x600 window; \
-            needs an owner decision on clamping toast and empty-state text"]
 fn a_long_connect_failure_keeps_connect_reachable(#[case] size: (f32, f32)) {
     let row = Row {
         name: "a long connect failure",
         build: long_connect_failure,
-        reachable: &["empty-connect", "connect"],
+        reachable: &["empty-connect", "connect", FAILURE_KEY],
         disabled: &[],
         covered: &[],
     };

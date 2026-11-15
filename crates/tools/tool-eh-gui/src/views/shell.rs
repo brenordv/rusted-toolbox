@@ -1,19 +1,18 @@
 //! The window frame: toolbar with the section switch and the connection controls, the sidebar,
 //! the content area, and toasts.
 
-use super::{export, inspector, sections, send};
+use super::{details, export, inspector, sections, send};
 use crate::app::dispatch;
 use crate::design::tokens::{
     POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE,
 };
 use crate::design::{Surface, icons, parts, surface};
-use crate::read::LogKind;
-use crate::read::rows::display_line;
+use crate::read::{LogKind, LogLine};
 use crate::state::{
-    AppState, ConnectionState, Input, ListSection, Section, SheetPurpose, ToastKind,
+    AppState, ConnectionState, Input, ListSection, Section, SheetPurpose, ToastKind, error_preview,
 };
 use common_cli::app_logger::FileLogging;
-use rune::{Color, Cx, El, col, row, text};
+use rune::{Color, Cx, El, Tx, col, row, text};
 use rune_kit::{
     Button, ButtonVariant, Kit, Placement, Popover, SegmentedControl, SplitView, Toast,
     ToastRegion, Toolbar,
@@ -119,54 +118,93 @@ fn pill(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
             }
         });
 
-    let mut details = col()
+    let mut rows = col()
         .gap(SPACE_MD)
         .w(POPOVER_WIDTH)
         .child(parts::detail_row(k, "Data folder", &s.form.data_folder))
         .child(log_detail(k, &s.file_logging))
         .child(parts::detail_row(k, "Version", env!("CARGO_PKG_VERSION")));
     if let ConnectionState::Failed(failure) = &s.connection {
-        details = details.child(parts::detail_row(k, "Error", &failure.text));
+        let preview = error_preview(&failure.text);
+        rows = rows.child(parts::detail_row(k, "Error", &preview.shown));
+        if preview.cut {
+            rows = rows.child(details::button(
+                k,
+                "pill-error-details",
+                |s: &mut AppState, tx: &mut Tx| {
+                    // The popover closes as the modal opens; focus returns to the pill.
+                    if details::open_failure(s) {
+                        tx.focus("pill", false);
+                    }
+                },
+            ));
+        }
     }
     if !s.read.session_log.is_empty() {
-        details = details.child(session_log(s, k));
+        rows = rows.child(session_log(s, k));
     }
 
     Popover::new("pill-popover")
         .trigger(face)
         .title("Connection")
-        .child(details)
+        .child(rows)
         .open(s.pill_open)
         .placement(Placement::Bottom)
         .on_close(|s: &mut AppState| s.pill_open = false)
         .build(k, layer)
 }
 
-/// The session's partition errors and ends, newest first.
+/// A session-log line's label: its time, what it reports, and its partition.
+fn log_label(line: &LogLine) -> String {
+    let what = match line.kind {
+        LogKind::Error => "Error",
+        LogKind::PartitionEnded => "Partition ended",
+    };
+    let partition = line
+        .partition
+        .as_deref()
+        .map_or(String::new(), |partition| {
+            format!(", partition {partition}")
+        });
+    format!("{} · {what}{partition}", line.at.format("%H:%M:%S UTC"))
+}
+
+/// The session's partition errors and ends, newest first; a line cut short offers its whole
+/// text.
 fn session_log(s: &AppState, k: &Kit) -> El {
     let mut lines = col().gap(SPACE_SM).w_full();
     for line in s.read.session_log.iter().rev() {
-        let what = match line.kind {
-            LogKind::Error => "Error",
-            LogKind::PartitionEnded => "Partition ended",
-        };
-        let partition = line
-            .partition
-            .as_deref()
-            .map_or(String::new(), |partition| {
-                format!(", partition {partition}")
-            });
-        lines = lines.child(parts::detail_row(
-            k,
-            &format!("{} · {what}{partition}", line.at.format("%H:%M:%S UTC")),
-            &display_line(line.text.chars()),
-        ));
+        let label = log_label(line);
+        let preview = error_preview(&line.text);
+        lines = lines.child(parts::detail_row(k, &label, &preview.shown));
+        if preview.cut {
+            let id = line.id;
+            lines = lines.child(
+                details::button(
+                    k,
+                    &format!("log-details-{id}"),
+                    move |s: &mut AppState, tx: &mut Tx| open_log_line(s, tx, id),
+                )
+                .label(format!("View details: {label}")),
+            );
+        }
     }
     col()
         .gap(SPACE_SM)
         .w_full()
         .child(parts::section_header(k, "Session log"))
         .child(lines)
+}
+
+/// Opens the whole text of log line `id`; nothing (and no focus move) once it left the log.
+pub(crate) fn open_log_line(s: &mut AppState, tx: &mut Tx, id: u64) {
+    let Some(line) = s.read.session_log.iter().find(|line| line.id == id) else {
+        return;
+    };
+    let (title, text) = (log_label(line), line.text.clone());
+    // The popover closes as the modal opens; focus returns to the pill.
+    tx.focus("pill", false);
+    details::show(s, &title, &text);
 }
 
 fn log_detail(k: &Kit, logging: &FileLogging) -> El {
@@ -216,7 +254,8 @@ fn connection_button(s: &AppState, k: &Kit) -> El {
     }
 }
 
-/// Toasts, bottom-right; each closes itself through its own id.
+/// Toasts, bottom-right; each closes itself through its own id, and one whose text was cut
+/// short offers the whole text.
 pub fn toasts(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
     if s.toasts.is_empty() {
         return;
@@ -228,13 +267,33 @@ pub fn toasts(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
             ToastKind::Info => "Done",
             ToastKind::Danger => "Something failed",
         };
-        region = region.toast(
-            Toast::new(format!("toast-{id}"), title)
-                .description(toast.text.clone())
-                .on_close(move |s: &mut AppState| dispatch(s, Input::DismissToast(id)))
-                .closable()
-                .build(k),
-        );
+        let preview = error_preview(&toast.text);
+        let mut built = Toast::new(format!("toast-{id}"), title)
+            .description(preview.shown)
+            .on_close(move |s: &mut AppState| dispatch(s, Input::DismissToast(id)))
+            .closable();
+        if preview.cut {
+            built = built.action(
+                k,
+                "View details",
+                false,
+                move |s: &mut AppState, _: &mut Tx| open_toast(s, id),
+            );
+        }
+        region = region.toast(built.build(k));
     }
     layer.push(region.build(k));
+}
+
+/// Opens the whole text of toast `id`; nothing once it closed.
+fn open_toast(s: &mut AppState, id: u64) {
+    let Some(toast) = s.toasts.iter().find(|toast| toast.id == id) else {
+        return;
+    };
+    let title = match toast.kind {
+        ToastKind::Info => "Details",
+        ToastKind::Danger => "Error details",
+    };
+    let text = toast.text.clone();
+    details::show(s, title, &text);
 }

@@ -1,11 +1,13 @@
 //! The Read and Export content areas and the sidebar. While a session captures, the Read area
 //! is the live list; otherwise each area shows the empty state its connection state calls for.
 
-use super::{export, read, send};
+use super::{details, export, read, send};
 use crate::app::dispatch;
 use crate::design::{icons, parts};
-use crate::state::{AppState, ConnectionState, FailureStage, Input, Section, SheetPurpose};
-use rune::El;
+use crate::state::{
+    AppState, ConnectionState, Failure, FailureStage, Input, Section, SheetPurpose, error_preview,
+};
+use rune::{El, Tx};
 use rune_kit::{Button, ButtonVariant, Kit};
 
 /// Connect, disabled while a send runs (a running send keeps every sheet closed).
@@ -62,28 +64,43 @@ pub fn read(s: &AppState, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
             "Writing the last message files.",
             None,
         ),
-        ConnectionState::Failed(failure) => match failure.stage {
-            FailureStage::Starting => parts::empty_state(
-                k,
-                "failed",
-                &icons::ANTENNA,
-                "Couldn't connect",
-                &failure.text,
-                Some(connect_button(s, k)),
+        ConnectionState::Failed(failure) => failed(s, k, failure),
+    }
+}
+
+/// The empty state of a failed connection: the failure cut short, with its details when cut,
+/// and Connect.
+fn failed(s: &AppState, k: &Kit, failure: &Failure) -> El {
+    let preview = error_preview(&failure.text);
+    let note = preview.cut.then(|| {
+        details::button(k, details::FAILURE_KEY, |s: &mut AppState, _: &mut Tx| {
+            details::open_failure(s);
+        })
+    });
+    let title = details::failure_title(failure.stage);
+    match failure.stage {
+        FailureStage::Starting => parts::empty_state_with_note(
+            k,
+            "failed",
+            &icons::ANTENNA,
+            title,
+            &preview.shown,
+            note,
+            Some(connect_button(s, k)),
+        ),
+        FailureStage::Run => parts::empty_state_with_note(
+            k,
+            "session-failed",
+            &icons::ARCHIVE,
+            title,
+            &format!(
+                "{} Captured messages are safe in the archive; eh export or the Export \
+                 section can write what is missing.",
+                preview.shown
             ),
-            FailureStage::Run => parts::empty_state(
-                k,
-                "session-failed",
-                &icons::ARCHIVE,
-                "The session failed",
-                &format!(
-                    "{} Captured messages are safe in the archive; eh export or the Export \
-                     section can write what is missing.",
-                    failure.text
-                ),
-                Some(connect_button(s, k)),
-            ),
-        },
+            note,
+            Some(connect_button(s, k)),
+        ),
     }
 }
 

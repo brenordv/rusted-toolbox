@@ -237,17 +237,19 @@ fn a_late_progress_or_end_after_done_is_ignored() {
 }
 
 #[test]
-fn failed_files_toast_the_first_error_even_when_cancelled() {
+fn failed_files_report_the_first_error_even_when_cancelled() {
     let mut archive = searched();
     let request = started(&mut archive);
 
     let out = act(&mut archive, done(request.export, Ok(failed_files(true))));
 
     assert!(out.run_failed);
-    assert!(matches!(
-        out.toasts.as_slice(),
-        [(ToastKind::Danger, text)] if text.contains("disk full")
-    ));
+    assert!(out.toasts.is_empty());
+    assert!(
+        out.bulk_failure
+            .as_deref()
+            .is_some_and(|text| text.contains("disk full"))
+    );
 }
 
 #[test]
@@ -261,10 +263,11 @@ fn a_run_that_stopped_shows_its_error() {
     );
 
     assert!(out.run_failed);
-    assert!(matches!(
-        out.toasts.as_slice(),
-        [(ToastKind::Danger, text)] if text.contains("read failed")
-    ));
+    assert!(
+        out.bulk_failure
+            .as_deref()
+            .is_some_and(|text| text.contains("read failed"))
+    );
     assert!(!archive.busy());
 }
 

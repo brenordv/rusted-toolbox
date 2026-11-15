@@ -33,6 +33,17 @@ Connect checks the fields first (namespace and event hub names use the same rule
 Secrets are typed into hidden fields with a show toggle; they are wiped after Connect and Save
 config, and never shown to screen readers.
 
+### Failures
+
+A failure shows where it happened: the Read empty state for a connection, the Send action row
+for a send, the bulk bar for an export, a toast for the rest. In place, a failure shows at most
+140 characters, with line breaks shown as spaces, ending in "…" when there is more. Then **View
+details** opens the whole text in a larger window that scrolls. **Copy error** puts the text on
+the clipboard, and **Done**, the close button, Escape, or a click outside closes it. Return
+presses Done, even with Copy error focused; Space presses Copy error. A connection or bulk
+export failure toasts only when the section that shows it isn't the one in the window. The
+details window has no resize handle; it grows with the app's window.
+
 ## Reading
 
 While a session captures, the Read section shows:
@@ -231,7 +242,8 @@ and `--log-level debug`; Rune prints every commit over the 8 ms budget on the te
 A dev-only binary runs the real window against a generated event hub and a temporary data folder
 (deleted on exit), with no namespace or credentials. Pick a scenario with `EH_GUI_DEMO` (default
 `live`): `live`, `burst`, `quiet`, `partition-fail`, `start-fail`, `slow-finish`,
-`seeded-empty`, `seeded-failed`, `seeded-connect`, `seeded-read` (a full list with a message
+`seeded-empty`, `seeded-failed`, `error-details` (a 2,000-character connect failure with its
+details open), `seeded-connect`, `seeded-read` (a full list with a message
 selected), `seeded-search` (the same with a regex filter), `seeded-export` (the Export section
 over an archive of 6,000 generated messages, searched for everything; paging and bulk exports
 are real), `send` (the Send section with a JSON body, idle), `send-paced` (10 events one a
@@ -275,6 +287,7 @@ scale 1.5 for truncated text (a snapshot renders at scale 2 unless `--scale` say
 EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/send-960.png
 EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --snap target/eh-gui-demo/send.png
 EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --scale 1.5 --snap target/eh-gui-demo/send-1.5x.png
+EH_GUI_DEMO=error-details cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/error-details-960.png
 ```
 
 Snapshots are dark: the app reads the system appearance itself, so `--theme light` changes

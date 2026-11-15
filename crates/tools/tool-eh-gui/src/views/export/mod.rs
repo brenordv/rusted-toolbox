@@ -4,15 +4,15 @@
 mod bar;
 pub mod sidebar;
 
-use super::message_list;
+use super::{details, message_list};
 use crate::app::dispatch;
 use crate::archive::ArchiveInput;
 use crate::archive::results::{More, Results};
 use crate::design::tokens::{SPACE_LG, SPACE_SM};
 use crate::design::{icons, parts};
-use crate::state::{AppState, Input, ListSection};
+use crate::state::{AppState, Input, ListSection, error_preview};
 use common_utils::string_utils::format_thousands;
-use rune::{El, col, row, spacer};
+use rune::{El, Tx, col, row, spacer};
 use rune_kit::{Button, ButtonVariant, Kit, Spinner};
 
 pub fn content(s: &AppState, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
@@ -35,14 +35,20 @@ pub fn content(s: &AppState, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
             Some(Spinner::new().build(k)),
             None,
         ),
-        Results::Unavailable { error, .. } => parts::empty_state(
-            k,
-            "export-unavailable",
-            &icons::ARCHIVE,
-            "Couldn't search the archive",
-            error,
-            None,
-        ),
+        Results::Unavailable { error, .. } => {
+            let preview = error_preview(error);
+            parts::empty_state_with_note(
+                k,
+                "export-unavailable",
+                &icons::ARCHIVE,
+                UNAVAILABLE_TITLE,
+                &preview.shown,
+                preview
+                    .cut
+                    .then(|| details::button(k, "archive-error-details", open_archive_error)),
+                None,
+            )
+        }
         Results::Shown { rows, more, .. } if rows.is_empty() => match more {
             More::End | More::Capped => parts::empty_state(
                 k,
@@ -73,6 +79,17 @@ pub fn content(s: &AppState, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
         );
     }
     content
+}
+
+const UNAVAILABLE_TITLE: &str = "Couldn't search the archive";
+
+/// Opens the whole archive error; nothing once the results moved on.
+fn open_archive_error(s: &mut AppState, _: &mut Tx) {
+    let error = match &s.archive.results {
+        Results::Unavailable { error, .. } => error.clone(),
+        Results::NotSearched | Results::Loading { .. } | Results::Shown { .. } => return,
+    };
+    details::show(s, UNAVAILABLE_TITLE, &error);
 }
 
 fn results(s: &AppState, k: &Kit, dark: bool, rows: usize, more: &More) -> El {

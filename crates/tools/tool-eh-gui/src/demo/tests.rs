@@ -276,8 +276,16 @@ fn seeded_scenarios_reach_their_states_through_apply_and_render() {
     let empty = seeded(Scenario::SeededEmpty, root.path(), &rt);
     let read = seeded(Scenario::SeededRead, root.path(), &rt);
     let search = seeded(Scenario::SeededSearch, root.path(), &rt);
+    let details = seeded(Scenario::ErrorDetails, root.path(), &rt);
 
     assert!(matches!(failed.connection, ConnectionState::Failed(_)));
+    assert!(matches!(details.connection, ConnectionState::Failed(_)));
+    assert!(
+        details
+            .details
+            .as_ref()
+            .is_some_and(|open| open.text.chars().count() > 2_000)
+    );
     assert!(connect.sheet.is_some() && connect.show_issues);
     assert!(matches!(empty.connection, ConnectionState::Disconnected));
     assert!(matches!(read.connection, ConnectionState::Connected { .. }));
@@ -295,7 +303,7 @@ fn seeded_scenarios_reach_their_states_through_apply_and_render() {
     assert!(read.read.shown.is_some());
     assert!(search.read.list_len() > 0 && search.read.list_len() < 5_000);
     assert_eq!(search.read.search.rebuilding(), None);
-    for state in [failed, connect, empty, read, search] {
+    for state in [failed, connect, empty, read, search, details] {
         let mut rt = rune::Runtime::new(
             state,
             crate::views::view,

@@ -87,6 +87,8 @@ pub struct ArchiveOutcome {
     pub toasts: Vec<(ToastKind, String)>,
     /// A bulk export ended in a failure the user must see.
     pub run_failed: bool,
+    /// The ended bulk export's failure text, when it failed.
+    pub bulk_failure: Option<String>,
 }
 
 impl ArchiveOutcome {
@@ -506,6 +508,7 @@ impl ArchiveState {
             changed: out.changed,
             toasts: out.toasts,
             run_failed: false,
+            bulk_failure: None,
         }
     }
 }

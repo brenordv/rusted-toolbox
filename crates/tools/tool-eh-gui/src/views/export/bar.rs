@@ -3,11 +3,12 @@
 
 use crate::app::dispatch;
 use crate::archive::ArchiveInput;
-use crate::archive::bulk::{BulkExport, counts_line, run_failed};
+use crate::archive::bulk::{BulkExport, counts_line, run_failed, stopped_text};
 use crate::archive::results::Results;
 use crate::design::parts;
 use crate::design::tokens::{SPACE_MD, SPACE_SM, SPACE_XS};
-use crate::state::{AppState, Input};
+use crate::state::{AppState, Input, error_preview};
+use crate::views::details;
 use crate::views::inspector::{CSV_CAPTION, FORMAT_LABELS, FORMATS};
 use common_cli::app_logger::FileLogging;
 use rune::{El, FileDialogOptions, Tx, col, row};
@@ -48,7 +49,8 @@ pub fn bar(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> Option<El> {
             .key("bulk-cancel"),
         ],
         BulkExport::Done { result, .. } => {
-            let mut summary = col().gap(SPACE_SM);
+            let mut summary = col().gap(SPACE_SM).shrink().min_w(0.0);
+            let mut cut = false;
             match result {
                 Ok(outcome) => {
                     let mut line = counts_line(outcome);
@@ -59,23 +61,29 @@ pub fn bar(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> Option<El> {
                     if run_failed(result)
                         && let Some(error) = &outcome.first_error
                     {
-                        summary = summary.child(parts::caption(k, error));
+                        let preview = error_preview(error);
+                        cut = preview.cut;
+                        summary = summary.child(parts::caption(k, &preview.shown));
                         match &s.file_logging {
                             FileLogging::Writing(_) => {
                                 summary = summary
-                                    .child(parts::caption(k, "Details are in the log file."));
+                                    .child(parts::caption(k, "Every failure is in the log file."));
                             }
                             FileLogging::Off | FileLogging::Failed { .. } => {}
                         }
                     }
                 }
                 Err(error) => {
-                    summary =
-                        summary.child(parts::caption(k, &format!("The export stopped: {error}")));
+                    let preview = error_preview(&stopped_text(error));
+                    cut = preview.cut;
+                    summary = summary.child(parts::caption(k, &preview.shown));
                 }
             }
-            vec![
-                summary,
+            let mut children = vec![summary];
+            if cut {
+                children.push(details::button(k, "bulk-details", open_bulk_error));
+            }
+            children.push(
                 Button::new("Done")
                     .variant(ButtonVariant::Neutral)
                     .on_press(|s: &mut AppState| {
@@ -83,10 +91,26 @@ pub fn bar(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> Option<El> {
                     })
                     .build(k)
                     .key("bulk-done"),
-            ]
+            );
+            children
         }
     };
     Some(parts::floating_bar(k, "bulk-bar", children).max_w(720.0))
+}
+
+/// Opens the whole first failure of the ended export; nothing once its result is gone.
+fn open_bulk_error(s: &mut AppState, _: &mut Tx) {
+    let (title, text) = match &s.archive.bulk {
+        BulkExport::Done { result, .. } => match result {
+            Ok(outcome) => match &outcome.first_error {
+                Some(error) => ("The export failed", error.clone()),
+                None => return,
+            },
+            Err(error) => ("The export stopped", stopped_text(error)),
+        },
+        BulkExport::Idle | BulkExport::Running { .. } => return,
+    };
+    details::show(s, title, &text);
 }
 
 /// The element the options popover anchors to.

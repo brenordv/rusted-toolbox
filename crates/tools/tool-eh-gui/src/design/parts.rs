@@ -2,11 +2,11 @@
 //! happens only here and in the kit.
 
 use super::tokens::{
-    COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT, FORM_POPOVER_WIDTH,
-    HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE, PRESS_SCALE, RADIUS_BADGE, RADIUS_CONTROL,
-    RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE, REVEAL_OFFSET, SAMPLE_LINES, SELECTION_INSET,
-    SHEET_TOP, SHEET_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL,
-    TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY,
+    COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT, FOCUS_RING_WIDTH,
+    FORM_POPOVER_WIDTH, HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE, PRESS_SCALE,
+    RADIUS_BADGE, RADIUS_CONTROL, RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE, REVEAL_OFFSET,
+    SAMPLE_LINES, SELECTION_INSET, SHEET_TOP, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS,
+    SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY,
     TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
 };
 use super::{Surface, floating_tint, motion, selected_secondary_text, selection_fill, surface};
@@ -17,7 +17,7 @@ use rune::{
 use rune_kit::{IconButton, IconButtonVariant, Kit, RollingText, ScrollBar};
 
 /// The centered empty state that replaces a content area: glyph, title, one muted line, and at
-/// most one action. Enters once with a fade and a small rise.
+/// most one action button. Enters once with a fade and a small rise.
 pub fn empty_state(
     k: &Kit,
     key: &str,
@@ -29,7 +29,8 @@ pub fn empty_state(
     empty_state_with_note(k, key, glyph, title, body, None, action)
 }
 
-/// [`empty_state`] with `note` (a [`live_numbers`] line) under the body line.
+/// [`empty_state`] with `note` under the body line: a [`live_numbers`] line, or the Ghost
+/// "View details" of a body line cut short.
 pub fn empty_state_with_note(
     k: &Kit,
     key: &str,
@@ -85,13 +86,15 @@ pub fn status_dot(color: Color) -> El {
         .fill(color)
 }
 
-/// The connection pill's face: a status dot and a short label.
+/// The connection pill's face: a status dot and a short label, focusable with the kit's ring.
 pub fn pill_face(k: &Kit, dot: Color, label: &str) -> El {
     row()
         .gap(SPACE_SM)
         .center_y()
         .px(SPACE_MD)
         .h(28.0)
+        .focusable(true)
+        .focus_ring(FOCUS_RING_WIDTH, 0.0, k.c.border_focus)
         .child(status_dot(dot))
         .child(text(label).font(TYPE_LABEL).color(k.c.text_base))
 }
@@ -126,6 +129,16 @@ pub fn caption(k: &Kit, line: &str) -> El {
     text(line).font(TYPE_CAPTION).color(k.c.text_muted).wrap()
 }
 
+/// What a sheet is called and how wide it gets.
+pub struct SheetFrame<'a> {
+    /// The prefix of its keys: `{key}-dialog`, `{key}-scrim`, `{key}-layer`.
+    pub key: &'a str,
+    /// The title row's text and the dialog's accessible name.
+    pub title: &'a str,
+    /// The panel's widest width; a narrower window narrows it.
+    pub width: f32,
+}
+
 /// A modal sheet below the toolbar: a fixed title row, `body` (a scroll view, which takes the
 /// height left over), and a fixed `footer` under a hairline. The panel is as tall as its
 /// content and never taller than the window, so a long form scrolls while the footer's actions
@@ -136,13 +149,13 @@ pub fn caption(k: &Kit, line: &str) -> El {
 /// so a form longer than that cannot scroll in it.
 pub fn sheet<S: 'static>(
     k: &Kit,
-    key: &str,
-    title: &str,
+    frame: SheetFrame<'_>,
     close: impl Fn(&mut S) + Clone + 'static,
     body: El,
     footer: El,
     layer: &mut Vec<El>,
 ) {
+    let SheetFrame { key, title, width } = frame;
     let dismiss = IconButton::new(k.glyph.close)
         .variant(IconButtonVariant::Ghost)
         .label("Close")
@@ -170,7 +183,7 @@ pub fn sheet<S: 'static>(
         .role("dialog")
         .label(title)
         .w_full()
-        .max_w(SHEET_WIDTH)
+        .max_w(width)
         .shrink()
         .min_h(0.0)
         .radius(RADIUS_SHEET)

@@ -517,7 +517,7 @@ fn a_failed_export_points_at_the_log_only_when_one_is_written(
     let rt = runtime(s);
 
     assert!(has_text(&rt, "x.txt: disk full"));
-    assert_eq!(has_text(&rt, "Details are in the log file."), points);
+    assert_eq!(has_text(&rt, "Every failure is in the log file."), points);
 }
 
 #[test]

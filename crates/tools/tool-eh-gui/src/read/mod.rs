@@ -81,6 +81,8 @@ pub enum LogKind {
 /// One line of the session log.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LogLine {
+    /// Unique in the app's run: lines get increasing ids as they are logged.
+    pub id: u64,
     pub at: DateTime<Utc>,
     pub kind: LogKind,
     pub partition: Option<String>,
@@ -173,6 +175,8 @@ pub struct ReadState {
     pub inspector: InspectorState,
     /// Whether the Received tile's per-partition popover shows.
     pub partitions_open: bool,
+    /// The id the next session-log line gets; never reset, so a line's id names only it.
+    next_log_id: u64,
     /// The session these rows belong to.
     session: Option<u64>,
     eviction_noted: bool,
@@ -208,6 +212,7 @@ impl Default for ReadState {
             session_log_unseen: 0,
             inspector: InspectorState::default(),
             partitions_open: false,
+            next_log_id: 0,
             session: None,
             eviction_noted: false,
         }
@@ -226,7 +231,8 @@ impl ReadState {
     }
 
     /// Starts over for `session`, keeping the rules, the inspector's picks, width, and an
-    /// export still writing, and the search generation (moved on, so no earlier result lands).
+    /// export still writing, the search generation (moved on, so no earlier result lands), and
+    /// the next log id.
     pub fn start_session(&mut self, session: u64, feedback_interval: Duration) {
         let previous = std::mem::take(self);
         previous.generation.fetch_add(1, Ordering::AcqRel);
@@ -238,6 +244,7 @@ impl ReadState {
             feedback_interval,
             generation: previous.generation,
             inspector,
+            next_log_id: previous.next_log_id,
             session: Some(session),
             ..Self::default()
         };
@@ -297,12 +304,26 @@ impl ReadState {
         }
     }
 
-    /// A line for the session log; counted as unseen unless its popover is open.
-    pub fn log(&mut self, line: LogLine, popover_open: bool) {
+    /// Logs a line with the next id; counted as unseen unless its popover is open.
+    pub fn log(
+        &mut self,
+        at: DateTime<Utc>,
+        kind: LogKind,
+        partition: Option<String>,
+        text: String,
+        popover_open: bool,
+    ) {
         if self.session_log.len() == SESSION_LOG_CAP {
             self.session_log.pop_front();
         }
-        self.session_log.push_back(line);
+        self.session_log.push_back(LogLine {
+            id: self.next_log_id,
+            at,
+            kind,
+            partition,
+            text,
+        });
+        self.next_log_id += 1;
         if !popover_open {
             self.session_log_unseen = self.session_log_unseen.saturating_add(1);
         }

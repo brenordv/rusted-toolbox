@@ -12,7 +12,7 @@ use crate::design::tokens::{SEARCH_WIDTH, SPACE_LG, SPACE_SM};
 use crate::design::{icons, parts};
 use crate::read::ReadInput;
 use crate::read::search::SearchState;
-use crate::state::{AppState, Input, ListSection};
+use crate::state::{AppState, Input, ListSection, error_preview};
 use common_utils::string_utils::format_thousands;
 use rune::{El, Key, Tx, col, row, spacer};
 use rune_kit::{Button, ButtonVariant, Kit, TextInput};
@@ -110,7 +110,7 @@ fn toolbar(s: &AppState, k: &Kit) -> El {
         .child(field)
         .child(regex);
     if let Some(error) = &read.search_error {
-        bar = bar.child(parts::caption(k, error));
+        bar = bar.child(parts::caption(k, &error_preview(error).shown));
     }
     bar = bar.child(spacer());
     match &read.search {

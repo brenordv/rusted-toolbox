@@ -1,13 +1,14 @@
 //! The connection sheet: auth method, the fields it needs, storage, and Save / Connect.
 
+use super::details;
 use crate::app::dispatch;
-use crate::design::parts;
-use crate::design::tokens::{SPACE_MD, SPACE_SM, SPACE_XL};
+use crate::design::parts::{self, SheetFrame};
+use crate::design::tokens::{SHEET_WIDTH, SPACE_MD, SPACE_SM, SPACE_XL};
 use crate::form::{
     AuthChoice, CredentialChoice, DISK_WRITE_LABELS, DISK_WRITE_MODES, FieldIssues, SecretSource,
     disk_write_index,
 };
-use crate::state::{AppState, Input, SaveStatus, SheetPurpose, ToastKind};
+use crate::state::{AppState, Input, SaveStatus, SheetPurpose, ToastKind, error_preview};
 use rune::{El, FileDialogOptions, ScrollSpec, TextEdit, col, row, spacer};
 use rune_kit::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
@@ -48,7 +49,11 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
                 .build(k),
         );
     if let Some(caption) = &s.config_caption {
-        body = body.child(parts::caption(k, caption));
+        let preview = error_preview(caption);
+        body = body.child(parts::caption(k, &preview.shown));
+        if preview.cut {
+            body = body.child(details::button(k, "config-details", open_config_caption));
+        }
     }
     body = method_fields(s, k, &issues, body)
         .child(field(
@@ -76,13 +81,24 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
     };
     parts::sheet(
         k,
-        "connect",
-        title,
+        SheetFrame {
+            key: "connect",
+            title,
+            width: SHEET_WIDTH,
+        },
         |s: &mut AppState| dispatch(s, Input::CloseSheet),
         scroller,
         footer(s, k, purpose),
         layer,
     );
+}
+
+/// Opens the whole config.json caption; nothing once the caption is gone.
+fn open_config_caption(s: &mut AppState, _: &mut rune::Tx) {
+    let Some(caption) = s.config_caption.clone() else {
+        return;
+    };
+    details::show(s, "config.json", &caption);
 }
 
 fn method_fields(s: &AppState, k: &Kit, issues: &FieldIssues, mut body: El) -> El {
@@ -262,7 +278,7 @@ fn footer(s: &AppState, k: &Kit, purpose: SheetPurpose) -> El {
         SaveStatus::Idle => None,
         SaveStatus::Saving(_) => Some("Saving config.json".to_owned()),
         SaveStatus::Saved => Some("Saved config.json".to_owned()),
-        SaveStatus::Failed(error) => Some(format!("Not saved: {error}")),
+        SaveStatus::Failed(error) => Some(error_preview(&format!("Not saved: {error}")).shown),
     };
     let mut bar = row()
         .key("connect-footer")

@@ -1,6 +1,11 @@
 # Changelog
 
 ## 1.0.0
+- Failure text in toasts, empty states, the connection popover, the Send action row, the bulk
+  bar, and the connect sheet shows at most 140 characters; View details opens the whole text in
+  a scrolling window with Copy error and Done (Escape closes it). A connection or bulk export
+  failure no longer also toasts when its own section is the one in the window. The connection
+  pill takes keyboard focus. Demo scenario `error-details`.
 - Return in the connect sheet presses its Connect (or Done when it picks where to send).
 - Headless reliability tests: journeys through Read, Export, and Send, accessibility and layout
   sweeps over every section at 960x600 and 1280x800, seeded input sequences that replay from

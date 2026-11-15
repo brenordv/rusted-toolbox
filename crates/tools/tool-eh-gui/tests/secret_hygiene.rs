@@ -7,12 +7,15 @@ use eh_gui::bridge::{EngineDone, UiDelivery, UiPort};
 use eh_gui::design::tokens::WINDOW_SIZE;
 use eh_gui::form::{AuthChoice, CredentialChoice};
 use eh_gui::services::{ConnectRequest, prepare_session};
-use eh_gui::state::{AppState, ConnectionState, Input, ToastKind};
+use eh_gui::state::{
+    AppState, ConnectionState, ERROR_PREVIEW_CHARS, Input, Section, ToastKind, error_preview,
+};
 use eh_gui::tasks::StoreSlot;
 use eh_gui::test_harness::Harness;
 use eh_gui::test_harness::builders::state;
 use eh_gui::test_harness::journeys::{Capturing, connect_and_capture, send_batched};
 use eh_gui::test_harness::services::ServiceCall;
+use eh_gui::views::details::{COPY_KEY, FAILURE_KEY};
 use std::io::Write;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -141,9 +144,39 @@ fn surfaces(h: &Harness) -> String {
     )
 }
 
-fn off_allowlist_with_a_typed_key(data: &std::path::Path) -> (Harness, u64, ConnectRequest) {
+/// Opens the details of the connection's failure from the Read section's empty state and
+/// copies them; returns the modal's text and what reached the clipboard.
+fn copy_failure_details(h: &mut Harness) -> (String, Option<String>) {
+    h.deliver(Input::SectionPicked(Section::Read));
+    let failure = match &h.state().connection {
+        ConnectionState::Failed(failure) => failure.text.clone(),
+        other => panic!("not failed: {other:?}"),
+    };
+    assert!(
+        error_preview(&failure).cut,
+        "the failure is short enough to show whole, so nothing offers its details: {failure}"
+    );
+    h.press(FAILURE_KEY);
+    h.press(COPY_KEY);
+    let shown = h
+        .state()
+        .details
+        .as_ref()
+        .map(|details| details.text.clone())
+        .unwrap_or_default();
+    (shown, h.clipboard_text())
+}
+
+/// A state in the Export section, where a connection failure toasts.
+fn connecting_from_export(data: &std::path::Path) -> AppState {
     let mut s = state();
+    s.section = Section::Export;
     s.form.data_folder = data.display().to_string();
+    s
+}
+
+fn off_allowlist_with_a_typed_key(data: &std::path::Path) -> (Harness, u64, ConnectRequest) {
+    let mut s = connecting_from_export(data);
     s.form
         .connection_string
         .edit_mut()
@@ -156,8 +189,7 @@ fn off_allowlist_with_a_typed_key(data: &std::path::Path) -> (Harness, u64, Conn
 fn off_allowlist_with_a_typed_client_secret(
     data: &std::path::Path,
 ) -> (Harness, u64, ConnectRequest) {
-    let mut s: AppState = state();
-    s.form.data_folder = data.display().to_string();
+    let mut s = connecting_from_export(data);
     s.form.set_auth(AuthChoice::Credential);
     s.form.credential = CredentialChoice::ClientSecret;
     s.form
@@ -209,6 +241,10 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
         .as_ref()
         .is_some_and(|value| value.expose().contains(CLIENT_MARKER));
     let client_failure = run_refused(&mut client, attempt, request);
+    assert_failed_with_a_toast(&refused);
+    assert_failed_with_a_toast(&client);
+    let (refused_details, refused_copied) = copy_failure_details(&mut refused);
+    let (client_details, client_copied) = copy_failure_details(&mut client);
     let text = logs.text();
 
     let exposes = |request: &ConnectRequest| {
@@ -234,12 +270,21 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
         client_failure.contains("does not have one of the required suffixes"),
         "{client_failure}"
     );
-    assert_failed_with_a_toast(&refused);
-    assert_failed_with_a_toast(&client);
+    for (shown, copied) in [
+        (&refused_details, &refused_copied),
+        (&client_details, &client_copied),
+    ] {
+        assert_eq!(copied.as_deref(), Some(shown.as_str()));
+        assert!(shown.chars().count() > ERROR_PREVIEW_CHARS, "{shown}");
+    }
     let everything = [
         text,
         failure,
         client_failure,
+        refused_details,
+        client_details,
+        refused_copied.unwrap_or_default(),
+        client_copied.unwrap_or_default(),
         format!("{connected:?}\n{send_request:?}"),
         surfaces(&captured),
         surfaces(&sent),
