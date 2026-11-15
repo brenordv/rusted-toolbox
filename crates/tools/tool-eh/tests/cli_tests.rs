@@ -90,6 +90,7 @@ async fn seed_archive(data: &Path) -> Vec<DateTime<Utc>> {
         .bind(&EventHubIdentity {
             fully_qualified_namespace: NAMESPACE.to_owned(),
             event_hub_name: HUB.to_owned(),
+            created_on: None,
         })
         .await
         .unwrap();
@@ -506,6 +507,7 @@ mod interrupt {
             .bind(&EventHubIdentity {
                 fully_qualified_namespace: NAMESPACE.to_owned(),
                 event_hub_name: HUB.to_owned(),
+                created_on: None,
             })
             .await
             .unwrap();

@@ -295,6 +295,7 @@ async fn at_end_mode_writes_the_pending_message_files_when_the_run_ends() {
     sink.bind(&EventHubIdentity {
         fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
         event_hub_name: "orders".to_owned(),
+        created_on: None,
     })
     .await
     .unwrap();

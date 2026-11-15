@@ -5,7 +5,7 @@
 
 use super::Scenario;
 use anyhow::Context;
-use chrono::{TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use shared_eventhub_core::connection::EventHubIdentity;
 use shared_eventhub_core::engine::{
     Checkpoint, EVENT_CHANNEL_CAPACITY, EngineChannels, EngineCommand, EngineEvent, MessageSink,
@@ -24,6 +24,9 @@ use tracing::debug;
 
 pub const DEMO_NAMESPACE: &str = "demo.servicebus.windows.net";
 pub const DEMO_HUB: &str = "demo";
+/// When the demo hub was "created" (2026-01-01 UTC, Unix seconds): before any event it
+/// generates, as a real hub's creation time is.
+const DEMO_HUB_CREATED_ON: i64 = 1_767_225_600;
 pub const PARTITIONS: [&str; 4] = ["0", "1", "2", "3"];
 /// The partition the `partition-fail` scenario loses, and when.
 const FAILING_PARTITION: &str = "2";
@@ -137,6 +140,7 @@ impl<S: MessageSink> Hub<S> {
             .bind(&EventHubIdentity {
                 fully_qualified_namespace: DEMO_NAMESPACE.to_owned(),
                 event_hub_name: DEMO_HUB.to_owned(),
+                created_on: DateTime::from_timestamp(DEMO_HUB_CREATED_ON, 0),
             })
             .await
             .with_context(|| {

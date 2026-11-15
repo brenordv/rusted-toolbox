@@ -68,6 +68,7 @@ async fn the_first_twenty_failures_are_logged_and_the_rest_counted() {
         .bind(&EventHubIdentity {
             fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
             event_hub_name: "orders".to_owned(),
+            created_on: None,
         })
         .await
         .unwrap();

@@ -10,6 +10,7 @@
 //! moves.
 
 use anyhow::Context;
+use chrono::{DateTime, SecondsFormat, Utc};
 use redb::TableDefinition;
 use shared_eventhub_core::engine::Checkpoint;
 use shared_eventhub_core::models::{CapturedMessage, MessageKey};
@@ -29,6 +30,14 @@ pub(crate) const SCHEMA_VERSION_KEY: &str = "schema_version";
 pub(crate) const SCHEMA_VERSION: &str = "1";
 pub(crate) const NAMESPACE_KEY: &str = "namespace";
 pub(crate) const EVENT_HUB_KEY: &str = "event_hub";
+/// When the service created the bound event hub, RFC 3339 UTC with milliseconds; absent when
+/// the service did not report it or the archive was bound before the key existed.
+pub(crate) const CREATED_ON_KEY: &str = "created_on";
+
+/// A creation time as stored under [`CREATED_ON_KEY`].
+pub(crate) fn encode_created_on(time: DateTime<Utc>) -> String {
+    time.to_rfc3339_opts(SecondsFormat::Millis, true)
+}
 
 /// The time-index key of a message without an enqueue time. A real enqueue
 /// time can never be this many milliseconds, since it lies outside chrono's

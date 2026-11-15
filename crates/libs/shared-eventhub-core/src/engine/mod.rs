@@ -342,6 +342,7 @@ async fn start_run<S: MessageSink>(
     let identity = EventHubIdentity {
         fully_qualified_namespace: connection.fully_qualified_namespace.clone(),
         event_hub_name: connection.event_hub_name.clone(),
+        created_on: connection.created_on,
     };
     if let Err(error) = bind_sink(sink, &identity).await {
         close_client_quietly(connection.client).await;
@@ -913,6 +914,7 @@ mod tests {
         EventHubIdentity {
             fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
             event_hub_name: "orders".to_owned(),
+            created_on: chrono::DateTime::from_timestamp(1_782_993_600, 0),
         }
     }
 

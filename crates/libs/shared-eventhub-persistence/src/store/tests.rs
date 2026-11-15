@@ -1,12 +1,22 @@
-use super::schema::test_messages::{checkpoint_for, message};
-use super::schema::{BY_TIME, MESSAGES, NO_ENQUEUED_TIME};
+use super::schema::test_messages::{checkpoint_for, instant, message};
+use super::schema::{BY_TIME, MESSAGES, NO_ENQUEUED_TIME, encode_created_on};
 use super::*;
 use std::collections::BTreeSet;
 
+/// When the test event hub was created: before every test message's enqueue time.
+fn orders_created_on() -> DateTime<Utc> {
+    instant(9, 0, 0)
+}
+
 pub(super) fn orders_hub() -> EventHubIdentity {
+    orders_hub_created(Some(orders_created_on()))
+}
+
+fn orders_hub_created(created_on: Option<DateTime<Utc>>) -> EventHubIdentity {
     EventHubIdentity {
         fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
         event_hub_name: "orders".to_owned(),
+        created_on,
     }
 }
 
@@ -334,6 +344,7 @@ async fn binding_the_same_hub_again_succeeds_whatever_its_casing() {
     let shouted = EventHubIdentity {
         fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
         event_hub_name: "ORDERS".to_owned(),
+        created_on: Some(orders_created_on()),
     };
 
     store.bind(&shouted).await.unwrap();
@@ -348,6 +359,7 @@ async fn binding_another_hub_is_refused_with_both_names() {
     let other = EventHubIdentity {
         fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
         event_hub_name: "payments".to_owned(),
+        created_on: Some(orders_created_on()),
     };
 
     let error = store.bind(&other).await.unwrap_err();
@@ -386,6 +398,214 @@ async fn storing_into_an_unbound_archive_is_refused() {
 
     assert!(error.to_string().contains("not bound"), "{error:#}");
     assert_eq!(store.message_count().unwrap(), 0);
+}
+
+fn stored_created_on(store: &MessageStore) -> Option<String> {
+    let read = store.begin_read().unwrap();
+    let meta = read.open_table(META).unwrap();
+    meta.get(CREATED_ON_KEY)
+        .unwrap()
+        .map(|guard| guard.value().to_owned())
+}
+
+fn write_meta(store: &MessageStore, entries: &[(&str, &str)]) {
+    let transaction = store.database().begin_write().unwrap();
+    {
+        let mut meta = transaction.open_table(META).unwrap();
+        for (key, value) in entries {
+            meta.insert(*key, *value).unwrap();
+        }
+    }
+    transaction.commit().unwrap();
+}
+
+/// An archive bound by name only, holding one event: as one bound before the creation time
+/// was recorded.
+async fn bound_without_a_time(root: &tempfile::TempDir) -> MessageStore {
+    let store = open_store(root);
+    store.bind(&orders_hub_created(None)).await.unwrap();
+    store_one(&store, &message("0", 1, "x"), true)
+        .await
+        .unwrap();
+    store
+}
+
+#[tokio::test]
+async fn a_first_bind_records_the_creation_time_to_the_millisecond() {
+    let root = tempfile::tempdir().unwrap();
+    let store = open_store(&root);
+    let created_on = orders_created_on() + chrono::Duration::milliseconds(123);
+
+    store
+        .bind(&orders_hub_created(Some(created_on)))
+        .await
+        .unwrap();
+    store.close().await.unwrap();
+    let reopened = open_store(&root);
+
+    assert_eq!(
+        reopened.binding().unwrap(),
+        Some(orders_hub_created(Some(created_on)))
+    );
+}
+
+#[tokio::test]
+async fn a_first_bind_without_a_creation_time_records_none() {
+    let root = tempfile::tempdir().unwrap();
+    let store = open_store(&root);
+
+    store.bind(&orders_hub_created(None)).await.unwrap();
+
+    assert_eq!(stored_created_on(&store), None);
+    assert_eq!(store.binding().unwrap(), Some(orders_hub_created(None)));
+}
+
+#[tokio::test]
+async fn a_hub_created_at_another_time_is_refused_with_both_times() {
+    let root = tempfile::tempdir().unwrap();
+    let store = bound_store(&root).await;
+    let recreated = orders_hub_created(Some(instant(10, 0, 0) + chrono::Duration::milliseconds(5)));
+
+    let error = store.bind(&recreated).await.unwrap_err();
+
+    let rendered = error.to_string();
+    assert!(
+        rendered.contains("created on 2026-07-02 10:00:00.005 UTC"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("the one created on 2026-07-02 09:00:00.000 UTC"),
+        "{rendered}"
+    );
+    assert_eq!(store.binding().unwrap(), Some(orders_hub()));
+}
+
+#[tokio::test]
+async fn an_archive_bound_without_a_time_records_the_reported_one() {
+    let root = tempfile::tempdir().unwrap();
+    let store = bound_without_a_time(&root).await;
+
+    store.bind(&orders_hub()).await.unwrap();
+
+    assert_eq!(store.binding().unwrap(), Some(orders_hub()));
+}
+
+fn bind_outcome(request: &WriteRequest) -> Result<(), String> {
+    match request {
+        WriteRequest::Bind { outcome, .. } => {
+            outcome.as_ref().map(|_| ()).map_err(|e| e.to_string())
+        }
+        WriteRequest::Store { .. } => panic!("expected a bind request"),
+    }
+}
+
+#[tokio::test]
+async fn binds_in_one_batch_compare_against_a_time_recorded_in_that_batch() {
+    let root = tempfile::tempdir().unwrap();
+    let store = bound_without_a_time(&root).await;
+    let later = orders_hub_created(Some(orders_created_on() + chrono::Duration::seconds(30)));
+    let mut batch = [
+        WriteRequest::bind(orders_hub()).0,
+        WriteRequest::bind(later).0,
+    ];
+
+    writer::apply_batch(store.database(), &mut batch).unwrap();
+
+    assert_eq!(bind_outcome(&batch[0]), Ok(()));
+    assert!(
+        bind_outcome(&batch[1]).is_err(),
+        "{:?}",
+        bind_outcome(&batch[1])
+    );
+    assert_eq!(store.binding().unwrap(), Some(orders_hub()));
+}
+
+const OLDER_EVENTS: &str = "holds events enqueued on 2026-07-02 12:00:01.000 UTC";
+
+#[tokio::test]
+async fn an_archive_without_a_time_holding_older_events_is_refused_and_left_as_is() {
+    let root = tempfile::tempdir().unwrap();
+    let store = bound_without_a_time(&root).await;
+
+    let error = store
+        .bind(&orders_hub_created(Some(instant(12, 5, 0))))
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains(OLDER_EVENTS), "{error:#}");
+    assert_eq!(stored_created_on(&store), None);
+    assert_eq!(store.binding().unwrap(), Some(orders_hub_created(None)));
+}
+
+#[tokio::test]
+async fn an_archive_with_the_same_time_holding_older_events_is_refused_and_left_as_is() {
+    let root = tempfile::tempdir().unwrap();
+    let store = bound_without_a_time(&root).await;
+    let created_after = instant(12, 5, 0);
+    let recorded = encode_created_on(created_after);
+    write_meta(&store, &[(CREATED_ON_KEY, recorded.as_str())]);
+
+    let error = store
+        .bind(&orders_hub_created(Some(created_after)))
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains(OLDER_EVENTS), "{error:#}");
+    assert_eq!(stored_created_on(&store), Some(recorded));
+}
+
+#[tokio::test]
+async fn events_within_a_minute_before_the_creation_time_still_bind() {
+    let root = tempfile::tempdir().unwrap();
+    let store = bound_without_a_time(&root).await;
+    let created_just_after = instant(12, 0, 59);
+
+    store
+        .bind(&orders_hub_created(Some(created_just_after)))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        store.binding().unwrap(),
+        Some(orders_hub_created(Some(created_just_after)))
+    );
+}
+
+#[tokio::test]
+async fn a_bind_without_a_reported_time_keeps_the_stored_one() {
+    let root = tempfile::tempdir().unwrap();
+    let store = bound_store(&root).await;
+
+    store.bind(&orders_hub_created(None)).await.unwrap();
+
+    assert_eq!(store.binding().unwrap(), Some(orders_hub()));
+}
+
+#[tokio::test]
+async fn an_unreadable_creation_time_fails_the_binding() {
+    let root = tempfile::tempdir().unwrap();
+    let store = bound_store(&root).await;
+    write_meta(&store, &[(CREATED_ON_KEY, "yesterday")]);
+
+    let error = store.binding().unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("creation time could not be read"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn a_creation_time_without_a_hub_is_an_incomplete_binding() {
+    let root = tempfile::tempdir().unwrap();
+    let store = open_store(&root);
+    write_meta(&store, &[(CREATED_ON_KEY, "2026-07-02T09:00:00.000Z")]);
+
+    let error = store.binding().unwrap_err();
+
+    assert!(error.to_string().contains("incomplete"), "{error:#}");
 }
 
 #[test]
