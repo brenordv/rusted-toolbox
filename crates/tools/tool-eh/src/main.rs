@@ -7,7 +7,7 @@ mod read_app;
 mod send_app;
 mod send_cli;
 mod settings;
-mod target;
+mod target_setup;
 
 use crate::cli_utils::initialize;
 use crate::models::{EhCommand, RunOutcome};

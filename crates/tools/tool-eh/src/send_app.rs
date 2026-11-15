@@ -2,7 +2,7 @@
 
 use crate::models::{RunOutcome, SendJob};
 use crate::progress::{ExportProgressLine, Renderer, connecting_notice, display, format_elapsed};
-use crate::target::{TargetSetup, prepare_target};
+use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
 use shared_eventhub_core::cancel::{CANCEL_POLL, flag_set};
 use shared_eventhub_core::producer::{

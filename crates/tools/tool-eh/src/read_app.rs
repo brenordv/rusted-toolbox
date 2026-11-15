@@ -5,7 +5,7 @@ use crate::models::{ReadJob, RunOutcome};
 use crate::progress::{
     ExportProgressLine, Renderer, connecting_notice, display, read_summary_block,
 };
-use crate::target::{TargetSetup, prepare_target};
+use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
 use shared_eventhub_core::engine::{CaptureEngine, PartitionEnd, RunEnd};
 use shared_eventhub_persistence::export::{
