@@ -17,7 +17,7 @@ use crate::send::SendRequest;
 use crate::state::{AppState, Input};
 use crate::tasks::StoreSlot;
 use anyhow::Context;
-use rune::AppHandle;
+use rune::{AppHandle, Tx};
 use shared_eventhub_core::connection::EventHubTarget;
 use shared_eventhub_core::engine::CaptureEngine;
 use shared_eventhub_core::models::MessageKey;
@@ -428,12 +428,16 @@ pub(crate) fn export_result(joined: Result<anyhow::Result<()>, JoinError>) -> an
 
 /// Applies `input` on the UI thread, runs its effects, and moves its commit as it asks.
 pub(crate) fn apply_from_runtime(handle: &AppHandle<AppState>, input: Input) {
-    handle.update_if(move |state, tx| {
-        let outcome = state.apply(input);
-        apply_motion(&outcome, tx);
-        run_effects(state, outcome.effects);
-        outcome.changed
-    });
+    handle.update_if(move |state, tx| apply_input(state, tx, input));
+}
+
+/// Applies `input`, moves its commit as it asks, and runs its effects; returns whether anything
+/// the view reads changed.
+pub(crate) fn apply_input(state: &mut AppState, tx: &mut Tx, input: Input) -> bool {
+    let outcome = state.apply(input);
+    apply_motion(&outcome, tx);
+    run_effects(state, outcome.effects);
+    outcome.changed
 }
 
 /// How often arrived rows move onto the list.

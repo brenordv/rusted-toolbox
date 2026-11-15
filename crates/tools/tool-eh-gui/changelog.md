@@ -1,6 +1,10 @@
 # Changelog
 
 ## 1.0.0
+- Return in the connect sheet presses its Connect (or Done when it picks where to send).
+- Headless reliability tests: journeys through Read, Export, and Send, accessibility and layout
+  sweeps over every section at 960x600 and 1280x800, seeded input sequences that replay from
+  their seed, and a secret-hygiene test behind the dev-only `test-harness` feature.
 - The Send section: a monospace body editor, content type, count, routing (automatic or a
   partition key), and pacing (batched, or one event every 1 to 3,600,000 ms, start to start),
   checked through core's own constructors. The destination is named from the connection sheet

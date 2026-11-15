@@ -16,4 +16,6 @@ pub mod send;
 pub mod services;
 pub mod state;
 pub mod tasks;
+#[cfg(any(test, feature = "test-harness"))]
+pub mod test_harness;
 pub mod views;

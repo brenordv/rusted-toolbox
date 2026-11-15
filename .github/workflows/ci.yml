@@ -30,9 +30,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev libssl-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      # eh-gui's demo mode is feature-gated, so the workspace runs above never build it.
-      - run: cargo clippy -p eh-gui --features demo --all-targets --locked -- -D warnings
-      - run: cargo test -p eh-gui --features demo --locked
+      # eh-gui's demo mode and test harness are feature-gated, so the workspace runs above
+      # never build them; the harness feature also runs the secret-hygiene test binary.
+      - run: cargo clippy -p eh-gui --features demo,test-harness --all-targets --locked -- -D warnings
+      - run: cargo test -p eh-gui --features demo,test-harness --locked
 
   test:
     name: build & test (${{ matrix.os }})

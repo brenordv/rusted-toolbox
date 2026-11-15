@@ -293,12 +293,14 @@ fn footer(s: &AppState, k: &Kit, purpose: SheetPurpose) -> El {
             .variant(ButtonVariant::Submit)
             .on_press(|s: &mut AppState| dispatch(s, Input::ConnectPressed))
             .build(k)
-            .key("sheet-connect"),
+            .key("sheet-connect")
+            .default_button(),
         SheetPurpose::SendTarget => Button::new("Done")
             .variant(ButtonVariant::Submit)
             .on_press(|s: &mut AppState| dispatch(s, Input::CloseSheet))
             .build(k)
-            .key("sheet-done"),
+            .key("sheet-done")
+            .default_button(),
     })
 }
 

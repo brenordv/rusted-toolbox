@@ -480,7 +480,7 @@ pub fn rules_editable(connection: &ConnectionState) -> bool {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_support;
+#[cfg(any(test, feature = "test-harness"))]
+pub mod test_support;
 #[cfg(test)]
 mod tests;

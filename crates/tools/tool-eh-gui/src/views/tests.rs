@@ -1,115 +1,26 @@
 use super::*;
 use crate::archive::results::{More, Results};
-use crate::archive::test_support::{cursor, messages, page};
-use crate::archive::{ArchiveEffect, ArchiveInput, PageRequest};
+use crate::archive::{ArchiveEffect, ArchiveInput};
 use crate::bridge::UiDelivery;
-use crate::bridge::test_support::detached_session;
 use crate::design::tokens::WINDOW_MIN;
-use crate::form::{AuthChoice, ConnectForm, CredentialChoice};
-use crate::read::ReadInput;
+use crate::form::{AuthChoice, CredentialChoice};
 use crate::read::rows::ROW_CAP;
-use crate::read::test_support::captured;
-use crate::services::Services;
 use crate::state::{Effect, Input};
+use crate::test_harness::builders::{
+    connected, export_results, export_state, open_sheet, record, send_running, send_state, state,
+    template_state, with_rows,
+};
+use crate::test_harness::{
+    command, focused_key, has_key, has_text, press, press_key, rect, row_visible, runtime,
+    runtime_at, settle, text_visible,
+};
 use common_cli::app_logger::FileLogging;
-use rune::{Env, Key, KeyEvent, Mods, Runtime};
+use rune::{Key, KeyEvent, Mods, Runtime};
 use shared_eventhub_core::engine::EngineEvent;
 use shared_eventhub_core::stats::StatsSnapshot;
 use shared_eventhub_persistence::export::ExportOutcome;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
 const MARKER: &str = "SharedAccessKey=marker-55219";
-
-fn runtime(state: AppState) -> Runtime<AppState> {
-    runtime_at(state, (1280.0, 800.0))
-}
-
-fn runtime_at(state: AppState, size: (f32, f32)) -> Runtime<AppState> {
-    let mut rt = Runtime::new(state, view, size, Env::new(true, 1.0));
-    rt.frame(0.0);
-    for _ in 0..30 {
-        rt.frame(1.0 / 60.0);
-    }
-    rt
-}
-
-/// `[x, y, width, height]` of the element keyed `key`.
-fn rect(rt: &Runtime<AppState>, key: &str) -> [f32; 4] {
-    rt.elements()
-        .into_iter()
-        .find(|element| element.key.as_deref() == Some(key) && !element.exiting)
-        .unwrap_or_else(|| panic!("no element keyed {key}"))
-        .rect
-}
-
-fn press_key(rt: &mut Runtime<AppState>, key: Key) {
-    rt.key(KeyEvent {
-        key,
-        mods: Mods::default(),
-    });
-    settle(rt);
-}
-
-fn open_sheet(auth: AuthChoice) -> AppState {
-    let mut s = state();
-    s.form.set_auth(auth);
-    s.sheet = Some(crate::state::SheetPurpose::Connect);
-    s
-}
-
-/// A state connected to a session over four partitions; the runtime must outlive it.
-fn connected(rt: &tokio::runtime::Runtime) -> AppState {
-    let mut s = state();
-    s.form
-        .connection_string
-        .edit_mut()
-        .replace_text("Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKey=k");
-    let out = s.apply(Input::ConnectPressed);
-    let [Effect::PrepareSession { attempt, .. }] = out.effects.as_slice() else {
-        panic!("expected PrepareSession, got {:?}", out.effects);
-    };
-    let attempt = *attempt;
-    let (session, _) = detached_session(attempt, rt.handle());
-    s.apply(Input::SessionReady {
-        attempt,
-        result: Ok(session),
-    });
-    s.apply(Input::Delivery(UiDelivery {
-        at: chrono::Utc::now(),
-        session: attempt,
-        events: vec![EngineEvent::Started {
-            partitions: ["0", "1", "2", "3"].map(str::to_owned).to_vec(),
-        }],
-        stats: None,
-    }));
-    s
-}
-
-fn settle(rt: &mut Runtime<AppState>) {
-    for _ in 0..30 {
-        rt.frame(1.0 / 60.0);
-    }
-}
-
-fn press(rt: &mut Runtime<AppState>, key: &str) {
-    let (x, y) = rt
-        .find(key)
-        .unwrap_or_else(|| panic!("no element keyed {key}"));
-    rt.pointer_down(x, y);
-    rt.pointer_up(x, y);
-    settle(rt);
-}
-
-fn state() -> AppState {
-    AppState::new(None, ConnectForm::default(), None, FileLogging::Off)
-}
-
-fn has_key(rt: &Runtime<AppState>, key: &str) -> bool {
-    rt.elements()
-        .iter()
-        .any(|element| element.key.as_deref() == Some(key))
-}
 
 #[test]
 fn pressing_export_switches_the_section() {
@@ -310,26 +221,6 @@ fn the_received_tile_shows_the_count_with_separators() {
     assert_eq!(label.as_deref(), Some("Received 12,403"));
 }
 
-fn with_rows(s: &mut AppState, first: usize, count: usize) {
-    let session = s.connection.session().unwrap().id();
-    let events = (first..first + count)
-        .map(|sequence| EngineEvent::Message(Box::new(captured("0", sequence as i64, "body"))))
-        .collect();
-    s.apply(Input::Delivery(UiDelivery {
-        at: chrono::Utc::now(),
-        session,
-        events,
-        stats: None,
-    }));
-    s.apply(Input::Read(ReadInput::ListFlush));
-}
-
-fn row_visible(rt: &Runtime<AppState>, key: &str) -> bool {
-    rt.elements()
-        .iter()
-        .any(|element| element.key.as_deref() == Some(key) && element.visible[3] > 0.0)
-}
-
 fn built_rows(rt: &Runtime<AppState>) -> usize {
     rt.elements()
         .iter()
@@ -502,52 +393,6 @@ fn clicking_a_row_opens_the_inspector_and_escape_closes_it() {
     assert!(!has_key(&rt, "inspector"));
 }
 
-/// Services that count the archive pages asked for and do nothing else.
-#[derive(Default)]
-struct PageCounter(Arc<AtomicUsize>);
-
-impl Services for PageCounter {
-    fn prepare_session(&self, _: u64, _: crate::services::ConnectRequest) {}
-    fn save_config(&self, _: crate::services::SaveRequest) {}
-    fn switch_data_folder(&self, _: shared_eventhub_persistence::paths::DataPaths) {}
-    fn reopen_window(&self) {}
-    fn quit(&self) {}
-    fn rebuild_search(&self, _: crate::read::search::RebuildRequest) {}
-    fn export_one(&self, _: crate::read::ExportOneRequest) {}
-    fn search_archive(&self, _: PageRequest) {
-        self.0.fetch_add(1, AtomicOrdering::SeqCst);
-    }
-    fn bulk_export(&self, _: crate::archive::bulk::BulkRequest) {}
-    fn start_send(&self, _: crate::send::SendRequest) {}
-}
-
-/// The Export section with a search whose first page showed `count` rows, more to come when
-/// `more`; the counter sees the pages asked for after that.
-fn export_results(count: usize, more: bool) -> (AppState, Arc<AtomicUsize>) {
-    let pages = Arc::new(AtomicUsize::new(0));
-    let mut s = state();
-    s.services = Some(Box::new(PageCounter(Arc::clone(&pages))));
-    s.section = crate::state::Section::Export;
-    let out = s.apply(Input::Archive(ArchiveInput::SearchPressed));
-    let [Effect::Archive(ArchiveEffect::Search(request))] = out.effects.as_slice() else {
-        panic!("expected a page request, got {:?}", out.effects);
-    };
-    let generation = request.generation;
-    s.apply(Input::Archive(ArchiveInput::PageLoaded {
-        generation,
-        elapsed_ms: 1,
-        result: Ok(page(messages(count), more.then(cursor))),
-    }));
-    (s, pages)
-}
-
-fn export_state(results: Results) -> AppState {
-    let mut s = state();
-    s.section = crate::state::Section::Export;
-    s.archive.results = results;
-    s
-}
-
 #[rstest::rstest]
 #[case::not_searched(Results::NotSearched, "export-empty")]
 #[case::searching(Results::Loading { generation: 1 }, "export-searching")]
@@ -584,7 +429,7 @@ fn results_show_in_the_list_with_the_export_bar() {
 fn scrolling_near_the_end_asks_for_one_page_and_shows_the_footer_spinner() {
     let (s, pages) = export_results(300, true);
     let mut rt = runtime(s);
-    let before = pages.load(AtomicOrdering::SeqCst);
+    let before = pages.searches();
 
     for _ in 0..40 {
         rt.wheel(640.0, 500.0, -2_000.0);
@@ -593,7 +438,7 @@ fn scrolling_near_the_end_asks_for_one_page_and_shows_the_footer_spinner() {
     settle(&mut rt);
 
     assert_eq!(before, 0);
-    assert_eq!(pages.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(pages.searches(), 1);
     assert!(matches!(
         &rt.state.archive.results,
         Results::Shown {
@@ -643,15 +488,6 @@ fn a_finished_export_shows_done_which_returns_to_idle() {
         crate::archive::bulk::BulkExport::Idle
     ));
     assert!(has_key(&rt, "bulk-export"));
-}
-
-fn has_text(rt: &Runtime<AppState>, needle: &str) -> bool {
-    rt.elements().iter().any(|element| {
-        element
-            .text
-            .as_deref()
-            .is_some_and(|text| text.contains(needle))
-    })
 }
 
 #[rstest::rstest]
@@ -727,81 +563,21 @@ fn pressing_outside_the_export_options_closes_them() {
 
 #[test]
 fn the_search_button_searches_the_archive() {
-    let pages = Arc::new(AtomicUsize::new(0));
     let mut s = state();
-    s.services = Some(Box::new(PageCounter(Arc::clone(&pages))));
+    let pages = record(&mut s);
     s.section = crate::state::Section::Export;
     let mut rt = runtime(s);
 
     press(&mut rt, "archive-search-button");
 
-    assert_eq!(pages.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(pages.searches(), 1);
     assert!(matches!(rt.state.archive.results, Results::Loading { .. }));
-}
-
-/// Services that count the sends asked for and do nothing else.
-#[derive(Default)]
-struct SendCounter(Arc<AtomicUsize>);
-
-impl Services for SendCounter {
-    fn prepare_session(&self, _: u64, _: crate::services::ConnectRequest) {}
-    fn save_config(&self, _: crate::services::SaveRequest) {}
-    fn switch_data_folder(&self, _: shared_eventhub_persistence::paths::DataPaths) {}
-    fn reopen_window(&self) {}
-    fn quit(&self) {}
-    fn rebuild_search(&self, _: crate::read::search::RebuildRequest) {}
-    fn export_one(&self, _: crate::read::ExportOneRequest) {}
-    fn search_archive(&self, _: PageRequest) {}
-    fn bulk_export(&self, _: crate::archive::bulk::BulkRequest) {}
-    fn start_send(&self, _: crate::send::SendRequest) {
-        self.0.fetch_add(1, AtomicOrdering::SeqCst);
-    }
-}
-
-const SEND_CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;\
-    SharedAccessKeyName=send;SharedAccessKey=c2VjcmV0;EntityPath=orders";
-
-/// The Send section with a usable destination; the counter sees each send started.
-fn send_state() -> (AppState, Arc<AtomicUsize>) {
-    let sends = Arc::new(AtomicUsize::new(0));
-    let mut form = ConnectForm::default();
-    form.connection_string
-        .edit_mut()
-        .replace_text(SEND_CONNECTION_STRING);
-    let mut s = AppState::new(
-        Some(Box::new(SendCounter(Arc::clone(&sends)))),
-        form,
-        None,
-        FileLogging::Off,
-    );
-    s.section = crate::state::Section::Send;
-    (s, sends)
-}
-
-fn command(rt: &mut Runtime<AppState>, key: Key) {
-    rt.key(KeyEvent {
-        key,
-        mods: Mods {
-            cmd: true,
-            ctrl: !cfg!(target_os = "macos"),
-            logo: cfg!(target_os = "macos"),
-            ..Mods::default()
-        },
-    });
-    settle(rt);
 }
 
 fn send_runtime(s: AppState, size: (f32, f32)) -> Runtime<AppState> {
     let mut rt = runtime_at(s, size);
     rt.on_key = Some(window_key);
     rt
-}
-
-fn focused_key(rt: &Runtime<AppState>) -> Option<String> {
-    rt.elements()
-        .into_iter()
-        .filter(|element| element.focused)
-        .find_map(|element| element.key)
 }
 
 #[test]
@@ -836,7 +612,7 @@ fn return_in_the_body_types_a_newline_and_sends_nothing() {
     press_key(&mut rt, Key::Enter);
 
     assert_eq!(rt.state.send.composer.body.text, "\n");
-    assert_eq!(sends.load(AtomicOrdering::SeqCst), 0);
+    assert_eq!(sends.sends(), 0);
 }
 
 #[test]
@@ -847,7 +623,7 @@ fn return_in_the_count_sends_nothing() {
 
     press_key(&mut rt, Key::Enter);
 
-    assert_eq!(sends.load(AtomicOrdering::SeqCst), 0);
+    assert_eq!(sends.sends(), 0);
 }
 
 #[rstest::rstest]
@@ -864,7 +640,7 @@ fn mod_enter_sends_from_a_focused_field_and_with_nothing_focused(#[case] field: 
 
     command(&mut rt, Key::Enter);
 
-    assert_eq!(sends.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(sends.sends(), 1);
 }
 
 #[test]
@@ -875,7 +651,7 @@ fn mod_enter_with_the_sheet_open_sends_nothing() {
 
     command(&mut rt, Key::Enter);
 
-    assert_eq!(sends.load(AtomicOrdering::SeqCst), 0);
+    assert_eq!(sends.sends(), 0);
 }
 
 #[rstest::rstest]
@@ -904,33 +680,6 @@ fn status_label(rt: &Runtime<AppState>) -> String {
         })
         .and_then(|element| element.label)
         .unwrap_or_default()
-}
-
-fn send_running(s: &mut AppState, paced: bool) -> u64 {
-    if paced {
-        s.send.composer.pacing = crate::send::compose::PacingChoice::Paced;
-    }
-    s.send.composer.count.replace_text("1000");
-    let out = s.apply(Input::Send(crate::send::SendInput::SendPressed));
-    let [Effect::Send(crate::send::SendEffect::StartSend(request))] = out.effects.as_slice() else {
-        panic!("expected StartSend, got {:?}", out.effects);
-    };
-    let run = request.run;
-    let at = chrono::Utc::now();
-    s.apply(Input::Send(crate::send::SendInput::Started {
-        run,
-        target: crate::send::run::Names {
-            namespace: "orders.servicebus.windows.net".to_owned(),
-            event_hub: "orders".to_owned(),
-        },
-        at,
-    }));
-    s.apply(Input::Send(crate::send::SendInput::Progress {
-        run,
-        sent: 340,
-    }));
-    s.apply(Input::Tick(at + chrono::TimeDelta::seconds(4)));
-    run
 }
 
 #[test]
@@ -1015,17 +764,6 @@ fn an_invalid_interval_shows_its_issue_reachable_in_the_smallest_window() {
     );
 }
 
-/// Whether an element holding `needle` shows on screen.
-fn text_visible(rt: &Runtime<AppState>, needle: &str) -> bool {
-    rt.elements().iter().any(|element| {
-        element
-            .text
-            .as_deref()
-            .is_some_and(|text| text.contains(needle))
-            && element.visible[3] > 0.0
-    })
-}
-
 #[test]
 fn a_send_with_issues_moves_focus_into_the_first_invalid_field() {
     let (mut s, sends) = send_state();
@@ -1034,15 +772,8 @@ fn a_send_with_issues_moves_focus_into_the_first_invalid_field() {
 
     press(&mut rt, crate::views::send::SEND_BUTTON_KEY);
 
-    assert_eq!(sends.load(AtomicOrdering::SeqCst), 0);
+    assert_eq!(sends.sends(), 0);
     assert!(rt.state.send.composer.count.focused);
-}
-
-fn template_state(body: &str) -> (AppState, Arc<AtomicUsize>) {
-    let (mut s, sends) = send_state();
-    s.send.composer.body.replace_text(body);
-    s.send.composer.set_template(true);
-    (s, sends)
 }
 
 #[test]
