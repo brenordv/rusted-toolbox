@@ -1,7 +1,7 @@
 //! The window frame: toolbar with the section switch and the connection controls, the sidebar,
 //! the content area, and toasts.
 
-use super::{read, sections};
+use super::{export, inspector, sections};
 use crate::app::dispatch;
 use crate::design::tokens::{
     POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE,
@@ -43,7 +43,7 @@ pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut V
 
     let content = match s.section {
         Section::Read => sections::read(s, k, dark, layer).key("read"),
-        Section::Export => sections::export(k).key("export"),
+        Section::Export => export::content(s, k, dark, layer).key("export"),
     };
     let main = col()
         .key("content")
@@ -54,18 +54,23 @@ pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut V
         .child(content);
 
     let sidebar = sections::sidebar(s, k, layer);
-    let mut split = SplitView::new(main)
+    let split = SplitView::new(main)
         .sidebar(&s.sidebar, |s: &mut AppState| &mut s.sidebar, sidebar)
         .toolbar(toolbar)
         .titlebar_inset(cx.titlebar_inset())
         .reduced_motion(cx.is_reduced_motion());
-    if s.section == Section::Read {
-        split = split.inspector(
-            &s.read.inspector,
-            |s: &mut AppState| &mut s.read.inspector,
-            read::inspector(s, k),
-        );
-    }
+    let split = match s.section {
+        Section::Read => split.inspector(
+            &s.read.inspector.pane,
+            |s: &mut AppState| &mut s.read.inspector.pane,
+            inspector::inspector(s, k, Section::Read),
+        ),
+        Section::Export => split.inspector(
+            &s.archive.inspector.pane,
+            |s: &mut AppState| &mut s.archive.inspector.pane,
+            inspector::inspector(s, k, Section::Export),
+        ),
+    };
     split.build(k)
 }
 

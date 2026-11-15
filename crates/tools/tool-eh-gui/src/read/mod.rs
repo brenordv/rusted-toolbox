@@ -2,30 +2,30 @@
 //! selected message, the capture rules, and the live statistics. Plain Rust, no window: the app
 //! state forwards Read inputs here and runs the effects that come back.
 
-mod export_flow;
+pub mod export_flow;
 pub mod inspector;
-mod list_flow;
+pub(crate) mod list_flow;
 pub mod rows;
 pub mod rules;
 pub mod search;
 
-use crate::design::tokens::{INSPECTOR_MAX, INSPECTOR_MIN, INSPECTOR_WIDTH};
-use crate::state::{ConnectionState, ToastKind};
+pub use inspector::ExportOneRequest;
+
+use crate::bridge::EngineSession;
+use crate::state::{ConnectionState, Section, ToastKind};
 use chrono::{DateTime, TimeDelta, Utc};
-use export_flow::running_only;
-use inspector::{ExportPhase, Feedback, FeedbackKind};
+use export_flow::InspectorContext;
+use inspector::{InspectorInput, InspectorState};
 use rows::{RowBuffer, RowSource, RowSummary};
 use rules::RulesForm;
 use rune::TextEdit;
-use rune_kit::PaneState;
 use search::{RebuildRequest, Rebuilt, SearchState};
 use shared_eventhub_core::filters::CaptureFilters;
 use shared_eventhub_core::models::{CapturedMessage, MessageKey};
 use shared_eventhub_core::stats::StatsSnapshot;
-use shared_eventhub_persistence::export::{ExportFormat, ExportOptions};
+use shared_eventhub_persistence::export::ExportFormat;
 use shared_eventhub_persistence::paths::DataPaths;
 use std::collections::VecDeque;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -37,6 +37,8 @@ pub const SESSION_LOG_CAP: usize = 200;
 pub const QUIET_AFTER: TimeDelta = TimeDelta::seconds(30);
 /// No delivery for this many feedback intervals means the engine's feed stopped.
 const STALE_INTERVALS: u32 = 3;
+/// The toast for a file picked after the session that showed its message ended.
+const DROPPED_ANSWER: &str = "The session ended before the export started; nothing was written";
 
 /// The selected message.
 #[derive(Clone, Debug)]
@@ -115,25 +117,7 @@ pub enum ReadInput {
     Select(String),
     Move(Step),
     ClearSelection,
-    /// The selected message's body or JSON reached the clipboard.
-    Copied {
-        kind: FeedbackKind,
-        now: DateTime<Utc>,
-    },
-    CopyFailed(String),
-    ExportPressed,
-    /// The save dialog opened for `key` of `session` answered.
-    ExportAnswered {
-        session: u64,
-        key: MessageKey,
-        answer: Result<Option<PathBuf>, String>,
-    },
-    ExportDone {
-        session: u64,
-        key: MessageKey,
-        result: Result<(), String>,
-        now: DateTime<Utc>,
-    },
+    Inspector(InspectorInput),
     ApplyRules,
     ClearRules,
 }
@@ -145,17 +129,6 @@ pub enum ReadEffect {
     /// Send the filters to the running session.
     UpdateFilters(CaptureFilters),
     ExportOne(ExportOneRequest),
-}
-
-/// Write one archived message to a file the user chose.
-#[derive(Debug)]
-pub struct ExportOneRequest {
-    pub session: u64,
-    pub key: MessageKey,
-    pub key_str: String,
-    pub options: ExportOptions,
-    pub destination: PathBuf,
-    pub paths: DataPaths,
 }
 
 /// What a Read transition did.
@@ -187,7 +160,6 @@ pub struct ReadState {
     pub feed_stale: bool,
     pub feedback_interval: Duration,
     pub rows: RowBuffer,
-    pub selected: Option<Selected>,
     pub search: SearchState,
     pub search_edit: TextEdit,
     pub search_regex: bool,
@@ -198,11 +170,7 @@ pub struct ReadState {
     pub tail: TailState,
     pub session_log: VecDeque<LogLine>,
     pub session_log_unseen: u32,
-    pub export: ExportPhase,
-    pub feedback: Option<Feedback>,
-    pub export_format: ExportFormat,
-    pub export_metadata: bool,
-    pub inspector: PaneState,
+    pub inspector: InspectorState,
     /// Whether the Received tile's per-partition popover shows.
     pub partitions_open: bool,
     /// The session these rows belong to.
@@ -230,7 +198,6 @@ impl Default for ReadState {
             feed_stale: false,
             feedback_interval: Duration::from_secs(1),
             rows: RowBuffer::default(),
-            selected: None,
             search: SearchState::Off,
             search_edit: TextEdit::new(""),
             search_regex: false,
@@ -239,13 +206,7 @@ impl Default for ReadState {
             tail: TailState::default(),
             session_log: VecDeque::new(),
             session_log_unseen: 0,
-            export: ExportPhase::Idle,
-            feedback: None,
-            export_format: ExportFormat::Txt,
-            export_metadata: true,
-            inspector: PaneState::new(INSPECTOR_WIDTH)
-                .range(INSPECTOR_MIN, INSPECTOR_MAX)
-                .collapsed(),
+            inspector: InspectorState::default(),
             partitions_open: false,
             session: None,
             eviction_noted: false,
@@ -259,27 +220,23 @@ impl ReadState {
         Self {
             rules: RulesForm::from_filters(filters),
             rules_applied: filters.clone(),
-            export_format: format,
-            export_metadata: metadata,
+            inspector: InspectorState::with_export(format, metadata),
             ..Self::default()
         }
     }
 
-    /// Starts over for `session`, keeping the rules, the export picks, an export still writing,
-    /// the inspector's width, and the search generation (moved on, so no earlier result lands).
+    /// Starts over for `session`, keeping the rules, the inspector's picks, width, and an
+    /// export still writing, and the search generation (moved on, so no earlier result lands).
     pub fn start_session(&mut self, session: u64, feedback_interval: Duration) {
         let previous = std::mem::take(self);
         previous.generation.fetch_add(1, Ordering::AcqRel);
         let mut inspector = previous.inspector;
-        inspector.set_open(false);
+        inspector.reset();
         *self = Self {
             rules: previous.rules,
             rules_applied: previous.rules_applied,
             feedback_interval,
             generation: previous.generation,
-            export: running_only(previous.export),
-            export_format: previous.export_format,
-            export_metadata: previous.export_metadata,
             inspector,
             session: Some(session),
             ..Self::default()
@@ -298,10 +255,7 @@ impl ReadState {
         self.search_regex = false;
         self.search_error = None;
         self.clear_search();
-        self.selected = None;
-        self.inspector.set_open(false);
-        self.export = running_only(std::mem::take(&mut self.export));
-        self.feedback = None;
+        self.inspector.reset();
         self.tail = TailState::default();
         self.stats = None;
         self.shown = None;
@@ -312,7 +266,7 @@ impl ReadState {
 
     /// Whether an export still writes a file (the app must not close the archive under it).
     pub fn export_running(&self) -> bool {
-        self.export.is_running()
+        self.inspector.export.is_running()
     }
 
     /// Records a delivery's arrival and statistics.
@@ -362,11 +316,7 @@ impl ReadState {
     /// The once-a-second refresh: numbers, staleness, the pill count, and feedback expiry.
     /// Returns whether anything shown changed.
     pub fn tick(&mut self, now: DateTime<Utc>, connected: bool) -> bool {
-        let mut changed = false;
-        if self.feedback.as_ref().is_some_and(|f| now >= f.until) {
-            self.feedback = None;
-            changed = true;
-        }
+        let mut changed = self.inspector.tick(now);
         if self.tail.shown_unseen != self.tail.unseen {
             self.tail.shown_unseen = self.tail.unseen;
             changed = true;
@@ -436,28 +386,21 @@ impl ReadState {
             ReadInput::Select(key_str) => self.select(&key_str),
             ReadInput::Move(step) => self.step(step),
             ReadInput::ClearSelection => self.clear_selection(),
-            ReadInput::Copied { kind, now } => {
-                if let Some(selected) = &self.selected {
-                    self.feedback = Some(Feedback::new(selected.key.clone(), kind, now));
+            ReadInput::Inspector(input) => {
+                let cx = InspectorContext {
+                    section: Section::Read,
+                    owner: connection.session().map(EngineSession::id),
+                    paths: &paths,
+                    dropped_answer: DROPPED_ANSWER,
+                };
+                let out = self.inspector.apply(input, cx);
+                ReadOutcome {
+                    effects: out.export.into_iter().map(ReadEffect::ExportOne).collect(),
+                    changed: out.changed,
+                    rows_landed: false,
+                    toasts: out.toasts,
                 }
-                ReadOutcome::changed()
             }
-            ReadInput::CopyFailed(text) => ReadOutcome {
-                toasts: vec![(ToastKind::Danger, text)],
-                ..ReadOutcome::changed()
-            },
-            ReadInput::ExportPressed => self.export_pressed(connection, paths),
-            ReadInput::ExportAnswered {
-                session,
-                key,
-                answer,
-            } => self.export_answered(session, &key, answer),
-            ReadInput::ExportDone {
-                session,
-                key,
-                result,
-                now,
-            } => self.export_done(session, key, result, now),
             ReadInput::ApplyRules => match self.rules.parsed() {
                 Ok(filters) => self.apply_rules(filters, connection),
                 Err(_) => ReadOutcome::default(),

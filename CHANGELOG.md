@@ -1,7 +1,29 @@
 # Workspace Changelog
 
 ## v7
-TODO: Add after phase-7
+- Rebuilt the Azure Event Hubs tooling on the official `azure_messaging_eventhubs` SDK and a redb
+  archive:
+  - New tools: `eh` 1.0.0 (`crates/tools/tool-eh`), one CLI with `eh read` (capture into the local
+    archive) and `eh export` (txt, csv, or json), and `eh-gui` 1.0.0 (`crates/tools/tool-eh-gui`),
+    a desktop app on Rune with a Read section (live capture, statistics, quick filter, inspector)
+    and an Export section (archive search by time window and text or regex, results loaded as
+    you scroll, export of one message or of every match with live counts and cancel).
+  - New libraries: `shared-azure` (credentials and Key Vault secrets), `shared-eventhub-core`
+    (message model, capture filters, the capture engine, statistics), and
+    `shared-eventhub-persistence` (redb archive, checkpoints, export log, exporters, config.json
+    and the secrets file).
+  - Removed: `tool-eventhub-read` (`eh-read`), `tool-eventhub-export` (`eh-export`), and the
+    `shared-eventhub` library. Data captured by `eh-read` 1.1.0 (sled) is not migrated; the last
+    released 1.1.0 binaries still read it.
+- Workspace dependencies added: `azure_core` 1.2.0-beta.2, `azure_identity` 1.1.0-beta.2,
+  `azure_messaging_eventhubs` 0.16.0, `azure_security_keyvault_secrets` 1.1.0-beta.1,
+  `azure_core_amqp` 1.2.0-beta.3 (test fixtures only), `redb` 4.6.0, `windows` 0.62.2 (eh-gui
+  reads the Windows appearance through `UISettings`), and `rune` and `rune-kit` as git
+  dependencies pinned at rev `c4eda05889c984fff91ccd906e3c00cdfc4cae24`. Removed: `azeventhubs`
+  and `sled`.
+- Rune's `[patch.crates-io]` block (forks of `winit`, `wgpu-hal`, `parley_engine`, and
+  `accesskit_windows` at the same rev) is copied into the root `Cargo.toml` and applies to the
+  whole workspace, `seal-gui`'s eframe stack included. `wgpu-hal` stays at Rune's 30.0.1.
 
 ## v6
 - Updated dependencies.

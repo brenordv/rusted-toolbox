@@ -1,7 +1,11 @@
 //! The view: a pure function of the state. Handlers dispatch inputs; nothing here does I/O.
 
 mod connect;
+mod export;
+mod inspector;
+mod message_list;
 mod read;
+mod rules_form;
 mod sections;
 mod shell;
 

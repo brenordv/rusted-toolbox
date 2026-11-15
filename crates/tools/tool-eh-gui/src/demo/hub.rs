@@ -136,16 +136,9 @@ impl<S: MessageSink> Hub<S> {
     }
 
     async fn start(&self) -> anyhow::Result<()> {
-        self.sink
-            .bind(&EventHubIdentity {
-                fully_qualified_namespace: DEMO_NAMESPACE.to_owned(),
-                event_hub_name: DEMO_HUB.to_owned(),
-                created_on: DateTime::from_timestamp(DEMO_HUB_CREATED_ON, 0),
-            })
-            .await
-            .with_context(|| {
-                format!("Failed to bind the archive to '{DEMO_NAMESPACE}/{DEMO_HUB}'")
-            })?;
+        self.sink.bind(&identity()).await.with_context(|| {
+            format!("Failed to bind the archive to '{DEMO_NAMESPACE}/{DEMO_HUB}'")
+        })?;
         if self.scenario == Scenario::StartFail {
             anyhow::bail!(
                 "Failed to read the event hub properties of '{DEMO_NAMESPACE}/{DEMO_HUB}': the \
@@ -182,15 +175,8 @@ impl<S: MessageSink> Hub<S> {
             message.processed_at,
             message.enqueued_time,
         );
-        let checkpoint = Checkpoint {
-            partition_id: message.key.partition_id.clone(),
-            sequence_number: message.key.sequence_number,
-            offset: message.offset.clone(),
-            enqueued_time: message.enqueued_time,
-            updated_at: message.processed_at,
-        };
         self.sink
-            .store(&message, &checkpoint, true)
+            .store(&message, &checkpoint_of(&message), true)
             .await
             .context("Failed to store a demo message")?;
         self.tracker.record_stored();
@@ -215,6 +201,26 @@ impl<S: MessageSink> Hub<S> {
         if self.events.send(event).await.is_err() {
             debug!("the demo hub's consumer is gone; a control event was not delivered");
         }
+    }
+}
+
+/// The demo event hub the archive is bound to.
+pub fn identity() -> EventHubIdentity {
+    EventHubIdentity {
+        fully_qualified_namespace: DEMO_NAMESPACE.to_owned(),
+        event_hub_name: DEMO_HUB.to_owned(),
+        created_on: DateTime::from_timestamp(DEMO_HUB_CREATED_ON, 0),
+    }
+}
+
+/// The checkpoint that storing `message` records.
+pub fn checkpoint_of(message: &CapturedMessage) -> Checkpoint {
+    Checkpoint {
+        partition_id: message.key.partition_id.clone(),
+        sequence_number: message.key.sequence_number,
+        offset: message.offset.clone(),
+        enqueued_time: message.enqueued_time,
+        updated_at: message.processed_at,
     }
 }
 

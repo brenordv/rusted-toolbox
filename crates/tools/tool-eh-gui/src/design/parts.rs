@@ -2,11 +2,12 @@
 //! happens only here and in the kit.
 
 use super::tokens::{
-    COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT, HAIRLINE, ICON_SIZE,
-    LIST_ROW_HEIGHT, LIVE_DOT_SIZE, PRESS_SCALE, RADIUS_BADGE, RADIUS_SELECTION, RADIUS_SHEET,
-    RADIUS_TILE, SELECTION_INSET, SHEET_TOP, SHEET_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL,
-    SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION,
-    TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
+    COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT, FORM_POPOVER_WIDTH,
+    HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE, PRESS_SCALE, RADIUS_BADGE,
+    RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE, SELECTION_INSET, SHEET_TOP, SHEET_WIDTH, SPACE_LG,
+    SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY,
+    TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO,
+    TYPE_TITLE,
 };
 use super::{Surface, floating_tint, motion, selected_secondary_text, selection_fill, surface};
 use rune::{Color, El, Icon, SpringPair, Transition, col, el, icon, row, text};
@@ -280,6 +281,85 @@ pub fn floating_pill(k: &Kit, key: &str, label: &str) -> El {
         pill = pill.box_shadow(shadow);
     }
     pill
+}
+
+/// A frosted bar floating over content in the pill's material, holding `children` in a row:
+/// controls and live numbers for work that runs over the content, such as a bulk export.
+pub fn floating_bar(k: &Kit, key: &str, children: Vec<El>) -> El {
+    let mut bar = row()
+        .key(key)
+        .gap(SPACE_MD)
+        .center_y()
+        .px(SPACE_LG)
+        .py(SPACE_SM)
+        .radius(RADIUS_SHEET)
+        .backdrop_blur(FLOATING_BLUR)
+        .fill(floating_tint(k))
+        .border(HAIRLINE, k.c.border_weak)
+        .transition(
+            Transition::opacity()
+                .combined(Transition::offset(0.0, 8.0))
+                .springs(motion::SURFACE_PAIR),
+        );
+    for child in children {
+        bar = bar.child(child);
+    }
+    for shadow in k.shadow_layers(&k.elevation.overlay) {
+        bar = bar.box_shadow(shadow);
+    }
+    bar
+}
+
+/// A titled popover surface [`FORM_POPOVER_WIDTH`] wide for a form, with a close button that
+/// calls `close`, keyed `{anchor_key}-content`; focus returns to the element keyed
+/// `anchor_key` when it closes. The kit's `Popover` caps its surface at 320 pt, too narrow for
+/// a row of pickers and a folder path. Mount it with `rune_kit::popover::anchored`.
+pub fn form_popover<S: 'static>(
+    k: &Kit,
+    anchor_key: &str,
+    title: &str,
+    body: El,
+    close: impl Fn(&mut S) + 'static,
+) -> El {
+    let header = row()
+        .key("header")
+        .w_full()
+        .gap(SPACE_SM)
+        .center_y()
+        .padding(SPACE_MD)
+        .pb(0.0)
+        .child(
+            text(title)
+                .key("title")
+                .font(TYPE_HEADLINE)
+                .color(k.c.text_base)
+                .grow(1.0),
+        )
+        .child(
+            IconButton::new(k.glyph.close)
+                .variant(IconButtonVariant::Ghost)
+                .label("Close")
+                .on_press(close)
+                .build(k)
+                .key("close"),
+        );
+    let content = col()
+        .key(format!("{anchor_key}-content"))
+        .role("dialog")
+        .label(title)
+        .focus_return(anchor_key)
+        .w(FORM_POPOVER_WIDTH)
+        .child(header)
+        .child(
+            col()
+                .key("body")
+                .w_full()
+                .padding(SPACE_MD)
+                .shrink()
+                .min_h(0.0)
+                .child(body),
+        );
+    rune_kit::popover::raised(k, content, RADIUS_TILE)
 }
 
 /// A small warning-colored count, as on the connection pill when the session log has news.

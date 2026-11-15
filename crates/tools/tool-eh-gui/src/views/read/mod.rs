@@ -1,19 +1,16 @@
 //! The Read section while a session captures: the stats strip, the list toolbar with the quick
 //! search, the message list, and the inspector.
 
-mod inspector;
-mod list;
 pub mod rules;
 mod strip;
 
-pub use inspector::inspector;
-
+use super::message_list;
 use crate::app::dispatch;
 use crate::design::tokens::{SEARCH_WIDTH, SPACE_LG, SPACE_SM};
 use crate::design::{icons, parts};
 use crate::read::ReadInput;
 use crate::read::search::SearchState;
-use crate::state::{AppState, Input};
+use crate::state::{AppState, Input, Section};
 use common_utils::string_utils::format_thousands;
 use rune::{El, Key, Tx, col, row, spacer};
 use rune_kit::{Button, ButtonVariant, Kit, TextInput};
@@ -58,7 +55,7 @@ pub fn content(s: &AppState, k: &Kit, dark: bool, partitions: usize, layer: &mut
             None,
         ));
     }
-    area.child(list::list(s, k, dark, list::read_rows))
+    area.child(message_list::list(s, k, dark, Section::Read, None))
 }
 
 fn toolbar(s: &AppState, k: &Kit) -> El {
@@ -93,7 +90,7 @@ fn toolbar(s: &AppState, k: &Kit) -> El {
                 true
             }
             Key::Down => {
-                tx.focus(list::MESSAGE_LIST_KEY, true);
+                tx.focus(message_list::MESSAGE_LIST_KEY, true);
                 true
             }
             // `Key` gains variants over time; other keys go on to the field and the window.

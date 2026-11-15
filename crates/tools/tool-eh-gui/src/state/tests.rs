@@ -1,4 +1,5 @@
 use super::*;
+use crate::archive::test_support::{messages as archive_messages, page as archive_page};
 use crate::bridge::test_support::detached_session;
 use crate::form::SecretSource;
 use shared_eventhub_core::engine::{EngineCommand, PartitionEnd};
@@ -1112,19 +1113,22 @@ fn a_closed_window_waits_for_a_running_export_before_quitting() {
         partition_id: "0".to_owned(),
         sequence_number: 1,
     };
-    f.state.read.export = crate::read::inspector::ExportPhase::Running {
-        session: 1,
+    f.state.read.inspector.export = crate::read::inspector::ExportPhase::Running {
+        owner: 1,
         key: key.clone(),
         key_str: "p0-s1".to_owned(),
     };
 
     let closed = f.apply(Input::WindowClosed(base_time()));
-    let finished = f.apply(Input::Read(ReadInput::ExportDone {
-        session: 1,
-        key,
-        result: Ok(()),
-        now: base_time(),
-    }));
+    let finished = f.apply(Input::inspector(
+        Section::Read,
+        InspectorInput::ExportDone {
+            owner: 1,
+            key,
+            result: Ok(()),
+            now: base_time(),
+        },
+    ));
 
     assert!(!has_quit(&closed));
     assert!(has_quit(&finished));
@@ -1138,14 +1142,252 @@ fn a_failed_message_export_shows_a_danger_toast() {
         sequence_number: 1,
     };
 
-    f.apply(Input::Read(ReadInput::ExportDone {
-        session: 1,
-        key,
-        result: Err("disk full".to_owned()),
-        now: base_time(),
-    }));
+    f.apply(Input::inspector(
+        Section::Read,
+        InspectorInput::ExportDone {
+            owner: 1,
+            key,
+            result: Err("disk full".to_owned()),
+            now: base_time(),
+        },
+    ));
 
     assert_eq!(f.state.toasts.len(), 1);
     assert_eq!(f.state.toasts[0].kind, ToastKind::Danger);
     assert!(f.state.toasts[0].text.contains("disk full"));
+}
+
+impl Fixture {
+    /// An empty search of the Export section whose first page showed `count` rows.
+    fn searched(&mut self, count: usize) {
+        let out = self.apply(Input::Archive(ArchiveInput::SearchPressed));
+        let [Effect::Archive(ArchiveEffect::Search(request))] = out.effects.as_slice() else {
+            panic!("expected a page request, got {:?}", out.effects);
+        };
+        let generation = request.generation;
+        self.apply(Input::Archive(ArchiveInput::PageLoaded {
+            generation,
+            elapsed_ms: 1,
+            result: Ok(archive_page(archive_messages(count), None)),
+        }));
+    }
+
+    /// A bulk export of the searched rows started; returns its id.
+    fn bulk_running(&mut self) -> u64 {
+        self.searched(2);
+        let out = self.apply(Input::Archive(ArchiveInput::BulkExportPressed));
+        match out.effects.as_slice() {
+            [Effect::Archive(ArchiveEffect::BulkExport(request))] => request.export,
+            other => panic!("expected a bulk export, got {other:?}"),
+        }
+    }
+}
+
+fn bulk_done(export: u64, result: Result<ExportOutcome, String>) -> Input {
+    Input::Archive(ArchiveInput::BulkDone {
+        export,
+        elapsed_ms: 1,
+        result,
+    })
+}
+
+fn files_failed(cancelled: bool) -> Result<ExportOutcome, String> {
+    Ok(ExportOutcome {
+        failed: 1,
+        first_error: Some("x.txt: disk full".to_owned()),
+        cancelled,
+        ..ExportOutcome::default()
+    })
+}
+
+#[test]
+fn the_data_folder_cannot_change_while_a_bulk_export_runs() {
+    let mut f = fixture();
+    let export = f.bulk_running();
+    let before = f.state.form.data_folder.clone();
+
+    let refused = f.apply(Input::DataFolderPicked(PathBuf::from("other")));
+    let refused_folder = f.state.form.data_folder.clone();
+    f.apply(bulk_done(export, clean_finish()));
+    let accepted = f.apply(Input::DataFolderPicked(PathBuf::from("other")));
+
+    assert!(!refused.changed && refused_folder == before);
+    assert!(matches!(
+        accepted.effects.as_slice(),
+        [Effect::SwitchDataFolder(_)]
+    ));
+    assert!(!f.state.archive.searched());
+}
+
+#[test]
+fn the_data_folder_lock_names_what_holds_the_folder() {
+    let mut f = fixture();
+    let free = f.state.data_folder_lock();
+    f.bulk_running();
+    let exporting = f.state.data_folder_lock();
+    f.state.archive.bulk = crate::archive::bulk::BulkExport::Idle;
+    f.connected();
+    let connected = f.state.data_folder_lock();
+
+    assert!(free.is_none());
+    assert!(exporting.is_some_and(|reason| reason.contains("bulk export")));
+    assert!(connected.is_some_and(|reason| reason.contains("session")));
+}
+
+#[test]
+fn a_closed_window_cancels_a_bulk_export_and_quits_after_it_ends() {
+    let mut f = fixture();
+    let export = f.bulk_running();
+
+    let closed = f.apply(Input::WindowClosed(base_time()));
+    let cancelled = match &f.state.archive.bulk {
+        crate::archive::bulk::BulkExport::Running { cancel, .. } => {
+            cancel.load(std::sync::atomic::Ordering::Acquire)
+        }
+        other => panic!("expected Running, got {other:?}"),
+    };
+    let finished = f.apply(bulk_done(
+        export,
+        Ok(ExportOutcome {
+            cancelled: true,
+            ..ExportOutcome::default()
+        }),
+    ));
+
+    assert!(cancelled);
+    assert!(!has_quit(&closed));
+    assert!(has_quit(&finished) && !has_reopen(&finished));
+}
+
+#[rstest::rstest]
+#[case::export_first(true)]
+#[case::session_first(false)]
+fn a_closed_window_quits_only_after_both_the_session_and_the_export_end(
+    #[case] export_first: bool,
+) {
+    let mut f = fixture();
+    let export = f.bulk_running();
+    let (id, _) = f.connected();
+    f.apply(Input::WindowClosed(base_time()));
+    let end_session = || done(id, Ok(summary(RunEnd::Stopped, &[])), clean_finish());
+    let end_export = || bulk_done(export, clean_finish());
+
+    let (first, second) = if export_first {
+        (f.apply(end_export()), f.apply(end_session()))
+    } else {
+        (f.apply(end_session()), f.apply(end_export()))
+    };
+
+    assert!(!has_quit(&first));
+    assert!(has_quit(&second));
+}
+
+#[rstest::rstest]
+#[case::failed_files(files_failed(false))]
+#[case::cancelled_with_failed_files(files_failed(true))]
+#[case::stopped(Err("read failed".to_owned()))]
+fn a_failed_bulk_export_with_the_window_closed_reopens_it(
+    #[case] result: Result<ExportOutcome, String>,
+) {
+    let mut f = fixture();
+    let export = f.bulk_running();
+    f.apply(Input::WindowClosed(base_time()));
+
+    let finished = f.apply(bulk_done(export, result));
+
+    assert!(has_reopen(&finished));
+    assert!(!has_quit(&finished));
+    assert_eq!(f.state.toasts.len(), 1);
+}
+
+#[test]
+fn a_session_failing_first_reopens_once_and_the_export_ending_later_does_not_quit() {
+    let mut f = fixture();
+    let export = f.bulk_running();
+    let (id, _) = f.connected();
+    f.apply(Input::WindowClosed(base_time()));
+
+    let failed = f.apply(done(
+        id,
+        Ok(summary(RunEnd::Stopped, &["0"])),
+        clean_finish(),
+    ));
+    let finished = f.apply(bulk_done(export, files_failed(false)));
+
+    assert!(has_reopen(&failed));
+    assert!(!has_reopen(&finished) && !has_quit(&finished));
+}
+
+#[test]
+fn a_closed_window_waits_for_an_export_section_message_export() {
+    let mut f = fixture();
+    let key = shared_eventhub_core::models::MessageKey {
+        partition_id: "0".to_owned(),
+        sequence_number: 1,
+    };
+    f.state.archive.inspector.export = crate::read::inspector::ExportPhase::Running {
+        owner: 0,
+        key: key.clone(),
+        key_str: "p0-s1".to_owned(),
+    };
+
+    let closed = f.apply(Input::WindowClosed(base_time()));
+    let finished = f.apply(Input::inspector(
+        Section::Export,
+        InspectorInput::ExportDone {
+            owner: 0,
+            key,
+            result: Ok(()),
+            now: base_time(),
+        },
+    ));
+
+    assert!(!has_quit(&closed));
+    assert!(has_quit(&finished));
+}
+
+#[test]
+fn an_export_section_result_never_ends_a_read_export_with_the_same_owner() {
+    let mut f = fixture();
+    let key = shared_eventhub_core::models::MessageKey {
+        partition_id: "0".to_owned(),
+        sequence_number: 1,
+    };
+    f.state.read.inspector.export = crate::read::inspector::ExportPhase::Running {
+        owner: 1,
+        key: key.clone(),
+        key_str: "p0-s1".to_owned(),
+    };
+
+    f.apply(Input::inspector(
+        Section::Export,
+        InspectorInput::ExportDone {
+            owner: 1,
+            key,
+            result: Ok(()),
+            now: base_time(),
+        },
+    ));
+
+    assert!(f.state.read.export_running());
+}
+
+#[test]
+fn a_tick_ends_export_section_feedback() {
+    let mut f = fixture();
+    f.searched(1);
+    f.apply(Input::Archive(ArchiveInput::Select("p0-s0".to_owned())));
+    let now = base_time();
+    f.apply(Input::inspector(
+        Section::Export,
+        InspectorInput::Copied {
+            kind: crate::read::inspector::FeedbackKind::CopiedBody,
+            now,
+        },
+    ));
+
+    let tick = f.apply(Input::Tick(now + crate::read::inspector::FEEDBACK_FOR));
+
+    assert!(tick.changed);
+    assert!(f.state.archive.inspector.feedback.is_none());
 }

@@ -1,15 +1,17 @@
-//! The inspector: the selected message's metadata and body, copy, and export.
+//! The inspector both sections share: the selected message's metadata and body, copy, and
+//! export.
 
-use super::list::copy_selected_body;
+use super::message_list::{clear_selection_input, copy_selected_body};
 use crate::app::dispatch;
 use crate::design::parts;
 use crate::design::tokens::{SPACE_LG, SPACE_MD, SPACE_SM, TYPE_MONO, TYPE_TITLE};
+use crate::read::Selected;
 use crate::read::inspector::{
-    ExportPhase, FeedbackKind, export_file_name, message_json, shown_body,
+    ExportPhase, FeedbackKind, InspectorInput, InspectorState, export_file_name, message_json,
+    shown_body,
 };
 use crate::read::rows::display_line;
-use crate::read::{ReadInput, Selected};
-use crate::state::{AppState, Input};
+use crate::state::{AppState, Input, Section};
 use chrono::Local;
 use rune::{El, FileDialogOptions, ScrollSpec, Tx, col, el, row, text};
 use rune_kit::{
@@ -18,13 +20,33 @@ use rune_kit::{
 use shared_eventhub_core::models::BodyKind;
 use shared_eventhub_persistence::export::ExportFormat;
 
-const FORMATS: [ExportFormat; 3] = [ExportFormat::Txt, ExportFormat::Csv, ExportFormat::Json];
-const FORMAT_LABELS: [&str; 3] = ["txt", "csv", "json"];
+/// The export formats in picker order, with their labels.
+pub const FORMATS: [ExportFormat; 3] = [ExportFormat::Txt, ExportFormat::Csv, ExportFormat::Json];
+pub const FORMAT_LABELS: [&str; 3] = ["txt", "csv", "json"];
+/// The caption under a csv pick.
+pub const CSV_CAPTION: &str =
+    "Spreadsheet apps may run cells that start with =, +, - or @ as formulas.";
 
-/// The inspector pane's content: the selected message, or nothing while none is selected (the
-/// pane is closed then).
-pub fn inspector(s: &AppState, k: &Kit) -> El {
-    let Some(selected) = &s.read.selected else {
+/// `section`'s inspector.
+pub fn inspector_of(s: &AppState, section: Section) -> &InspectorState {
+    match section {
+        Section::Read => &s.read.inspector,
+        Section::Export => &s.archive.inspector,
+    }
+}
+
+fn inspector_of_mut(s: &mut AppState, section: Section) -> &mut InspectorState {
+    match section {
+        Section::Read => &mut s.read.inspector,
+        Section::Export => &mut s.archive.inspector,
+    }
+}
+
+/// The inspector pane's content: `section`'s selected message, or nothing while none is
+/// selected (the pane is closed then).
+pub fn inspector(s: &AppState, k: &Kit, section: Section) -> El {
+    let state = inspector_of(s, section);
+    let Some(selected) = &state.selected else {
         return el().key("inspector-empty");
     };
     let message = &selected.message;
@@ -40,7 +62,7 @@ pub fn inspector(s: &AppState, k: &Kit) -> El {
     let close = IconButton::new(k.glyph.close)
         .variant(IconButtonVariant::Ghost)
         .label("Close")
-        .on_press(|s: &mut AppState| dispatch(s, Input::Read(ReadInput::ClearSelection)))
+        .on_press(move |s: &mut AppState| dispatch(s, clear_selection_input(section)))
         .build(k)
         .key("inspector-close");
     let title = text(format!(
@@ -82,8 +104,8 @@ pub fn inspector(s: &AppState, k: &Kit) -> El {
     }
     let pane = pane
         .child(metadata(k, selected))
-        .child(actions(s, k, selected))
-        .child(export(s, k))
+        .child(actions(state, k, selected, section))
+        .child(export(state, k, section))
         .child(body(k, &message.body));
     col()
         .key("inspector-scroll")
@@ -130,9 +152,9 @@ fn metadata(k: &Kit, selected: &Selected) -> El {
     parts::metadata_card(k, rows)
 }
 
-fn actions(s: &AppState, k: &Kit, selected: &Selected) -> El {
+fn actions(state: &InspectorState, k: &Kit, selected: &Selected, section: Section) -> El {
     let shows = |kind| {
-        s.read
+        state
             .feedback
             .as_ref()
             .is_some_and(|feedback| feedback.shows(&selected.key, kind))
@@ -149,8 +171,8 @@ fn actions(s: &AppState, k: &Kit, selected: &Selected) -> El {
                 } else {
                     k.glyph.copy
                 })
-                .on_press_tx(|s: &mut AppState, tx: &mut Tx| {
-                    copy_selected_body(s, tx);
+                .on_press_tx(move |s: &mut AppState, tx: &mut Tx| {
+                    copy_selected_body(s, tx, section);
                 })
                 .build(k)
                 .key("copy-body"),
@@ -158,40 +180,38 @@ fn actions(s: &AppState, k: &Kit, selected: &Selected) -> El {
         .child(
             Button::new(label(FeedbackKind::CopiedJson, "Copy as JSON", "Copied"))
                 .variant(ButtonVariant::Neutral)
-                .on_press_tx(copy_json)
+                .on_press_tx(move |s: &mut AppState, tx: &mut Tx| copy_json(s, tx, section))
                 .build(k)
                 .key("copy-json"),
         )
 }
 
-fn copy_json(s: &mut AppState, tx: &mut Tx) {
-    let Some(selected) = &s.read.selected else {
+fn copy_json(s: &mut AppState, tx: &mut Tx, section: Section) {
+    let Some(selected) = &inspector_of(s, section).selected else {
         return;
     };
     let input = match message_json(&selected.message) {
         Ok(json) => {
             tx.copy(json);
-            ReadInput::Copied {
+            InspectorInput::Copied {
                 kind: FeedbackKind::CopiedJson,
                 now: chrono::Utc::now(),
             }
         }
-        Err(error) => ReadInput::CopyFailed(error),
+        Err(error) => InspectorInput::CopyFailed(error),
     };
-    dispatch(s, Input::Read(input));
+    dispatch(s, Input::inspector(section, input));
 }
 
-fn export(s: &AppState, k: &Kit) -> El {
-    let read = &s.read;
-    let index = FORMATS
-        .iter()
-        .position(|format| *format == read.export_format);
-    let exported = read.selected.as_ref().is_some_and(|selected| {
-        read.feedback
+fn export(state: &InspectorState, k: &Kit, section: Section) -> El {
+    let index = FORMATS.iter().position(|format| *format == state.format);
+    let exported = state.selected.as_ref().is_some_and(|selected| {
+        state
+            .feedback
             .as_ref()
             .is_some_and(|feedback| feedback.shows(&selected.key, FeedbackKind::Exported))
     });
-    let label = match (&read.export, exported) {
+    let label = match (&state.export, exported) {
         (ExportPhase::Running { .. }, _) => "Exporting",
         (ExportPhase::Idle | ExportPhase::Picking { .. }, true) => "Exported",
         (ExportPhase::Idle | ExportPhase::Picking { .. }, false) => "Export…",
@@ -208,18 +228,19 @@ fn export(s: &AppState, k: &Kit) -> El {
                     SegmentedControl::new(&FORMAT_LABELS, index)
                         .label("Export format")
                         .fit()
-                        .on_pick(|s: &mut AppState, index: usize, _| {
+                        .on_pick(move |s: &mut AppState, index: usize, _| {
                             if let Some(format) = FORMATS.get(index) {
-                                s.read.export_format = *format;
+                                inspector_of_mut(s, section).format = *format;
                             }
                         })
                         .build(k),
                 )
                 .child(
-                    Switch::new(read.export_metadata)
+                    Switch::new(state.metadata)
                         .label("Metadata")
-                        .on_toggle(|s: &mut AppState| {
-                            s.read.export_metadata = !s.read.export_metadata
+                        .on_toggle(move |s: &mut AppState| {
+                            let inspector = inspector_of_mut(s, section);
+                            inspector.metadata = !inspector.metadata;
                         })
                         .build(k),
                 ),
@@ -227,45 +248,44 @@ fn export(s: &AppState, k: &Kit) -> El {
         .child(
             Button::new(label)
                 .variant(ButtonVariant::Outline)
-                .disabled(!read.export.is_idle())
-                .on_press_tx(open_export_dialog)
+                .disabled(!state.export.is_idle())
+                .on_press_tx(move |s: &mut AppState, tx: &mut Tx| {
+                    open_export_dialog(s, tx, section);
+                })
                 .build(k)
                 .key("export-message"),
         );
-    if read.export_format == ExportFormat::Csv {
-        group = group.child(parts::caption(
-            k,
-            "Spreadsheet apps may run cells that start with =, +, - or @ as formulas.",
-        ));
+    if state.format == ExportFormat::Csv {
+        group = group.child(parts::caption(k, CSV_CAPTION));
     }
     group
 }
 
 /// Starts an export of the selection and opens the save dialog for it; does nothing while an
 /// export is already picking or writing.
-fn open_export_dialog(s: &mut AppState, tx: &mut Tx) {
-    if !s.read.export.is_idle() {
+fn open_export_dialog(s: &mut AppState, tx: &mut Tx, section: Section) {
+    if !inspector_of(s, section).export.is_idle() {
         return;
     }
-    dispatch(s, Input::Read(ReadInput::ExportPressed));
-    let (session, key) = match &s.read.export {
-        ExportPhase::Picking { session, key, .. } => (*session, key.clone()),
+    dispatch(s, Input::inspector(section, InspectorInput::ExportPressed));
+    let state = inspector_of(s, section);
+    let (owner, key) = match &state.export {
+        ExportPhase::Picking { owner, key, .. } => (*owner, key.clone()),
         ExportPhase::Idle | ExportPhase::Running { .. } => return,
     };
     let options = FileDialogOptions {
         title: "Export the message".to_owned(),
-        file_name: Some(export_file_name(&key, s.read.export_format)),
+        file_name: Some(export_file_name(&key, state.format)),
         ..FileDialogOptions::default()
     };
     tx.save_file(options, move |s: &mut AppState, answer, _| {
         let answer = answer.map_err(|error| error.to_string());
         dispatch(
             s,
-            Input::Read(ReadInput::ExportAnswered {
-                session,
-                key,
-                answer,
-            }),
+            Input::inspector(
+                section,
+                InspectorInput::ExportAnswered { owner, key, answer },
+            ),
         );
     });
 }

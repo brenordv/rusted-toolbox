@@ -7,15 +7,23 @@ use crate::bridge::{EngineSession, UiDelivery};
 use crate::read::search::Rebuilt;
 use crate::read::{ReadEffect, ReadInput};
 use crate::state::{AppState, Effect, Input};
+use crate::tasks::StoreSlot;
+use anyhow::Context;
 use chrono::{TimeDelta, Utc};
-use shared_eventhub_core::engine::EngineEvent;
+use shared_eventhub_core::engine::{EngineEvent, MessageSink};
 use shared_eventhub_core::stats::StatsSnapshot;
 use std::collections::BTreeMap;
+use std::path::Path;
 use tokio::runtime::Handle;
+use tokio::task::JoinSet;
 use tracing::debug;
 
 /// The rows a seeded Read state holds.
 const SEEDED_ROWS: usize = 5_000;
+/// The messages `seeded-export`'s archive holds: past the Export list's cap.
+const SEEDED_ARCHIVE: usize = 6_000;
+/// Stores in flight at a time while seeding, so the archive's writer commits them in groups.
+const SEED_BATCH: usize = 256;
 /// The quick search `seeded-search` shows.
 const SEEDED_SEARCH: &str = r#""amount":4\d\d"#;
 
@@ -92,6 +100,36 @@ fn filter(state: &mut AppState) {
             state.apply(Input::Read(ReadInput::SearchRebuilt(rebuilt)));
         }
     }
+}
+
+/// Stores [`SEEDED_ARCHIVE`] generated messages into the demo archive of `root`, bound to the
+/// demo hub, a batch of them in flight at a time.
+///
+/// # Errors
+/// Fails when the archive cannot be opened, bound, or written.
+pub async fn seed_archive(slot: &StoreSlot, root: &Path) -> anyhow::Result<()> {
+    let store = slot.acquire(&super::data_paths(root)).await?;
+    store
+        .bind(&hub::identity())
+        .await
+        .context("Failed to bind the demo archive")?;
+    let mut messages = hub::generated(Scenario::SeededExport, SEEDED_ARCHIVE);
+    while !messages.is_empty() {
+        let mut writes = JoinSet::new();
+        for message in messages.drain(..SEED_BATCH.min(messages.len())) {
+            let store = store.clone();
+            writes.spawn(async move {
+                store
+                    .store(&message, &hub::checkpoint_of(&message), true)
+                    .await
+            });
+        }
+        while let Some(written) = writes.join_next().await {
+            written.context("Storing a demo message stopped unexpectedly")??;
+        }
+    }
+    debug!(messages = SEEDED_ARCHIVE, "seeded the demo archive");
+    Ok(())
 }
 
 /// Statistics for a session that received `received` messages over two minutes.

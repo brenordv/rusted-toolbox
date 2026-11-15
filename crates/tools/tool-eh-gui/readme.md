@@ -2,10 +2,10 @@
 
 A desktop window for Azure Event Hubs: connect to an event hub and capture its events into the
 same local archive the `eh` CLI uses, watch them arrive in a live list, filter them, inspect
-one, copy it, or export it to a file. Archive search and bulk export come in a later version;
-until then `eh export` writes the archive out.
+one, copy it, or export it to a file. The Export section searches the archive by time and
+text and exports one message or every match, with or without a connection.
 
-Screenshots: to come with the Export section.
+Screenshots come in a later version.
 
 ```
 eh-gui                      # opens the window
@@ -73,6 +73,42 @@ Apply rules sends them to the running session; rows already in the list stay. Wh
 runs, applied rules are kept for the next Connect, and Save config writes them to
 `config.json`. A recalled `config.json` fills them in at launch.
 
+## Exporting
+
+The Export section works on the data folder's archive, connected or not, and while a session
+captures into it.
+
+- **Search archive** (sidebar): the same time and text fields as the capture rules. Search shows
+  every archived message that matches, oldest enqueue time first (messages without an enqueue
+  time come first, and only in a search without a time condition). It is disabled while a page
+  is still being read: a search cannot be stopped halfway, so a slow regex over a large archive
+  has to finish first. Clear empties the form and keeps the results.
+- **Results** load 250 at a time as you scroll toward the end, up to 5,000 rows (fewer with very
+  large bodies: at most 256 MB of bodies; loading a page briefly holds one more page on top).
+  Past that the footer says so; narrow the search, or export them all. A page that fails to load
+  shows its error with Retry. Each page is read on its own, so a message overwritten between two
+  pages (a capture with `ignore_checkpoint` running at the same time) can be missing.
+- **The inspector** works as in the Read section: metadata, body, Copy body, Copy as JSON, and
+  Export of one message to a file you pick.
+- **Export all matches** (the bar at the bottom): exports every match of the last search, not
+  just the loaded rows, and not what the form says now if you edited it since. Options sets the
+  format (txt, csv, or json; with csv, mind spreadsheet apps that run cells starting with `=`,
+  `+`, `-`, or `@` as formulas), metadata, one file per month, local time, skip already exported,
+  and the folder (the data folder's `exports` unless you pick another; picks are not saved to
+  `config.json`). While it runs the bar shows exported, skipped, and failed counts and Cancel,
+  which stops between messages, so every file written stays complete. When it ends the bar
+  shows the counts, and when files failed, the first failure (the log file has the rest).
+- **Skip already exported** uses the archive's export log, which is global: a message exported
+  once, in any format or folder, is skipped, unless the exported file no longer exists (with one
+  file per month it is skipped even then). An export of one message from the inspector does not
+  count.
+- A bulk export during a live capture is fine: messages captured while it runs may or may not be
+  included, and the counts say what was written.
+- One bulk export runs at a time, and the data folder cannot change while it runs.
+
+The CSV injection warning and how the archive grows (there is no purge yet) are covered in
+`shared-eventhub-persistence`'s readme.
+
 ## Config
 
 At launch eh-gui reads `config.json` from the working directory, exactly as `eh` does, and fills
@@ -88,7 +124,12 @@ one `config.json` per data folder.
 - The archive is locked while eh-gui uses it: from the first Connect until the app quits (or the
   data folder changes), `eh read` and `eh export` on the same folder report it as in use. One
   process at a time per data folder.
-- The data folder can change only while no session runs.
+- The data folder can change only while no session and no bulk export runs. A new data folder
+  clears the Export section's results.
+- Secrets saved with Save config go to the data folder's secrets file, which is obfuscated, not
+  encrypted; protect the folder like the secrets themselves.
+- Data captured by `eh-read` 1.1.0 (sled) is not migrated; the last released 1.1.0 binaries
+  still read it.
 
 ## Closing the window
 
@@ -96,6 +137,10 @@ Closing the window during a session stops the session and lets it finish writing
 in the background; the app quits when it is done. If that fails, the window comes back with the
 error (captured messages are safe in the archive, and `eh export` can write what was missed). If
 it is still running after 30 seconds, the window comes back with a Force quit button.
+
+Closing the window during a bulk export cancels it; the app quits once the files being written
+are complete. If the export failed (some files could not be written, or the archive could not
+be read), the window comes back to show it.
 
 ## GPU
 
@@ -128,8 +173,11 @@ A dev-only binary runs the real window against a generated event hub and a tempo
 (deleted on exit), with no namespace or credentials. Pick a scenario with `EH_GUI_DEMO` (default
 `live`): `live`, `burst`, `quiet`, `partition-fail`, `start-fail`, `slow-finish`,
 `seeded-empty`, `seeded-failed`, `seeded-connect`, `seeded-read` (a full list with a message
-selected), `seeded-search` (the same with a regex filter). The seeded Read states run no engine,
-so Disconnect there never finishes. Debug builds accept Rune's agent flags
+selected), `seeded-search` (the same with a regex filter), `seeded-export` (the Export section
+over an archive of 6,000 generated messages, searched for everything; paging and bulk exports
+are real). The seeded Read states run no engine, so Disconnect there never finishes. Demo mode
+reads and writes only under its temporary folder: bulk exports go to its `data/exports`,
+whatever folder is picked. Debug builds accept Rune's agent flags
 (`--snap`, `--script`, `--tree`, `--trace`, `--scene`); write their output under
 `target/eh-gui-demo/`, which git ignores.
 
@@ -171,3 +219,7 @@ Release builds of the workspace leave the demo out.
   only turns Last message the warning color.
 - Run with `RUNE_COMMIT_BUDGET_MS=8` under `EH_GUI_DEMO=burst`, and while opening and closing
   the inspector: no commit over budget.
+- Export section on a real archive: search by a time window plus a regex, scroll through several
+  pages, bulk export a few thousand messages and cancel halfway (the partial files parse), run
+  it again with Skip already exported on (the skips show), and run a bulk export while a live
+  capture writes into the same archive.

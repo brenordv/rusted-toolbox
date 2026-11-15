@@ -3,9 +3,12 @@
 
 use crate::app::{apply_motion, run_effects};
 use crate::appearance::SystemAppearance;
+use crate::archive::bulk::{BulkRequest, progress_due};
+use crate::archive::{ArchiveInput, PageRequest};
 use crate::bridge::{
     EngineDone, EngineSession, FilterHook, SessionSink, UiDelivery, UiPort, spawn_session,
 };
+use crate::read::inspector::InspectorInput;
 use crate::read::search::{REBUILD_DEBOUNCE, RebuildRequest, Rebuilt};
 use crate::read::{ExportOneRequest, ReadInput};
 use crate::state::{AppState, Input};
@@ -18,8 +21,11 @@ use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_persistence::config::{
     SensitiveValues, ToolConfig, needs_stored_secret, resolve_target_with, save_config,
 };
-use shared_eventhub_persistence::export::{DiskWriteConfig, ExportOptions, WritingSink};
+use shared_eventhub_persistence::export::{
+    DiskWriteConfig, ExportOptions, ExportOutcome, WritingSink,
+};
 use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::search::{SearchPage, SearchQuery};
 use shared_eventhub_persistence::secrets::SecretsStore;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,7 +34,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::task::JoinError;
-use tracing::{debug, error};
+use tracing::{debug, error, info_span, trace};
 
 /// A request to start a session: the config, the typed secrets, and the data folder it is for.
 #[derive(Debug)]
@@ -62,8 +68,14 @@ pub trait Services {
     fn quit(&self);
     /// Runs a quick-search rebuild off the UI thread; reports [`ReadInput::SearchRebuilt`].
     fn rebuild_search(&self, request: RebuildRequest);
-    /// Writes one archived message to a file; reports [`ReadInput::ExportDone`].
+    /// Writes one archived message to a file; reports [`InspectorInput::ExportDone`] to the
+    /// request's section.
     fn export_one(&self, request: ExportOneRequest);
+    /// Reads one page of an archive search; reports [`ArchiveInput::PageLoaded`].
+    fn search_archive(&self, request: PageRequest);
+    /// Exports every match of a search; reports [`ArchiveInput::BulkProgress`] while it runs
+    /// and [`ArchiveInput::BulkDone`] at the end.
+    fn bulk_export(&self, request: BulkRequest);
 }
 
 /// The production services.
@@ -154,6 +166,133 @@ impl Services for ProdServices {
             request,
         );
     }
+
+    fn search_archive(&self, request: PageRequest) {
+        spawn_search_archive(
+            &self.rt,
+            self.handle.clone(),
+            Arc::clone(&self.slot),
+            request,
+        );
+    }
+
+    fn bulk_export(&self, request: BulkRequest) {
+        spawn_bulk_export(
+            &self.rt,
+            self.handle.clone(),
+            Arc::clone(&self.slot),
+            request,
+        );
+    }
+}
+
+/// Reads `request`'s page from the archive of its data folder and posts it.
+pub(crate) fn spawn_search_archive(
+    rt: &Handle,
+    handle: AppHandle<AppState>,
+    slot: Arc<StoreSlot>,
+    request: PageRequest,
+) {
+    rt.spawn(async move {
+        let started = Instant::now();
+        let PageRequest {
+            generation,
+            query,
+            paths,
+        } = request;
+        let result = search_page(&slot, &paths, query)
+            .await
+            .map_err(|error| format!("{error:#}"));
+        apply_from_runtime(
+            &handle,
+            Input::Archive(ArchiveInput::PageLoaded {
+                generation,
+                elapsed_ms: started.elapsed().as_millis(),
+                result,
+            }),
+        );
+    });
+}
+
+async fn search_page(
+    slot: &StoreSlot,
+    paths: &DataPaths,
+    query: SearchQuery,
+) -> anyhow::Result<SearchPage> {
+    let store = slot.acquire(paths).await?;
+    let joined = tokio::task::spawn_blocking(move || store.search(&query)).await;
+    blocking_result(joined, "Searching the archive stopped unexpectedly")
+}
+
+/// Exports every match of `request`'s query, posting throttled progress and then the end.
+pub(crate) fn spawn_bulk_export(
+    rt: &Handle,
+    handle: AppHandle<AppState>,
+    slot: Arc<StoreSlot>,
+    request: BulkRequest,
+) {
+    rt.spawn(async move {
+        let started = Instant::now();
+        let export = request.export;
+        let progress = handle.clone();
+        let post = move |counts: ExportOutcome| {
+            apply_from_runtime(
+                &progress,
+                Input::Archive(ArchiveInput::BulkProgress { export, counts }),
+            );
+        };
+        let result = bulk_export(&slot, request, post)
+            .await
+            .map_err(|error| format!("{error:#}"));
+        apply_from_runtime(
+            &handle,
+            Input::Archive(ArchiveInput::BulkDone {
+                export,
+                elapsed_ms: started.elapsed().as_millis(),
+                result,
+            }),
+        );
+    });
+}
+
+/// Exports every match of `request`'s query from the archive of its data folder, handing
+/// `post` the counts at most once per [`PROGRESS_EVERY`](crate::archive::bulk::PROGRESS_EVERY).
+pub(crate) async fn bulk_export(
+    slot: &StoreSlot,
+    request: BulkRequest,
+    post: impl Fn(ExportOutcome) + Send + 'static,
+) -> anyhow::Result<ExportOutcome> {
+    let BulkRequest {
+        export,
+        query,
+        options,
+        cancel,
+        paths,
+    } = request;
+    let store = slot.acquire(&paths).await?;
+    let joined = tokio::task::spawn_blocking(move || {
+        let _span = info_span!("bulk_export", export).entered();
+        let mut last = None;
+        let report = |outcome: &ExportOutcome| {
+            let now = Instant::now();
+            if progress_due(last, now) {
+                last = Some(now);
+                trace!(export, exported = outcome.exported, "bulk export progress");
+                post(outcome.clone());
+            }
+        };
+        store.export(&query, &options, report, &cancel)
+    })
+    .await;
+    blocking_result(joined, "The export stopped unexpectedly")
+}
+
+/// A blocking task's result, with a task that died reported as `what`.
+pub(crate) fn blocking_result<T>(
+    joined: Result<anyhow::Result<T>, JoinError>,
+    what: &'static str,
+) -> anyhow::Result<T> {
+    joined.context(what)?
 }
 
 /// Runs `request` after the typing pause (follow-ups don't wait), on a blocking thread, and
@@ -211,7 +350,8 @@ pub(crate) fn spawn_export_one(
 ) {
     rt.spawn(async move {
         let ExportOneRequest {
-            session,
+            section,
+            owner,
             key,
             options,
             destination,
@@ -223,12 +363,15 @@ pub(crate) fn spawn_export_one(
             .map_err(|error| format!("{error:#}"));
         apply_from_runtime(
             &handle,
-            Input::Read(ReadInput::ExportDone {
-                session,
-                key,
-                result,
-                now: chrono::Utc::now(),
-            }),
+            Input::inspector(
+                section,
+                InspectorInput::ExportDone {
+                    owner,
+                    key,
+                    result,
+                    now: chrono::Utc::now(),
+                },
+            ),
         );
     });
 }
@@ -248,7 +391,7 @@ async fn export_one(
 
 /// A blocking export's outcome, with a task that died reported as a failure.
 pub(crate) fn export_result(joined: Result<anyhow::Result<()>, JoinError>) -> anyhow::Result<()> {
-    joined.context("Exporting the message stopped unexpectedly")?
+    blocking_result(joined, "Exporting the message stopped unexpectedly")
 }
 
 /// Applies `input` on the UI thread, runs its effects, and moves its commit as it asks.

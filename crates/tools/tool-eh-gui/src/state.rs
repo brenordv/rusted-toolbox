@@ -8,10 +8,12 @@ mod ending;
 
 pub use ending::{Failure, FailureStage};
 
+use crate::archive::{ArchiveEffect, ArchiveInput, ArchiveState};
 use crate::bridge::{EngineDone, EngineSession, UiDelivery};
 use crate::design::Ds;
 use crate::design::tokens::{SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH};
 use crate::form::{ConnectForm, PendingSave};
+use crate::read::inspector::InspectorInput;
 use crate::read::{LogKind, LogLine, ReadEffect, ReadInput, ReadState};
 use crate::services::{ConnectRequest, SaveRequest, Services};
 use chrono::{DateTime, TimeDelta, Utc};
@@ -146,6 +148,17 @@ pub enum Input {
     /// The system's appearance, read by the app itself (true: dark).
     AppearanceChanged(bool),
     Read(ReadInput),
+    Archive(ArchiveInput),
+}
+
+impl Input {
+    /// `input` for the inspector of `section`.
+    pub fn inspector(section: Section, input: InspectorInput) -> Self {
+        match section {
+            Section::Read => Self::Read(ReadInput::Inspector(input)),
+            Section::Export => Self::Archive(ArchiveInput::Inspector(input)),
+        }
+    }
 }
 
 /// Work `apply` asks the runtime glue to do.
@@ -168,6 +181,7 @@ pub enum Effect {
     /// Close the store and end the process.
     Quit,
     Read(ReadEffect),
+    Archive(ArchiveEffect),
 }
 
 /// What a transition did: the effects to run, whether anything the view reads changed, and
@@ -214,6 +228,7 @@ pub struct AppState {
     /// [`STILL_FINISHING_AFTER`]; offers Force quit.
     pub still_finishing: bool,
     pub read: ReadState,
+    pub archive: ArchiveState,
     /// The system's appearance as the app read it; `None` leaves Rune's.
     pub system_dark: Option<bool>,
     window_closed: bool,
@@ -264,6 +279,7 @@ impl AppState {
             toasts: Vec::new(),
             still_finishing: false,
             read: ReadState::default(),
+            archive: ArchiveState::default(),
             system_dark: None,
             window_closed: false,
             closed_at: None,
@@ -320,6 +336,7 @@ impl AppState {
             Input::EngineDone(done) => self.engine_done(done, &mut out),
             Input::AppearanceChanged(dark) => self.appearance_changed(dark, &mut out),
             Input::Read(input) => self.read_input(input, &mut out),
+            Input::Archive(input) => self.archive_input(input, &mut out),
         }
         self.quit_rule(&mut out);
         out
@@ -396,6 +413,20 @@ impl AppState {
         }
     }
 
+    fn archive_input(&mut self, input: ArchiveInput, out: &mut Outcome) {
+        let archive = self.archive.apply(input, &self.form.data_paths());
+        for (kind, text) in archive.toasts {
+            self.toast(kind, text);
+        }
+        out.effects
+            .extend(archive.effects.into_iter().map(Effect::Archive));
+        out.changed = archive.changed;
+        if archive.run_failed && self.window_closed {
+            info!("a bulk export failed with the window closed; reopening it");
+            self.reopen(out);
+        }
+    }
+
     fn disconnect_pressed(&mut self, out: &mut Outcome) {
         match std::mem::take(&mut self.connection) {
             ConnectionState::Connecting { session: None, .. } => {
@@ -461,25 +492,35 @@ impl AppState {
         }
     }
 
-    /// Accepted only while no session can be using the old folder.
-    fn data_folder_picked(&mut self, folder: PathBuf, out: &mut Outcome) {
+    /// Why the data folder cannot change now, or `None` when it can: nothing may be using the
+    /// current folder.
+    pub fn data_folder_lock(&self) -> Option<&'static str> {
         match &self.connection {
             ConnectionState::Disconnected | ConnectionState::Failed(_) => {}
             ConnectionState::Connecting { .. }
             | ConnectionState::Connected { .. }
             | ConnectionState::Stopping { .. } => {
-                debug!("data folder change refused: a session is starting or running");
-                out.changed = false;
-                return;
+                return Some("The data folder can change once the session ends.");
             }
         }
         if self.save_status.is_saving() {
-            debug!("data folder change refused: a save to the current folder is running");
+            return Some("The data folder can change once the save finishes.");
+        }
+        if self.archive.bulk.is_running() {
+            return Some("The data folder can change once the bulk export ends.");
+        }
+        None
+    }
+
+    fn data_folder_picked(&mut self, folder: PathBuf, out: &mut Outcome) {
+        if let Some(reason) = self.data_folder_lock() {
+            debug!(reason, "data folder change refused");
             out.changed = false;
             return;
         }
         self.form.data_folder = folder.display().to_string();
         self.form.forget_stored_secrets();
+        self.archive.folder_changed();
         let paths = self.form.data_paths();
         info!(folder = %paths.base().display(), "data folder changed");
         out.effects.push(Effect::SwitchDataFolder(paths));
@@ -490,6 +531,7 @@ impl AppState {
         self.closed_at = Some(at);
         self.sheet_open = false;
         self.form.hide_secrets();
+        self.archive.window_closed();
         match std::mem::take(&mut self.connection) {
             ConnectionState::Connecting { session: None, .. } => {
                 info!("window closed while preparing; the attempt is abandoned");
@@ -527,6 +569,7 @@ impl AppState {
             | ConnectionState::Failed(_) => false,
         };
         out.changed |= self.read.tick(now, connected);
+        out.changed |= self.archive.tick(now);
         if out.changed {
             out.motion = Motion::Animated;
         }
@@ -742,14 +785,15 @@ impl AppState {
         out.effects.push(Effect::ReopenWindow);
     }
 
-    /// Quits once the window is closed and neither a session, a save, nor a message export is
-    /// left running. Asks for the quit once; the quit path then runs to the end on its own.
+    /// Quits once the window is closed and neither a session, a save, nor an export is left
+    /// running. Asks for the quit once; the quit path then runs to the end on its own.
     fn quit_rule(&mut self, out: &mut Outcome) {
         if self.quit_requested
             || !self.window_closed
             || self.connection.session().is_some()
             || self.save_status.is_saving()
             || self.read.export_running()
+            || self.archive.busy()
         {
             return;
         }
