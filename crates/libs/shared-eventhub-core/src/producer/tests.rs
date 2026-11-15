@@ -567,3 +567,49 @@ async fn a_namespace_outside_the_allowlist_fails_before_any_network() {
     );
     assert!(!rendered.contains(SECRET_KEY), "{rendered}");
 }
+
+const RENDER_CAP: usize = 1024 * 1024;
+
+#[test]
+fn without_a_template_the_event_is_the_body_as_given() {
+    let event = OutgoingEvent {
+        body: b"{{person.email}}".to_vec(),
+        content_type: Some("text/plain".to_owned()),
+    };
+
+    let next = next_event(&event, None, RENDER_CAP).unwrap();
+
+    assert_eq!(next, event);
+}
+
+#[test]
+fn with_a_template_the_event_is_a_render_under_the_same_content_type() {
+    let template = Template::compile("{\"n\": {{random.integer min=4 max=4}}}").unwrap();
+    let event = OutgoingEvent {
+        body: b"ignored".to_vec(),
+        content_type: Some("application/json".to_owned()),
+    };
+
+    let next = next_event(&event, Some(&template), RENDER_CAP).unwrap();
+
+    assert_eq!(next.body, b"{\"n\": 4}");
+    assert_eq!(next.content_type.as_deref(), Some("application/json"));
+}
+
+#[test]
+fn a_render_past_the_cap_fails_naming_the_placeholder_and_not_the_text() {
+    let template = Template::compile("secret-literal {{internet.password length=64}}").unwrap();
+    let event = OutgoingEvent {
+        body: Vec::new(),
+        content_type: None,
+    };
+
+    let error = next_event(&event, Some(&template), 32).unwrap_err();
+
+    let rendered = format!("{error:#}");
+    assert!(
+        rendered.contains("line 1, column 16: internet.password"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("secret-literal"), "{rendered}");
+}

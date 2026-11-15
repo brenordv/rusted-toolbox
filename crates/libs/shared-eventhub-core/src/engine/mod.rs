@@ -196,6 +196,28 @@ pub struct RunSummary {
     pub end: RunEnd,
 }
 
+impl RunSummary {
+    /// The ids of the partitions that ended in [`PartitionEnd::Failed`], in
+    /// the order of [`RunSummary::partitions`] (string order: "10" before
+    /// "2").
+    pub fn failed_partitions(&self) -> Vec<&str> {
+        failed_ids(&self.partitions)
+    }
+}
+
+/// The ids in `ends` whose partition failed, in map order.
+fn failed_ids(ends: &BTreeMap<String, PartitionEnd>) -> Vec<&str> {
+    ends.iter()
+        .filter(|(_, end)| match end {
+            PartitionEnd::Failed(_) => true,
+            PartitionEnd::UpperBoundPassed
+            | PartitionEnd::NothingLeftInWindow
+            | PartitionEnd::Stopped => false,
+        })
+        .map(|(partition_id, _)| partition_id.as_str())
+        .collect()
+}
+
 /// The consumer's side of a run.
 ///
 /// Drain `events` independently of sending `commands`: control events wait
@@ -431,12 +453,7 @@ impl SupervisionOutcome {
             return RunEnd::Stopped;
         }
 
-        let failed: Vec<&str> = self
-            .ends
-            .iter()
-            .filter(|(_, end)| matches!(end, PartitionEnd::Failed(_)))
-            .map(|(partition_id, _)| partition_id.as_str())
-            .collect();
+        let failed = failed_ids(&self.ends);
         if failed.is_empty() {
             RunEnd::Completed
         } else if failed.len() == self.ends.len() {
@@ -513,6 +530,40 @@ impl Supervisor {
 mod tests {
     use super::*;
     use crate::filters::TextFilter;
+
+    fn summary_with(ends: &[(&str, PartitionEnd)]) -> RunSummary {
+        RunSummary {
+            stats: StatsSnapshot::default(),
+            partitions: ends
+                .iter()
+                .map(|(partition_id, end)| ((*partition_id).to_owned(), end.clone()))
+                .collect(),
+            end: RunEnd::Stopped,
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::mixed(
+        &[
+            ("2", PartitionEnd::Failed("lost".to_owned())),
+            ("0", PartitionEnd::Stopped),
+            ("10", PartitionEnd::Failed("denied".to_owned())),
+            ("1", PartitionEnd::NothingLeftInWindow),
+        ],
+        &["10", "2"],
+    )]
+    #[case::none_failed(
+        &[("0", PartitionEnd::Stopped), ("1", PartitionEnd::UpperBoundPassed)],
+        &[],
+    )]
+    fn failed_partitions_lists_only_failed_ids_in_map_order(
+        #[case] ends: &[(&str, PartitionEnd)],
+        #[case] expected: &[&str],
+    ) {
+        let summary = summary_with(ends);
+
+        assert_eq!(summary.failed_partitions(), expected);
+    }
 
     struct SupervisorHarness {
         supervisor: Supervisor,

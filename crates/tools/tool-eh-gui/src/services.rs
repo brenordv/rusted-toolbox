@@ -24,9 +24,7 @@ use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_persistence::config::{
     SensitiveValues, ToolConfig, needs_stored_secret, resolve_target_with, save_config,
 };
-use shared_eventhub_persistence::export::{
-    DiskWriteConfig, ExportOptions, ExportOutcome, WritingSink,
-};
+use shared_eventhub_persistence::export::{ExportOptions, ExportOutcome, WritingSink};
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::search::{SearchPage, SearchQuery};
 use shared_eventhub_persistence::secrets::SecretsStore;
@@ -528,14 +526,9 @@ pub async fn prepare_session(
 ) -> anyhow::Result<EngineSession> {
     let store = slot.acquire(&request.paths).await?;
     let target = resolve_target(&request).await?;
-    let disk_write = &request.config.storage.disk_write;
     let sink = WritingSink::new(
         store,
-        DiskWriteConfig {
-            mode: disk_write.mode,
-            inbound_dir: request.paths.inbound_dir(&disk_write.received_msg_path),
-            content_only: disk_write.content_only,
-        },
+        request.config.disk_write_config(&request.paths),
         request.config.capture.filters.clone(),
     );
     let (channels, run) = CaptureEngine::build(request.config.engine_config(target), sink.clone());
@@ -601,7 +594,7 @@ pub async fn resolve_target(request: &ConnectRequest) -> anyhow::Result<EventHub
     .await
     .context("Reading the secrets file stopped unexpectedly")??;
 
-    if let (Some(client_id), None) = (config.client_secret_id(), &target.client_secret) {
+    if let Some(client_id) = config.missing_client_secret(&target) {
         anyhow::bail!(
             "No client secret for client '{client_id}': type it in the connection sheet, or save \
              it once with Save config"

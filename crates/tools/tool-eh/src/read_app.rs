@@ -7,10 +7,8 @@ use crate::progress::{
 };
 use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
-use shared_eventhub_core::engine::{CaptureEngine, PartitionEnd, RunEnd};
-use shared_eventhub_persistence::export::{
-    DiskWriteConfig, DiskWriteMode, ExportOutcome, WritingSink,
-};
+use shared_eventhub_core::engine::{CaptureEngine, RunEnd};
+use shared_eventhub_persistence::export::{DiskWriteMode, ExportOutcome, WritingSink};
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::store::MessageStore;
 use std::sync::atomic::AtomicBool;
@@ -43,11 +41,7 @@ pub async fn run(job: ReadJob, shutdown: &AtomicBool) -> anyhow::Result<RunOutco
     let disk_write = &job.config.storage.disk_write;
     let sink = WritingSink::new(
         store,
-        DiskWriteConfig {
-            mode: disk_write.mode,
-            inbound_dir: paths.inbound_dir(&disk_write.received_msg_path),
-            content_only: disk_write.content_only,
-        },
+        job.config.disk_write_config(&paths),
         job.config.capture.filters.clone(),
     );
 
@@ -118,12 +112,7 @@ pub(crate) fn run_outcome(
         LoopEnd::InterruptedBeforeStart => interrupted = true,
         LoopEnd::Finished(Err(error)) => errors.push(error),
         LoopEnd::Finished(Ok(summary)) => {
-            let failed: Vec<&str> = summary
-                .partitions
-                .iter()
-                .filter(|(_, end)| matches!(end, PartitionEnd::Failed(_)))
-                .map(|(partition_id, _)| partition_id.as_str())
-                .collect();
+            let failed = summary.failed_partitions();
             match summary.end {
                 RunEnd::Completed => {}
                 RunEnd::Stopped => {

@@ -3,7 +3,8 @@
 //! strings and client secrets go to the data folder's secrets file, and the
 //! config only says where to find them.
 
-use crate::export::{DiskWriteMode, ExportFormat};
+use crate::export::{DiskWriteConfig, DiskWriteMode, ExportFormat};
+use crate::paths::DataPaths;
 use crate::secrets::{CONNECTION_STRING_SECRET, SecretsStore, client_secret_name};
 use anyhow::Context;
 use common_file_utils::atomic_write::write_via_temp;
@@ -236,6 +237,27 @@ impl ToolConfig {
         match kind {
             CredentialKindConfig::ClientSecret { client_id, .. } => Some(client_id),
             CredentialKindConfig::DeveloperTools | CredentialKindConfig::ManagedIdentity => None,
+        }
+    }
+
+    /// The client id whose secret this config needs but `target` lacks:
+    /// the config uses a client-secret credential and the target was
+    /// resolved without its secret. `None` when nothing is missing.
+    pub fn missing_client_secret(&self, target: &EventHubTarget) -> Option<&str> {
+        match (self.client_secret_id(), &target.client_secret) {
+            (Some(client_id), None) => Some(client_id),
+            (Some(_), Some(_)) | (None, _) => None,
+        }
+    }
+
+    /// The disk-write settings for a capture run of this config, with the
+    /// received-messages folder placed in the data folder `paths`.
+    pub fn disk_write_config(&self, paths: &DataPaths) -> DiskWriteConfig {
+        let disk_write = &self.storage.disk_write;
+        DiskWriteConfig {
+            mode: disk_write.mode,
+            inbound_dir: paths.inbound_dir(&disk_write.received_msg_path),
+            content_only: disk_write.content_only,
         }
     }
 

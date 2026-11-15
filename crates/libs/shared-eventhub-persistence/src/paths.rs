@@ -44,6 +44,12 @@ impl DataPaths {
         self.base.join(received_msg_path)
     }
 
+    /// The folder exports go to: `export_folder` relative to the data
+    /// folder, or as given when it is absolute.
+    pub fn export_dir(&self, export_folder: &str) -> PathBuf {
+        self.base.join(export_folder)
+    }
+
     /// Creates the data folder (owner-only on Unix) when missing and, while
     /// it is empty, writes a `.gitignore` that ignores everything in it. A
     /// folder that already holds files must carry that same `.gitignore`, so
@@ -121,6 +127,26 @@ mod tests {
         let inbound = paths.inbound_dir(absolute.path().to_str().unwrap());
 
         assert_eq!(inbound, absolute.path());
+    }
+
+    #[test]
+    fn a_relative_export_folder_sits_inside_the_base_folder() {
+        let paths = DataPaths::new("data");
+
+        assert_eq!(
+            paths.export_dir("exports"),
+            Path::new("data").join("exports")
+        );
+    }
+
+    #[test]
+    fn an_absolute_export_folder_is_kept_as_given() {
+        let absolute = tempfile::tempdir().unwrap();
+        let paths = DataPaths::new("data");
+
+        let export = paths.export_dir(absolute.path().to_str().unwrap());
+
+        assert_eq!(export, absolute.path());
     }
 
     #[test]

@@ -6,7 +6,6 @@ use super::{apply_from_runtime, resolve_target};
 use crate::archive::bulk::progress_due;
 use crate::send::compose::BODY_CAP;
 use crate::send::run::Names;
-use crate::send::template::next_event;
 use crate::send::{SendInput, SendRequest};
 use crate::services::ConnectRequest;
 use crate::state::{AppState, Input, SEND_STOP_BOUND};
@@ -16,7 +15,8 @@ use rune::AppHandle;
 use shared_eventhub_core::cancel::{CANCEL_POLL, flag_set};
 use shared_eventhub_core::connection::EventHubTarget;
 use shared_eventhub_core::producer::{
-    EventHubProducer, OutgoingEvent, SendEnd, SendPlan, SendProgress, SendSummary, open_producer,
+    EventHubProducer, OutgoingEvent, SendEnd, SendPlan, SendProgress, SendSummary, next_event,
+    open_producer,
 };
 use std::future::Future;
 use std::pin::Pin;

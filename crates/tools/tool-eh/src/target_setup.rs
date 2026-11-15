@@ -48,7 +48,7 @@ pub(crate) fn prepare_target<O: Write, E: Write>(
     let target = resolve_target_with(config, setup.given.clone(), Some(&secrets))?;
     drop(secrets);
 
-    if let (Some(client_id), None) = (config.client_secret_id(), &target.client_secret) {
+    if let Some(client_id) = config.missing_client_secret(&target) {
         anyhow::bail!(
             "No client secret for client '{}': set {CLIENT_SECRET_ENV}, or set it once and save \
              it with --save-config",

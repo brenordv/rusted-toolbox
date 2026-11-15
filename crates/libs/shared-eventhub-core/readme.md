@@ -109,7 +109,8 @@ the run cannot start (connection, partition selection, or the sink refusing
 validated namespace and hub, before any partition loads a checkpoint, so a
 sink can refuse to mix two event hubs' data. The summary's
 `RunEnd` is `Stopped` after a stop, `Failed` (naming the partitions) when any
-partition failed, and `Completed` otherwise.
+partition failed, and `Completed` otherwise. `RunSummary::failed_partitions()`
+lists the failed partitions, including any that failed before a stop.
 
 `Stop` is the graceful end: it is honoured during each partition's setup too,
 and never interrupts a store. Dropping the run future instead aborts the
@@ -194,12 +195,17 @@ batch is created. `EventHubProducer::fully_qualified_namespace` and
 show its hub before anything is sent. Always `close()` the producer: dropping
 the SDK client does not reliably close its connection.
 
-`EventHubProducer::send(&plan, next_event, &cancel, progress)` sends
+`EventHubProducer::send(&plan, next, &cancel, progress)` sends
 `plan.count()` events and returns a `SendSummary` (`sent`, `batches`,
 `elapsed`, and `SendEnd::Completed`, `Cancelled`, or `Failed(reason)`):
 
-- `next_event(index)` builds each `OutgoingEvent` (body and content type);
-  `OutgoingEvent`'s `Debug` shows the body length only.
+- The closure gets each event's zero-based index and builds its
+  `OutgoingEvent` (body and content type); `OutgoingEvent`'s `Debug` shows the
+  body length only. The free function `producer::next_event(&event, template,
+  cap)` covers a fixed body or a `mock_data_utils` template rendered fresh per
+  event: pass `|_| producer::next_event(&event, template, cap)`. Without a
+  template it returns `event` as given; with one, a render of at most `cap`
+  bytes under `event`'s content type.
 - `SendPlan::new(count, routing, pacing)` takes 1 to 1,000,000 events.
   `Routing::automatic()` lets the service pick partitions;
   `Routing::partition_key(key)` sends every event with that key (one
@@ -216,7 +222,7 @@ the SDK client does not reliably close its connection.
 - The first failure ends the run: an event that does not fit an empty batch
   (the SDK sizes a batch's first event twice, so one event can use only about
   half the publish limit: about 128 KB on Basic, 512 KB on Standard and
-  Premium), a failed batch creation, a failing `next_event`, or a send the SDK
+  Premium), a failed batch creation, a failing `next` closure, or a send the SDK
   gave up on. Nothing is retried on top of the SDK's own retries, and a failed
   batch is not counted.
 - `sent` counts events in batches the service accepted or did not refuse:

@@ -8,7 +8,7 @@ use anyhow::Context;
 use clap::{ArgGroup, Args};
 use common_cli::header_format::format_config_item;
 use mock_data_utils::template::{OPTIONS_HELP, Template, placeholder_groups};
-use shared_eventhub_core::producer::{MAX_SEND_COUNT, MAX_SEND_INTERVAL_MS, OutgoingEvent};
+use shared_eventhub_core::producer::{MAX_SEND_COUNT, MAX_SEND_INTERVAL_MS};
 use std::convert::Infallible;
 use std::fmt;
 use std::io::Read;
@@ -122,26 +122,6 @@ pub(crate) fn compile_template(body: &[u8]) -> anyhow::Result<Template> {
         )
     })?;
     Template::compile(source).context("The --template body does not compile")
-}
-
-/// The event to send: `event` as given, or with `template` a fresh render
-/// of it (at most `cap` bytes) under `event`'s content type.
-///
-/// # Errors
-/// Fails when the render fails; the error names the placeholder by its
-/// position and type, never the template's text.
-pub(crate) fn next_event(
-    event: &OutgoingEvent,
-    template: Option<&Template>,
-    cap: usize,
-) -> anyhow::Result<OutgoingEvent> {
-    match template {
-        Some(template) => Ok(OutgoingEvent {
-            body: template.render(cap)?.into_bytes(),
-            content_type: event.content_type.clone(),
-        }),
-        None => Ok(event.clone()),
-    }
 }
 
 /// The stderr notices a template run starts with, escaped: a template with

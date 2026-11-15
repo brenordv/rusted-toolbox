@@ -99,7 +99,7 @@ impl BulkOptions {
     pub fn destination(&self, paths: &DataPaths) -> PathBuf {
         self.destination
             .clone()
-            .unwrap_or_else(|| paths.base().join(&self.export_folder))
+            .unwrap_or_else(|| paths.export_dir(&self.export_folder))
     }
 
     pub fn export_options(&self, paths: &DataPaths) -> ExportOptions {
