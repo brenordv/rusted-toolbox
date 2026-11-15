@@ -362,8 +362,8 @@ async fn await_ack(session: u64, mut accepted: oneshot::Receiver<()>) -> bool {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_support {
+#[cfg(any(test, feature = "test-harness"))]
+pub mod test_support {
     use super::*;
     use std::sync::Mutex;
 

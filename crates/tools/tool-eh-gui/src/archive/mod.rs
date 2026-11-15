@@ -539,7 +539,7 @@ pub(crate) fn text_mode(filters: &CaptureFilters) -> &'static str {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_support;
+#[cfg(any(test, feature = "test-harness"))]
+pub mod test_support;
 #[cfg(test)]
 mod tests;

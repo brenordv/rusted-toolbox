@@ -10,6 +10,11 @@ mod sections;
 mod send;
 mod shell;
 
+pub use read::SEARCH_KEY;
+pub use send::sidebar::{COUNT_KEY, INTERVAL_KEY};
+pub use send::template::{PLACEHOLDERS_KEY, REGENERATE_KEY, SWITCH_KEY};
+pub use send::{BODY_KEY, SEND_BUTTON_KEY};
+
 use crate::state::AppState;
 use rune::{Chord, Cx, El, KeyEvent, Tx};
 

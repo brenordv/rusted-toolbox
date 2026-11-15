@@ -11,6 +11,9 @@ license.workspace = true
 # Dev-only demo mode: the `eh-gui-demo` binary with a generated event hub. Release builds
 # (`cargo build --release --workspace`) leave it out.
 demo = ["dep:tempfile"]
+# Dev-only headless test harness: the test support modules and the drivers the integration
+# tests share with the unit tests. Release builds leave it out.
+test-harness = ["dep:tempfile"]
 
 [[bin]]
 name = "eh-gui-demo"
