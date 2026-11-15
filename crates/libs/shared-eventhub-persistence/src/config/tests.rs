@@ -727,3 +727,29 @@ fn needs_stored_secret_is_true_only_for_a_used_secret_that_was_not_given(
 ) {
     assert_eq!(needs_stored_secret(&config, &given), expected);
 }
+
+#[test]
+fn engine_config_carries_the_capture_settings_and_the_target() {
+    let mut config = connection_string_config();
+    config.capture.partitions = Some(vec!["1".to_owned()]);
+    config.capture.ignore_checkpoint = true;
+    config.capture.prefetch = Some(64);
+    config.capture.feedback_interval_secs = 3;
+    let target = resolve_target_with(
+        &config,
+        SensitiveValues {
+            connection_string: Some(SecretString::from(CONNECTION_STRING.to_owned())),
+            client_secret: None,
+        },
+        None,
+    )
+    .unwrap();
+
+    let engine = config.engine_config(target);
+
+    assert_eq!(engine.partitions, Some(vec!["1".to_owned()]));
+    assert!(engine.ignore_checkpoint);
+    assert_eq!(engine.prefetch, Some(64));
+    assert_eq!(engine.feedback_interval, Duration::from_secs(3));
+    assert_eq!(engine.target.event_hub_name.as_deref(), Some("orders"));
+}

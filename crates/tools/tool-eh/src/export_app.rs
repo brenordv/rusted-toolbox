@@ -43,9 +43,9 @@ pub async fn run(job: ExportJob, shutdown: &Arc<AtomicBool>) -> anyhow::Result<R
     let worker = store.clone();
     let cancel = Arc::clone(shutdown);
     let exported = tokio::task::spawn_blocking(move || {
-        let mut line = ExportProgressLine::new(io::stdout());
+        let mut line = ExportProgressLine::stdout();
         let exported = worker.export(&query, &options, |outcome| line.draw(outcome), &cancel);
-        line.finish(exported.as_ref().ok());
+        line.finish(exported.is_ok());
         exported
     })
     .await

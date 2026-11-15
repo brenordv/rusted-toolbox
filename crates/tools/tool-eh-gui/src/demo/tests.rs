@@ -1,0 +1,212 @@
+use super::*;
+use crate::state::ConnectionState;
+use shared_eventhub_core::connection::EventHubIdentity;
+use shared_eventhub_core::engine::{
+    Checkpoint, EngineCommand, EngineEvent, MessageSink, RunEnd, StoreOutcome,
+};
+use shared_eventhub_core::filters::{CaptureFilters, TextFilter};
+use shared_eventhub_core::models::CapturedMessage;
+use std::sync::Mutex;
+
+/// Records the order of sink calls.
+#[derive(Clone, Default)]
+struct Recording(Arc<Mutex<Vec<String>>>);
+
+impl Recording {
+    fn log(&self) -> Vec<String> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl MessageSink for Recording {
+    async fn bind(&self, hub: &EventHubIdentity) -> anyhow::Result<()> {
+        self.0
+            .lock()
+            .unwrap()
+            .push(format!("bind {}", hub.event_hub_name));
+        Ok(())
+    }
+
+    async fn store(
+        &self,
+        message: &CapturedMessage,
+        _checkpoint: &Checkpoint,
+        _dedup: bool,
+    ) -> anyhow::Result<StoreOutcome> {
+        self.0.lock().unwrap().push(format!(
+            "store {}",
+            message.message_id.as_deref().unwrap_or("")
+        ));
+        Ok(StoreOutcome { newly_stored: true })
+    }
+
+    async fn load_checkpoint(&self, _partition_id: &str) -> anyhow::Result<Option<Checkpoint>> {
+        Ok(None)
+    }
+}
+
+struct NoServices;
+
+impl Services for NoServices {
+    fn prepare_session(&self, _attempt: u64, _request: ConnectRequest) {}
+    fn save_config(&self, _request: SaveRequest) {}
+    fn switch_data_folder(&self, _paths: DataPaths) {}
+    fn reopen_window(&self) {}
+    fn quit(&self) {}
+}
+
+#[test]
+fn every_scenario_name_parses_and_an_unknown_one_lists_them() {
+    for (name, scenario) in Scenario::NAMES {
+        assert_eq!(Scenario::parse(name), Ok(scenario));
+    }
+
+    let error = Scenario::parse("nope").unwrap_err();
+
+    assert!(error.contains("'nope'"), "{error}");
+    assert!(error.contains("live, burst, quiet"), "{error}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_hub_binds_first_starts_and_stores_each_message_before_emitting_it() {
+    let sink = Recording::default();
+    let (mut channels, run) = hub::build(Scenario::Live, CaptureFilters::default(), sink.clone());
+    let running = tokio::spawn(run);
+
+    let first = channels.events.recv().await.unwrap();
+    let message = loop {
+        if let EngineEvent::Message(message) = channels.events.recv().await.unwrap() {
+            break message;
+        }
+    };
+    channels.commands.send(EngineCommand::Stop).await.unwrap();
+    let summary = running.await.unwrap().unwrap();
+
+    let log = sink.log();
+    assert_eq!(log[0], "bind demo");
+    assert!(log.contains(&format!("store {}", message.message_id.unwrap())));
+    assert!(matches!(first, EngineEvent::Started { partitions } if partitions.len() == 4));
+    assert_eq!(summary.end, RunEnd::Stopped);
+}
+
+#[tokio::test(start_paused = true)]
+async fn new_filters_stop_non_matching_messages_but_not_their_storage() {
+    let sink = Recording::default();
+    let (mut channels, run) = hub::build(Scenario::Live, CaptureFilters::default(), sink.clone());
+    let running = tokio::spawn(run);
+    drop(channels.events.recv().await);
+
+    channels
+        .commands
+        .send(EngineCommand::UpdateFilters(CaptureFilters {
+            time: None,
+            text: Some(TextFilter::Contains(vec![
+                "no demo body has this".to_owned(),
+            ])),
+        }))
+        .await
+        .unwrap();
+    while channels.events.try_recv().is_ok() {}
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let emitted_after = std::iter::from_fn(|| channels.events.try_recv().ok())
+        .filter(|event| matches!(event, EngineEvent::Message(_)))
+        .count();
+    channels.commands.send(EngineCommand::Stop).await.unwrap();
+    let summary = running.await.unwrap().unwrap();
+
+    assert_eq!(emitted_after, 0);
+    assert!(summary.stats.filtered_out > 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_full_event_channel_counts_dropped_view_events() {
+    let (channels, run) = hub::build(
+        Scenario::Burst,
+        CaptureFilters::default(),
+        Recording::default(),
+    );
+    let running = tokio::spawn(run);
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    channels.commands.send(EngineCommand::Stop).await.unwrap();
+    let summary = running.await.unwrap().unwrap();
+
+    assert!(summary.stats.ui_dropped > 0);
+}
+
+#[tokio::test]
+async fn the_start_fail_scenario_reports_a_fatal_error_and_fails() {
+    let (mut channels, run) = hub::build(
+        Scenario::StartFail,
+        CaptureFilters::default(),
+        Recording::default(),
+    );
+
+    let error = run.await.unwrap_err();
+
+    assert!(format!("{error:#}").contains("refuses"), "{error:#}");
+    assert!(matches!(
+        channels.events.recv().await,
+        Some(EngineEvent::Error { fatal: true, .. })
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_partition_fail_scenario_ends_with_a_failed_partition() {
+    let (mut channels, run) = hub::build(
+        Scenario::PartitionFail,
+        CaptureFilters::default(),
+        Recording::default(),
+    );
+    let running = tokio::spawn(run);
+
+    let failed = loop {
+        match channels.events.recv().await.unwrap() {
+            EngineEvent::PartitionEnded { partition_id, .. } => break partition_id,
+            _ => continue,
+        }
+    };
+    channels.commands.send(EngineCommand::Stop).await.unwrap();
+    let summary = running.await.unwrap().unwrap();
+
+    assert_eq!(failed, "2");
+    assert!(matches!(
+        summary.partitions.get("2"),
+        Some(shared_eventhub_core::engine::PartitionEnd::Failed(_))
+    ));
+}
+
+#[test]
+fn seeded_scenarios_reach_their_states_through_apply_and_render() {
+    let root = tempfile::tempdir().unwrap();
+
+    let failed = initial_state(Scenario::SeededFailed, root.path(), Box::new(NoServices));
+    let connect = initial_state(Scenario::SeededConnect, root.path(), Box::new(NoServices));
+    let empty = initial_state(Scenario::SeededEmpty, root.path(), Box::new(NoServices));
+
+    assert!(matches!(failed.connection, ConnectionState::Failed(_)));
+    assert!(connect.sheet_open && connect.show_issues);
+    assert!(matches!(empty.connection, ConnectionState::Disconnected));
+    for state in [failed, connect, empty] {
+        let mut rt = rune::Runtime::new(
+            state,
+            crate::views::view,
+            (1280.0, 800.0),
+            rune::Env::new(true, 1.0),
+        );
+        rt.frame(0.0);
+        assert!(!rt.elements().is_empty());
+    }
+}
+
+#[test]
+fn the_demo_data_folder_lies_under_its_root() {
+    let root = tempfile::tempdir().unwrap();
+
+    let paths = data_paths(root.path());
+    let state = initial_state(Scenario::SeededEmpty, root.path(), Box::new(NoServices));
+
+    assert!(paths.base().starts_with(root.path()));
+    assert!(paths.inbound_dir(DEMO_INBOUND).starts_with(root.path()));
+    assert!(state.form.data_paths().base().starts_with(root.path()));
+}

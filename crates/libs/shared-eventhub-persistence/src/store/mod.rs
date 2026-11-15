@@ -7,14 +7,15 @@ mod writer;
 
 use crate::paths::DataPaths;
 use anyhow::{Context, anyhow};
+use chrono::{DateTime, Utc};
 use common_file_utils::permissions::open_owner_only;
 use redb::backends::FileBackend;
 use redb::{
     Builder, Database, DatabaseError, ReadTransaction, ReadableDatabase, ReadableTable, TableHandle,
 };
 use schema::{
-    BY_TIME, CHECKPOINTS, EVENT_HUB_KEY, EXPORT_LOG, MESSAGES, META, NAMESPACE_KEY, SCHEMA_VERSION,
-    SCHEMA_VERSION_KEY, decode_checkpoint, decode_message, message_table_key,
+    BY_TIME, CHECKPOINTS, CREATED_ON_KEY, EVENT_HUB_KEY, EXPORT_LOG, MESSAGES, META, NAMESPACE_KEY,
+    SCHEMA_VERSION, SCHEMA_VERSION_KEY, decode_checkpoint, decode_message, message_table_key,
 };
 use shared_eventhub_core::connection::EventHubIdentity;
 use shared_eventhub_core::engine::{Checkpoint, MessageSink, StoreOutcome};
@@ -268,14 +269,24 @@ pub(crate) fn read_binding(
         .get(EVENT_HUB_KEY)
         .context("Failed to read the archive's event hub")?
         .map(|guard| guard.value().to_owned());
+    let created_on = meta
+        .get(CREATED_ON_KEY)
+        .context("Failed to read the archive's event hub creation time")?
+        .map(|guard| {
+            DateTime::parse_from_rfc3339(guard.value())
+                .map(|time| time.with_timezone(&Utc))
+                .context("The archive's event hub creation time could not be read")
+        })
+        .transpose()?;
 
     match (namespace, event_hub) {
         (Some(fully_qualified_namespace), Some(event_hub_name)) => Ok(Some(EventHubIdentity {
             fully_qualified_namespace,
             event_hub_name,
+            created_on,
         })),
-        (None, None) => Ok(None),
-        (Some(_), None) | (None, Some(_)) => {
+        (None, None) if created_on.is_none() => Ok(None),
+        (None, None) | (Some(_), None) | (None, Some(_)) => {
             Err(anyhow!("The archive's event hub binding is incomplete"))
         }
     }

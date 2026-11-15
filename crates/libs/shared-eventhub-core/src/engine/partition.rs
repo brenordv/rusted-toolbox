@@ -2,8 +2,8 @@
 //! per-event pipeline.
 
 use crate::engine::start::{
-    PartitionSnapshot, StartDecision, checkpoint_ahead_of_partition, checkpoint_floor,
-    choose_start, decide, initial_high_water, to_start_position, window_before_checkpoint,
+    PartitionSnapshot, StartDecision, checkpoint_floor, choose_start, decide, ensure_resumable,
+    initial_high_water, to_start_position, window_before_checkpoint,
 };
 use crate::engine::{Checkpoint, EngineEvent, MessageSink, PartitionEnd, SkipReason, send_control};
 use crate::filters::CaptureFilters;
@@ -17,6 +17,7 @@ use azure_messaging_eventhubs::{
 };
 use chrono::Utc;
 use futures_util::{Stream, StreamExt};
+use std::error::Error;
 use std::future::Future;
 use std::pin::pin;
 use std::sync::Arc;
@@ -163,7 +164,8 @@ async fn prepare_partition<S: MessageSink>(
     let filters = context.filters.borrow().clone();
 
     if let Some(checkpoint) = checkpoint.as_ref().filter(|_| !context.ignore_checkpoint) {
-        warn_about_checkpoint(&partition_id, checkpoint, &snapshot, &filters);
+        ensure_resumable(&partition_id, checkpoint, &snapshot)?;
+        warn_if_window_before_checkpoint(&partition_id, checkpoint, &filters);
     }
     context.checkpoint_floor =
         checkpoint_floor(checkpoint.as_ref(), &snapshot, context.ignore_checkpoint);
@@ -206,21 +208,11 @@ async fn until_stopped<F: Future>(
     }
 }
 
-fn warn_about_checkpoint(
+fn warn_if_window_before_checkpoint(
     partition_id: &str,
     checkpoint: &Checkpoint,
-    snapshot: &PartitionSnapshot,
     filters: &CaptureFilters,
 ) {
-    if checkpoint_ahead_of_partition(checkpoint, snapshot) {
-        warn!(
-            partition_id = %partition_id,
-            checkpoint = checkpoint.sequence_number,
-            last_sequence_number = snapshot.last_sequence_number,
-            "The checkpoint is ahead of the partition (was the event hub recreated?); ignore the \
-             checkpoint to read from the start"
-        );
-    }
     if window_before_checkpoint(checkpoint, filters.upper_time_bound()) {
         warn!(
             partition_id = %partition_id,
@@ -393,13 +385,21 @@ fn skipped(partition_id: &str, reason: SkipReason) -> EngineEvent {
     }
 }
 
+/// The partition's failure for a stream error. The SDK's error prints its inner
+/// AMQP error inside its own message and also returns it as its source, so a
+/// rendered chain repeats it; only the innermost error, which carries the
+/// service's description, goes into the message.
 fn stream_error(error: EventHubsError, partition_id: &str) -> anyhow::Error {
     let context = match &error.kind {
         ErrorKind::ConsumerDisconnected(_) => CONSUMER_DISCONNECTED_MESSAGE.to_owned(),
         _ => format!("The event stream of partition {partition_id} failed after the SDK's retries"),
     };
+    let mut innermost: &dyn Error = &error;
+    while let Some(source) = innermost.source() {
+        innermost = source;
+    }
 
-    anyhow::Error::new(error).context(context)
+    anyhow::anyhow!("{context}: {innermost}")
 }
 
 #[cfg(test)]
@@ -802,6 +802,22 @@ mod tests {
         let rendered = format!("{error:#}");
         assert!(rendered.contains("partition 0 failed"), "{rendered}");
         assert!(rendered.contains("link detached"), "{rendered}");
+    }
+
+    #[test]
+    fn a_wrapped_amqp_error_is_reported_once() {
+        let inner = azure_core_amqp::AmqpError::from(
+            azure_core_amqp::AmqpErrorKind::SimpleMessage("sequence number invalid".into()),
+        );
+        let failure = EventHubsError::from(ErrorKind::AmqpError(inner));
+
+        let rendered = format!("{:#}", stream_error(failure, "0"));
+
+        assert_eq!(
+            rendered.matches("sequence number invalid").count(),
+            1,
+            "{rendered}"
+        );
     }
 
     #[tokio::test]

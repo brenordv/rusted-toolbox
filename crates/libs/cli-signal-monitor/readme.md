@@ -27,6 +27,6 @@ while !shutdown.load(Ordering::Relaxed) {
   the process exits via `exit_error`, reporting the failure through the tool's
   logging.
 
-The shutdown messages are emitted through `tracing`, so they land on stderr
+The shutdown messages are emitted through `tracing` at warn level, so they land on stderr
 under the default logging configuration (stdout under `--log-to-console`), and
 nowhere when logging is disabled or no subscriber is installed yet.

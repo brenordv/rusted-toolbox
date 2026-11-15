@@ -148,10 +148,12 @@ Events and statistics:
   below the highest sequence number it has already processed, so a replay is
   never stored or emitted twice, with or without `ignore_checkpoint`.
 - A checkpoint trimmed away by retention resumes at the earliest retained
-  event. A checkpoint ahead of the partition (the event hub was deleted and
-  recreated) reads nothing and logs a warning suggesting the checkpoint be
-  ignored. So does a time window that ends before the checkpointed event; the
-  archive may already hold those messages.
+  event. A checkpoint ahead of the partition's last sequence number (usually
+  an event hub deleted and recreated) fails that partition at start, naming
+  both numbers, since the service refuses a start there. A time window that
+  ends before the checkpointed event reads nothing and logs a warning
+  suggesting the checkpoint be ignored; the archive may already hold those
+  messages.
 - `ignore_checkpoint` starts from the filter bound or the earliest event and
   stores every event again, but never moves the stored checkpoint backwards:
   events at or below it are re-stored with the existing checkpoint, so the

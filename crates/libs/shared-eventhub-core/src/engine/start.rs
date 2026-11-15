@@ -166,14 +166,40 @@ pub(crate) fn checkpoint_floor(
         .cloned()
 }
 
-/// A checkpoint beyond the partition's last sequence number usually means
-/// the event hub was deleted and recreated: resuming after it would read
-/// nothing.
+/// Whether a checkpoint is beyond the partition's last sequence number: the
+/// same comparison the service makes when it refuses a receiver's start ("The
+/// supplied sequence number '24' is invalid. The last sequence number in the
+/// system is '-1'"), whether or not the partition is empty. The usual cause is
+/// an event hub deleted and recreated, where numbering starts over at -1.
 pub(crate) fn checkpoint_ahead_of_partition(
     checkpoint: &Checkpoint,
     snapshot: &PartitionSnapshot,
 ) -> bool {
-    !snapshot.is_empty && checkpoint.sequence_number > snapshot.last_sequence_number
+    checkpoint.sequence_number > snapshot.last_sequence_number
+}
+
+/// Refuses to resume after a checkpoint the partition never reached: the
+/// service rejects a start past its last sequence number, and reading the new
+/// hub from its start would collide with the old hub's events in the archive.
+///
+/// # Errors
+/// Fails when `checkpoint` is ahead of the partition, naming both sequence
+/// numbers.
+pub(crate) fn ensure_resumable(
+    partition_id: &str,
+    checkpoint: &Checkpoint,
+    snapshot: &PartitionSnapshot,
+) -> anyhow::Result<()> {
+    if checkpoint_ahead_of_partition(checkpoint, snapshot) {
+        anyhow::bail!(
+            "The stored checkpoint of partition {partition_id} (sequence number {}) is ahead of \
+             the event hub (last sequence number {}). The event hub was likely deleted and \
+             recreated. Use another data folder.",
+            checkpoint.sequence_number,
+            snapshot.last_sequence_number
+        );
+    }
+    Ok(())
 }
 
 /// True when the whole time window ends before the checkpointed event, so a
@@ -428,7 +454,7 @@ mod tests {
     #[rstest]
     #[case::ahead(60, false, true)]
     #[case::at_tail(50, false, false)]
-    #[case::empty_partition(60, true, false)]
+    #[case::empty_partition_at_its_last_number(50, true, false)]
     fn checkpoint_ahead_of_partition_flags_a_recreated_hub(
         #[case] sequence_number: i64,
         #[case] is_empty: bool,
@@ -440,6 +466,30 @@ mod tests {
         );
 
         assert_eq!(flagged, expected);
+    }
+
+    #[test]
+    fn a_recreated_empty_hub_is_flagged() {
+        let flagged = checkpoint_ahead_of_partition(&checkpoint(24, None), &snapshot(true, -1));
+
+        assert!(flagged);
+    }
+
+    #[test]
+    fn resuming_past_a_recreated_hub_fails_naming_both_sequence_numbers() {
+        let error = ensure_resumable("3", &checkpoint(44, None), &snapshot(true, -1)).unwrap_err();
+
+        let text = error.to_string();
+        assert!(text.contains("partition 3 (sequence number 44)"), "{text}");
+        assert!(text.contains("last sequence number -1"), "{text}");
+        assert!(text.contains("Use another data folder"), "{text}");
+    }
+
+    #[test]
+    fn resuming_within_the_partition_is_allowed() {
+        let resumable = ensure_resumable("0", &checkpoint(50, None), &snapshot(false, 80));
+
+        assert!(resumable.is_ok());
     }
 
     #[rstest]

@@ -83,12 +83,22 @@ entirely before the checkpoint, the run warns and reads nothing new. Use
 and store everything again, or `eh export` to query what is already archived.
 
 Events older than the hub's retention are gone; a checkpoint behind them resumes at the
-earliest retained event. When a hub is deleted and recreated, sequence numbers start over.
-If the new hub has fewer events than the old checkpoint, the run warns that the checkpoint
-is ahead; with `-i`, storing an event at a sequence number the archive already holds for a
-different event fails that partition ("the event hub was likely deleted and recreated. Use
-another data folder."). A recreated hub that has already passed the old checkpoint is not
-detected: its earlier events are skipped.
+earliest retained event. When a hub is deleted and recreated, sequence numbers start over,
+so its archive can't take the new hub's events. The archive records when the service created
+the event hub, and a run against a hub of the same name created at another time stops before
+reading anything: "The event hub 'ns/hub' was created on 2026-11-14 21:30:05.123 UTC; this
+data folder's archive holds the one created on 2026-11-13 18:02:41.870 UTC: the event hub was
+deleted and recreated (or replaced). Use another data folder." An archive that holds events
+enqueued before the hub's creation time is refused the same way, which also covers an archive
+from before the creation time was recorded.
+
+When the service doesn't report the creation time, two later checks remain: a partition whose
+checkpoint is ahead of the new hub fails at start ("The stored checkpoint of partition 0
+(sequence number 24) is ahead of the event hub (last sequence number -1). The event hub was
+likely deleted and recreated. Use another data folder."), and with `-i`, storing an event at
+a sequence number the archive already holds for a different event fails that partition the
+same way. A recreated hub that has already passed the old checkpoint is then not detected:
+its earlier events are skipped.
 
 ### Filters
 

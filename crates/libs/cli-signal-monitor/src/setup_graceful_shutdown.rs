@@ -2,16 +2,18 @@ use anyhow::{Context, Result};
 use common_cli::tool_exit_helpers::{exit_error, exit_success};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use tracing::error;
+use tracing::{error, warn};
 
 fn create_manual_shutdown_handler(immediate_exit: bool) -> Result<Arc<AtomicBool>> {
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = Arc::clone(&shutdown);
 
+    // A Ctrl-C is a requested stop. Warn keeps it visible at the tools' default log level,
+    // where it is often the only sign the interrupt registered.
     ctrlc::set_handler(move || {
-        error!("\n[X] Shutdown signal received, stopping application...");
+        warn!("Shutdown signal received, stopping");
         if immediate_exit {
-            error!("[X] Application terminated by the user...");
+            warn!("Application terminated by the user");
             exit_success();
         } else {
             shutdown_clone.store(true, std::sync::atomic::Ordering::Relaxed);

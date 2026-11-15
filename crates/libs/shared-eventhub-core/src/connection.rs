@@ -1,8 +1,10 @@
 //! Describing an Event Hubs target and opening a validated consumer client
 //! for it.
 
+use crate::models::system_time_to_utc;
 use anyhow::Context;
 use azure_messaging_eventhubs::{ConnectionString, ConsumerClient};
+use chrono::{DateTime, Utc};
 use common_utils::string_utils::SecretString;
 use shared_azure::auth::{AuthMethod, CredentialKind, build_credential};
 use shared_azure::host::host_has_allowed_suffix;
@@ -46,11 +48,16 @@ pub struct EventHubTarget {
     pub consumer_group: String,
 }
 
-/// A validated event hub: the lowercased namespace host and the hub name.
+/// A validated event hub: the lowercased namespace host, the hub name, and
+/// when the service created the hub.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EventHubIdentity {
     pub fully_qualified_namespace: String,
     pub event_hub_name: String,
+    /// When the service created the event hub; a hub deleted and recreated
+    /// under the same name has a new one. `None` when the service did not
+    /// report it.
+    pub created_on: Option<DateTime<Utc>>,
 }
 
 /// An open consumer client whose credential has been exercised once (the
@@ -59,6 +66,8 @@ pub struct EventHubConnection {
     pub client: ConsumerClient,
     pub fully_qualified_namespace: String,
     pub event_hub_name: String,
+    /// When the service created the event hub, as it reported it.
+    pub created_on: Option<DateTime<Utc>>,
     /// The event hub's partitions, in the order the service listed them.
     pub partition_ids: Vec<String>,
 }
@@ -126,10 +135,12 @@ pub async fn connect(target: &EventHubTarget) -> anyhow::Result<EventHubConnecti
             )));
         }
     };
+    let created_on = properties.created_on.and_then(system_time_to_utc);
     info!(
         namespace = %namespace,
         event_hub = %hub,
         partitions = properties.partition_ids.len(),
+        created_on = %created_on.map_or_else(|| "not reported".to_owned(), |time| time.to_rfc3339()),
         "Connected to Event Hubs"
     );
 
@@ -137,6 +148,7 @@ pub async fn connect(target: &EventHubTarget) -> anyhow::Result<EventHubConnecti
         client,
         fully_qualified_namespace: namespace,
         event_hub_name: hub,
+        created_on,
         partition_ids: properties.partition_ids,
     })
 }
@@ -252,7 +264,11 @@ fn resolve_connection_string(
 /// that is not shaped like a host name is rejected without being echoed,
 /// because a pasted connection string or key would otherwise land in the
 /// error text.
-fn validated_namespace(namespace: &str) -> anyhow::Result<String> {
+///
+/// # Errors
+/// Fails when `namespace` is not a host name, or not under one of
+/// [`EVENT_HUBS_ALLOWED_HOST_SUFFIXES`].
+pub fn validated_namespace(namespace: &str) -> anyhow::Result<String> {
     let looks_like_host = !namespace.is_empty()
         && namespace
             .chars()
@@ -279,7 +295,10 @@ fn validated_namespace(namespace: &str) -> anyhow::Result<String> {
 /// digits, `.`, `-`, `_`, starting and ending with a letter or digit). A
 /// failing value is never echoed, for the same reason as
 /// [`validated_namespace`].
-fn validated_event_hub_name(name: &str) -> anyhow::Result<String> {
+///
+/// # Errors
+/// Fails when `name` breaks the naming rules.
+pub fn validated_event_hub_name(name: &str) -> anyhow::Result<String> {
     let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_');
     let valid = (1..=MAX_EVENT_HUB_NAME_LENGTH).contains(&name.len())
         && name.chars().all(allowed)

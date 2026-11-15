@@ -35,11 +35,23 @@ inside a data folder.) Old `.eh-read-data` sled folders are not readable by
 these tools and are never touched; captured data there stays readable through
 the last released `eh-read`/`eh-export` 1.1.0.
 
+A hub deleted and recreated under the same name counts as another hub: its
+sequence numbers start over and would collide with the archived ones. The
+binding records when the service created the hub, and a bind is refused when
+the reported creation time differs from the recorded one (both times are
+named), or when the archive holds an event enqueued more than a minute before
+the reported creation time (the margin absorbs clock differences between the
+service's management plane and its brokers). An archive bound before the
+creation time was recorded gets it on its next bind, after that event check.
+When the service reports no creation time, the bind goes ahead; it warns when
+the archive already has a recorded time. Older builds ignore the recorded time
+and bind by name.
+
 ## The archive
 
 | Table | Key | Value |
 |---|---|---|
-| `meta` | name | `schema_version` ("1"), bound `namespace` and `event_hub` |
+| `meta` | name | `schema_version` ("1"), bound `namespace` and `event_hub`, the hub's `created_on` (RFC 3339 UTC, milliseconds) when known |
 | `messages` | (partition, sequence) | serde_json of `CapturedMessage` |
 | `by_time` | (enqueued unix ms, partition, sequence) | `()`: the time index |
 | `checkpoints` | partition | serde_json of `Checkpoint` |

@@ -1,5 +1,5 @@
-# Only the advisories check runs in CI (deps-audit.yml passes
-# `check advisories`), so the licenses/bans/sources sections stay
+# CI runs the advisories and sources checks (deps-audit.yml passes
+# `check advisories sources`); the licenses and bans sections stay
 # unconfigured on purpose.
 #
 # Vulnerability advisories error at the default severity. `unmaintained` is
@@ -23,3 +23,14 @@ ignore = [
     # arithmetic never runs.
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via age 0.12.1's p256 tag recipients: no safe upgrade; seal uses only x25519" },
 ]
+
+# Every crate comes from crates.io except Rune (eh-gui's UI framework), which is
+# not published there and is pinned to one reviewed git rev. Its repository also
+# serves the forks in the root Cargo.toml's [patch.crates-io]. Advisory data does
+# not cover git or patched crates, so each Rune bump repeats a manual review of
+# those forks instead; this check stops any other git source from arriving
+# unreviewed.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = ["https://github.com/anomalyco/rune"]

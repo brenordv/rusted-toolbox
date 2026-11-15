@@ -1,0 +1,46 @@
+[package]
+name = "eh-gui"
+version = "1.0.0"
+description = "Desktop GUI for Azure Event Hubs: live capture into a local archive, archive search, and export"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+# Dev-only demo mode: the `eh-gui-demo` binary with a generated event hub. Release builds
+# (`cargo build --release --workspace`) leave it out.
+demo = ["dep:tempfile"]
+
+[[bin]]
+name = "eh-gui-demo"
+path = "src/bin/eh_gui_demo.rs"
+required-features = ["demo"]
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+shared-eventhub-core = { workspace = true }
+shared-eventhub-persistence = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+rune = { workspace = true }
+rune-kit = { workspace = true }
+tempfile = { workspace = true, optional = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["UI_ViewManagement"] }
+
+[dev-dependencies]
+shared-azure = { workspace = true }
+
+rstest = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }

@@ -6,7 +6,7 @@ use shared_eventhub_core::engine::RunSummary;
 use shared_eventhub_core::stats::StatsSnapshot;
 use shared_eventhub_persistence::config::{
     AuthMethodConfig, CONFIG_FILE_NAME, CredentialKindConfig, SensitiveValues, StoredSecret,
-    TargetConfig,
+    TargetConfig, ToolConfig,
 };
 use shared_eventhub_persistence::secrets::CONNECTION_STRING_SECRET;
 use std::collections::BTreeMap;
@@ -295,6 +295,7 @@ async fn at_end_mode_writes_the_pending_message_files_when_the_run_ends() {
     sink.bind(&EventHubIdentity {
         fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
         event_hub_name: "orders".to_owned(),
+        created_on: None,
     })
     .await
     .unwrap();

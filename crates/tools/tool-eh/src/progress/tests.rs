@@ -246,51 +246,58 @@ fn the_export_line_shows_counts_and_rate() {
     );
 }
 
+/// What crossterm's `Clear(ClearType::CurrentLine)` writes.
+const CLEAR_LINE: &str = "\u{1b}[2K";
+
 #[test]
-fn the_export_progress_line_ends_with_a_newline_only_when_drawn() {
-    let mut untouched = ExportProgressLine::new(Vec::new());
-    let mut drawn = ExportProgressLine::new(Vec::new());
+fn a_finished_export_on_a_terminal_erases_its_line_for_the_summary() {
+    let mut line = ExportProgressLine::new(Vec::new(), true);
 
-    untouched.finish(None);
-    drawn.draw(&ExportOutcome::default());
-    drawn.draw(&ExportOutcome::default());
-    drawn.finish(Some(&ExportOutcome::default()));
+    line.draw(&ExportOutcome::default());
+    line.draw(&ExportOutcome::default());
+    line.finish(true);
 
-    assert!(untouched.into_inner().is_empty());
-    let out = text(drawn.into_inner());
-    assert_eq!(out.matches("Exported: 0").count(), 2, "throttled: {out:?}");
-    assert!(out.ends_with('\n'));
+    let out = text(line.into_inner());
+    assert_eq!(out.matches("Exported: 0").count(), 1, "throttled: {out:?}");
+    assert!(out.ends_with(CLEAR_LINE), "{out:?}");
+    assert!(!out.contains('\n'), "{out:?}");
 }
 
-#[test]
-fn finishing_a_line_that_never_drew_with_nothing_to_count_draws_nothing() {
-    let mut line = ExportProgressLine::new(Vec::new());
+#[rstest::rstest]
+#[case::failed_export_on_a_terminal(true, false)]
+#[case::finished_export_into_a_file(false, true)]
+#[case::failed_export_into_a_file(false, false)]
+fn the_last_counts_stay_on_their_own_line(#[case] terminal: bool, #[case] summary_follows: bool) {
+    let mut line = ExportProgressLine::new(Vec::new(), terminal);
 
-    line.finish(Some(&ExportOutcome::default()));
+    line.draw(&ExportOutcome {
+        exported: 4,
+        ..ExportOutcome::default()
+    });
+    line.finish(summary_follows);
+
+    let out = text(line.into_inner());
+    assert!(out.contains("Exported: 4"), "{out:?}");
+    assert!(out.ends_with('\n'), "{out:?}");
+}
+
+#[rstest::rstest]
+#[case::finished(true)]
+#[case::failed(false)]
+fn a_line_that_never_drew_writes_nothing_when_it_finishes(#[case] summary_follows: bool) {
+    let mut line = ExportProgressLine::new(Vec::new(), true);
+
+    line.finish(summary_follows);
 
     assert!(line.into_inner().is_empty());
 }
 
 #[test]
-fn finishing_a_line_that_never_drew_still_shows_real_counts() {
-    let mut line = ExportProgressLine::new(Vec::new());
-
-    line.finish(Some(&ExportOutcome {
-        exported: 1,
-        ..ExportOutcome::default()
-    }));
-
-    let out = text(line.into_inner());
-    assert!(out.contains("Exported: 1"), "{out:?}");
-    assert!(out.ends_with('\n'));
-}
-
-#[test]
 fn a_failing_export_line_never_panics_and_reports_once() {
-    let mut line = ExportProgressLine::new(FailingDisk);
+    let mut line = ExportProgressLine::new(FailingDisk, true);
 
     line.draw(&ExportOutcome::default());
-    line.finish(Some(&ExportOutcome::default()));
+    line.finish(true);
 
     assert!(line.write_failed);
 }

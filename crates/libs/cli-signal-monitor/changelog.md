@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+- The interrupt message is logged at warn instead of error ("Shutdown signal received,
+  stopping"): a Ctrl-C is a requested stop, and warn keeps it visible at the tools' default
+  level. The leading newline and `[X]` marker are gone; the newline came after
+  the log prefix, so it never moved the message off a progress line.
+
 ## 1.0.1
 - Wrote the readme, which was an empty file: polling contract, `immediate_exit`
   semantics (exit 0, skipped `Drop` and its telemetry-loss consequence), and the

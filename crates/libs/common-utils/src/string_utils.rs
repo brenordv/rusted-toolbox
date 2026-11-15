@@ -119,14 +119,7 @@ pub fn format_bytes_to_string(bytes: u64) -> String {
     let whole_part = parts[0];
     let decimal_part = parts[1];
 
-    // Add thousand separators to the integer part
-    let mut formatted_with_commas = String::new();
-    for (i, c) in whole_part.chars().rev().enumerate() {
-        if i != 0 && i % 3 == 0 {
-            formatted_with_commas.insert(0, ',');
-        }
-        formatted_with_commas.insert(0, c);
-    }
+    let formatted_with_commas = group_thousands(whole_part);
 
     let decimal_suffix = if *unit == "bytes" {
         "".to_string()
@@ -135,6 +128,24 @@ pub fn format_bytes_to_string(bytes: u64) -> String {
     };
 
     format!("{formatted_with_commas}{decimal_suffix} {unit}")
+}
+
+/// `value` with a comma between each group of three digits, for counts shown to people:
+/// `12403` becomes `12,403`.
+pub fn format_thousands(value: u64) -> String {
+    group_thousands(&value.to_string())
+}
+
+/// `digits` (a run of ASCII digits) with a comma between each group of three, from the right.
+fn group_thousands(digits: &str) -> String {
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i != 0 && (digits.len() - i).is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(c);
+    }
+    grouped
 }
 
 /// A secret value (connection string, token, key) that cannot leak through
@@ -226,6 +237,17 @@ mod tests {
     #[case::above_tb_stays_in_tb(1024 * (1 << 40), "1,024.00 TB")]
     fn format_bytes_cases(#[case] bytes: u64, #[case] expected: &str) {
         assert_eq!(format_bytes_to_string(bytes), expected);
+    }
+
+    #[rstest]
+    #[case::zero(0, "0")]
+    #[case::three_digits(999, "999")]
+    #[case::four_digits(1000, "1,000")]
+    #[case::six_digits(123_456, "123,456")]
+    #[case::seven_digits(1_234_567, "1,234,567")]
+    #[case::largest(u64::MAX, "18,446,744,073,709,551,615")]
+    fn format_thousands_cases(#[case] value: u64, #[case] expected: &str) {
+        assert_eq!(format_thousands(value), expected);
     }
 
     #[test]

@@ -12,9 +12,11 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use shared_azure::auth::{AuthMethod, CredentialKind};
 use shared_eventhub_core::connection::{DEFAULT_CONSUMER_GROUP, EventHubTarget};
+use shared_eventhub_core::engine::EngineConfig;
 use shared_eventhub_core::filters::CaptureFilters;
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::time::Duration;
 use tracing::info;
 
 /// The config file's name, in the working directory.
@@ -234,6 +236,19 @@ impl ToolConfig {
         match kind {
             CredentialKindConfig::ClientSecret { client_id, .. } => Some(client_id),
             CredentialKindConfig::DeveloperTools | CredentialKindConfig::ManagedIdentity => None,
+        }
+    }
+
+    /// The engine settings for a capture run of this config against `target`.
+    pub fn engine_config(&self, target: EventHubTarget) -> EngineConfig {
+        let capture = &self.capture;
+        EngineConfig {
+            target,
+            partitions: capture.partitions.clone(),
+            initial_filters: capture.filters.clone(),
+            ignore_checkpoint: capture.ignore_checkpoint,
+            prefetch: capture.prefetch,
+            feedback_interval: Duration::from_secs(capture.feedback_interval_secs),
         }
     }
 

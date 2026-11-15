@@ -5,10 +5,12 @@
 //! a runtime thread.
 
 use crate::store::schema::{
-    BY_TIME, CHECKPOINTS, EVENT_HUB_KEY, MESSAGES, META, NAMESPACE_KEY, decode_message,
-    encode_checkpoint, encode_message, message_table_key, time_key,
+    BY_TIME, CHECKPOINTS, CREATED_ON_KEY, EVENT_HUB_KEY, MESSAGES, META, NAMESPACE_KEY,
+    NO_ENQUEUED_TIME, decode_message, encode_checkpoint, encode_created_on, encode_message,
+    message_table_key, time_key,
 };
 use anyhow::{Context, anyhow};
+use chrono::{DateTime, TimeDelta, Utc};
 use redb::{Database, ReadableTable, Table, WriteTransaction};
 use shared_eventhub_core::connection::EventHubIdentity;
 use shared_eventhub_core::engine::{Checkpoint, StoreOutcome};
@@ -29,6 +31,10 @@ const MAX_BATCH: usize = 256;
 const SLOW_BATCH: Duration = Duration::from_secs(2);
 /// At most one slow-batch warning per this interval.
 const SLOW_BATCH_WARNING_INTERVAL: Duration = Duration::from_secs(60);
+/// How much earlier than the event hub's creation time an archived event may be enqueued
+/// before it counts as an older hub's: the creation time and the enqueue times come from
+/// different service clocks.
+const CREATION_CLOCK_TOLERANCE: TimeDelta = TimeDelta::minutes(1);
 
 type Reply<T> = oneshot::Sender<anyhow::Result<T>>;
 
@@ -303,7 +309,7 @@ impl WriterCounters {
 }
 
 #[derive(Clone, Copy)]
-struct BatchTiming {
+pub(super) struct BatchTiming {
     lock_wait: Duration,
     write: Duration,
 }
@@ -393,7 +399,10 @@ fn settle_all(batch: Vec<WriteRequest>, failure: Option<&str>) {
 /// Applies every request in one transaction and commits it. A request the
 /// archive refuses (another hub, a different event at the same key) gets its
 /// own error and writes nothing; a storage failure fails the whole batch.
-fn apply_batch(database: &Database, batch: &mut [WriteRequest]) -> anyhow::Result<BatchTiming> {
+pub(super) fn apply_batch(
+    database: &Database,
+    batch: &mut [WriteRequest],
+) -> anyhow::Result<BatchTiming> {
     let started = Instant::now();
     let transaction = database
         .begin_write()
@@ -468,14 +477,7 @@ impl<'txn> WriteTables<'txn> {
         hub: &EventHubIdentity,
     ) -> anyhow::Result<anyhow::Result<()>> {
         match binding {
-            Some(bound) if same_event_hub(bound, hub) => {
-                trace!(
-                    namespace = %hub.fully_qualified_namespace,
-                    event_hub = %hub.event_hub_name,
-                    "The archive is already bound to this event hub"
-                );
-                Ok(Ok(()))
-            }
+            Some(bound) if same_event_hub(bound, hub) => self.rebind(bound, hub),
             Some(bound) => Ok(Err(anyhow!(
                 "This data folder's archive belongs to '{}/{}'; the run targets '{}/{}'. Use \
                  another data folder.",
@@ -491,15 +493,117 @@ impl<'txn> WriteTables<'txn> {
                 self.meta
                     .insert(EVENT_HUB_KEY, hub.event_hub_name.as_str())
                     .context("Failed to record the archive's event hub")?;
+                if let Some(created_on) = hub.created_on {
+                    self.record_created_on(created_on)?;
+                }
                 info!(
                     namespace = %hub.fully_qualified_namespace,
                     event_hub = %hub.event_hub_name,
+                    created_on = %describe_created_on(hub.created_on),
                     "Bound the archive to its event hub"
                 );
                 *binding = Some(hub.clone());
                 Ok(Ok(()))
             }
         }
+    }
+
+    /// Binds again to the event hub `bound` names, checking that it is the same hub: one
+    /// created at another time, or one created after the archive's earliest event, is a
+    /// deleted and recreated hub. An archive bound without a creation time records the
+    /// reported one, in `meta` and in `bound`, the batch's view of the binding.
+    fn rebind(
+        &mut self,
+        bound: &mut EventHubIdentity,
+        hub: &EventHubIdentity,
+    ) -> anyhow::Result<anyhow::Result<()>> {
+        let Some(reported) = hub.created_on else {
+            if bound.created_on.is_some() {
+                warn!(
+                    namespace = %hub.fully_qualified_namespace,
+                    event_hub = %hub.event_hub_name,
+                    "The service did not report the event hub's creation time; a recreated \
+                     event hub cannot be detected on this run"
+                );
+            }
+            return Ok(Ok(()));
+        };
+        if let Some(archived) = bound.created_on
+            && archived != reported
+        {
+            warn!(
+                namespace = %hub.fully_qualified_namespace,
+                event_hub = %hub.event_hub_name,
+                archived_created_on = %encode_created_on(archived),
+                reported_created_on = %encode_created_on(reported),
+                "The event hub's creation time differs from the archive's"
+            );
+            return Ok(Err(anyhow!(
+                "The event hub '{}/{}' was created on {}; this data folder's archive holds the \
+                 one created on {}: the event hub was deleted and recreated (or replaced). Use \
+                 another data folder.",
+                hub.fully_qualified_namespace,
+                hub.event_hub_name,
+                display_time(reported),
+                display_time(archived)
+            )));
+        }
+        if let Some(earliest) = self.earliest_enqueued_time()?
+            && reported.signed_duration_since(earliest) > CREATION_CLOCK_TOLERANCE
+        {
+            warn!(
+                namespace = %hub.fully_qualified_namespace,
+                event_hub = %hub.event_hub_name,
+                earliest_enqueued = %encode_created_on(earliest),
+                reported_created_on = %encode_created_on(reported),
+                "The archive holds events older than the event hub"
+            );
+            return Ok(Err(anyhow!(
+                "This data folder's archive holds events enqueued on {}, before the event hub \
+                 '{}/{}' was created on {}: the event hub was deleted and recreated (or \
+                 replaced). Use another data folder.",
+                display_time(earliest),
+                hub.fully_qualified_namespace,
+                hub.event_hub_name,
+                display_time(reported)
+            )));
+        }
+        if bound.created_on.is_none() {
+            self.record_created_on(reported)?;
+            bound.created_on = Some(reported);
+            info!(
+                namespace = %hub.fully_qualified_namespace,
+                event_hub = %hub.event_hub_name,
+                created_on = %encode_created_on(reported),
+                "Recorded the event hub's creation time in the archive"
+            );
+        }
+        trace!(
+            namespace = %hub.fully_qualified_namespace,
+            event_hub = %hub.event_hub_name,
+            "The archive is already bound to this event hub"
+        );
+        Ok(Ok(()))
+    }
+
+    fn record_created_on(&mut self, created_on: DateTime<Utc>) -> anyhow::Result<()> {
+        self.meta
+            .insert(CREATED_ON_KEY, encode_created_on(created_on).as_str())
+            .context("Failed to record the event hub's creation time")?;
+        Ok(())
+    }
+
+    /// The earliest enqueue time among the archived events, from the time index; events
+    /// without an enqueue time sort first under their own key and are skipped.
+    fn earliest_enqueued_time(&self) -> anyhow::Result<Option<DateTime<Utc>>> {
+        let first = self
+            .by_time
+            .range((NO_ENQUEUED_TIME + 1, "", i64::MIN)..)
+            .context("Failed to read the archive's time index")?
+            .next()
+            .transpose()
+            .context("Failed to read the archive's time index")?;
+        Ok(first.and_then(|(key, _)| DateTime::from_timestamp_millis(key.value().0)))
     }
 
     fn store(
@@ -581,6 +685,16 @@ impl<'txn> WriteTables<'txn> {
             .map(|guard| decode_message(key.0, key.1, guard.value()))
             .transpose())
     }
+}
+
+/// A time as the archive's refusal messages show it: `2026-11-14 21:30:05.123 UTC`.
+fn display_time(time: DateTime<Utc>) -> String {
+    time.format("%Y-%m-%d %H:%M:%S%.3f UTC").to_string()
+}
+
+/// A creation time for the log in its stored form, or "not reported".
+fn describe_created_on(created_on: Option<DateTime<Utc>>) -> String {
+    created_on.map_or_else(|| "not reported".to_owned(), encode_created_on)
 }
 
 /// Event hub names compare case-insensitively; the namespace arrives

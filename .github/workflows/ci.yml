@@ -26,10 +26,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # eframe (seal-gui) needs these to build on Linux, per its README.
-      - run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+      # eframe (seal-gui) and Rune (eh-gui) need these to build on Linux, per their READMEs.
+      - run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev libssl-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # eh-gui's demo mode is feature-gated, so the workspace runs above never build it.
+      - run: cargo clippy -p eh-gui --features demo --all-targets --locked -- -D warnings
+      - run: cargo test -p eh-gui --features demo --locked
 
   test:
     name: build & test (${{ matrix.os }})
@@ -53,10 +56,10 @@ jobs:
         run: |
           vcpkg install libxml2:x64-windows-static-md
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-      # eframe (seal-gui) needs these to build on Linux, per its README.
-      - name: Install eframe system libraries (Linux)
+      # eframe (seal-gui) and Rune (eh-gui) need these to build on Linux, per their READMEs.
+      - name: Install GUI system libraries (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev libssl-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       # --locked matches release.yml, so lockfile drift fails here instead of
       # at tag time. cargo test builds the workspace; no separate build step.
