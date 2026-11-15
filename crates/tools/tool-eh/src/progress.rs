@@ -112,19 +112,27 @@ pub(crate) fn describe_text_filter(filter: Option<&TextFilter>) -> String {
     }
 }
 
-/// The stderr line shown while the run connects.
-pub(crate) fn connecting_notice(target: &TargetConfig) -> String {
-    match target.auth {
-        AuthMethodConfig::KeyVaultConnectionString { .. } => format!(
+/// The stderr line shown while the run connects, naming `consumer_group`
+/// when there is one.
+pub(crate) fn connecting_notice(target: &TargetConfig, consumer_group: Option<&str>) -> String {
+    match (&target.auth, consumer_group) {
+        (AuthMethodConfig::KeyVaultConnectionString { .. }, Some(group)) => format!(
             "Connecting (connection string from Key Vault, consumer group {})...",
-            display(&target.consumer_group)
+            display(group)
         ),
-        AuthMethodConfig::ConnectionString { .. } | AuthMethodConfig::Credential { .. } => {
-            format!(
-                "Connecting to {} (consumer group {})...",
-                target_label(target),
-                display(&target.consumer_group)
-            )
+        (AuthMethodConfig::KeyVaultConnectionString { .. }, None) => {
+            "Connecting (connection string from Key Vault)...".to_owned()
+        }
+        (
+            AuthMethodConfig::ConnectionString { .. } | AuthMethodConfig::Credential { .. },
+            Some(group),
+        ) => format!(
+            "Connecting to {} (consumer group {})...",
+            target_label(target),
+            display(group)
+        ),
+        (AuthMethodConfig::ConnectionString { .. } | AuthMethodConfig::Credential { .. }, None) => {
+            format!("Connecting to {}...", target_label(target))
         }
     }
 }
@@ -169,7 +177,7 @@ pub(crate) fn export_line(outcome: &ExportOutcome, elapsed: Duration) -> String 
 }
 
 /// `HH:MM:SS.mmm`.
-fn format_elapsed(elapsed: Duration) -> String {
+pub(crate) fn format_elapsed(elapsed: Duration) -> String {
     // A run would need to last about 292 million years to overflow chrono's
     // millisecond range; saturate rather than fail a display string.
     let elapsed = chrono::Duration::from_std(elapsed).unwrap_or(chrono::Duration::MAX);
@@ -398,8 +406,8 @@ impl<O: Write, E: Write> Renderer<O, E> {
     }
 }
 
-/// The export progress line, redrawn at most every 250 ms. Writing is
-/// best-effort, as for [`Renderer`].
+/// A single progress line (export, at-end message files, send), redrawn at
+/// most every 250 ms. Writing is best-effort, as for [`Renderer`].
 pub(crate) struct ExportProgressLine<W: Write> {
     out: W,
     /// Whether `out` is a terminal, where a finished line can be erased; a
@@ -431,8 +439,15 @@ impl<W: Write> ExportProgressLine<W> {
         }
     }
 
-    /// Redraws the line unless it was drawn less than 250 ms ago.
+    /// Redraws the export counts unless the line was drawn less than 250 ms
+    /// ago.
     pub(crate) fn draw(&mut self, outcome: &ExportOutcome) {
+        self.draw_with(|elapsed| export_line(outcome, elapsed));
+    }
+
+    /// Redraws the line with the text `line` builds from the time since the
+    /// line was created, unless it was drawn less than 250 ms ago.
+    pub(crate) fn draw_with(&mut self, line: impl FnOnce(Duration) -> String) {
         let now = Instant::now();
         if self
             .last_draw
@@ -441,7 +456,7 @@ impl<W: Write> ExportProgressLine<W> {
             return;
         }
         self.last_draw = Some(now);
-        self.render(outcome);
+        self.render(&line(self.started.elapsed()));
     }
 
     /// Ends the line. On a terminal, when a summary with the final counts is
@@ -460,11 +475,8 @@ impl<W: Write> ExportProgressLine<W> {
         self.record(result);
     }
 
-    fn render(&mut self, outcome: &ExportOutcome) {
-        let line = truncate(
-            &export_line(outcome, self.started.elapsed()),
-            terminal_width().saturating_sub(1),
-        );
+    fn render(&mut self, line: &str) {
+        let line = truncate(line, terminal_width().saturating_sub(1));
         let result = queue!(
             self.out,
             MoveToColumn(0),

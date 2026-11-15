@@ -4,7 +4,10 @@ mod export_app;
 mod models;
 mod progress;
 mod read_app;
+mod send_app;
+mod send_cli;
 mod settings;
+mod target;
 
 use crate::cli_utils::initialize;
 use crate::models::{EhCommand, RunOutcome};
@@ -17,9 +20,9 @@ use tracing::error;
 /// Azure Event Hubs CLI.
 ///
 /// Parses the arguments and `config.json`, installs the Ctrl-C handler, and
-/// runs `read` or `export`. Exit codes: 0 on success, 1 on any failure
-/// (including a partition that failed during a stopped run), 130 when
-/// interrupted cleanly.
+/// runs `read`, `export`, or `send`. Exit codes: 0 on success, 1 on any
+/// failure (including a partition that failed during a stopped run), 130
+/// when interrupted cleanly.
 #[tokio::main]
 async fn main() {
     let command = match initialize().await {
@@ -31,6 +34,7 @@ async fn main() {
     let outcome = match command {
         EhCommand::Read(job) => read_app::run(*job, &shutdown).await,
         EhCommand::Export(job) => export_app::run(*job, &shutdown).await,
+        EhCommand::Send(job) => send_app::run(*job, &shutdown).await,
     };
 
     match outcome {

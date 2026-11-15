@@ -3,17 +3,21 @@
 //! timestamp and filter values. Everything here is pure.
 
 use crate::cli_utils::{AuthArg, ExportArgs, ReadArgs, TargetArgs, TextFilterArgs, TimeFilterArgs};
-use crate::models::{ConfigSource, Environment, ExportJob, ReadJob};
+use crate::models::{BodySource, ConfigSource, Environment, ExportJob, ReadJob, SendJob};
+use crate::progress::target_label;
+use crate::send_cli::SendArgs;
 use anyhow::{Result, bail};
 use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
 use shared_eventhub_core::filters::{CaptureFilters, TextFilter, TimeFilter};
+use shared_eventhub_core::producer::{OutgoingEvent, Pacing, Routing, SendPlan};
 use shared_eventhub_persistence::config::{
     AuthMethodConfig, CaptureConfig, CredentialKindConfig, DiskWriteSettings, ExportSettings,
     SensitiveValues, StorageConfig, StoredSecret, TargetConfig, ToolConfig,
 };
 use std::path::PathBuf;
+use std::time::Duration;
 
-const NO_TARGET: &str = "No event hub to read: pass -s, --auth, or --keyvault-url, set \
+const NO_TARGET: &str = "No event hub given: pass -s, --auth, or --keyvault-url, set \
                          EH_CONNECTION_STRING, or run in a folder with a saved config.json";
 const CLIENT_IDS_NEED_CLIENT_SECRET: &str =
     "--tenant-id and --client-id apply to --auth client-secret only";
@@ -33,7 +37,12 @@ pub(crate) fn read_job(
     working_dir: PathBuf,
     config_source: ConfigSource,
 ) -> Result<ReadJob> {
-    let target = merge_target(&args.target, recalled, environment)?;
+    let target = merge_target(
+        &args.target,
+        args.consumer_group.as_deref(),
+        recalled,
+        environment,
+    )?;
     let mut config = ToolConfig::new(target);
     config.capture = merge_capture(&args, recalled.map(|recalled| &recalled.capture));
     config.storage = merge_read_storage(&args, recalled.map(|recalled| &recalled.storage));
@@ -84,8 +93,105 @@ pub(crate) fn export_job(
     }
 }
 
+/// Builds a send run. The target merges exactly as for `read` (a recalled
+/// consumer group is kept, so saving does not lose it); every other setting
+/// is the recalled config's except the data folder. A target recalled from
+/// `config.json` must be named on the command line or confirmed with
+/// `--yes`.
+///
+/// # Errors
+/// Fails as [`read_job`] does, when the recalled target is neither named
+/// nor confirmed, and when the partition key is blank.
+pub(crate) fn send_job(
+    args: SendArgs,
+    (body, body_source): (Vec<u8>, BodySource),
+    recalled: Option<&ToolConfig>,
+    environment: &Environment,
+    working_dir: PathBuf,
+    config_source: ConfigSource,
+) -> Result<SendJob> {
+    let target = merge_target(&args.target, None, recalled, environment)?;
+    check_recalled_destination(&args, &target, recalled, environment)?;
+    let mut config = match recalled {
+        Some(recalled) => ToolConfig {
+            target,
+            ..recalled.clone()
+        },
+        None => ToolConfig::new(target),
+    };
+    if let Some(base_data_folder) = args.data.base_data_folder.clone() {
+        config.storage.base_data_folder = base_data_folder;
+    }
+    let routing = match &args.partition_key {
+        Some(key) => Routing::partition_key(key.as_str())?,
+        None => Routing::automatic(),
+    };
+    let pacing = match args.interval_ms {
+        Some(interval_ms) => Pacing::interval(Duration::from_millis(interval_ms))?,
+        None => Pacing::batched(),
+    };
+    let secrets = given_secrets(&config, &args.target, environment);
+
+    Ok(SendJob {
+        config,
+        secrets,
+        save_config: args.target.save_config,
+        working_dir,
+        config_source,
+        plan: SendPlan::new(args.count, routing, pacing)?,
+        event: OutgoingEvent {
+            body,
+            content_type: args.content_type,
+        },
+        body_source,
+    })
+}
+
+/// Refuses a send in a folder with a `config.json` unless the run's
+/// destination comes from this command line or the environment, or `--yes`
+/// confirms it. A cloned repository can ship a `config.json` that points at
+/// someone else's event hub, so the merged `target` counts as named only
+/// when `--namespace` and `-e` are both on the command line (a saved
+/// connection string must then match both: a string without `EntityPath`
+/// would otherwise keep its own namespace under any `-e`), when
+/// connection-string auth uses a string given by `-s` or
+/// `EH_CONNECTION_STRING` rather than one stored in the data folder, or when
+/// Key Vault auth names its vault with `--keyvault-url`.
+fn check_recalled_destination(
+    args: &SendArgs,
+    target: &TargetConfig,
+    recalled: Option<&ToolConfig>,
+    environment: &Environment,
+) -> Result<()> {
+    if recalled.is_none() || args.yes {
+        return Ok(());
+    }
+    let flags = &args.target;
+    let given = match target.auth {
+        AuthMethodConfig::ConnectionString { .. } => {
+            flags.connection_string.is_some() || environment.connection_string.is_some()
+        }
+        AuthMethodConfig::KeyVaultConnectionString { .. } => flags.keyvault_url.is_some(),
+        AuthMethodConfig::Credential { .. } => false,
+    };
+    if given || (flags.namespace.is_some() && flags.event_hub.is_some()) {
+        return Ok(());
+    }
+    let source = if flags.has_auth_flags() {
+        "the connection string saved in the data folder"
+    } else {
+        "this folder's config.json"
+    };
+    bail!(
+        "This run would send to {}, taken from {source}. Name it with --namespace and -e, or \
+         pass --yes.",
+        target_label(target)
+    )
+}
+
 fn merge_target(
     args: &TargetArgs,
+    consumer_group: Option<&str>,
     recalled: Option<&ToolConfig>,
     environment: &Environment,
 ) -> Result<TargetConfig> {
@@ -118,9 +224,8 @@ fn merge_target(
         bail!(NO_TARGET);
     };
 
-    let consumer_group = args
-        .consumer_group
-        .clone()
+    let consumer_group = consumer_group
+        .map(str::to_owned)
         .or_else(|| recalled.map(|recalled| recalled.consumer_group.clone()))
         .unwrap_or_else(|| DEFAULT_CONSUMER_GROUP.to_owned());
     if consumer_group.trim().is_empty() {

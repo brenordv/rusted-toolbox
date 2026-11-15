@@ -3,7 +3,7 @@ This is a collection of free command-line tools I made in an attempt to learn Ru
 
 We currently have the following tools:
 1. A tool to read the [public info on JWT tokens](crates/tools/tool-jwt/readme.md);
-2. An Azure Event Hubs tool called [eh](crates/tools/tool-eh/readme.md): `eh read` captures events into a local archive (it replaces `eh-read`), and `eh export` writes them to txt, csv, or json (it replaces `eh-export`). [eh-gui](crates/tools/tool-eh-gui/readme.md) does both in a GPU-drawn desktop window built on Rune, and searches the archive;
+2. An Azure Event Hubs tool called [eh](crates/tools/tool-eh/readme.md): `eh read` captures events into a local archive (it replaces `eh-read`), `eh export` writes them to txt, csv, or json (it replaces `eh-export`), and `eh send` publishes test events. [eh-gui](crates/tools/tool-eh-gui/readme.md) does both in a GPU-drawn desktop window built on Rune, and searches the archive;
 3. A [CSV data normalizer](crates/tools/tool-csvn/readme.md) tool;
 4. A tool that [splits large files](crates/tools/tool-csv-split/readme.md) (including CSV) into smaller ones;
 5. A tool [that searches for multiple terms](crates/tools/tool-get-lines/readme.md) inside a text file and creates one output file per search term;

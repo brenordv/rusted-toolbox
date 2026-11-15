@@ -19,14 +19,21 @@ fn parse_error(argv: &[&str]) -> ErrorKind {
 fn read_args(argv: &[&str]) -> ReadArgs {
     match parse(argv).command {
         Commands::Read(args) => *args,
-        Commands::Export(_) => panic!("expected the read subcommand"),
+        Commands::Export(_) | Commands::Send(_) => panic!("expected the read subcommand"),
     }
 }
 
 fn export_args(argv: &[&str]) -> ExportArgs {
     match parse(argv).command {
         Commands::Export(args) => *args,
-        Commands::Read(_) => panic!("expected the export subcommand"),
+        Commands::Read(_) | Commands::Send(_) => panic!("expected the export subcommand"),
+    }
+}
+
+fn send_args(argv: &[&str]) -> SendArgs {
+    match parse(argv).command {
+        Commands::Send(args) => *args,
+        Commands::Read(_) | Commands::Export(_) => panic!("expected the send subcommand"),
     }
 }
 
@@ -118,7 +125,7 @@ fn read_flags_land_in_their_fields() {
         "Endpoint=sb://x/;SharedAccessKey=k"
     );
     assert_eq!(args.target.event_hub.as_deref(), Some("orders"));
-    assert_eq!(args.target.consumer_group.as_deref(), Some("group"));
+    assert_eq!(args.consumer_group.as_deref(), Some("group"));
     assert!(args.target.save_config);
     assert_eq!(args.data.base_data_folder.as_deref(), Some("data"));
     assert_eq!(args.partitions, ["0", "2"]);
@@ -138,7 +145,7 @@ fn read_flags_land_in_their_fields() {
 fn flags_config_json_can_supply_stay_unset_when_not_given() {
     let args = read_args(&["eh", "read"]);
 
-    assert!(args.target.consumer_group.is_none());
+    assert!(args.consumer_group.is_none());
     assert!(args.data.base_data_folder.is_none());
     assert!(args.feedback_interval.is_none());
     assert!(args.disk_mode.is_none());
@@ -197,6 +204,74 @@ fn include_metadata_takes_only_true_or_false() {
 #[case::bad_regex(&["eh", "read", "--filter-regex", "(unclosed"])]
 fn invalid_values_are_a_usage_error(#[case] argv: &[&str]) {
     assert_eq!(parse_error(argv), ErrorKind::ValueValidation);
+}
+
+#[test]
+fn send_flags_land_in_their_fields() {
+    let args = send_args(&[
+        "eh",
+        "send",
+        "-e",
+        "orders",
+        "--body",
+        "{}",
+        "-n",
+        "500",
+        "--partition-key",
+        "customer-17",
+        "--content-type",
+        "application/json",
+        "--interval-ms",
+        "250",
+        "--yes",
+    ]);
+
+    assert_eq!(args.target.event_hub.as_deref(), Some("orders"));
+    assert_eq!(args.body.map(|body| body.0).as_deref(), Some("{}"));
+    assert_eq!(args.count, 500);
+    assert_eq!(args.partition_key.as_deref(), Some("customer-17"));
+    assert_eq!(args.content_type.as_deref(), Some("application/json"));
+    assert_eq!(args.interval_ms, Some(250));
+    assert!(args.yes);
+}
+
+#[test]
+fn send_defaults_to_one_batched_event() {
+    let args = send_args(&["eh", "send", "--body-file", "-"]);
+
+    assert_eq!(args.count, 1);
+    assert_eq!(args.interval_ms, None);
+    assert_eq!(args.body_file.as_deref(), Some(std::path::Path::new("-")));
+}
+
+#[rstest::rstest]
+#[case::no_body(&["eh", "send"], ErrorKind::MissingRequiredArgument)]
+#[case::two_bodies(&["eh", "send", "--body", "x", "--body-file", "y"], ErrorKind::ArgumentConflict)]
+#[case::zero_count(&["eh", "send", "--body", "x", "-n", "0"], ErrorKind::ValueValidation)]
+#[case::count_over_the_maximum(&["eh", "send", "--body", "x", "-n", "1000001"], ErrorKind::ValueValidation)]
+#[case::zero_interval(&["eh", "send", "--body", "x", "--interval-ms", "0"], ErrorKind::ValueValidation)]
+#[case::interval_over_the_maximum(&["eh", "send", "--body", "x", "--interval-ms", "3600001"], ErrorKind::ValueValidation)]
+#[case::consumer_group(&["eh", "send", "--body", "x", "-g", "group"], ErrorKind::UnknownArgument)]
+#[case::partition_id(&["eh", "send", "--body", "x", "--partition", "0"], ErrorKind::UnknownArgument)]
+fn bad_send_arguments_are_usage_errors(#[case] argv: &[&str], #[case] expected: ErrorKind) {
+    assert_eq!(parse_error(argv), expected);
+}
+
+#[test]
+fn the_count_and_interval_maximums_are_accepted() {
+    let args = send_args(&[
+        "eh",
+        "send",
+        "--body",
+        "x",
+        "-n",
+        "1000000",
+        "--interval-ms",
+        "3600000",
+    ]);
+
+    assert_eq!(args.count, 1_000_000);
+    assert_eq!(args.interval_ms, Some(3_600_000));
 }
 
 #[test]

@@ -2,7 +2,8 @@ use crate::models::{ConfigSource, EhCommand, Environment, ExportJob, ReadJob};
 use crate::progress::{
     describe_auth, describe_text_filter, describe_time_filter, display, target_label,
 };
-use crate::settings::{export_job, parse_regex, read_job};
+use crate::send_cli::{SendArgs, load_body, send_header};
+use crate::settings::{export_job, parse_regex, read_job, send_job};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -18,12 +19,13 @@ use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat};
 use shared_eventhub_persistence::paths::DataPaths;
 use std::fmt::Display;
 
-/// Azure Event Hubs CLI: captures events into a local archive and exports
-/// them.
+/// Azure Event Hubs CLI: captures events into a local archive, exports them,
+/// and sends test events.
 ///
 /// `read` captures events from an event hub into the data folder's archive
-/// (optionally writing message files as it goes), and `export` writes
-/// archived events to txt, csv, or json files. The shared flags
+/// (optionally writing message files as it goes), `export` writes archived
+/// events to txt, csv, or json files, and `send` publishes one body a given
+/// number of times. The shared flags
 /// (`--app-header`, `--verbose`, `--log-level`, ...) go before the
 /// subcommand: `eh --verbose read ...`.
 #[derive(Parser, Debug)]
@@ -53,6 +55,16 @@ enum Commands {
         eh export -f csv --include-metadata false --export-folder out\n  \
         eh export --between 2026-07-02T00:00:00Z..2026-07-02T23:59:59Z --filter-regex 'order-\\d+'")]
     Export(Box<ExportArgs>),
+
+    /// Send test events to an event hub
+    #[command(after_help = "Examples:\n  \
+        eh send -e orders --body '{\"orderId\": 1}' --content-type application/json\n  \
+        eh send --body-file order.json -n 500\n  \
+        eh send --body-file - --partition-key customer-17 < event.json\n  \
+        eh send -e orders --body ping -n 600 --interval-ms 1000\n\n\
+        A target recalled from config.json must be named again with --namespace and -e, or \
+        confirmed with --yes.")]
+    Send(Box<SendArgs>),
 }
 
 /// Where the event hub is and how to authenticate to it.
@@ -93,10 +105,6 @@ pub(crate) struct TargetArgs {
     /// Name of the Key Vault secret holding the connection string
     #[arg(long = "keyvault-secret", value_name = "NAME")]
     pub keyvault_secret: Option<String>,
-
-    /// Consumer group [default: $Default]
-    #[arg(short = 'g', long = "consumer-group", value_name = "NAME")]
-    pub consumer_group: Option<String>,
 
     /// Save this run's settings to config.json (secrets go to the data
     /// folder's secrets file, not encrypted), then continue
@@ -209,6 +217,10 @@ pub(crate) struct ReadArgs {
 
     #[command(flatten)]
     pub data: DataArgs,
+
+    /// Consumer group [default: $Default]
+    #[arg(short = 'g', long = "consumer-group", value_name = "NAME")]
+    pub consumer_group: Option<String>,
 
     /// Partition to read; repeat for several [default: all]
     #[arg(short = 'p', long = "partition", value_name = "ID")]
@@ -373,6 +385,7 @@ async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<Eh
     let no_config = match &command {
         Commands::Read(args) => args.data.no_config,
         Commands::Export(args) => args.data.no_config,
+        Commands::Send(args) => args.data.no_config,
     };
     let (recalled, source) = if no_config {
         (None, ConfigSource::Disabled)
@@ -401,6 +414,18 @@ async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<Eh
             recalled.as_ref(),
             source,
         )))),
+        Commands::Send(args) => load_body(&args)
+            .and_then(|body| {
+                send_job(
+                    *args,
+                    body,
+                    recalled.as_ref(),
+                    &environment,
+                    working_dir,
+                    source,
+                )
+            })
+            .map(|job| EhCommand::Send(Box::new(job))),
     };
     (notice, command)
 }
@@ -438,13 +463,14 @@ fn print_header(command: &EhCommand) {
     let lines = match command {
         EhCommand::Read(job) => read_header(job),
         EhCommand::Export(job) => export_header(job),
+        EhCommand::Send(job) => send_header(job),
     };
     for line in lines {
         println!("{line}");
     }
 }
 
-fn item(label: &str, value: impl Display) -> String {
+pub(crate) fn item(label: &str, value: impl Display) -> String {
     format_config_item(label, escape_for_terminal_display(&value.to_string()))
 }
 
@@ -531,7 +557,7 @@ fn format_name(format: ExportFormat) -> &'static str {
     }
 }
 
-fn config_source_name(source: ConfigSource) -> &'static str {
+pub(crate) fn config_source_name(source: ConfigSource) -> &'static str {
     match source {
         ConfigSource::Disabled => "not read (--no-config)",
         ConfigSource::Missing => "none",

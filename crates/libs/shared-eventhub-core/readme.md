@@ -1,7 +1,8 @@
 # shared-eventhub-core
 
-UI-agnostic Event Hubs capture: the captured-message model, capture filters,
-the connection to an event hub, the capture engine, and live statistics.
+UI-agnostic Event Hubs capture and sending: the captured-message model, capture
+filters, the connection to an event hub, the capture engine, live statistics,
+and a producer for test events.
 Nothing here prints, renders, or touches the filesystem; storage happens
 through the `MessageSink` trait, and consumers talk to the engine through
 channels. Built on the official `azure_messaging_eventhubs` SDK (0.16.0);
@@ -179,6 +180,49 @@ Events and statistics:
   total). A longer outage ends the affected partitions, even in an unbounded
   run; restart the run to resume from the checkpoints.
 
+## Sending
+
+`open_producer(&target)` validates the same `EventHubTarget` as `connect`
+(the consumer group is ignored) and opens a producer. Opening only
+establishes the AMQP connection; the credential is first used when the first
+batch is created. `EventHubProducer::fully_qualified_namespace` and
+`event_hub_name` are the resolved names, so a connection-string target can
+show its hub before anything is sent. Always `close()` the producer: dropping
+the SDK client does not reliably close its connection.
+
+`EventHubProducer::send(&plan, next_event, &cancel, progress)` sends
+`plan.count()` events and returns a `SendSummary` (`sent`, `batches`,
+`elapsed`, and `SendEnd::Completed`, `Cancelled`, or `Failed(reason)`):
+
+- `next_event(index)` builds each `OutgoingEvent` (body and content type);
+  `OutgoingEvent`'s `Debug` shows the body length only.
+- `SendPlan::new(count, routing, pacing)` takes 1 to 1,000,000 events.
+  `Routing::automatic()` lets the service pick partitions;
+  `Routing::partition_key(key)` sends every event with that key (one
+  partition, in order).
+- `Pacing::batched()` packs as many events per batch as fit.
+  `Pacing::interval(d)` (1 ms to one hour) sends one event per batch, each
+  send starting `d` after the previous one started; a slower send delays the
+  next one and never causes a burst.
+- `progress` runs after every sent batch (once per event when paced).
+- Setting `cancel` stops before the next batch, while a batch is being
+  created, or during a paced wait (within about 100 ms). A batch already
+  handed to the SDK finishes first, which can take as long as the SDK's
+  retries (about a minute).
+- The first failure ends the run: an event that does not fit an empty batch
+  (the SDK sizes a batch's first event twice, so one event can use only about
+  half the publish limit: about 128 KB on Basic, 512 KB on Standard and
+  Premium), a failed batch creation, a failing `next_event`, or a send the SDK
+  gave up on. Nothing is retried on top of the SDK's own retries, and a failed
+  batch is not counted.
+- `sent` counts events in batches the service accepted or did not refuse:
+  the SDK treats `Modified` and `Released` outcomes as success with a warning.
+  A send retried after a lost acknowledgement can store an event twice, with
+  the same message id.
+
+`cancel::flag_set(&flag)` resolves once a flag is set, polling every
+`CANCEL_POLL` (100 ms); it suits a race that ends on the flag.
+
 ## Logging
 
 The engine logs connect and partition lifecycle at info, start decisions and
@@ -190,6 +234,11 @@ warn level. To see reconnects and engine detail without hiding anything else:
 ```
 RUST_LOG=warn,azure_messaging_eventhubs=info,shared_eventhub_core=debug
 ```
+
+The producer logs the open and the first batch creation (when the sender is
+authorized) at info, each sent batch at trace (counts, bytes, send and wait
+times, never the body or the partition key), the run's end at info, and the
+close at debug.
 
 A bare `RUST_LOG=azure_messaging_eventhubs=debug` replaces the whole filter and
 hides the tools' own warnings. A failed receive shows up twice, once as the

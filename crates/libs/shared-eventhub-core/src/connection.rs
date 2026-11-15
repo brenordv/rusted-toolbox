@@ -3,6 +3,8 @@
 
 use crate::models::system_time_to_utc;
 use anyhow::Context;
+use azure_core::credentials::TokenCredential;
+use azure_messaging_eventhubs::builders::ConsumerClientBuilder;
 use azure_messaging_eventhubs::{ConnectionString, ConsumerClient};
 use chrono::{DateTime, Utc};
 use common_utils::string_utils::SecretString;
@@ -10,6 +12,7 @@ use shared_azure::auth::{AuthMethod, CredentialKind, build_credential};
 use shared_azure::host::host_has_allowed_suffix;
 use shared_azure::key_vault::fetch_secret;
 use std::str::FromStr;
+use std::sync::Arc;
 use tracing::{info, warn};
 
 /// The consumer group every event hub has.
@@ -30,7 +33,8 @@ pub const EVENT_HUBS_ALLOWED_HOST_SUFFIXES: [&str; 3] = [
 
 const MAX_EVENT_HUB_NAME_LENGTH: usize = 256;
 
-/// Everything needed to reach one event hub through one consumer group.
+/// Everything needed to reach one event hub, and the consumer group to read
+/// it through (`consumer_group` applies to consumers only).
 #[derive(Clone, Debug)]
 pub struct EventHubTarget {
     pub auth: AuthMethod,
@@ -73,17 +77,105 @@ pub struct EventHubConnection {
 }
 
 /// Where the client's authentication comes from once the target is resolved.
-enum ClientAuth {
+pub(crate) enum ClientAuth {
     ConnectionString(SecretString),
     Credential(CredentialKind),
 }
 
 /// A target that passed validation: names are checked and the namespace host
 /// is on the allowlist.
-struct ResolvedTarget {
-    fully_qualified_namespace: String,
-    event_hub_name: String,
-    auth: ClientAuth,
+pub(crate) struct ResolvedTarget {
+    pub(crate) fully_qualified_namespace: String,
+    pub(crate) event_hub_name: String,
+    pub(crate) auth: ClientAuth,
+}
+
+/// An SDK client builder that can open its client either way the resolved
+/// auth allows.
+pub(crate) trait OpenClient {
+    type Client;
+
+    fn with_connection_string(
+        self,
+        connection_string: &str,
+        event_hub_name: &str,
+    ) -> impl Future<Output = azure_messaging_eventhubs::Result<Self::Client>> + Send;
+
+    fn with_credential(
+        self,
+        fully_qualified_namespace: &str,
+        event_hub_name: &str,
+        credential: Arc<dyn TokenCredential>,
+    ) -> impl Future<Output = azure_messaging_eventhubs::Result<Self::Client>> + Send;
+}
+
+impl OpenClient for ConsumerClientBuilder {
+    type Client = ConsumerClient;
+
+    async fn with_connection_string(
+        self,
+        connection_string: &str,
+        event_hub_name: &str,
+    ) -> azure_messaging_eventhubs::Result<ConsumerClient> {
+        self.open_with_connection_string(connection_string, Some(event_hub_name))
+            .await
+    }
+
+    async fn with_credential(
+        self,
+        fully_qualified_namespace: &str,
+        event_hub_name: &str,
+        credential: Arc<dyn TokenCredential>,
+    ) -> azure_messaging_eventhubs::Result<ConsumerClient> {
+        self.open(
+            fully_qualified_namespace,
+            event_hub_name.to_owned(),
+            credential,
+        )
+        .await
+    }
+}
+
+impl ResolvedTarget {
+    /// Opens `builder`'s client with this target's auth, building the Entra
+    /// ID credential (with `client_secret` for a client-secret credential)
+    /// when the auth is not a connection string.
+    ///
+    /// # Errors
+    /// Fails when the credential cannot be built or the SDK refuses to open
+    /// the client; the error names the namespace and event hub only.
+    pub(crate) async fn open<B: OpenClient>(
+        &self,
+        builder: B,
+        client_secret: Option<SecretString>,
+    ) -> anyhow::Result<B::Client> {
+        let namespace = &self.fully_qualified_namespace;
+        let hub = &self.event_hub_name;
+        let opened = match &self.auth {
+            ClientAuth::ConnectionString(connection_string) => {
+                builder
+                    .with_connection_string(connection_string.expose(), hub)
+                    .await
+            }
+            ClientAuth::Credential(kind) => {
+                let credential = build_credential(kind, client_secret).with_context(|| {
+                    format!("Failed to build a credential for '{namespace}/{hub}'")
+                })?;
+                builder.with_credential(namespace, hub, credential).await
+            }
+        };
+        opened
+            .with_context(|| format!("Failed to open an Event Hubs client for '{namespace}/{hub}'"))
+    }
+}
+
+/// The auth method's name for logs, never a secret.
+pub(crate) fn auth_method_name(auth: &AuthMethod) -> &'static str {
+    match auth {
+        AuthMethod::ConnectionString { .. } => "connection-string",
+        AuthMethod::Credential { .. } => "credential",
+        AuthMethod::KeyVaultConnectionString { .. } => "key-vault-connection-string",
+    }
 }
 
 /// Validates `target`, opens a consumer client for it, and reads the event
@@ -102,29 +194,19 @@ struct ResolvedTarget {
 /// and never contain connection-string or secret material.
 pub async fn connect(target: &EventHubTarget) -> anyhow::Result<EventHubConnection> {
     let resolved = resolve_target(target).await?;
-    let namespace = resolved.fully_qualified_namespace;
-    let hub = resolved.event_hub_name;
-    info!(namespace = %namespace, event_hub = %hub, "Connecting to Event Hubs");
+    info!(
+        namespace = %resolved.fully_qualified_namespace,
+        event_hub = %resolved.event_hub_name,
+        "Connecting to Event Hubs"
+    );
 
     let builder = ConsumerClient::builder().with_consumer_group(target.consumer_group.clone());
-    let client = match resolved.auth {
-        ClientAuth::ConnectionString(connection_string) => builder
-            .open_with_connection_string(connection_string.expose(), Some(hub.as_str()))
-            .await
-            .with_context(|| {
-                format!("Failed to open an Event Hubs client for '{namespace}/{hub}'")
-            })?,
-        ClientAuth::Credential(kind) => {
-            let credential = build_credential(&kind, target.client_secret.clone())
-                .with_context(|| format!("Failed to build a credential for '{namespace}/{hub}'"))?;
-            builder
-                .open(&namespace, hub.clone(), credential)
-                .await
-                .with_context(|| {
-                    format!("Failed to open an Event Hubs client for '{namespace}/{hub}'")
-                })?
-        }
-    };
+    let client = resolved.open(builder, target.client_secret.clone()).await?;
+    let ResolvedTarget {
+        fully_qualified_namespace: namespace,
+        event_hub_name: hub,
+        ..
+    } = resolved;
 
     let properties = match client.get_eventhub_properties().await {
         Ok(properties) => properties,
@@ -164,7 +246,13 @@ pub(crate) async fn close_client_quietly(client: ConsumerClient) {
     }
 }
 
-async fn resolve_target(target: &EventHubTarget) -> anyhow::Result<ResolvedTarget> {
+/// Validates `target` and settles where its auth comes from, fetching the
+/// connection string from Key Vault for Key Vault auth.
+///
+/// # Errors
+/// Fails as [`connect`] does before it opens a client; errors never contain
+/// connection-string or secret material.
+pub(crate) async fn resolve_target(target: &EventHubTarget) -> anyhow::Result<ResolvedTarget> {
     match &target.auth {
         AuthMethod::ConnectionString { connection_string } => {
             resolve_connection_string(target, connection_string.clone())
