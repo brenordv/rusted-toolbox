@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, SubsecRound, Utc};
 use shared_eventhub_core::connection::EventHubIdentity;
 use shared_eventhub_core::engine::{Checkpoint, MessageSink};
 use shared_eventhub_core::models::{BodyKind, CapturedMessage, MessageKey};
@@ -226,6 +226,36 @@ fn a_template_dry_run_prints_the_renders_with_no_target_and_creates_nothing() {
         stderr_of(&output)
     );
     assert!(files_under(root.path()).is_empty());
+}
+
+#[test]
+fn a_utc_now_dry_run_prints_the_time_each_event_is_built() {
+    let root = tempfile::tempdir().unwrap();
+    let before = Utc::now().trunc_subsecs(3);
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--dry-run",
+            "-n",
+            "2",
+            "--body",
+            "{{utc-now}}",
+        ],
+    );
+
+    let after = Utc::now();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    let stdout = stdout_of(&output);
+    let events: Vec<&str> = stdout.lines().filter(|line| !line.is_empty()).collect();
+    assert_eq!(events.len(), 2, "{stdout}");
+    for event in events {
+        let at = DateTime::parse_from_rfc3339(event).unwrap();
+        assert!(event.ends_with('Z'), "{event}");
+        assert!(before <= at && at <= after, "{event}");
+    }
 }
 
 #[test]

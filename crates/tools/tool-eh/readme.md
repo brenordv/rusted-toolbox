@@ -304,6 +304,12 @@ eh send -e orders --template -n 500 --content-type application/json --body \
   `precision=N`, `length=N` (up to 1048576), `age=N`, `range=N`, `past`, `future`, and
   `locale=CODE` (`pt-br`, `ja-jp`, ...). Options a type ignores are ignored; a locale a type
   ignores prints a notice. Whitespace and newlines inside the braces don't matter.
+- `{{now}}` and `{{utc-now}}` take no options and put in the time the event is built, RFC 3339
+  to the millisecond: `{{now}}` in this machine's time zone with its offset
+  (`2026-11-15T14:03:07.123-03:00`), `{{utc-now}}` in UTC (`2026-11-15T17:03:07.123Z`). Every one
+  in an event shows the same instant. `{{now}}` reveals this machine's UTC offset; use
+  `{{utc-now}}` to leave it out. Compared with the enqueued time the service stamps, expect the
+  skew between this machine's clock and the broker's.
 - `\{{` writes a literal `{{`; any other backslash stays as written. So a backslash right before
   a placeholder can't be written: `logs\\{{internet.username}}` sends
   `logs\{{internet.username}}`.

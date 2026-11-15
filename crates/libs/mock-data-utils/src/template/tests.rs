@@ -1,8 +1,19 @@
 use super::*;
 use crate::MAX_LENGTH;
+use chrono::NaiveDate;
 use rstest::rstest;
 
 const CAP: usize = 1 << 20;
+
+/// A fixed render time with a non-zero millisecond part: the exact text the clock
+/// placeholders print is the behavior under test.
+fn instant() -> DateTime<Utc> {
+    NaiveDate::from_ymd_opt(2026, 11, 14)
+        .unwrap()
+        .and_hms_milli_opt(23, 46, 40, 123)
+        .unwrap()
+        .and_utc()
+}
 
 fn compile_error(source: &str) -> String {
     format!("{:#}", Template::compile(source).unwrap_err())
@@ -22,7 +33,7 @@ fn compile_error(source: &str) -> String {
 fn text_without_placeholders_renders_as_written(#[case] source: &str, #[case] rendered: &str) {
     let template = Template::compile(source).unwrap();
 
-    assert_eq!(template.render(CAP).unwrap(), rendered);
+    assert_eq!(template.render(CAP, instant()).unwrap(), rendered);
     assert_eq!(template.placeholder_count(), 0);
 }
 
@@ -34,7 +45,7 @@ fn every_data_type_compiles_and_renders_as_a_placeholder() {
         let template = Template::compile(&source).unwrap();
 
         assert_eq!(template.placeholder_count(), 1, "{source}");
-        assert!(template.render(CAP).is_ok(), "{source}");
+        assert!(template.render(CAP, instant()).is_ok(), "{source}");
     }
 }
 
@@ -42,7 +53,7 @@ fn every_data_type_compiles_and_renders_as_a_placeholder() {
 fn a_fixed_integer_renders_its_value() {
     let template = Template::compile("{{random.integer min=5 max=5}}").unwrap();
 
-    assert_eq!(template.render(CAP).unwrap(), "5");
+    assert_eq!(template.render(CAP, instant()).unwrap(), "5");
 }
 
 #[test]
@@ -50,7 +61,7 @@ fn an_integer_range_stays_inside_its_bounds() {
     let template = Template::compile("{{random.integer min=1 max=6}}").unwrap();
 
     for _ in 0..200 {
-        let value: i32 = template.render(CAP).unwrap().parse().unwrap();
+        let value: i32 = template.render(CAP, instant()).unwrap().parse().unwrap();
         assert!((1..=6).contains(&value), "{value}");
     }
 }
@@ -190,7 +201,7 @@ fn a_render_error_holds_none_of_the_templates_text() {
     )
     .unwrap();
 
-    let error = format!("{:#}", template.render(CAP).unwrap_err());
+    let error = format!("{:#}", template.render(CAP, instant()).unwrap_err());
 
     assert!(!error.contains("secret-literal"), "{error}");
     assert!(!error.contains("length="), "{error}");
@@ -207,7 +218,7 @@ fn a_locale_on_an_aware_type_gives_no_note() {
 fn whitespace_and_newlines_inside_braces_are_ignored_and_text_around_is_kept() {
     let template = Template::compile("Olá «{{\n  random.integer\tmin=3   max=3\n}}» ☕\n").unwrap();
 
-    assert_eq!(template.render(CAP).unwrap(), "Olá «3» ☕\n");
+    assert_eq!(template.render(CAP, instant()).unwrap(), "Olá «3» ☕\n");
 }
 
 #[test]
@@ -216,7 +227,7 @@ fn render_fails_past_the_cap_naming_the_placeholder_that_crossed_it() {
         Template::compile("{{internet.password length=600000}}{{internet.password length=600000}}")
             .unwrap();
 
-    let error = format!("{:#}", template.render(CAP).unwrap_err());
+    let error = format!("{:#}", template.render(CAP, instant()).unwrap_err());
 
     assert_eq!(
         error,
@@ -228,14 +239,14 @@ fn render_fails_past_the_cap_naming_the_placeholder_that_crossed_it() {
 fn render_under_the_cap_succeeds() {
     let template = Template::compile("{{internet.password length=600000}}").unwrap();
 
-    assert_eq!(template.render(CAP).unwrap().len(), 600_000);
+    assert_eq!(template.render(CAP, instant()).unwrap().len(), 600_000);
 }
 
 #[test]
 fn render_fails_when_literal_text_passes_the_cap() {
     let template = Template::compile("0123456789").unwrap();
 
-    let error = format!("{:#}", template.render(4).unwrap_err());
+    let error = format!("{:#}", template.render(4, instant()).unwrap_err());
 
     assert_eq!(error, "the rendered body passes the 4-byte limit");
 }
@@ -244,7 +255,10 @@ fn render_fails_when_literal_text_passes_the_cap() {
 fn two_renders_draw_fresh_values() {
     let template = Template::compile("{{internet.password length=64}}").unwrap();
 
-    assert_ne!(template.render(CAP).unwrap(), template.render(CAP).unwrap());
+    assert_ne!(
+        template.render(CAP, instant()).unwrap(),
+        template.render(CAP, instant()).unwrap()
+    );
 }
 
 #[test]
@@ -257,12 +271,110 @@ fn debug_shows_counts_and_none_of_the_text() {
 }
 
 #[test]
-fn placeholder_groups_cover_every_type_once_under_its_prefix() {
+fn placeholder_groups_cover_every_type_once_under_its_prefix_then_the_clock() {
     let groups = placeholder_groups();
 
     let prefixes: Vec<&str> = groups.iter().map(|(prefix, _)| *prefix).collect();
-    let total: usize = groups.iter().map(|(_, commands)| commands.len()).sum();
-    assert_eq!(prefixes, ["person", "internet", "random", "commerce"]);
-    assert_eq!(total, DataType::ALL.len());
+    let types: usize = groups[..4].iter().map(|(_, commands)| commands.len()).sum();
+    assert_eq!(
+        prefixes,
+        ["person", "internet", "random", "commerce", "clock"]
+    );
+    assert_eq!(types, DataType::ALL.len());
     assert!(groups[0].1.contains(&"person.first-name"));
+    assert_eq!(groups[4].1, ["now", "utc-now"]);
+}
+
+#[test]
+fn options_help_names_the_clock_placeholders() {
+    assert!(
+        OPTIONS_HELP
+            .lines()
+            .last()
+            .unwrap()
+            .starts_with("now, utc-now: none")
+    );
+}
+
+#[test]
+fn utc_now_renders_the_instant_in_utc_to_the_millisecond() {
+    let template = Template::compile("{{utc-now}}").unwrap();
+
+    assert_eq!(
+        template.render(CAP, instant()).unwrap(),
+        "2026-11-14T23:46:40.123Z"
+    );
+}
+
+#[rstest]
+#[case::west_of_utc(FixedOffset::west_opt(3 * 3600).unwrap(), "2026-11-14T20:46:40.123-03:00")]
+#[case::at_utc(FixedOffset::east_opt(0).unwrap(), "2026-11-14T23:46:40.123+00:00")]
+fn local_text_shows_the_offset_and_never_z(#[case] offset: FixedOffset, #[case] text: &str) {
+    assert_eq!(local_text(instant(), offset), text);
+}
+
+#[test]
+fn now_and_utc_now_in_one_render_name_the_same_instant() {
+    let template = Template::compile("at {{now}} / {{utc-now}}.").unwrap();
+
+    let rendered = template.render(CAP, instant()).unwrap();
+
+    let inner = rendered
+        .strip_prefix("at ")
+        .and_then(|rest| rest.strip_suffix('.'))
+        .unwrap();
+    let (local, utc) = inner.split_once(" / ").unwrap();
+    assert_eq!(DateTime::parse_from_rfc3339(local).unwrap(), instant());
+    assert_eq!(DateTime::parse_from_rfc3339(utc).unwrap(), instant());
+    assert!(!local.ends_with('Z'), "{local}");
+}
+
+#[test]
+fn a_repeated_now_renders_the_same_text() {
+    let template = Template::compile("{{now}}|{{now}}").unwrap();
+
+    let rendered = template.render(CAP, instant()).unwrap();
+
+    let (first, second) = rendered.split_once('|').unwrap();
+    assert_eq!(first, second);
+}
+
+#[rstest]
+#[case::spaces("{{ now }}")]
+#[case::newlines("{{\nutc-now\n}}")]
+fn clock_placeholders_take_whitespace_inside_the_braces(#[case] source: &str) {
+    let template = Template::compile(source).unwrap();
+
+    assert_eq!(template.placeholder_count(), 1);
+}
+
+#[rstest]
+#[case::bare_word("{{now past}}", "line 1, column 1: unknown option 'past' for now")]
+#[case::key_value("{{utc-now x=1}}", "line 1, column 1: unknown option 'x' for utc-now")]
+#[case::case_sensitive("{{Now}}", "line 1, column 1: unknown type 'Now'")]
+fn clock_placeholders_refuse_options_and_other_spellings(
+    #[case] source: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(compile_error(source), expected);
+}
+
+#[test]
+fn clock_placeholders_count_and_give_no_locale_note() {
+    let template = Template::compile("{{now}}{{utc-now}}").unwrap();
+
+    assert_eq!(template.placeholder_count(), 2);
+    assert!(template.inert_locale_notes().is_empty());
+}
+
+#[test]
+fn a_clock_value_past_the_cap_fails_naming_the_placeholder_and_not_the_text() {
+    let template = Template::compile("prefix-text {{utc-now}}").unwrap();
+
+    let error = format!("{:#}", template.render(16, instant()).unwrap_err());
+
+    assert_eq!(
+        error,
+        "line 1, column 13: utc-now: the rendered body passes the 16-byte limit"
+    );
 }

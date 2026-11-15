@@ -10,6 +10,7 @@ use azure_core::credentials::TokenCredential;
 use azure_messaging_eventhubs::builders::ProducerClientBuilder;
 use azure_messaging_eventhubs::models::EventData;
 use azure_messaging_eventhubs::{EventDataBatch, EventDataBatchOptions, ProducerClient};
+use chrono::{DateTime, Utc};
 use mock_data_utils::template::Template;
 use std::fmt;
 use std::future::Future;
@@ -55,7 +56,8 @@ impl OutgoingEvent {
 }
 
 /// The event to send: `event` as given, or with `template` a fresh render
-/// of it (at most `cap` bytes) under `event`'s content type.
+/// of it (at most `cap` bytes, with `now` as the time its `{{now}}` and
+/// `{{utc-now}}` placeholders show) under `event`'s content type.
 ///
 /// # Errors
 /// Fails when the render fails; the error names the placeholder by its
@@ -64,10 +66,11 @@ pub fn next_event(
     event: &OutgoingEvent,
     template: Option<&Template>,
     cap: usize,
+    now: DateTime<Utc>,
 ) -> anyhow::Result<OutgoingEvent> {
     match template {
         Some(template) => Ok(OutgoingEvent {
-            body: template.render(cap)?.into_bytes(),
+            body: template.render(cap, now)?.into_bytes(),
             content_type: event.content_type.clone(),
         }),
         None => Ok(event.clone()),

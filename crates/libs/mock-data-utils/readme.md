@@ -40,7 +40,7 @@ locales produce non-ASCII local parts (mock data, matching fake's own localized 
 ## Templates
 
 `template::Template::compile(source)` turns text with placeholders into a template, and
-`render(max_bytes)` produces one instance with fresh values:
+`render(max_bytes, now)` produces one instance with fresh values:
 
 ```
 {"orderId": {{random.integer min=1000 max=9999}}, "email": "{{person.email}}", "at": "{{random.datetime past}}"}
@@ -50,6 +50,11 @@ locales produce non-ASCII local parts (mock data, matching fake's own localized 
   `max=N`, `length=N`, `precision=N`, `age=N`, `range=N`, `locale=CODE`, and the bare `past`
   and `future`). Whitespace and newlines inside the braces don't matter. `OPTIONS_HELP` and
   `placeholder_groups()` hold the help text for the syntax.
+- `{{now}}` and `{{utc-now}}` take no options and print `render`'s `now` as RFC 3339 to the
+  millisecond (truncated): `{{now}}` in the local time zone with its offset
+  (`2026-11-15T14:03:07.123-03:00`), `{{utc-now}}` in UTC (`2026-11-15T17:03:07.123Z`). Every
+  one in a render shows the same instant. They are not data types, so `generate_mock_data` and
+  `DataType::ALL` don't know them.
 - `\{{` is a literal `{{`; every other character, `}}` and other backslashes included, is copied
   as written.
 - Compiling checks each placeholder the way `generate_mock_data` would (unknown type or option,

@@ -30,8 +30,8 @@
   rules `connect` and `open_producer` apply, without any network call (`None` for Key Vault
   auth), so a form can name the destination before sending.
 - `producer::next_event` builds the event to send: the body as given, or a fresh render of a
-  `mock_data_utils` template under the same content type. Adds the `mock-data-utils`
-  dependency.
+  `mock_data_utils` template under the same content type, with the caller's `now` as the time
+  `{{now}}` and `{{utc-now}}` show. Adds the `mock-data-utils` dependency.
 - `RunSummary::failed_partitions` lists the partitions that ended in `Failed`, in map order.
 - Azure SDK pins: `azure_messaging_eventhubs` 0.16.0 on `azure_core`
   1.2.0-beta.2 (one `azure_core` shared with `shared-azure`'s

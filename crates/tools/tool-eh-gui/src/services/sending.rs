@@ -102,7 +102,7 @@ impl SendPort for HubPort {
     ) -> impl Future<Output = SendSummary> + Send + 'a {
         producer.send(
             plan,
-            move |_| next_event(event, template, BODY_CAP),
+            move |_| next_event(event, template, BODY_CAP, Utc::now()),
             cancel,
             progress,
         )

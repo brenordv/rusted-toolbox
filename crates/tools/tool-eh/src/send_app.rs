@@ -5,6 +5,7 @@ use crate::progress::{ExportProgressLine, Renderer, connecting_notice, display, 
 use crate::send_cli::{RENDER_CAP, template_notices};
 use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
+use chrono::Utc;
 use shared_eventhub_core::cancel::{CANCEL_POLL, flag_set};
 use shared_eventhub_core::producer::{
     EventHubProducer, SendEnd, SendPlan, SendProgress, SendSummary, next_event, open_producer,
@@ -93,7 +94,7 @@ async fn send_with_progress<O: Write, E: Write>(
     let summary = {
         let send = producer.send(
             &job.plan,
-            |_| next_event(&job.event, job.template.as_deref(), RENDER_CAP),
+            |_| next_event(&job.event, job.template.as_deref(), RENDER_CAP, Utc::now()),
             shutdown,
             |progress| line.draw_with(|_| send_line(progress, requested)),
         );

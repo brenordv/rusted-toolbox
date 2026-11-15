@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
-- `--length`/`-n` above 1,048,576 for `internet.password` and `commerce.product-description` is
-  refused with exit 1 (mock-data-utils' new cap); before, a huge value could abort the process
-  on the allocation.
+## 3.0.0
+- BREAKING: `--length`/`-n` above 1,048,576 for `internet.password` and
+  `commerce.product-description` is refused with exit 1 (mock-data-utils 4.0.0's cap); before, a
+  value up to the machine's memory printed, and a huge one could abort the process on the
+  allocation.
 - The inert-locale check comes from mock-data-utils (`locale_is_inert`), so the tool and
   message templates share one rule.
 

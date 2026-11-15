@@ -5,6 +5,7 @@ use crate::models::{DryRunJob, RunOutcome};
 use crate::progress::Renderer;
 use crate::send_cli::{RENDER_CAP, template_notices};
 use anyhow::Context;
+use chrono::Utc;
 use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
 use common_utils::string_utils::escape_for_terminal_display;
 use mock_data_utils::template::Template;
@@ -78,7 +79,7 @@ pub(crate) fn print_renders(
             return Ok(Printed::Interrupted(index));
         }
         let body = template
-            .render(cap)
+            .render(cap, Utc::now())
             .with_context(|| format!("event {index}"))?;
         match write_event(&mut out, &body, index > 0) {
             Ok(()) => {}
