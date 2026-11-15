@@ -5,7 +5,6 @@
 use crate::cli_utils::{AuthArg, ExportArgs, ReadArgs, TargetArgs, TextFilterArgs, TimeFilterArgs};
 use crate::models::{ConfigSource, Environment, ExportJob, ReadJob};
 use anyhow::{Result, bail};
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
 use shared_eventhub_core::filters::{CaptureFilters, TextFilter, TimeFilter};
 use shared_eventhub_persistence::config::{
@@ -16,16 +15,8 @@ use std::path::PathBuf;
 
 const NO_TARGET: &str = "No event hub to read: pass -s, --auth, or --keyvault-url, set \
                          EH_CONNECTION_STRING, or run in a folder with a saved config.json";
-const TIME_SHAPES: &str = "an RFC3339 timestamp such as 2026-07-02T12:34:56Z, or a date such as 2026-07-02 (midnight UTC)";
 const CLIENT_IDS_NEED_CLIENT_SECRET: &str =
     "--tenant-id and --client-id apply to --auth client-secret only";
-
-/// An inclusive enqueue-time window from `--between START..END`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct TimeWindow {
-    pub start: DateTime<Utc>,
-    pub end: DateTime<Utc>,
-}
 
 /// Builds a capture run from the arguments, the recalled `config.json`, and
 /// the environment.
@@ -314,55 +305,13 @@ fn time_filter(args: &TimeFilterArgs) -> Option<TimeFilter> {
         .or(newer_than.map(TimeFilter::NewerThan))
         .or(newer_or_equal.map(TimeFilter::NewerOrEqual))
         .or(during.map(TimeFilter::During))
-        .or(between.map(|window| TimeFilter::Between {
-            start: window.start,
-            end: window.end,
-        }))
+        .or(between.map(TimeFilter::from))
 }
 
 fn text_filter(args: &TextFilterArgs) -> Option<TextFilter> {
     args.filter_regex
         .clone()
         .or_else(|| args.dump_filter.clone().map(TextFilter::Contains))
-}
-
-/// Parses an RFC3339 timestamp, or a `YYYY-MM-DD` date as midnight UTC.
-pub(crate) fn parse_time(value: &str) -> Result<DateTime<Utc>, String> {
-    match DateTime::parse_from_rfc3339(value) {
-        Ok(time) => Ok(time.with_timezone(&Utc)),
-        Err(_) => NaiveDate::parse_from_str(value, "%Y-%m-%d")
-            .map(|date| date.and_time(NaiveTime::MIN).and_utc())
-            .map_err(|_| format!("expected {TIME_SHAPES}")),
-    }
-}
-
-/// Parses the full RFC3339 timestamp `--during` needs. A date alone is
-/// refused: as midnight it would select one hour, not the day.
-pub(crate) fn parse_time_with_granularity(value: &str) -> Result<DateTime<Utc>, String> {
-    match DateTime::parse_from_rfc3339(value) {
-        Ok(time) => Ok(time.with_timezone(&Utc)),
-        Err(_) if NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok() => Err(format!(
-            "a date alone would select its first hour only; for the whole day use \
-             --between {value}T00:00:00Z..{value}T23:59:59.999Z"
-        )),
-        Err(_) => Err(
-            "expected an RFC3339 timestamp such as 2026-07-02T12:34:00Z (that minute)".to_owned(),
-        ),
-    }
-}
-
-/// Parses `START..END`, two [`parse_time`] values with `START` not after
-/// `END`.
-pub(crate) fn parse_window(value: &str) -> Result<TimeWindow, String> {
-    let Some((start, end)) = value.split_once("..") else {
-        return Err(format!("expected START..END, each {TIME_SHAPES}"));
-    };
-    let start = parse_time(start).map_err(|error| format!("START: {error}"))?;
-    let end = parse_time(end).map_err(|error| format!("END: {error}"))?;
-    if start > end {
-        return Err("START is after END".to_owned());
-    }
-    Ok(TimeWindow { start, end })
 }
 
 /// Compiles a `--filter-regex` pattern.

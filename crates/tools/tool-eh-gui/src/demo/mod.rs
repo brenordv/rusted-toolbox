@@ -3,12 +3,15 @@
 //! feature; the shipped `eh-gui` never contains it.
 
 pub mod hub;
+mod seed;
 
-use crate::bridge::{EngineSession, UiPort, spawn_session};
+use crate::bridge::{EngineSession, SessionSink, UiPort, spawn_session};
 use crate::form::ConnectForm;
+use crate::read::ExportOneRequest;
+use crate::read::search::RebuildRequest;
 use crate::services::{
-    AppPort, ConnectRequest, SaveRequest, Services, apply_from_runtime, gate, report_ready,
-    spawn_tick,
+    AppPort, ConnectRequest, SaveRequest, Services, apply_from_runtime, filter_hook, gate,
+    report_ready, spawn_export_one, spawn_list_flush, spawn_rebuild, spawn_tick,
 };
 use crate::state::{AppState, Input};
 use crate::tasks::StoreSlot;
@@ -55,6 +58,10 @@ pub enum Scenario {
     SeededFailed,
     /// The connect sheet open with validation errors.
     SeededConnect,
+    /// Connected, 5,000 rows in the list, statistics, a JSON row selected.
+    SeededRead,
+    /// [`Scenario::SeededRead`] with a regex quick search.
+    SeededSearch,
 }
 
 /// How fast a scenario's hub produces messages.
@@ -77,7 +84,7 @@ impl Pace {
 }
 
 impl Scenario {
-    const NAMES: [(&'static str, Scenario); 9] = [
+    const NAMES: [(&'static str, Scenario); 11] = [
         ("live", Self::Live),
         ("burst", Self::Burst),
         ("quiet", Self::Quiet),
@@ -87,6 +94,8 @@ impl Scenario {
         ("seeded-empty", Self::SeededEmpty),
         ("seeded-failed", Self::SeededFailed),
         ("seeded-connect", Self::SeededConnect),
+        ("seeded-read", Self::SeededRead),
+        ("seeded-search", Self::SeededSearch),
     ];
 
     /// The scenario named `name`.
@@ -128,7 +137,11 @@ impl Scenario {
             | Self::PartitionFail
             | Self::StartFail
             | Self::SlowFinish => true,
-            Self::SeededEmpty | Self::SeededFailed | Self::SeededConnect => false,
+            Self::SeededEmpty
+            | Self::SeededFailed
+            | Self::SeededConnect
+            | Self::SeededRead
+            | Self::SeededSearch => false,
         }
     }
 
@@ -155,7 +168,9 @@ impl Scenario {
             | Self::SlowFinish
             | Self::SeededEmpty
             | Self::SeededFailed
-            | Self::SeededConnect => steady,
+            | Self::SeededConnect
+            | Self::SeededRead
+            | Self::SeededSearch => steady,
         }
     }
 
@@ -173,8 +188,13 @@ pub fn data_paths(root: &Path) -> DataPaths {
 }
 
 /// The first state of `scenario`. Seeded states are reached by feeding inputs through `apply`,
-/// so they are real states rather than hand-assembled ones.
-pub fn initial_state(scenario: Scenario, root: &Path, services: Box<dyn Services>) -> AppState {
+/// so they are real states rather than hand-assembled ones; a seeded session runs on `rt`.
+pub fn initial_state(
+    scenario: Scenario,
+    root: &Path,
+    services: Box<dyn Services>,
+    rt: &Handle,
+) -> AppState {
     let mut form = ConnectForm::default();
     form.connection_string
         .edit_mut()
@@ -208,6 +228,8 @@ pub fn initial_state(scenario: Scenario, root: &Path, services: Box<dyn Services
             drop(state.apply(Input::OpenSheet));
             drop(state.apply(Input::ConnectPressed));
         }
+        Scenario::SeededRead => seed::read(&mut state, rt, false),
+        Scenario::SeededSearch => seed::read(&mut state, rt, true),
         Scenario::Live
         | Scenario::Burst
         | Scenario::Quiet
@@ -240,6 +262,7 @@ impl DemoServices {
     ) -> Self {
         if scenario.is_live() {
             spawn_tick(&rt, handle.clone(), Arc::new(AtomicBool::new(false)));
+            spawn_list_flush(&rt, handle.clone());
         }
         Self {
             handle,
@@ -305,6 +328,25 @@ impl Services for DemoServices {
             handle.quit();
         });
     }
+
+    fn rebuild_search(&self, request: RebuildRequest) {
+        spawn_rebuild(&self.rt, self.handle.clone(), request);
+    }
+
+    /// Reads the demo's own archive whatever the request names; the destination is the one
+    /// the user picked in the save dialog.
+    fn export_one(&self, request: ExportOneRequest) {
+        let request = ExportOneRequest {
+            paths: data_paths(&self.root),
+            ..request
+        };
+        spawn_export_one(
+            &self.rt,
+            self.handle.clone(),
+            Arc::clone(&self.slot),
+            request,
+        );
+    }
 }
 
 /// Message files go here inside the demo data folder, whatever the form says: a typed path
@@ -345,6 +387,7 @@ impl DemoSession {
         );
         let scenario = self.scenario;
         let (channels, run) = hub::build(scenario, filters, sink.clone());
+        let set_filters = filter_hook(&sink);
         let finish = async move {
             if scenario == Scenario::SlowFinish {
                 tokio::time::sleep(SLOW_FINISH).await;
@@ -357,7 +400,10 @@ impl DemoSession {
             gate(start),
             channels,
             run,
-            finish,
+            SessionSink {
+                finish,
+                set_filters,
+            },
             port,
         ))
     }

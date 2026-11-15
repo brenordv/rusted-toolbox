@@ -3,8 +3,9 @@
 
 use crate::design::tokens::{WINDOW_MIN, WINDOW_SIZE};
 use crate::form::ConnectForm;
+use crate::read::{ReadEffect, ReadState};
 use crate::services::Services;
-use crate::state::{AppState, Effect, Input, ToastKind};
+use crate::state::{AppState, Effect, Input, Motion, Outcome, ToastKind};
 use crate::views;
 use common_cli::app_logger::FileLogging;
 use rune::{App, AppHandle, AppSpec, Tx};
@@ -12,10 +13,12 @@ use shared_eventhub_persistence::config::{ConfigLoad, load_config};
 use std::path::Path;
 use tracing::{debug, error, warn};
 
-/// What the window starts with: the connect form (recalled from `config.json` when there is
-/// one), the caption saying what happened to that file, and the log file's state.
+/// What the window starts with: the connect form and capture rules (recalled from
+/// `config.json` when there is one), the caption saying what happened to that file, and the log
+/// file's state.
 pub struct Preload {
     pub form: ConnectForm,
+    pub read: ReadState,
     pub config_caption: Option<String>,
     pub file_logging: FileLogging,
 }
@@ -23,12 +26,14 @@ pub struct Preload {
 impl Preload {
     /// The first state: these values plus `services`.
     pub fn into_state(self, services: Box<dyn Services>) -> AppState {
-        AppState::new(
+        let mut state = AppState::new(
             Some(services),
             self.form,
             self.config_caption,
             self.file_logging,
-        )
+        );
+        state.read = self.read;
+        state
     }
 }
 
@@ -42,6 +47,7 @@ pub fn build_app(
 ) -> App<AppState> {
     let mut spec = AppSpec::new("eh", WINDOW_SIZE, AppState::detached, views::view);
     spec.min_size = Some(WINDOW_MIN);
+    spec.on_key = Some(views::window_key);
     let app = App::new(spec);
     let handle = app.handle();
     let app = match rune_args {
@@ -77,16 +83,24 @@ fn on_close(state: &mut AppState, _: &mut Tx) {
 
 /// Reads `config.json` from `dir` into the form, with a caption that never quotes a value.
 pub async fn preload_config(dir: &Path, file_logging: FileLogging) -> Preload {
-    let (form, config_caption) = match load_config(dir).await {
-        Ok(ConfigLoad::Missing) => (ConnectForm::default(), None),
+    let (form, read, config_caption) = match load_config(dir).await {
+        Ok(ConfigLoad::Missing) => (ConnectForm::default(), ReadState::default(), None),
         Ok(ConfigLoad::Foreign) => (
             ConnectForm::default(),
+            ReadState::default(),
             Some("A config.json here belongs to another tool; it was not loaded".to_owned()),
         ),
         Ok(ConfigLoad::Loaded(config)) => {
             let (form, loaded) = ConnectForm::from_config(&config);
+            let export = &config.storage.export;
+            let read = ReadState::with_rules(
+                &config.capture.filters,
+                export.format,
+                export.include_metadata,
+            );
             (
                 form,
+                read,
                 Some(format!("Loaded from config.json: {}", loaded.join(", "))),
             )
         }
@@ -94,12 +108,14 @@ pub async fn preload_config(dir: &Path, file_logging: FileLogging) -> Preload {
             warn!(error = %format!("{error:#}"), "config.json was not loaded");
             (
                 ConnectForm::default(),
+                ReadState::default(),
                 Some(format!("config.json was not loaded: {error:#}")),
             )
         }
     };
     Preload {
         form,
+        read,
         config_caption,
         file_logging,
     }
@@ -142,7 +158,29 @@ pub fn run_effects(state: &mut AppState, effects: Vec<Effect>) {
                 Some(services) => services.quit(),
                 None => services_missing(state, "quit"),
             },
+            Effect::Read(ReadEffect::UpdateFilters(filters)) => match state.connection.session() {
+                Some(session) => session.update_filters(filters),
+                None => debug!("capture rules not sent: the session already ended"),
+            },
+            Effect::Read(ReadEffect::RebuildSearch(request)) => match &state.services {
+                Some(services) => services.rebuild_search(request),
+                None => services_missing(state, "filter the list"),
+            },
+            Effect::Read(ReadEffect::ExportOne(request)) => match &state.services {
+                Some(services) => services.export_one(request),
+                None => services_missing(state, "export the message"),
+            },
         }
+    }
+}
+
+/// Applies a commit's motion: rows landing never move, a tick's numbers and the first
+/// connect animate even though no input caused them.
+pub fn apply_motion(outcome: &Outcome, tx: &mut Tx) {
+    match outcome.motion {
+        Motion::Still => {}
+        Motion::Animated => tx.animated(),
+        Motion::Instant => tx.instant(),
     }
 }
 

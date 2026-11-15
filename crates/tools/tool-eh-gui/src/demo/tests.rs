@@ -53,6 +53,8 @@ impl Services for NoServices {
     fn switch_data_folder(&self, _paths: DataPaths) {}
     fn reopen_window(&self) {}
     fn quit(&self) {}
+    fn rebuild_search(&self, _request: RebuildRequest) {}
+    fn export_one(&self, _request: ExportOneRequest) {}
 }
 
 #[test]
@@ -176,18 +178,46 @@ async fn the_partition_fail_scenario_ends_with_a_failed_partition() {
     ));
 }
 
+fn seeded(scenario: Scenario, root: &Path, rt: &tokio::runtime::Runtime) -> AppState {
+    initial_state(scenario, root, Box::new(NoServices), rt.handle())
+}
+
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
 #[test]
 fn seeded_scenarios_reach_their_states_through_apply_and_render() {
     let root = tempfile::tempdir().unwrap();
+    let rt = runtime();
 
-    let failed = initial_state(Scenario::SeededFailed, root.path(), Box::new(NoServices));
-    let connect = initial_state(Scenario::SeededConnect, root.path(), Box::new(NoServices));
-    let empty = initial_state(Scenario::SeededEmpty, root.path(), Box::new(NoServices));
+    let failed = seeded(Scenario::SeededFailed, root.path(), &rt);
+    let connect = seeded(Scenario::SeededConnect, root.path(), &rt);
+    let empty = seeded(Scenario::SeededEmpty, root.path(), &rt);
+    let read = seeded(Scenario::SeededRead, root.path(), &rt);
+    let search = seeded(Scenario::SeededSearch, root.path(), &rt);
 
     assert!(matches!(failed.connection, ConnectionState::Failed(_)));
     assert!(connect.sheet_open && connect.show_issues);
     assert!(matches!(empty.connection, ConnectionState::Disconnected));
-    for state in [failed, connect, empty] {
+    assert!(matches!(read.connection, ConnectionState::Connected { .. }));
+    assert_eq!(read.read.rows.displayed().len(), 5_000);
+    assert!(
+        read.read
+            .selected
+            .as_ref()
+            .unwrap()
+            .message
+            .body
+            .starts_with('{')
+    );
+    assert!(read.read.shown.is_some());
+    assert!(search.read.list_len() > 0 && search.read.list_len() < 5_000);
+    assert_eq!(search.read.search.rebuilding(), None);
+    for state in [failed, connect, empty, read, search] {
         let mut rt = rune::Runtime::new(
             state,
             crate::views::view,
@@ -204,7 +234,7 @@ fn the_demo_data_folder_lies_under_its_root() {
     let root = tempfile::tempdir().unwrap();
 
     let paths = data_paths(root.path());
-    let state = initial_state(Scenario::SeededEmpty, root.path(), Box::new(NoServices));
+    let state = seeded(Scenario::SeededEmpty, root.path(), &runtime());
 
     assert!(paths.base().starts_with(root.path()));
     assert!(paths.inbound_dir(DEMO_INBOUND).starts_with(root.path()));

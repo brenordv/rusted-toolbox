@@ -47,8 +47,8 @@ fn run(scenario: Scenario) -> anyhow::Result<()> {
 
     let app = build_app(
         move |handle| {
-            let services = DemoServices::new(handle, rt, slot, path.clone(), scenario);
-            demo::initial_state(scenario, &path, Box::new(services))
+            let services = DemoServices::new(handle, rt.clone(), slot, path.clone(), scenario);
+            demo::initial_state(scenario, &path, Box::new(services), &rt)
         },
         None,
     );

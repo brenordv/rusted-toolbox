@@ -18,6 +18,10 @@
   empty or not) fails that partition at start with a message naming both numbers, instead of
   opening a receiver the service rejects with the same comparison. A stream error names the
   SDK's innermost error once instead of repeating it through the error chain.
+- `filters::parse_time`, `parse_time_with_granularity`, `parse_window`, `TimeWindow`, and
+  `TIME_SHAPES` parse capture-rule timestamps (an RFC3339 timestamp or a date; During needs a
+  full timestamp; a window's start may not follow its end), so the CLI and the GUI accept the
+  same input.
 - Azure SDK pins: `azure_messaging_eventhubs` 0.16.0 on `azure_core`
   1.2.0-beta.2 (one `azure_core` shared with `shared-azure`'s
   `azure_identity` 1.1.0-beta.2 and `azure_security_keyvault_secrets`

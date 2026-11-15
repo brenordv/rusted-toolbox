@@ -87,6 +87,16 @@ pub fn floating_tint(k: &Kit) -> Color {
     surface(k, Surface::Content).alpha(alpha)
 }
 
+/// The fill behind a selected list row: the accent at the kit table's selection alpha.
+pub fn selection_fill(k: &Kit) -> Color {
+    let alpha = if k.dark {
+        tokens::SELECTION_ALPHA_DARK
+    } else {
+        tokens::SELECTION_ALPHA_LIGHT
+    };
+    k.c.text_accent.alpha(alpha)
+}
+
 /// Secondary text on a selected row. Muted text sits at its 4.5:1 floor on the content
 /// surface, so any selection tint pushes it under; selected rows draw it in `fg`.
 pub fn selected_secondary_text(k: &Kit) -> Color {

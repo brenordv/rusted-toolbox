@@ -3,6 +3,9 @@ use crate::bridge::UiDelivery;
 use crate::bridge::test_support::detached_session;
 use crate::design::tokens::WINDOW_MIN;
 use crate::form::{AuthChoice, ConnectForm, CredentialChoice};
+use crate::read::ReadInput;
+use crate::read::rows::ROW_CAP;
+use crate::read::test_support::captured;
 use crate::state::{Effect, Input};
 use common_cli::app_logger::FileLogging;
 use rune::{Env, Key, KeyEvent, Mods, Runtime};
@@ -66,6 +69,7 @@ fn connected(rt: &tokio::runtime::Runtime) -> AppState {
         result: Ok(session),
     });
     s.apply(Input::Delivery(UiDelivery {
+        at: chrono::Utc::now(),
         session: attempt,
         events: vec![EngineEvent::Started {
             partitions: ["0", "1", "2", "3"].map(str::to_owned).to_vec(),
@@ -270,7 +274,7 @@ fn the_toolbar_fits_the_smallest_window_while_connected() {
 }
 
 #[test]
-fn capturing_shows_the_counts_with_separators() {
+fn the_received_tile_shows_the_count_with_separators() {
     let tokio = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -278,6 +282,7 @@ fn capturing_shows_the_counts_with_separators() {
     let mut s = connected(&tokio);
     let session = s.connection.session().unwrap().id();
     s.apply(Input::Delivery(UiDelivery {
+        at: chrono::Utc::now(),
         session,
         events: Vec::new(),
         stats: Some(StatsSnapshot {
@@ -290,10 +295,202 @@ fn capturing_shows_the_counts_with_separators() {
 
     let rt = runtime(s);
 
-    let counts = rt
+    let label = rt
         .elements()
         .into_iter()
-        .find(|element| element.key.as_deref() == Some("capture-counts"))
-        .and_then(|element| element.text);
-    assert_eq!(counts.as_deref(), Some("Received 12,403 · Stored 12,380"));
+        .find(|element| element.key.as_deref() == Some("stat-received"))
+        .and_then(|element| element.label);
+    assert_eq!(label.as_deref(), Some("Received 12,403"));
+}
+
+fn with_rows(s: &mut AppState, first: usize, count: usize) {
+    let session = s.connection.session().unwrap().id();
+    let events = (first..first + count)
+        .map(|sequence| EngineEvent::Message(Box::new(captured("0", sequence as i64, "body"))))
+        .collect();
+    s.apply(Input::Delivery(UiDelivery {
+        at: chrono::Utc::now(),
+        session,
+        events,
+        stats: None,
+    }));
+    s.apply(Input::Read(ReadInput::ListFlush));
+}
+
+fn row_visible(rt: &Runtime<AppState>, key: &str) -> bool {
+    rt.elements()
+        .iter()
+        .any(|element| element.key.as_deref() == Some(key) && element.visible[3] > 0.0)
+}
+
+fn built_rows(rt: &Runtime<AppState>) -> usize {
+    rt.elements()
+        .iter()
+        .filter(|element| {
+            element
+                .key
+                .as_deref()
+                .is_some_and(|key| key.starts_with("p0-s"))
+        })
+        .count()
+}
+
+#[test]
+fn a_full_list_builds_only_the_rows_near_the_viewport() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut s = connected(&tokio);
+    with_rows(&mut s, 0, ROW_CAP);
+
+    let rt = runtime(s);
+
+    let built = built_rows(&rt);
+    assert!(built > 0 && built < 200, "built {built} rows");
+    assert!(row_visible(&rt, &format!("p0-s{}", ROW_CAP - 1)));
+}
+
+#[test]
+fn the_list_follows_the_tail_until_scrolled_up_then_the_pill_brings_it_back() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut s = connected(&tokio);
+    with_rows(&mut s, 0, 200);
+    let mut rt = runtime(s);
+
+    with_rows(&mut rt.state, 200, 5);
+    rt.invalidate();
+    settle(&mut rt);
+    assert!(row_visible(&rt, "p0-s204"), "the tail is followed");
+
+    for _ in 0..10 {
+        rt.wheel(640.0, 500.0, 400.0);
+        rt.frame(1.0 / 60.0);
+    }
+    with_rows(&mut rt.state, 205, 5);
+    rt.state.apply(Input::Tick(chrono::Utc::now()));
+    rt.invalidate();
+    settle(&mut rt);
+    assert!(!row_visible(&rt, "p0-s209"), "scrolled up, the view stays");
+    assert!(has_key(&rt, "new-messages"), "the pill shows");
+
+    press(&mut rt, "new-messages");
+    settle(&mut rt);
+
+    assert!(row_visible(&rt, "p0-s209"));
+}
+
+#[test]
+fn the_pill_counts_session_log_lines_until_its_popover_opens() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut s = connected(&tokio);
+    let session = s.connection.session().unwrap().id();
+    s.apply(Input::Delivery(UiDelivery {
+        at: chrono::Utc::now(),
+        session,
+        events: vec![EngineEvent::Error {
+            partition_id: Some("2".to_owned()),
+            error: "link lost".to_owned(),
+            fatal: false,
+        }],
+        stats: None,
+    }));
+    let mut rt = runtime(s);
+    assert_eq!(rt.state.read.session_log_unseen, 1);
+
+    press(&mut rt, "pill");
+
+    assert_eq!(rt.state.read.session_log_unseen, 0);
+    assert!(rt.elements().iter().any(|element| {
+        element
+            .text
+            .as_deref()
+            .is_some_and(|text| text.contains("link lost"))
+    }));
+}
+
+#[test]
+fn a_stale_feed_shows_on_the_pill() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut s = connected(&tokio);
+    s.read.feed_stale = true;
+
+    let rt = runtime(s);
+
+    let label = rt
+        .elements()
+        .into_iter()
+        .find(|element| element.key.as_deref() == Some("pill"))
+        .and_then(|element| element.label);
+    assert_eq!(label.as_deref(), Some("Connection: Not receiving updates"));
+}
+
+#[test]
+fn the_find_shortcut_focuses_the_quick_search() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut s = connected(&tokio);
+    with_rows(&mut s, 0, 3);
+    let mut rt = runtime(s);
+    rt.on_key = Some(window_key);
+
+    rt.key(KeyEvent {
+        key: Key::Command('f'),
+        mods: Mods {
+            cmd: true,
+            ctrl: !cfg!(target_os = "macos"),
+            logo: cfg!(target_os = "macos"),
+            ..Mods::default()
+        },
+    });
+    settle(&mut rt);
+
+    assert!(rt.state.read.search_edit.focused);
+}
+
+#[test]
+fn the_inspector_close_button_clears_the_selection() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut s = connected(&tokio);
+    with_rows(&mut s, 0, 3);
+    let mut rt = runtime(s);
+    press(&mut rt, "p0-s1");
+
+    press(&mut rt, "inspector-close");
+
+    assert!(rt.state.read.selected.is_none());
+    assert!(!rt.state.read.inspector.is_open());
+}
+
+#[test]
+fn clicking_a_row_opens_the_inspector_and_escape_closes_it() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut s = connected(&tokio);
+    with_rows(&mut s, 0, 3);
+    let mut rt = runtime(s);
+
+    press(&mut rt, "p0-s1");
+    assert!(has_key(&rt, "inspector"));
+
+    press_key(&mut rt, Key::Escape);
+
+    assert!(rt.state.read.selected.is_none());
+    assert!(!has_key(&rt, "inspector"));
 }

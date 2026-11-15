@@ -3,7 +3,7 @@
 //! event without other tests' events mixed in.
 
 use chrono::Utc;
-use eh_gui::bridge::{EngineDone, UiDelivery, UiPort, spawn_session};
+use eh_gui::bridge::{EngineDone, SessionSink, UiDelivery, UiPort, spawn_session};
 use shared_eventhub_core::engine::{EngineChannels, EngineEvent, RunEnd, RunSummary, SkipReason};
 use shared_eventhub_core::stats::StatsTracker;
 use shared_eventhub_persistence::export::ExportOutcome;
@@ -80,7 +80,10 @@ async fn a_stalled_ui_is_warned_once_and_its_recovery_logged() {
                 end: RunEnd::Stopped,
             })
         },
-        async { Ok(ExportOutcome::default()) },
+        SessionSink {
+            finish: async { Ok(ExportOutcome::default()) },
+            set_filters: Arc::new(|_| {}),
+        },
         Arc::new(AckChannel(acks_tx, done_tx)),
     );
     sender

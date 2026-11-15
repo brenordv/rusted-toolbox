@@ -1,8 +1,9 @@
 use super::*;
 use crate::cli_utils::{DataArgs, DiskModeArg, FormatArg};
-use chrono::TimeZone;
+use chrono::{DateTime, TimeZone, Utc};
 use common_utils::string_utils::SecretString;
 use rstest::rstest;
+use shared_eventhub_core::filters::TimeWindow;
 use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat};
 
 const CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=listen;SharedAccessKey=c2VjcmV0";
@@ -533,67 +534,6 @@ fn export_defaults_apply_without_config() {
 
     assert_eq!(job.export, ExportSettings::default());
     assert_eq!(job.base_data_folder, PathBuf::from(".eh-data"));
-}
-
-#[rstest]
-#[case::utc("2026-07-02T12:00:00Z", at(12))]
-#[case::offset("2026-07-02T14:00:00+02:00", at(12))]
-#[case::date_only("2026-07-02", at(0))]
-fn parse_time_accepts_rfc3339_and_dates(#[case] value: &str, #[case] expected: DateTime<Utc>) {
-    assert_eq!(parse_time(value).unwrap(), expected);
-}
-
-#[rstest]
-#[case::garbage("yesterday")]
-#[case::no_zone("2026-07-02T12:00:00")]
-fn parse_time_rejects_other_shapes_naming_the_accepted_ones(#[case] value: &str) {
-    let error = parse_time(value).unwrap_err();
-
-    assert!(error.contains("RFC3339"), "{error}");
-}
-
-#[test]
-fn parse_time_with_granularity_rejects_a_date_and_suggests_between() {
-    let error = parse_time_with_granularity("2026-07-02").unwrap_err();
-
-    assert!(error.contains("--between 2026-07-02T00:00:00Z"), "{error}");
-}
-
-#[test]
-fn parse_time_with_granularity_accepts_a_timestamp() {
-    assert_eq!(
-        parse_time_with_granularity("2026-07-02T12:00:00Z").unwrap(),
-        at(12)
-    );
-}
-
-#[test]
-fn parse_time_with_granularity_rejects_garbage() {
-    assert!(parse_time_with_granularity("noon").is_err());
-}
-
-#[test]
-fn parse_window_splits_start_and_end() {
-    let window = parse_window("2026-07-02..2026-07-02T01:00:00Z").unwrap();
-
-    assert_eq!(
-        window,
-        TimeWindow {
-            start: at(0),
-            end: at(1)
-        }
-    );
-}
-
-#[rstest]
-#[case::no_separator("2026-07-02T01:00:00Z", "START..END")]
-#[case::bad_start("x..2026-07-02T01:00:00Z", "START:")]
-#[case::bad_end("2026-07-02T01:00:00Z..x", "END:")]
-#[case::reversed("2026-07-02T02:00:00Z..2026-07-02T01:00:00Z", "START is after END")]
-fn parse_window_rejects_bad_windows(#[case] value: &str, #[case] expected: &str) {
-    let error = parse_window(value).unwrap_err();
-
-    assert!(error.contains(expected), "{error}");
 }
 
 #[test]

@@ -28,8 +28,10 @@ shared-eventhub-persistence = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+regex = { workspace = true }
 rune = { workspace = true }
 rune-kit = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true, optional = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

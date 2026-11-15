@@ -42,7 +42,8 @@ pub enum ExportFormat {
 }
 
 impl ExportFormat {
-    fn extension(self) -> &'static str {
+    /// The file extension for this format, without the dot.
+    pub fn extension(self) -> &'static str {
         match self {
             Self::Txt => "txt",
             Self::Csv => "csv",

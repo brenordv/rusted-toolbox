@@ -6,7 +6,9 @@
 //! `EngineDone`: the engine drops its event senders on every run end, so the event channel
 //! closing says nothing about how the run ended.
 
+use chrono::{DateTime, Utc};
 use shared_eventhub_core::engine::{EngineChannels, EngineCommand, EngineEvent, RunSummary};
+use shared_eventhub_core::filters::CaptureFilters;
 use shared_eventhub_core::stats::StatsSnapshot;
 use shared_eventhub_persistence::export::ExportOutcome;
 use std::future::Future;
@@ -27,6 +29,8 @@ const STALL_WARN_AFTER: Duration = Duration::from_secs(2);
 pub struct UiDelivery {
     /// The session the batch belongs to; the UI ignores batches of any other session.
     pub session: u64,
+    /// When the forwarder sent it.
+    pub at: DateTime<Utc>,
     /// At most [`BATCH_MAX`] events.
     pub events: Vec<EngineEvent>,
     /// The latest statistics, when they changed since the previous delivery.
@@ -53,12 +57,30 @@ pub trait UiPort: Send + Sync + 'static {
     fn done(&self, done: EngineDone);
 }
 
+/// Replaces the filters a session's sink writes message files for.
+pub type FilterHook = Arc<dyn Fn(CaptureFilters) + Send + Sync>;
+
+/// The sink side of a session: the at-end pass (a lazy future) and the hook that keeps the
+/// sink's message-file filters in step with the engine's.
+pub struct SessionSink<F> {
+    pub finish: F,
+    pub set_filters: FilterHook,
+}
+
 /// The UI's handle on a running session: sends it commands without blocking.
-#[derive(Debug)]
 pub struct EngineSession {
     id: u64,
     commands: mpsc::Sender<EngineCommand>,
     rt: Handle,
+    set_filters: FilterHook,
+}
+
+impl std::fmt::Debug for EngineSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineSession")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
 }
 
 impl EngineSession {
@@ -67,10 +89,34 @@ impl EngineSession {
         self.id
     }
 
+    /// A session no engine runs, for the demo's seeded states: its commands go nowhere, and it
+    /// never ends on its own.
+    #[cfg(feature = "demo")]
+    pub fn idle(id: u64, rt: &Handle) -> Self {
+        let (commands, _) = mpsc::channel(1);
+        Self {
+            id,
+            commands,
+            rt: rt.clone(),
+            set_filters: Arc::new(|_| {}),
+        }
+    }
+
     /// Asks the engine to stop every partition; the session then ends with its at-end pass.
     /// Safe to call more than once.
     pub fn stop(&self) {
         self.send(EngineCommand::Stop);
+    }
+
+    /// Replaces the capture filters: the sink's message files follow at once, the engine from
+    /// the next event it processes.
+    ///
+    /// With the command channel full, the send moves to the runtime, so a later update that
+    /// finds room can reach the engine first. The channel holds 16 commands and only a user's
+    /// Apply sends filters, so that takes repeated presses while the engine stops reading.
+    pub fn update_filters(&self, filters: CaptureFilters) {
+        (self.set_filters)(filters.clone());
+        self.send(EngineCommand::UpdateFilters(filters));
     }
 
     /// Sends `command` without ever blocking the calling thread: a full channel hands the send
@@ -102,16 +148,16 @@ impl EngineSession {
 }
 
 /// Starts a session on `rt` once `start` resolves: the run task drives `run`, forwards
-/// `channels` to `port` under session id `id`, then awaits `finish` (the at-end pass, a lazy
-/// future) and reports [`EngineDone`]. Nothing reaches `port` before `start` resolves, so the
-/// owner can hand the returned session to the UI first.
+/// `channels` to `port` under session id `id`, then awaits `sink.finish` (the at-end pass)
+/// and reports [`EngineDone`]. Nothing reaches `port` before `start` resolves, so the owner
+/// can hand the returned session to the UI first.
 pub fn spawn_session<G, R, F>(
     rt: &Handle,
     id: u64,
     start: G,
     channels: EngineChannels,
     run: R,
-    finish: F,
+    sink: SessionSink<F>,
     port: Arc<dyn UiPort>,
 ) -> EngineSession
 where
@@ -124,6 +170,10 @@ where
         events,
         stats,
     } = channels;
+    let SessionSink {
+        finish,
+        set_filters,
+    } = sink;
     rt.spawn(async move {
         start.await;
         run_task(id, events, stats, run, finish, port).await;
@@ -132,6 +182,7 @@ where
         id,
         commands,
         rt: rt.clone(),
+        set_filters,
     }
 }
 
@@ -247,6 +298,7 @@ async fn forward(
         port.deliver(
             UiDelivery {
                 session,
+                at: Utc::now(),
                 events: batch,
                 stats: snapshot,
             },
@@ -313,21 +365,49 @@ async fn await_ack(session: u64, mut accepted: oneshot::Receiver<()>) -> bool {
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::*;
+    use std::sync::Mutex;
+
+    /// The filters a session's hook was called with, in order.
+    pub type HookCalls = Arc<Mutex<Vec<CaptureFilters>>>;
 
     /// A session whose commands land in the returned receiver, for state tests.
     pub fn detached_session(
         id: u64,
         rt: &Handle,
     ) -> (EngineSession, mpsc::Receiver<EngineCommand>) {
+        let (session, received, _) = recorded_session(id, rt);
+        (session, received)
+    }
+
+    /// [`detached_session`] that also records every filter hook call.
+    pub fn recorded_session(
+        id: u64,
+        rt: &Handle,
+    ) -> (EngineSession, mpsc::Receiver<EngineCommand>, HookCalls) {
         let (commands, received) = mpsc::channel(4);
+        let calls = HookCalls::default();
+        let recorder = Arc::clone(&calls);
+        let set_filters: FilterHook = Arc::new(move |filters| {
+            recorder.lock().unwrap().push(filters);
+        });
         (
             EngineSession {
                 id,
                 commands,
                 rt: rt.clone(),
+                set_filters,
             },
             received,
+            calls,
         )
+    }
+
+    /// A sink side whose filter hook does nothing.
+    pub fn sink<F>(finish: F) -> SessionSink<F> {
+        SessionSink {
+            finish,
+            set_filters: Arc::new(|_| {}),
+        }
     }
 }
 

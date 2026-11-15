@@ -12,15 +12,17 @@ use crate::bridge::{EngineDone, EngineSession, UiDelivery};
 use crate::design::Ds;
 use crate::design::tokens::{SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH};
 use crate::form::{ConnectForm, PendingSave};
+use crate::read::{LogKind, LogLine, ReadEffect, ReadInput, ReadState};
 use crate::services::{ConnectRequest, SaveRequest, Services};
 use chrono::{DateTime, TimeDelta, Utc};
 use common_cli::app_logger::FileLogging;
 use ending::{log_summary, session_failures};
 use rune_kit::PaneState;
 use shared_eventhub_core::engine::{EngineEvent, RunEnd, RunSummary};
-use shared_eventhub_core::stats::StatsSnapshot;
+use shared_eventhub_persistence::config::{SensitiveValues, ToolConfig};
 use shared_eventhub_persistence::paths::DataPaths;
 use std::path::PathBuf;
+use std::time::Duration;
 use tracing::{debug, info, warn};
 
 /// How long a closed window waits for a session's at-end pass before it reopens with a
@@ -62,8 +64,6 @@ pub enum ConnectionState {
     Connected {
         session: EngineSession,
         partitions: Vec<String>,
-        /// The counts on screen: zeros on connecting, then the latest statistics at each tick.
-        shown: ShownStats,
     },
     /// A stop was sent; the session ends once its at-end pass finishes.
     Stopping {
@@ -122,13 +122,6 @@ impl SaveStatus {
     }
 }
 
-/// The capture counts the Read section shows, refreshed at most once a second.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ShownStats {
-    pub received: u64,
-    pub stored: u64,
-}
-
 /// Something that happened: a user action, a background result, or the clock.
 #[derive(Debug)]
 pub enum Input {
@@ -152,6 +145,7 @@ pub enum Input {
     EngineDone(EngineDone),
     /// The system's appearance, read by the app itself (true: dark).
     AppearanceChanged(bool),
+    Read(ReadInput),
 }
 
 /// Work `apply` asks the runtime glue to do.
@@ -173,13 +167,28 @@ pub enum Effect {
     ReopenWindow,
     /// Close the store and end the process.
     Quit,
+    Read(ReadEffect),
 }
 
-/// What a transition did: the effects to run, and whether anything the view reads changed.
+/// What a transition did: the effects to run, whether anything the view reads changed, and
+/// how its commit moves. A commit no input caused lands without motion unless it asks for it.
 #[derive(Debug, Default)]
 pub struct Outcome {
     pub effects: Vec<Effect>,
     pub changed: bool,
+    pub motion: Motion,
+}
+
+/// How a commit moves.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Motion {
+    /// As the runtime decides: a commit no input caused lands without motion.
+    #[default]
+    Still,
+    /// Animate, though no input caused it (digit rolls, the first-connect entrance).
+    Animated,
+    /// Land without motion, whatever else in the frame asks for it (rows moved onto the list).
+    Instant,
 }
 
 /// The whole UI state.
@@ -204,8 +213,7 @@ pub struct AppState {
     /// Shown after the window reopened because the at-end pass ran past
     /// [`STILL_FINISHING_AFTER`]; offers Force quit.
     pub still_finishing: bool,
-    /// The latest statistics of the running session; `None` with no session.
-    pub stats: Option<StatsSnapshot>,
+    pub read: ReadState,
     /// The system's appearance as the app read it; `None` leaves Rune's.
     pub system_dark: Option<bool>,
     window_closed: bool,
@@ -255,7 +263,7 @@ impl AppState {
             file_logging,
             toasts: Vec::new(),
             still_finishing: false,
-            stats: None,
+            read: ReadState::default(),
             system_dark: None,
             window_closed: false,
             closed_at: None,
@@ -286,8 +294,8 @@ impl AppState {
     /// Applies `input` and returns the effects to run.
     pub fn apply(&mut self, input: Input) -> Outcome {
         let mut out = Outcome {
-            effects: Vec::new(),
             changed: true,
+            ..Outcome::default()
         };
         match input {
             Input::SectionPicked(section) => self.section = section,
@@ -311,6 +319,7 @@ impl AppState {
             Input::Delivery(delivery) => self.delivery(delivery, &mut out),
             Input::EngineDone(done) => self.engine_done(done, &mut out),
             Input::AppearanceChanged(dark) => self.appearance_changed(dark, &mut out),
+            Input::Read(input) => self.read_input(input, &mut out),
         }
         self.quit_rule(&mut out);
         out
@@ -340,9 +349,13 @@ impl AppState {
 
         let attempt = self.next_attempt;
         self.next_attempt += 1;
-        let (config, given) = self.form.to_config();
+        let (config, given) = self.config_with_rules();
         let paths = self.form.data_paths();
         info!(attempt, "connecting");
+        self.read.start_session(
+            attempt,
+            Duration::from_secs(config.capture.feedback_interval_secs),
+        );
         self.connection = ConnectionState::Connecting {
             attempt,
             session: None,
@@ -358,6 +371,29 @@ impl AppState {
                 paths,
             },
         });
+    }
+
+    /// The form's config with the applied capture rules, so the engine's first filters and a
+    /// saved `config.json` match the sidebar.
+    fn config_with_rules(&self) -> (ToolConfig, SensitiveValues) {
+        let (mut config, given) = self.form.to_config();
+        config.capture.filters = self.read.rules_applied.clone();
+        (config, given)
+    }
+
+    fn read_input(&mut self, input: ReadInput, out: &mut Outcome) {
+        let read = self
+            .read
+            .apply(input, &self.connection, self.form.data_paths());
+        for (kind, text) in read.toasts {
+            self.toast(kind, text);
+        }
+        out.effects
+            .extend(read.effects.into_iter().map(Effect::Read));
+        out.changed = read.changed;
+        if read.rows_landed {
+            out.motion = Motion::Instant;
+        }
     }
 
     fn disconnect_pressed(&mut self, out: &mut Outcome) {
@@ -392,7 +428,7 @@ impl AppState {
             self.show_issues = true;
             return;
         }
-        let (config, given) = self.form.to_config();
+        let (config, given) = self.config_with_rules();
         self.save_status = SaveStatus::Saving(self.form.pending_save());
         out.effects.push(Effect::SaveConfig(SaveRequest {
             config,
@@ -483,7 +519,17 @@ impl AppState {
         }
         self.toasts.retain(|toast| toast.ticks_left != Some(0));
         out.changed = self.toasts.len() != before;
-        out.changed |= self.refresh_shown();
+        let connected = match self.connection {
+            ConnectionState::Connected { .. } => true,
+            ConnectionState::Disconnected
+            | ConnectionState::Connecting { .. }
+            | ConnectionState::Stopping { .. }
+            | ConnectionState::Failed(_) => false,
+        };
+        out.changed |= self.read.tick(now, connected);
+        if out.changed {
+            out.motion = Motion::Animated;
+        }
 
         let overdue = matches!(self.connection, ConnectionState::Stopping { .. })
             && self.window_closed
@@ -498,23 +544,6 @@ impl AppState {
             self.section = Section::Read;
             out.changed = true;
         }
-    }
-
-    /// Copies the latest statistics into the counts a connected session shows; true when the
-    /// counts changed.
-    fn refresh_shown(&mut self) -> bool {
-        let (ConnectionState::Connected { shown, .. }, Some(stats)) =
-            (&mut self.connection, &self.stats)
-        else {
-            return false;
-        };
-        let latest = ShownStats {
-            received: stats.received,
-            stored: stats.stored,
-        };
-        let changed = *shown != latest;
-        *shown = latest;
-        changed
     }
 
     fn appearance_changed(&mut self, dark: bool, out: &mut Outcome) {
@@ -589,34 +618,52 @@ impl AppState {
             );
             return;
         }
-        if let Some(stats) = delivery.stats {
-            self.stats = Some(stats);
-        }
+        let at = delivery.at;
+        self.read.delivered(at, delivery.stats);
         for event in delivery.events {
             match event {
                 EngineEvent::Started { partitions } => self.started(partitions, out),
+                EngineEvent::Message(message) => self.read.message(*message),
                 EngineEvent::Error {
                     partition_id,
                     error,
-                    fatal: true,
+                    fatal,
                 } => {
-                    debug!(partition = ?partition_id, "the engine reported a fatal error");
-                    if let ConnectionState::Connecting { fatal, .. } = &mut self.connection {
-                        *fatal = Some(error);
+                    if fatal {
+                        debug!(partition = ?partition_id, "the engine reported a fatal error");
+                        if let ConnectionState::Connecting { fatal, .. } = &mut self.connection {
+                            *fatal = Some(error.clone());
+                        }
+                    } else {
+                        warn!(partition = ?partition_id, error = %error, "a partition reported an error");
                     }
+                    self.session_log(at, LogKind::Error, partition_id, error, out);
                 }
-                EngineEvent::Error {
-                    partition_id,
-                    error,
-                    fatal: false,
-                } => {
-                    warn!(partition = ?partition_id, error = %error, "a partition reported an error");
+                EngineEvent::PartitionEnded { partition_id, end } => {
+                    let text = format!("Partition {partition_id} {end}");
+                    self.session_log(at, LogKind::PartitionEnded, Some(partition_id), text, out);
                 }
-                EngineEvent::Message(_)
-                | EngineEvent::Skipped { .. }
-                | EngineEvent::PartitionEnded { .. } => {}
+                EngineEvent::Skipped { .. } => {}
             }
         }
+    }
+
+    fn session_log(
+        &mut self,
+        at: DateTime<Utc>,
+        kind: LogKind,
+        partition: Option<String>,
+        text: String,
+        out: &mut Outcome,
+    ) {
+        let line = LogLine {
+            at,
+            kind,
+            partition,
+            text,
+        };
+        self.read.log(line, self.pill_open);
+        out.changed = true;
     }
 
     fn started(&mut self, partitions: Vec<String>, out: &mut Outcome) {
@@ -633,9 +680,9 @@ impl AppState {
                 self.connection = ConnectionState::Connected {
                     session,
                     partitions,
-                    shown: ShownStats::default(),
                 };
                 out.changed = true;
+                out.motion = Motion::Animated;
             }
             other @ (ConnectionState::Disconnected
             | ConnectionState::Connecting { session: None, .. }
@@ -651,7 +698,7 @@ impl AppState {
             out.changed = false;
             return;
         }
-        self.stats = None;
+        self.read.end_session();
         let (fatal, stage) = match &mut self.connection {
             ConnectionState::Connecting { fatal, .. } => (fatal.take(), FailureStage::Starting),
             ConnectionState::Connected { .. }
@@ -695,13 +742,14 @@ impl AppState {
         out.effects.push(Effect::ReopenWindow);
     }
 
-    /// Quits once the window is closed and neither a session nor a save is left running. Asks
-    /// for the quit once; the quit path then runs to the end on its own.
+    /// Quits once the window is closed and neither a session, a save, nor a message export is
+    /// left running. Asks for the quit once; the quit path then runs to the end on its own.
     fn quit_rule(&mut self, out: &mut Outcome) {
         if self.quit_requested
             || !self.window_closed
             || self.connection.session().is_some()
             || self.save_status.is_saving()
+            || self.read.export_running()
         {
             return;
         }
