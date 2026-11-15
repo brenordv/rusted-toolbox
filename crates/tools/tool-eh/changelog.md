@@ -15,6 +15,11 @@
 - `eh send` publishes one body (`--body`, `--body-file`, or stdin) `-n` times, batched or one
   every `--interval-ms`, with `--partition-key` and `--content-type`. A target recalled from
   `config.json` must be named again (`--namespace` and `-e`) or confirmed with `--yes`. `-g/--consumer-group` is a `read` flag only.
+- `eh send --template` treats the body as a template: `{{type option=value}}` placeholders get
+  fresh mock values (mock-data-utils) in every event; compile errors name the line and column
+  and stop the run before anything is opened. `--dry-run` prints the rendered events instead of
+  sending, with no event hub and no `config.json` read. The header gains a Template line and
+  `send --help` lists the placeholders.
 - The export progress line (and the at-end message file line of `eh read`) is cleared when the
   summary follows, so the final counts print once; a failed export keeps its last counts.
 - Breaking, from 1.1.0 (the readme has the full table):

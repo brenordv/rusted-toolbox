@@ -1,6 +1,7 @@
 //! The capture-rules form: a draft of time and text filters that becomes the engine's
 //! `CaptureFilters` when applied.
 
+use crate::read::rows::sentence;
 use crate::read::search::MAX_PATTERN_CHARS;
 use chrono::{DateTime, SecondsFormat, Utc};
 use rune::TextEdit;
@@ -214,15 +215,6 @@ fn field(
             *issue = Some(sentence(&format!("{error:#}")));
             None
         }
-    }
-}
-
-/// `text` with its first letter capitalized, for a parser message shown on its own.
-fn sentence(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
     }
 }
 

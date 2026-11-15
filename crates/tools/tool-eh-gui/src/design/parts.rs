@@ -4,15 +4,15 @@
 use super::tokens::{
     COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT, FORM_POPOVER_WIDTH,
     HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE, PRESS_SCALE, RADIUS_BADGE, RADIUS_CONTROL,
-    RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE, REVEAL_OFFSET, SELECTION_INSET, SHEET_TOP,
-    SHEET_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH,
-    TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL,
-    TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
+    RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE, REVEAL_OFFSET, SAMPLE_LINES, SELECTION_INSET,
+    SHEET_TOP, SHEET_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL,
+    TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY,
+    TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
 };
 use super::{Surface, floating_tint, motion, selected_secondary_text, selection_fill, surface};
 use rune::{
     Color, El, Icon, KeyEvent, ScrollSpec, SpringPair, TextEdit, Transition, Tx, col, el, icon,
-    row, text, text_input,
+    row, spacer, text, text_input,
 };
 use rune_kit::{IconButton, IconButtonVariant, Kit, RollingText, ScrollBar};
 
@@ -456,7 +456,8 @@ const BODY_EDITOR_MIN_LINES: f32 = 8.0;
 /// A multi-line monospace editor for an event body: the kit field's look, at least
 /// [`BODY_EDITOR_MIN_LINES`] tall, growing to the space it is given and scrolling past it. The
 /// box never springs as lines are typed. There is no `on_submit`, and `on_key` sees every key
-/// first: a plain Return reaches it untyped, so `on_key` inserts the newline.
+/// first: a plain Return reaches it untyped, so `on_key` inserts the newline. `on_change` runs
+/// after every edit the field itself makes (typing, paste, undo), not after `on_key`'s.
 ///
 /// The kit's `TextArea` sets its own UI type with no way to change it, so it cannot be mono.
 pub fn body_editor<S: 'static>(
@@ -466,6 +467,7 @@ pub fn body_editor<S: 'static>(
     invalid: bool,
     access: fn(&mut S) -> &mut TextEdit,
     on_key: impl Fn(&mut S, &KeyEvent, &mut Tx) -> bool + 'static,
+    on_change: impl Fn(&mut S, &mut Tx) + 'static,
 ) -> El {
     let c = &k.c;
     let field = text_input(edit, TYPE_MONO)
@@ -477,7 +479,8 @@ pub fn body_editor<S: 'static>(
         .label("Event body")
         .invalid(invalid)
         .on_edit(access)
-        .on_input_key(on_key);
+        .on_input_key(on_key)
+        .on_input_change(on_change);
     let viewport = col()
         .key("scroll")
         .w_full()
@@ -523,6 +526,39 @@ pub fn reveal(content: El) -> El {
             .combined(Transition::offset(0.0, REVEAL_OFFSET))
             .springs(SpringPair::new(motion::CONTROL, motion::CONTROL_EXIT)),
     )
+}
+
+/// A card holding a sample: a header row (`title` in `caption` and `action` at its end) over a
+/// viewport a fixed [`SAMPLE_LINES`] of `mono` tall that scrolls, so the card's height never
+/// follows its content.
+pub fn sample_block(k: &Kit, key: &str, title: &str, action: El, body: El) -> El {
+    let header = row()
+        .w_full()
+        .center_y()
+        .child(text(title).font(TYPE_CAPTION).color(k.c.text_muted))
+        .child(spacer())
+        .child(action);
+    let viewport = col()
+        .key("sample-scroll")
+        .w_full()
+        .h(SAMPLE_LINES * TYPE_MONO.line_px())
+        .scroll(ScrollSpec {
+            stick_bottom: false,
+        })
+        .child(body)
+        .scroll_bar(k);
+    col()
+        .key(key)
+        .role("group")
+        .label(title)
+        .w_full()
+        .gap(SPACE_SM)
+        .padding(SPACE_MD)
+        .radius(RADIUS_TILE)
+        .fill(surface(k, Surface::Raised))
+        .border(HAIRLINE, k.c.border_weak)
+        .child(header)
+        .child(viewport)
 }
 
 /// A block of selectable monospace text, for a message body.

@@ -288,6 +288,41 @@ network that blocks 5671 blocks `eh send` (and `eh read`). A connection string w
 Troubleshooting throttling or slow sends:
 `RUST_LOG=warn,azure_messaging_eventhubs=debug,shared_eventhub_core=debug eh send ...`.
 
+### Templates (`--template`) and dry runs (`--dry-run`)
+
+With `--template`, the body is a template: every `{{type option=value}}` placeholder gets a
+fresh mock value in each event, from the same generators as the `mock` tool.
+
+```bash
+eh send --template --dry-run -n 3 --body-file order-template.json
+eh send -e orders --template -n 500 --content-type application/json --body \
+  '{"orderId": {{random.integer min=1000 max=9999}}, "email": "{{person.email}}", "placedAt": "{{random.datetime past}}"}'
+```
+
+- A placeholder names a type (`person.email`, `random.integer`, ...; `eh send --help` lists all
+  32) and takes options as words: `min=N max=N` (`random.integer`, `random.float`),
+  `precision=N`, `length=N` (up to 1048576), `age=N`, `range=N`, `past`, `future`, and
+  `locale=CODE` (`pt-br`, `ja-jp`, ...). Options a type ignores are ignored; a locale a type
+  ignores prints a notice. Whitespace and newlines inside the braces don't matter.
+- `\{{` writes a literal `{{`; any other backslash stays as written. So a backslash right before
+  a placeholder can't be written: `logs\\{{internet.username}}` sends
+  `logs\{{internet.username}}`.
+- Values go in as generated, with no escaping. A JSON template breaks when a value holds `"` or
+  `\`, and some do: Brazilian last names include `D"ávila` (`{{person.last-name locale=pt-br}}`).
+- The body must be UTF-8. A template that does not compile fails before anything is opened or
+  saved, naming the line and column ("The --template body does not compile: line 3, column 14:
+  unknown type 'person.fullname'"). A template holds at most 100,000 placeholders, and each
+  event at most 20 MiB once rendered.
+- Every event is rendered as it is sent, so values are fresh per event and not reproducible.
+  Without `--template`, `{{` is sent as written.
+
+`--dry-run` (with `--template`) renders `--count` events and prints them instead of sending: no
+event hub, no target flags, and no `config.json` are read, and nothing is written. Each event's
+lines print with control characters escaped, a blank line between events, and stderr ends with
+"Dry run: 3 event(s) rendered, nothing sent." It can't be combined with `--save-config`,
+`--partition-key`, `--interval-ms`, or `--yes`. Piping into `head` ends it quietly; Ctrl-C stops
+it between events (exit 130). `--app-header` prints its lines before the events, on stdout.
+
 ### Live checks (manual, against a dev event hub)
 
 The test suite never contacts Azure. Before relying on `send`:
@@ -306,6 +341,9 @@ The test suite never contacts Azure. Before relying on `send`:
 8. `eh read` with a Send-only connection string: whether reading the event hub properties
    succeeds tells whether a Send-only rule can read them (note the result here).
 9. The time from "Connecting" to the "First batch created" log line (`--log-level info`).
+10. `--template -n 5` with the order template above: `eh export -f json` shows five different
+    order ids and emails.
+11. `--template --dry-run -n 1000 ... | head -3` ends quietly with exit 0 (on Windows too).
 
 ## Exit codes
 

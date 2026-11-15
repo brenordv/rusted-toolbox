@@ -199,6 +199,124 @@ fn a_missing_body_file_fails_before_the_target_or_config_is_touched() {
 }
 
 #[test]
+fn a_template_dry_run_prints_the_renders_with_no_target_and_creates_nothing() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--dry-run",
+            "-n",
+            "3",
+            "--body",
+            "{\"n\": {{random.integer min=1 max=1}}}",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    assert_eq!(
+        stdout_of(&output),
+        "{\"n\": 1}\n\n{\"n\": 1}\n\n{\"n\": 1}\n"
+    );
+    assert!(
+        stderr_of(&output).contains("Dry run: 3 event(s) rendered, nothing sent."),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+}
+
+#[test]
+fn a_template_dry_run_never_reads_the_folders_config_json() {
+    let root = tempfile::tempdir().unwrap();
+    let config = root.path().join("config.json");
+    std::fs::write(
+        &config,
+        r#"{"tool": "eh", "schema_version": "not a number"}"#,
+    )
+    .unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--dry-run",
+            "--body",
+            "{{random.integer min=7 max=7}}",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    assert_eq!(stdout_of(&output), "7\n");
+    assert!(
+        !stderr_of(&output).contains("config.json"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert_eq!(files_under(root.path()), [config]);
+}
+
+#[test]
+fn a_template_that_does_not_compile_fails_before_the_target_is_saved() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--body",
+            "{\"name\": \"{{person.fullname}}\"}",
+            "-s",
+            &connection_string(),
+            "-e",
+            HUB,
+            "--save-config",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("line 1, column 11: unknown type 'person.fullname'"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+    assert!(!stderr_of(&output).contains(SECRET_KEY));
+}
+
+#[test]
+fn a_template_body_file_that_is_not_utf8_fails_naming_the_offset() {
+    let root = tempfile::tempdir().unwrap();
+    let body = root.path().join("event.bin");
+    std::fs::write(&body, b"{\"a\": \xc3\x28}").unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--body-file",
+            "event.bin",
+            "-s",
+            &connection_string(),
+            "--save-config",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("the byte at offset 6 is not valid"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert_eq!(files_under(root.path()), [body]);
+}
+
+#[test]
 fn a_body_file_over_the_cap_fails_naming_the_cap_and_creates_nothing() {
     let root = tempfile::tempdir().unwrap();
     let body = root.path().join("big.bin");

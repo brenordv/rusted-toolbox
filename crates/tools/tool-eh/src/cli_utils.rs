@@ -1,8 +1,10 @@
-use crate::models::{ConfigSource, EhCommand, Environment, ExportJob, ReadJob};
+use crate::models::{ConfigSource, DryRunJob, EhCommand, Environment, ExportJob, ReadJob};
 use crate::progress::{
     describe_auth, describe_text_filter, describe_time_filter, display, target_label,
 };
-use crate::send_cli::{SendArgs, load_body, send_header};
+use crate::send_cli::{
+    SendArgs, compile_template, dry_run_header, load_body, send_header, template_help,
+};
 use crate::settings::{export_job, parse_regex, read_job, send_job};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -18,6 +20,8 @@ use shared_eventhub_persistence::config::{ConfigLoad, ToolConfig, load_config};
 use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat};
 use shared_eventhub_persistence::paths::DataPaths;
 use std::fmt::Display;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Azure Event Hubs CLI: captures events into a local archive, exports them,
 /// and sends test events.
@@ -61,9 +65,10 @@ enum Commands {
         eh send -e orders --body '{\"orderId\": 1}' --content-type application/json\n  \
         eh send --body-file order.json -n 500\n  \
         eh send --body-file - --partition-key customer-17 < event.json\n  \
-        eh send -e orders --body ping -n 600 --interval-ms 1000\n\n\
+        eh send -e orders --body ping -n 600 --interval-ms 1000\n  \
+        eh send --template --dry-run -n 3 --body '{\"id\": {{random.integer min=1 max=999}}}'\n\n\
         A target recalled from config.json must be named again with --namespace and -e, or \
-        confirmed with --yes.")]
+        confirmed with --yes.", after_long_help = template_help())]
     Send(Box<SendArgs>),
 }
 
@@ -382,10 +387,11 @@ async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<Eh
         Err(error) => return (None, Err(error)),
     };
     let working_dir = get_current_dir();
+    // A dry run resolves no target, so it never reads config.json.
     let no_config = match &command {
         Commands::Read(args) => args.data.no_config,
         Commands::Export(args) => args.data.no_config,
-        Commands::Send(args) => args.data.no_config,
+        Commands::Send(args) => args.data.no_config || args.dry_run,
     };
     let (recalled, source) = if no_config {
         (None, ConfigSource::Disabled)
@@ -414,20 +420,48 @@ async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<Eh
             recalled.as_ref(),
             source,
         )))),
-        Commands::Send(args) => load_body(&args)
-            .and_then(|body| {
-                send_job(
-                    *args,
-                    body,
-                    recalled.as_ref(),
-                    &environment,
-                    working_dir,
-                    source,
-                )
-            })
-            .map(|job| EhCommand::Send(Box::new(job))),
+        Commands::Send(args) => {
+            send_command(*args, recalled.as_ref(), &environment, working_dir, source)
+        }
     };
     (notice, command)
+}
+
+/// Loads the body, compiles it under `--template`, and builds the send or
+/// the dry run. A body or template error returns before any target is
+/// resolved.
+fn send_command(
+    args: SendArgs,
+    recalled: Option<&ToolConfig>,
+    environment: &Environment,
+    working_dir: PathBuf,
+    source: ConfigSource,
+) -> Result<EhCommand> {
+    let body = load_body(&args)?;
+    let template = if args.template {
+        Some(Arc::new(compile_template(&body.0)?))
+    } else {
+        None
+    };
+    match (args.dry_run, template) {
+        (true, Some(template)) => Ok(EhCommand::DryRun(Box::new(DryRunJob {
+            template,
+            count: args.count,
+            body_len: body.0.len(),
+            body_source: body.1,
+        }))),
+        (true, None) => anyhow::bail!("--dry-run needs --template"),
+        (false, template) => send_job(
+            args,
+            body,
+            template,
+            recalled,
+            environment,
+            working_dir,
+            source,
+        )
+        .map(|job| EhCommand::Send(Box::new(job))),
+    }
 }
 
 fn print_notice(notice: Option<&str>) {
@@ -464,6 +498,7 @@ fn print_header(command: &EhCommand) {
         EhCommand::Read(job) => read_header(job),
         EhCommand::Export(job) => export_header(job),
         EhCommand::Send(job) => send_header(job),
+        EhCommand::DryRun(job) => dry_run_header(job),
     };
     for line in lines {
         println!("{line}");

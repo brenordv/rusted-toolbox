@@ -12,6 +12,7 @@ license.workspace = true
 cli-signal-monitor = { workspace = true }
 common-cli = { workspace = true }
 common-utils = { workspace = true }
+mock-data-utils = { workspace = true }
 shared-eventhub-core = { workspace = true }
 shared-eventhub-persistence = { workspace = true }
 

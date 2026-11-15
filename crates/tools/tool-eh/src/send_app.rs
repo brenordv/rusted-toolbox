@@ -2,6 +2,7 @@
 
 use crate::models::{RunOutcome, SendJob};
 use crate::progress::{ExportProgressLine, Renderer, connecting_notice, display, format_elapsed};
+use crate::send_cli::{RENDER_CAP, next_event, template_notices};
 use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
 use shared_eventhub_core::cancel::{CANCEL_POLL, flag_set};
@@ -39,6 +40,14 @@ pub async fn run(job: SendJob, shutdown: &AtomicBool) -> anyhow::Result<RunOutco
         &mut renderer,
     )?;
 
+    for notice in job
+        .template
+        .as_deref()
+        .map(template_notices)
+        .unwrap_or_default()
+    {
+        renderer.notice(&notice);
+    }
     renderer.notice(&connecting_notice(&job.config.target, None));
     let Some(producer) = open_or_interrupt(open_producer(&target), shutdown).await? else {
         renderer.notice("Interrupted while connecting; nothing was sent.");
@@ -84,7 +93,7 @@ async fn send_with_progress<O: Write, E: Write>(
     let summary = {
         let send = producer.send(
             &job.plan,
-            |_| Ok(job.event.clone()),
+            |_| next_event(&job.event, job.template.as_deref(), RENDER_CAP),
             shutdown,
             |progress| line.draw_with(|_| send_line(progress, requested)),
         );

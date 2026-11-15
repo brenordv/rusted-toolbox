@@ -7,6 +7,7 @@ use crate::models::{BodySource, ConfigSource, Environment, ExportJob, ReadJob, S
 use crate::progress::target_label;
 use crate::send_cli::SendArgs;
 use anyhow::{Result, bail};
+use mock_data_utils::template::Template;
 use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
 use shared_eventhub_core::filters::{CaptureFilters, TextFilter, TimeFilter};
 use shared_eventhub_core::producer::{OutgoingEvent, Pacing, Routing, SendPlan};
@@ -15,6 +16,7 @@ use shared_eventhub_persistence::config::{
     SensitiveValues, StorageConfig, StoredSecret, TargetConfig, ToolConfig,
 };
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 const NO_TARGET: &str = "No event hub given: pass -s, --auth, or --keyvault-url, set \
@@ -105,6 +107,7 @@ pub(crate) fn export_job(
 pub(crate) fn send_job(
     args: SendArgs,
     (body, body_source): (Vec<u8>, BodySource),
+    template: Option<Arc<Template>>,
     recalled: Option<&ToolConfig>,
     environment: &Environment,
     working_dir: PathBuf,
@@ -143,6 +146,7 @@ pub(crate) fn send_job(
             body,
             content_type: args.content_type,
         },
+        template,
         body_source,
     })
 }

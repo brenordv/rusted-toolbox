@@ -253,8 +253,133 @@ fn send_defaults_to_one_batched_event() {
 #[case::interval_over_the_maximum(&["eh", "send", "--body", "x", "--interval-ms", "3600001"], ErrorKind::ValueValidation)]
 #[case::consumer_group(&["eh", "send", "--body", "x", "-g", "group"], ErrorKind::UnknownArgument)]
 #[case::partition_id(&["eh", "send", "--body", "x", "--partition", "0"], ErrorKind::UnknownArgument)]
+#[case::dry_run_without_template(&["eh", "send", "--body", "x", "--dry-run"], ErrorKind::MissingRequiredArgument)]
+#[case::dry_run_with_save_config(&["eh", "send", "--body", "x", "--template", "--dry-run", "--save-config"], ErrorKind::ArgumentConflict)]
+#[case::dry_run_with_partition_key(&["eh", "send", "--body", "x", "--template", "--dry-run", "--partition-key", "k"], ErrorKind::ArgumentConflict)]
+#[case::dry_run_with_interval(&["eh", "send", "--body", "x", "--template", "--dry-run", "--interval-ms", "5"], ErrorKind::ArgumentConflict)]
+#[case::dry_run_with_yes(&["eh", "send", "--body", "x", "--template", "--dry-run", "--yes"], ErrorKind::ArgumentConflict)]
 fn bad_send_arguments_are_usage_errors(#[case] argv: &[&str], #[case] expected: ErrorKind) {
     assert_eq!(parse_error(argv), expected);
+}
+
+fn send_command_for(argv: &[&str]) -> Result<EhCommand> {
+    send_command(
+        send_args(argv),
+        None,
+        &Environment::default(),
+        PathBuf::from("."),
+        ConfigSource::Missing,
+    )
+}
+
+#[test]
+fn a_template_dry_run_resolves_to_a_dry_run_without_a_target() {
+    let command = send_command_for(&[
+        "eh",
+        "send",
+        "--template",
+        "--dry-run",
+        "-n",
+        "3",
+        "--body",
+        "{{random.integer}} {{person.email}}",
+    ])
+    .unwrap();
+
+    let EhCommand::DryRun(job) = command else {
+        panic!("expected a dry run, got {command:?}");
+    };
+    assert_eq!(job.count, 3);
+    assert_eq!(job.template.placeholder_count(), 2);
+}
+
+#[test]
+fn a_template_send_carries_the_compiled_template_and_the_source_body() {
+    let command = send_command_for(&[
+        "eh",
+        "send",
+        "--auth",
+        "developer",
+        "--namespace",
+        "orders.servicebus.windows.net",
+        "-e",
+        "orders",
+        "--template",
+        "--body",
+        "{{random.integer}}",
+    ])
+    .unwrap();
+
+    let EhCommand::Send(job) = command else {
+        panic!("expected a send, got {command:?}");
+    };
+    assert_eq!(job.event.body, b"{{random.integer}}");
+    assert_eq!(job.template.map(|t| t.placeholder_count()), Some(1));
+}
+
+#[test]
+fn a_send_without_template_keeps_the_braces_literal() {
+    let command = send_command_for(&[
+        "eh",
+        "send",
+        "--auth",
+        "developer",
+        "--namespace",
+        "orders.servicebus.windows.net",
+        "-e",
+        "orders",
+        "--body",
+        "{{person.email}}",
+    ])
+    .unwrap();
+
+    let EhCommand::Send(job) = command else {
+        panic!("expected a send, got {command:?}");
+    };
+    assert!(job.template.is_none());
+    assert_eq!(job.event.body, b"{{person.email}}");
+}
+
+#[test]
+fn a_template_that_does_not_compile_fails_naming_the_position_before_any_target() {
+    let error = send_command_for(&["eh", "send", "--template", "--body", "{{person.fullname}}"])
+        .unwrap_err();
+
+    assert_eq!(
+        format!("{error:#}"),
+        "The --template body does not compile: line 1, column 1: unknown type 'person.fullname'"
+    );
+}
+
+#[test]
+fn a_dry_run_flag_without_a_template_is_refused() {
+    let mut args = send_args(&["eh", "send", "--body", "x", "--template", "--dry-run"]);
+    args.template = false;
+
+    let error = send_command(
+        args,
+        None,
+        &Environment::default(),
+        PathBuf::from("."),
+        ConfigSource::Missing,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.to_string(), "--dry-run needs --template");
+}
+
+#[test]
+fn the_send_long_help_lists_placeholders_and_options() {
+    let mut command = CliArgs::command();
+    let help = command
+        .find_subcommand_mut("send")
+        .unwrap()
+        .render_long_help()
+        .to_string();
+
+    assert!(help.contains("person: person.first-name"), "{help}");
+    assert!(help.contains("commerce.product-description"), "{help}");
+    assert!(help.contains("min=N max=N"), "{help}");
 }
 
 #[test]

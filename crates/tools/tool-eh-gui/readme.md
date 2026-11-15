@@ -136,6 +136,14 @@ name it.
   editor (use `eh send --body-file`). A body that fits the editor can still be too large for one
   batch: the SDK limits a single event to about half the event hub's publish limit (about 128 KB
   on Basic, 512 KB on Standard and Premium), and the send then fails with that message.
+- **Template** (the switch beside "Event body"): the body becomes a template, and every
+  `{{type option=value}}` placeholder gets a fresh mock value in each event, as with
+  `eh send --template` (the `eh` readme has the syntax and its limits). "Show placeholders" lists
+  the types and options. Under the editor a Sample block shows one render; Regenerate draws
+  another. While the template does not compile, the block says where and why, and a Send press
+  marks the editor and blocks the send until it is fixed. A sample that fails to render (a value
+  too large for 1 MiB, say) shows its error but does not block Send; the send then fails at its
+  first event. Values go in unescaped, so a JSON template can break on a value holding `"`.
 - **Send** (Ctrl+Enter or Cmd+Enter from any Send field). The line beside it shows the run:
   connecting, then the sent count, the pacing, and the elapsed time; Cancel stops before the next
   batch or during a paced wait within about a tenth of a second. A batch already handed to the
@@ -226,7 +234,8 @@ A dev-only binary runs the real window against a generated event hub and a tempo
 selected), `seeded-search` (the same with a regex filter), `seeded-export` (the Export section
 over an archive of 6,000 generated messages, searched for everything; paging and bulk exports
 are real), `send` (the Send section with a JSON body, idle), `send-paced` (10 events one a
-second, already sending). Demo sends reach no event hub: they count up following the pacing and
+second, already sending), `send-template` (Template on with an order template and its sample,
+idle). Demo sends reach no event hub: they count up following the pacing and
 Cancel. The seeded Read states run no engine, so Disconnect there never finishes. Demo mode
 reads and writes only under its temporary folder: bulk exports go to its `data/exports`,
 whatever folder is picked. Debug builds accept Rune's agent flags
@@ -280,3 +289,6 @@ Release builds of the workspace leave the demo out.
   Read's partition column; send 10 Paced at 1,000 ms (about one a second in Read) and Cancel
   during a wait (stops within a second); close the window during a long send (the app quits
   after the batch in flight).
+- Template: turn it on with an order template, Regenerate a few samples, send 5 and see five
+  different values in Read; type a broken placeholder and press Send (the editor and caption
+  mark it); type into a large template with `RUNE_COMMIT_BUDGET_MS=8` (no commit over budget).

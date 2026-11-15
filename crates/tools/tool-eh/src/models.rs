@@ -2,11 +2,13 @@
 //! outcomes.
 
 use common_utils::string_utils::SecretString;
+use mock_data_utils::template::Template;
 use shared_eventhub_core::filters::CaptureFilters;
 use shared_eventhub_core::producer::{OutgoingEvent, SendPlan};
 use shared_eventhub_persistence::config::{ExportSettings, SensitiveValues, ToolConfig};
 use std::env::VarError;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Environment variable holding the event hub connection string.
 pub const CONNECTION_STRING_ENV: &str = "EH_CONNECTION_STRING";
@@ -68,6 +70,8 @@ pub enum EhCommand {
     Read(Box<ReadJob>),
     Export(Box<ExportJob>),
     Send(Box<SendJob>),
+    /// `send --dry-run`: render the template, send nothing.
+    DryRun(Box<DryRunJob>),
 }
 
 /// Where the body of `eh send` came from.
@@ -93,8 +97,23 @@ pub struct SendJob {
     pub working_dir: PathBuf,
     pub config_source: ConfigSource,
     pub plan: SendPlan,
+    /// The body as given (the template's source under `--template`) and the
+    /// content type.
     pub event: OutgoingEvent,
+    /// With `--template`, the body compiled; each event is a fresh render.
+    pub template: Option<Arc<Template>>,
     pub body_source: BodySource,
+}
+
+/// A dry run: `count` renders of a template, printed instead of sent.
+/// `Debug` never shows the template's text.
+#[derive(Clone, Debug)]
+pub struct DryRunJob {
+    pub template: Arc<Template>,
+    pub count: u64,
+    pub body_source: BodySource,
+    /// The template source's size in bytes.
+    pub body_len: usize,
 }
 
 /// A capture run: the merged configuration (flags over `config.json` over
