@@ -548,6 +548,8 @@ fn send_args(target: TargetArgs) -> SendArgs {
         content_type: None,
         interval_ms: None,
         yes: false,
+        template: false,
+        dry_run: false,
     }
 }
 
@@ -559,6 +561,7 @@ fn send(
     send_job(
         args,
         (b"x".to_vec(), BodySource::Inline),
+        None,
         recalled,
         environment,
         PathBuf::from("."),

@@ -1038,6 +1038,165 @@ fn a_send_with_issues_moves_focus_into_the_first_invalid_field() {
     assert!(rt.state.send.composer.count.focused);
 }
 
+fn template_state(body: &str) -> (AppState, Arc<AtomicUsize>) {
+    let (mut s, sends) = send_state();
+    s.send.composer.body.replace_text(body);
+    s.send.composer.set_template(true);
+    (s, sends)
+}
+
+#[test]
+fn pasting_into_the_body_with_template_on_recompiles_it() {
+    let (s, _) = template_state("");
+    let mut rt = send_runtime(s, (1280.0, 800.0));
+    press(&mut rt, crate::views::send::BODY_KEY);
+
+    rt.paste("{{random.integer min=4 max=4}}");
+    settle(&mut rt);
+
+    let template = rt.state.send.composer.template().template();
+    assert_eq!(template.map(|t| t.placeholder_count()), Some(1));
+    assert!(has_text(&rt, "4"));
+}
+
+#[test]
+fn return_in_the_body_with_template_on_recompiles_it() {
+    let (s, _) = template_state("{{nope}}");
+    let mut rt = send_runtime(s, (1280.0, 800.0));
+    rt.state.send.composer.body = rune::TextEdit::new("{{random.integer}}");
+    let stale = rt.state.send.composer.template().issue().is_some();
+    press(&mut rt, crate::views::send::BODY_KEY);
+    press_key(&mut rt, Key::End);
+
+    press_key(&mut rt, Key::Enter);
+
+    assert!(stale);
+    assert_eq!(rt.state.send.composer.body.text, "{{random.integer}}\n");
+    assert!(rt.state.send.composer.template().template().is_some());
+}
+
+#[test]
+fn the_switch_shows_and_removes_the_sample_block() {
+    let (s, _) = send_state();
+    let mut rt = runtime(s);
+    let hidden = has_key(&rt, crate::views::send::template::SAMPLE_KEY);
+
+    press(&mut rt, crate::views::send::template::SWITCH_KEY);
+    let shown = has_key(&rt, crate::views::send::template::SAMPLE_KEY);
+    press(&mut rt, crate::views::send::template::SWITCH_KEY);
+
+    assert!(!hidden && shown);
+    assert!(!row_visible(&rt, crate::views::send::template::SAMPLE_KEY));
+}
+
+#[test]
+fn the_caption_row_keeps_its_height_when_the_switch_turns_on() {
+    let (s, _) = send_state();
+    let mut rt = runtime(s);
+    let off = rect(&rt, "send-body-caption")[3];
+
+    press(&mut rt, crate::views::send::template::SWITCH_KEY);
+    let on = rect(&rt, "send-body-caption")[3];
+
+    assert_eq!(off, on);
+}
+
+#[test]
+fn the_placeholder_list_opens_and_mod_enter_closes_it() {
+    let (s, _) = template_state("{{person.email}}");
+    let mut rt = send_runtime(s, (1280.0, 800.0));
+
+    press(&mut rt, crate::views::send::template::PLACEHOLDERS_KEY);
+    let listed = has_text(&rt, "person.first-name");
+    command(&mut rt, Key::Enter);
+
+    assert!(listed);
+    assert!(!rt.state.send.composer.placeholders_open);
+}
+
+#[test]
+fn the_placeholder_list_stays_inside_the_smallest_window() {
+    let (mut s, _) = template_state("{{person.email}}");
+    s.send.composer.placeholders_open = true;
+
+    let rt = runtime_at(s, WINDOW_MIN);
+
+    let [_, y, _, height] = rect(&rt, crate::views::send::template::PLACEHOLDER_LIST_KEY);
+    assert!(
+        y >= 0.0 && y + height <= WINDOW_MIN.1,
+        "list at {y}+{height}"
+    );
+}
+
+#[test]
+fn an_invalid_template_shows_its_reason_muted_before_any_press() {
+    let (s, _) = template_state("{{person.fullname}}");
+
+    let rt = runtime(s);
+
+    assert!(has_text(
+        &rt,
+        "Line 1, column 1: unknown type 'person.fullname'"
+    ));
+    assert!(!has_text(&rt, "Fix 1 field to send"));
+}
+
+#[test]
+fn a_template_issue_at_the_smallest_size_keeps_eight_editor_lines_and_send_on_screen() {
+    let (mut s, _) = template_state("{{person.fullname}}");
+    s.apply(Input::Send(crate::send::SendInput::SendPressed));
+
+    let rt = runtime_at(s, WINDOW_MIN);
+
+    let editor = rect(&rt, crate::views::send::BODY_KEY)[3];
+    let [_, y, _, height] = rect(&rt, crate::views::send::SEND_BUTTON_KEY);
+    assert!(has_text(&rt, "Fix 1 field to send"));
+    assert!(
+        editor >= 8.0 * crate::design::tokens::TYPE_MONO.line_px(),
+        "editor {editor}"
+    );
+    assert!(
+        y >= 0.0 && y + height <= WINDOW_MIN.1,
+        "Send at {y}+{height}"
+    );
+}
+
+#[rstest::rstest]
+#[case::render_fails(
+    "{{internet.password length=1048576}}x",
+    "This sample failed: the rendered body passes the 1048576-byte limit"
+)]
+#[case::cut("{{internet.password length=20000}}", "Sample cut at 16 KB")]
+#[case::over_cap(
+    &"x".repeat(crate::send::compose::BODY_CAP + 1),
+    "No sample for bodies over 1 MB"
+)]
+#[case::no_placeholders("plain", "The template has no placeholders; every event is the same")]
+#[case::inert_locale(
+    "{{random.integer locale=pt-br}}",
+    "Line 1, column 1: locale=pt-br has no effect on random.integer"
+)]
+fn the_sample_block_says_what_it_shows(#[case] body: &str, #[case] line: &str) {
+    let (s, _) = template_state(body);
+
+    let rt = runtime(s);
+
+    assert!(has_text(&rt, line), "missing {line:?}");
+}
+
+#[test]
+fn regenerate_draws_a_new_sample() {
+    let (s, _) = template_state("{{internet.password}}");
+    let mut rt = runtime(s);
+
+    press(&mut rt, crate::views::send::template::REGENERATE_KEY);
+
+    assert!(matches!(
+        rt.state.send.composer.template(),
+        crate::send::template::TemplateState::Ready { generation: 1, .. }
+    ));
+}
+
 #[test]
 fn the_edit_button_opens_the_target_only_sheet() {
     let (s, _) = send_state();

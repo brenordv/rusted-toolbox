@@ -203,7 +203,7 @@ fn the_composer_maps_pacing_to_the_plan(
     send.composer.pacing = choice;
     send.composer.interval.replace_text(interval);
 
-    let (plan, _) = send.composer.compose(true).unwrap();
+    let plan = send.composer.compose(true).unwrap().plan;
 
     assert_eq!(
         plan.pacing(),
@@ -225,7 +225,7 @@ fn the_composer_maps_routing_content_type_and_body() {
     send.composer.body.replace_text("{\"orderId\": 1}");
     send.composer.count.replace_text(" 5 ");
 
-    let (plan, event) = send.composer.compose(true).unwrap();
+    let Composed { plan, event, .. } = send.composer.compose(true).unwrap();
 
     assert_eq!(
         plan.routing(),
@@ -240,7 +240,7 @@ fn the_composer_maps_routing_content_type_and_body() {
 fn an_empty_content_type_and_body_are_allowed() {
     let send = ready();
 
-    let (_, event) = send.composer.compose(true).unwrap();
+    let event = send.composer.compose(true).unwrap().event;
 
     assert_eq!(event.content_type, None);
     assert!(event.body.is_empty());
@@ -317,6 +317,170 @@ fn a_body_at_the_cap_has_no_issue() {
     send.composer.body.replace_text("x".repeat(BODY_CAP));
 
     assert!(send.composer.issues(true).is_empty());
+}
+
+fn with_template(body: &str) -> SendState {
+    let mut send = ready();
+    send.composer.body.replace_text(body);
+    send.composer.set_template(true);
+    send
+}
+
+#[test]
+fn a_template_issue_shows_only_after_a_press_and_blocks_it() {
+    let mut send = with_template("{\"n\": {{person.fullname}}}");
+    let before = send.shown_issues();
+
+    let form = form();
+    let out = send.apply(SendInput::SendPressed, cx(&form));
+
+    assert!(before.is_empty());
+    assert!(out.effects.is_empty());
+    assert_eq!(
+        send.shown_issues().body.as_deref(),
+        Some("Line 1, column 7: unknown type 'person.fullname'")
+    );
+    assert_eq!(send.take_focus(), Some(SendField::Body));
+}
+
+#[test]
+fn fixing_the_template_clears_its_issue_and_lets_the_press_through() {
+    let mut send = with_template("{{person.fullname}}");
+    let form = form();
+    send.apply(SendInput::SendPressed, cx(&form));
+
+    send.composer.body.replace_text("{{person.full-name}}");
+    send.composer.refresh_template();
+    let shown = send.shown_issues();
+    let out = send.apply(SendInput::SendPressed, cx(&form));
+
+    assert!(shown.is_empty());
+    assert_eq!(out.effects.len(), 1);
+}
+
+#[test]
+fn turning_the_switch_off_clears_the_template_issue() {
+    let mut send = with_template("{{person.fullname}}");
+
+    send.composer.set_template(false);
+
+    assert!(send.composer.issues(true).is_empty());
+    assert!(!send.composer.template().is_on());
+}
+
+#[test]
+fn a_template_body_over_the_cap_has_the_cap_issue_not_a_compile_issue() {
+    let send = with_template(&format!("{{{{nope}}}}{}", "x".repeat(BODY_CAP)));
+
+    let issues = send.composer.issues(true);
+
+    assert_eq!(
+        issues.body.as_deref(),
+        Some("Bodies over 1 MB don't fit this editor; use eh send --body-file")
+    );
+    assert_eq!(issues.len(), 1);
+}
+
+#[rstest]
+#[case::on(true, Some(2))]
+#[case::off(false, None)]
+fn the_request_carries_the_template_only_while_the_switch_is_on(
+    #[case] on: bool,
+    #[case] placeholders: Option<usize>,
+) {
+    let mut send = ready();
+    send.composer
+        .body
+        .replace_text("{{person.email}} {{random.integer}}");
+    send.composer.set_template(on);
+    let form = form();
+
+    let out = send.apply(SendInput::SendPressed, cx(&form));
+
+    let [SendEffect::StartSend(request)] = out.effects.as_slice() else {
+        panic!("expected StartSend, got {:?}", out.effects);
+    };
+    assert_eq!(
+        request.template.as_ref().map(|t| t.placeholder_count()),
+        placeholders
+    );
+    assert_eq!(request.event.body, b"{{person.email}} {{random.integer}}");
+}
+
+#[test]
+fn a_sample_that_fails_to_render_does_not_block_the_press() {
+    let mut send = with_template("{{internet.password length=1048576}}x");
+    let form = form();
+
+    let out = send.apply(SendInput::SendPressed, cx(&form));
+
+    assert_eq!(out.effects.len(), 1);
+}
+
+#[test]
+fn a_press_closes_the_placeholder_list_even_when_it_is_ignored() {
+    let mut send = with_template("{{person.email}}");
+    send.composer.placeholders_open = true;
+    let form = form();
+    let ignored = PressContext {
+        sheet_open: true,
+        ..cx(&form)
+    };
+
+    let out = send.apply(SendInput::SendPressed, ignored);
+
+    assert!(!send.composer.placeholders_open);
+    assert!(out.changed && out.effects.is_empty());
+}
+
+#[rstest]
+#[case::over_cap_shrinks_to_a_template("{{random.integer}}", Some(1), false)]
+#[case::over_cap_shrinks_to_a_broken_template("{{nope}}", None, true)]
+fn an_edit_that_brings_an_over_cap_body_under_the_cap_recompiles_it(
+    #[case] body: &str,
+    #[case] placeholders: Option<usize>,
+    #[case] invalid: bool,
+) {
+    let mut send = with_template(&"x".repeat(BODY_CAP + 1));
+    let over_cap = matches!(
+        send.composer.template(),
+        super::template::TemplateState::OverCap
+    );
+
+    send.composer.body.replace_text(body);
+    send.composer.refresh_template();
+
+    let state = send.composer.template();
+    assert!(over_cap);
+    assert_eq!(
+        state.template().map(|t| t.placeholder_count()),
+        placeholders
+    );
+    assert_eq!(state.issue().is_some(), invalid);
+}
+
+#[test]
+fn an_edit_while_the_switch_is_off_compiles_nothing() {
+    let mut send = ready();
+    send.composer.body.replace_text("{{nope}}");
+
+    send.composer.refresh_template();
+
+    assert!(!send.composer.template().is_on());
+    assert!(send.composer.issues(true).is_empty());
+}
+
+#[test]
+fn regenerate_bumps_the_generation_of_a_compiled_template() {
+    let mut send = with_template("{{internet.password}}");
+
+    let rendered = send.composer.regenerate();
+
+    assert!(rendered);
+    assert!(matches!(
+        send.composer.template(),
+        super::template::TemplateState::Ready { generation: 1, .. }
+    ));
 }
 
 #[test]

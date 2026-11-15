@@ -1,12 +1,15 @@
 //! The composer: the event body, how many to send, where they go, and how fast, checked
 //! through core's own constructors.
 
+use super::template::TemplateState;
 use crate::read::rows::display_line;
 use common_utils::string_utils::format_thousands;
+use mock_data_utils::template::Template;
 use rune::TextEdit;
 use shared_eventhub_core::producer::{
     MAX_SEND_COUNT, MAX_SEND_INTERVAL_MS, OutgoingEvent, Pacing, Routing, SendPlan,
 };
+use std::sync::Arc;
 use std::time::Duration;
 
 /// The largest body the editor sends, in bytes.
@@ -82,6 +85,8 @@ pub struct SendIssues {
     pub partition_key: Option<String>,
     pub count: Option<String>,
     pub interval: Option<String>,
+    /// A body over the editor's cap, or, under Template, a body that does not compile (an
+    /// over-cap body is never compiled, so the two never meet).
     pub body: Option<String>,
 }
 
@@ -130,6 +135,12 @@ pub struct Composer {
     pub routing_open: bool,
     /// Whether the pacing picker's list shows.
     pub pacing_open: bool,
+    /// The Template switch and what the body compiled to; written by
+    /// [`Composer::refresh_template`], [`Composer::set_template`], and
+    /// [`Composer::regenerate`] only.
+    template: TemplateState,
+    /// Whether the placeholder list shows.
+    pub placeholders_open: bool,
 }
 
 impl std::fmt::Debug for Composer {
@@ -138,6 +149,7 @@ impl std::fmt::Debug for Composer {
             .field("body_len", &self.body.text.len())
             .field("routing", &self.routing)
             .field("pacing", &self.pacing)
+            .field("template", &self.template)
             .finish_non_exhaustive()
     }
 }
@@ -154,8 +166,19 @@ impl Default for Composer {
             interval: TextEdit::new(DEFAULT_INTERVAL_MS),
             routing_open: false,
             pacing_open: false,
+            template: TemplateState::Off,
+            placeholders_open: false,
         }
     }
+}
+
+/// What a valid composer sends: the plan, the event (the body as typed, which is the template's
+/// source when the switch is on), and the compiled template when there is one.
+#[derive(Debug)]
+pub struct Composed {
+    pub plan: SendPlan,
+    pub event: OutgoingEvent,
+    pub template: Option<Arc<Template>>,
 }
 
 /// A whole number typed as ASCII digits, spaces around it allowed; `None` for anything else,
@@ -183,6 +206,29 @@ fn interval_issue() -> String {
 }
 
 impl Composer {
+    /// The Template switch and what the body compiled to.
+    pub fn template(&self) -> &TemplateState {
+        &self.template
+    }
+
+    /// Recompiles the body after it changed, keeping the switch where it is.
+    pub fn refresh_template(&mut self) {
+        self.template = TemplateState::for_body(self.template.is_on(), &self.body.text);
+    }
+
+    /// Turns the Template switch on or off; turning it off closes the placeholder list.
+    pub fn set_template(&mut self, on: bool) {
+        self.template = TemplateState::for_body(on, &self.body.text);
+        if !on {
+            self.placeholders_open = false;
+        }
+    }
+
+    /// Renders a new sample of a compiled template; true when there was one.
+    pub fn regenerate(&mut self) -> bool {
+        self.template.regenerate()
+    }
+
     fn routing(&self) -> Option<Routing> {
         match self.routing {
             RoutingChoice::Automatic => Some(Routing::automatic()),
@@ -205,8 +251,12 @@ impl Composer {
     ///
     /// # Errors
     /// Returns the issues of every part that is wrong.
-    pub fn compose(&self, target_ready: bool) -> Result<(SendPlan, OutgoingEvent), SendIssues> {
-        self.validate(target_ready).map(|plan| (plan, self.event()))
+    pub fn compose(&self, target_ready: bool) -> Result<Composed, SendIssues> {
+        self.validate(target_ready).map(|plan| Composed {
+            plan,
+            event: self.event(),
+            template: self.template.template().cloned(),
+        })
     }
 
     /// The plan the composer describes, or what is wrong with it, without copying the body.
@@ -237,7 +287,9 @@ impl Composer {
             partition_key: routing.is_none().then(|| KEY_ISSUE.to_owned()),
             count: (!count_ok).then(count_issue),
             interval: pacing.is_none().then(interval_issue),
-            body: (self.body.text.len() > BODY_CAP).then(|| BODY_ISSUE.to_owned()),
+            body: (self.body.text.len() > BODY_CAP)
+                .then(|| BODY_ISSUE.to_owned())
+                .or_else(|| self.template.issue().map(str::to_owned)),
         };
         match plan {
             Some(Ok(plan)) if issues.is_empty() => Ok(plan),

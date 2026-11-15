@@ -6,6 +6,7 @@ use shared_eventhub_persistence::config::{
     AuthMethodConfig, CredentialKindConfig, SensitiveValues, TargetConfig, ToolConfig,
 };
 use std::io::Cursor;
+use std::sync::Arc;
 use std::time::Duration;
 
 const HOSTILE: &str = "orders\r\u{1b}]52;c;cHduZWQ=\u{7}";
@@ -21,6 +22,8 @@ fn args(body: Option<&str>, body_file: Option<PathBuf>) -> SendArgs {
         content_type: None,
         interval_ms: None,
         yes: false,
+        template: false,
+        dry_run: false,
     }
 }
 
@@ -45,6 +48,7 @@ fn job(routing: Routing, pacing: Pacing, body_source: BodySource) -> SendJob {
             body: b"secret-body".to_vec(),
             content_type: Some("application/json".to_owned()),
         },
+        template: None,
         body_source,
     }
 }
@@ -190,6 +194,123 @@ fn hostile_config_values_are_escaped_in_the_send_header() {
     assert!(!header.contains('\u{1b}'), "{header:?}");
     assert!(!header.contains('\r'), "{header:?}");
     assert!(header.contains("\\u{1b}"), "{header:?}");
+}
+
+#[test]
+fn the_header_says_no_template_by_default() {
+    let job = job(Routing::automatic(), Pacing::batched(), BodySource::Inline);
+
+    let header = send_header(&job).join("\n");
+
+    assert!(header.contains("  - Template: no"), "{header}");
+}
+
+#[test]
+fn the_header_counts_the_templates_placeholders() {
+    let mut job = job(Routing::automatic(), Pacing::batched(), BodySource::Inline);
+    job.template = Some(Arc::new(
+        compile_template(b"{{person.email}} {{random.integer}}").unwrap(),
+    ));
+
+    let header = send_header(&job).join("\n");
+
+    assert!(
+        header.contains("  - Template: yes, 2 placeholders"),
+        "{header}"
+    );
+}
+
+#[test]
+fn the_dry_run_header_names_the_command_count_and_template() {
+    let job = DryRunJob {
+        template: Arc::new(compile_template(b"{{person.email}}").unwrap()),
+        count: 7,
+        body_source: BodySource::Stdin,
+        body_len: 16,
+    };
+
+    let header = dry_run_header(&job).join("\n");
+
+    assert!(header.contains("  - Command: send --dry-run"), "{header}");
+    assert!(header.contains("  - Count: 7"), "{header}");
+    assert!(header.contains("  - Body: stdin, 16 bytes"), "{header}");
+    assert!(
+        header.contains("  - Template: yes, 1 placeholder"),
+        "{header}"
+    );
+}
+
+#[test]
+fn a_template_body_that_is_not_utf8_names_the_offset() {
+    let error = compile_template(b"ok \xff rest").unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "The --template body is not UTF-8: the byte at offset 3 is not valid"
+    );
+}
+
+#[test]
+fn without_a_template_the_event_is_the_body_as_given() {
+    let event = OutgoingEvent {
+        body: b"{{person.email}}".to_vec(),
+        content_type: None,
+    };
+
+    let next = next_event(&event, None, RENDER_CAP).unwrap();
+
+    assert_eq!(next, event);
+}
+
+#[test]
+fn with_a_template_the_event_is_a_render_under_the_same_content_type() {
+    let template = compile_template(b"{\"n\": {{random.integer min=4 max=4}}}").unwrap();
+    let event = OutgoingEvent {
+        body: b"ignored".to_vec(),
+        content_type: Some("application/json".to_owned()),
+    };
+
+    let next = next_event(&event, Some(&template), RENDER_CAP).unwrap();
+
+    assert_eq!(next.body, b"{\"n\": 4}");
+    assert_eq!(next.content_type.as_deref(), Some("application/json"));
+}
+
+#[test]
+fn a_render_past_the_cap_fails_naming_the_placeholder_and_not_the_text() {
+    let template = compile_template(b"secret-literal {{internet.password length=64}}").unwrap();
+    let event = OutgoingEvent {
+        body: Vec::new(),
+        content_type: None,
+    };
+
+    let error = next_event(&event, Some(&template), 32).unwrap_err();
+
+    let rendered = format!("{error:#}");
+    assert!(
+        rendered.contains("line 1, column 16: internet.password"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("secret-literal"), "{rendered}");
+}
+
+#[test]
+fn a_template_with_no_placeholders_gets_a_notice() {
+    let template = compile_template(b"plain").unwrap();
+
+    assert_eq!(
+        template_notices(&template),
+        ["The template has no placeholders; every event is the same."]
+    );
+}
+
+#[test]
+fn an_inert_locale_gets_a_notice_and_a_plain_template_none() {
+    let inert = compile_template(b"{{random.integer locale=pt-br}}").unwrap();
+    let plain = compile_template(b"{{person.city}}").unwrap();
+
+    assert_eq!(template_notices(&inert).len(), 1);
+    assert!(template_notices(&plain).is_empty());
 }
 
 #[test]

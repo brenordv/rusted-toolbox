@@ -3,13 +3,15 @@
 
 pub mod compose;
 pub mod run;
+pub mod template;
 
 use crate::archive::bulk::CancelReason;
 use crate::form::ConnectForm;
 use crate::services::ConnectRequest;
 use crate::state::ToastKind;
 use chrono::{DateTime, Utc};
-use compose::{Composer, SendField, SendIssues};
+use compose::{Composed, Composer, SendField, SendIssues};
+use mock_data_utils::template::Template;
 use run::{Names, SendRun, ended_failed};
 use shared_eventhub_core::connection::target_names;
 use shared_eventhub_core::producer::{OutgoingEvent, SendEnd, SendPlan, SendSummary};
@@ -107,11 +109,13 @@ pub enum SendEffect {
 }
 
 /// Send `event` as `plan` says to the target `target` describes; results go back tagged `run`.
+/// With `template`, each event is a fresh render of it under `event`'s content type.
 #[derive(Debug)]
 pub struct SendRequest {
     pub run: u64,
     pub target: ConnectRequest,
     pub event: OutgoingEvent,
+    pub template: Option<Arc<Template>>,
     pub plan: SendPlan,
     pub cancel: Arc<AtomicBool>,
 }
@@ -191,6 +195,7 @@ impl SendState {
     }
 
     fn press(&mut self, cx: PressContext<'_>) -> SendOutcome {
+        let closed_placeholders = std::mem::replace(&mut self.composer.placeholders_open, false);
         if cx.sheet_open || cx.window_closed || self.run.is_running() {
             debug!(
                 sheet_open = cx.sheet_open,
@@ -198,9 +203,16 @@ impl SendState {
                 running = self.run.is_running(),
                 "Send ignored"
             );
-            return SendOutcome::default();
+            return SendOutcome {
+                changed: closed_placeholders,
+                ..SendOutcome::default()
+            };
         }
-        let (plan, event) = match self.composer.compose(self.destination.is_ready()) {
+        let Composed {
+            plan,
+            event,
+            template,
+        } = match self.composer.compose(self.destination.is_ready()) {
             Ok(composed) => composed,
             Err(issues) => {
                 debug!(
@@ -220,6 +232,7 @@ impl SendState {
             requested = plan.count(),
             partition_key = plan.routing().key().is_some(),
             pacing = %plan.pacing().describe(),
+            template = template.is_some(),
             "send started"
         );
         let (config, given) = cx.form.to_config();
@@ -240,6 +253,7 @@ impl SendState {
                     paths: cx.form.data_paths(),
                 },
                 event,
+                template,
                 plan,
                 cancel,
             })],

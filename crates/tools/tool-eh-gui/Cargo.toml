@@ -21,6 +21,7 @@ required-features = ["demo"]
 # Internal
 common-cli = { workspace = true }
 common-utils = { workspace = true }
+mock-data-utils = { workspace = true }
 shared-eventhub-core = { workspace = true }
 shared-eventhub-persistence = { workspace = true }
 

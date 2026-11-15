@@ -74,6 +74,27 @@ pub fn display_line(chars: impl Iterator<Item = char>) -> String {
         .collect()
 }
 
+/// `text` with its first letter capitalized, for a parser message shown on its own.
+pub fn sentence(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+/// The longest start of `text` that is at most `max` bytes and ends on a character boundary.
+pub fn cut_at_char_boundary(text: &str, max: usize) -> &str {
+    if text.len() <= max {
+        return text;
+    }
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
 /// What adding a message did to the rows on screen.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Pushed {

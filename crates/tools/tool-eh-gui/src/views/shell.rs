@@ -46,7 +46,7 @@ pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut V
     let content = match s.section {
         Section::Read => sections::read(s, k, dark, layer).key("read"),
         Section::Export => export::content(s, k, dark, layer).key("export"),
-        Section::Send => send::content(s, k).key("send"),
+        Section::Send => send::content(s, k, layer).key("send"),
     };
     let main = col()
         .key("content")

@@ -333,6 +333,7 @@ fn send_request(count: u64, pacing: shared_eventhub_core::producer::Pacing) -> S
             body: b"ping".to_vec(),
             content_type: None,
         },
+        template: None,
         plan: shared_eventhub_core::producer::SendPlan::new(
             count,
             shared_eventhub_core::producer::Routing::automatic(),

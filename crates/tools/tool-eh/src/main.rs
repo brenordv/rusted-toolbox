@@ -1,4 +1,5 @@
 mod cli_utils;
+mod dry_run;
 mod event_loop;
 mod export_app;
 mod models;
@@ -20,7 +21,7 @@ use tracing::error;
 /// Azure Event Hubs CLI.
 ///
 /// Parses the arguments and `config.json`, installs the Ctrl-C handler, and
-/// runs `read`, `export`, or `send`. Exit codes: 0 on success, 1 on any
+/// runs `read`, `export`, `send`, or a `send --dry-run`. Exit codes: 0 on success, 1 on any
 /// failure (including a partition that failed during a stopped run), 130
 /// when interrupted cleanly.
 #[tokio::main]
@@ -35,6 +36,7 @@ async fn main() {
         EhCommand::Read(job) => read_app::run(*job, &shutdown).await,
         EhCommand::Export(job) => export_app::run(*job, &shutdown).await,
         EhCommand::Send(job) => send_app::run(*job, &shutdown).await,
+        EhCommand::DryRun(job) => dry_run::run(*job, &shutdown),
     };
 
     match outcome {

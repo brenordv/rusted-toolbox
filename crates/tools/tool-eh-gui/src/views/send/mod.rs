@@ -1,11 +1,12 @@
 //! The Send section: the body editor over the action row that shows the run.
 
 pub mod sidebar;
+pub mod template;
 
 use crate::app::dispatch;
 use crate::design::tokens::{
-    ICON_SIZE, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION,
-    TYPE_LABEL,
+    CAPTION_ROW_HEIGHT, ICON_SIZE, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS, TYPE_BODY,
+    TYPE_BODY_NUM, TYPE_CAPTION, TYPE_LABEL,
 };
 use crate::design::{motion, parts};
 use crate::read::rows::display_line;
@@ -85,12 +86,14 @@ fn body_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
             ..Mods::default()
         } == key.mods;
     if newline {
-        s.send.composer.body.insert("\n");
+        let composer = &mut s.send.composer;
+        composer.body.insert("\n");
+        composer.refresh_template();
     }
     newline
 }
 
-pub fn content(s: &AppState, k: &Kit) -> El {
+pub fn content(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
     let send = &s.send;
     let issues = send.shown_issues();
     let bytes = send.composer.body.text.len();
@@ -104,11 +107,14 @@ pub fn content(s: &AppState, k: &Kit) -> El {
     let caption_row = row()
         .key("send-body-caption")
         .w_full()
+        .h(CAPTION_ROW_HEIGHT)
+        .gap(SPACE_LG)
         .center_y()
         .px(SPACE_LG)
-        .pt(SPACE_LG)
-        .pb(SPACE_SM)
+        .mt(SPACE_LG)
+        .mb(SPACE_SM)
         .child(text("Event body").font(TYPE_LABEL).color(k.c.text_base))
+        .child(template::switch_controls(s, k, layer))
         .child(spacer())
         .child(size);
     let editor = parts::body_editor(
@@ -118,6 +124,7 @@ pub fn content(s: &AppState, k: &Kit) -> El {
         issues.body.is_some(),
         |s: &mut AppState| &mut s.send.composer.body,
         body_keys,
+        |s: &mut AppState, _: &mut Tx| s.send.composer.refresh_template(),
     );
     let mut body = col()
         .key("send-body-area")
@@ -129,7 +136,10 @@ pub fn content(s: &AppState, k: &Kit) -> El {
         .pb(SPACE_LG)
         .child(editor);
     if let Some(issue) = &issues.body {
-        body = body.child(parts::issue(k, issue));
+        body = body.child(parts::issue(k, &display_line(issue.chars())));
+    }
+    if let Some(sample) = template::sample(s, k) {
+        body = body.child(parts::reveal(sample));
     }
     col()
         .key("send-content")

@@ -1,12 +1,14 @@
-//! `eh send` arguments, loading the body they name, and the run header.
+//! `eh send` arguments, loading the body they name, templates, and the run
+//! header.
 
 use crate::cli_utils::{DataArgs, TargetArgs, config_source_name, item};
-use crate::models::{BodySource, SendJob};
+use crate::models::{BodySource, DryRunJob, SendJob};
 use crate::progress::{describe_auth, display, target_label};
 use anyhow::Context;
 use clap::{ArgGroup, Args};
 use common_cli::header_format::format_config_item;
-use shared_eventhub_core::producer::{MAX_SEND_COUNT, MAX_SEND_INTERVAL_MS};
+use mock_data_utils::template::{OPTIONS_HELP, Template, placeholder_groups};
+use shared_eventhub_core::producer::{MAX_SEND_COUNT, MAX_SEND_INTERVAL_MS, OutgoingEvent};
 use std::convert::Infallible;
 use std::fmt;
 use std::io::Read;
@@ -16,6 +18,10 @@ use std::path::{Path, PathBuf};
 /// publication any Event Hubs tier accepts (20 MB on Dedicated). It guards
 /// memory; the SDK refuses events far smaller than this.
 pub(crate) const MAX_BODY_BYTES: u64 = 20 * 1024 * 1024;
+
+/// The largest body one template render may produce, the same 20 MiB as a
+/// body read from a file.
+pub(crate) const RENDER_CAP: usize = MAX_BODY_BYTES as usize;
 
 /// `eh send` arguments.
 #[derive(Args, Debug)]
@@ -72,6 +78,100 @@ pub(crate) struct SendArgs {
     /// again
     #[arg(long = "yes")]
     pub yes: bool,
+
+    /// Treat the body as a template: every {{type option=value}} placeholder
+    /// gets a fresh mock value in each event (see the list below)
+    #[arg(long = "template")]
+    pub template: bool,
+
+    /// Print the rendered events instead of sending them; needs no event hub
+    /// and reads no config.json
+    #[arg(
+        long = "dry-run",
+        requires = "template",
+        conflicts_with_all = ["save_config", "partition_key", "interval_ms", "yes"]
+    )]
+    pub dry_run: bool,
+}
+
+/// The `after_long_help` text of `eh send`: the placeholder names by group
+/// and the option words.
+pub(crate) fn template_help() -> String {
+    let mut help =
+        String::from("Template placeholders (with --template; \\{{ writes a literal {{):\n");
+    for (prefix, commands) in placeholder_groups() {
+        help.push_str(&format!("  {prefix}: {}\n", commands.join(", ")));
+    }
+    help.push_str("\nPlaceholder options:\n");
+    for line in OPTIONS_HELP.lines() {
+        help.push_str(&format!("  {line}\n"));
+    }
+    help
+}
+
+/// Compiles `body` as a template.
+///
+/// # Errors
+/// Fails when `body` is not UTF-8, naming the offset of the first bad byte,
+/// and when the template does not compile, naming the line and column.
+pub(crate) fn compile_template(body: &[u8]) -> anyhow::Result<Template> {
+    let source = std::str::from_utf8(body).map_err(|error| {
+        anyhow::anyhow!(
+            "The --template body is not UTF-8: the byte at offset {} is not valid",
+            error.valid_up_to()
+        )
+    })?;
+    Template::compile(source).context("The --template body does not compile")
+}
+
+/// The event to send: `event` as given, or with `template` a fresh render
+/// of it (at most `cap` bytes) under `event`'s content type.
+///
+/// # Errors
+/// Fails when the render fails; the error names the placeholder by its
+/// position and type, never the template's text.
+pub(crate) fn next_event(
+    event: &OutgoingEvent,
+    template: Option<&Template>,
+    cap: usize,
+) -> anyhow::Result<OutgoingEvent> {
+    match template {
+        Some(template) => Ok(OutgoingEvent {
+            body: template.render(cap)?.into_bytes(),
+            content_type: event.content_type.clone(),
+        }),
+        None => Ok(event.clone()),
+    }
+}
+
+/// The stderr notices a template run starts with, escaped: a template with
+/// no placeholders, and each locale that has no effect.
+pub(crate) fn template_notices(template: &Template) -> Vec<String> {
+    let mut notices = Vec::new();
+    if template.placeholder_count() == 0 {
+        notices.push("The template has no placeholders; every event is the same.".to_owned());
+    }
+    notices.extend(template.inert_locale_notes().iter().map(display));
+    notices
+}
+
+fn template_line(template: Option<&Template>) -> String {
+    match template {
+        Some(template) => match template.placeholder_count() {
+            1 => "yes, 1 placeholder".to_owned(),
+            count => format!("yes, {count} placeholders"),
+        },
+        None => "no".to_owned(),
+    }
+}
+
+fn body_line(source: &BodySource, bytes: usize) -> String {
+    let source = match source {
+        BodySource::Inline => "--body".to_owned(),
+        BodySource::File(path) => format!("file {}", display(path.display().to_string())),
+        BodySource::Stdin => "stdin".to_owned(),
+    };
+    format!("{source}, {bytes} bytes")
 }
 
 /// Reads the body `args` names: `--body` as UTF-8 bytes, `--body-file` from
@@ -147,11 +247,6 @@ pub(crate) fn send_header(job: &SendJob) -> Vec<String> {
         Some(interval) => format!("one event every {} ms", interval.as_millis()),
         None => "batched".to_owned(),
     };
-    let source = match &job.body_source {
-        BodySource::Inline => "--body".to_owned(),
-        BodySource::File(path) => format!("file {}", display(path.display().to_string())),
-        BodySource::Stdin => "stdin".to_owned(),
-    };
     vec![
         item("Command", "send"),
         format_config_item("Target", target_label(&config.target)),
@@ -160,13 +255,24 @@ pub(crate) fn send_header(job: &SendJob) -> Vec<String> {
         item("Count", job.plan.count()),
         format_config_item("Routing", routing),
         item("Pacing", pacing),
-        format_config_item("Body", format!("{source}, {} bytes", job.event.body.len())),
+        format_config_item("Body", body_line(&job.body_source, job.event.body.len())),
+        item("Template", template_line(job.template.as_deref())),
         item(
             "Content type",
             job.event.content_type.as_deref().unwrap_or("none"),
         ),
         item("Save config", job.save_config),
         item("config.json", config_source_name(job.config_source)),
+    ]
+}
+
+/// The `--app-header` lines for a dry run.
+pub(crate) fn dry_run_header(job: &DryRunJob) -> Vec<String> {
+    vec![
+        item("Command", "send --dry-run"),
+        item("Count", job.count),
+        format_config_item("Body", body_line(&job.body_source, job.body_len)),
+        item("Template", template_line(Some(&job.template))),
     ]
 }
 

@@ -42,6 +42,8 @@ struct FakePort {
     closing: Closing,
     closed: AtomicUsize,
     seen_pacing: Mutex<Option<Pacing>>,
+    /// The placeholder count of the template the send received, when it received one.
+    seen_placeholders: Mutex<Option<usize>>,
 }
 
 impl FakePort {
@@ -55,6 +57,7 @@ impl FakePort {
             closing: Closing::Closes,
             closed: AtomicUsize::new(0),
             seen_pacing: Mutex::new(None),
+            seen_placeholders: Mutex::new(None),
         }
     }
 }
@@ -108,10 +111,12 @@ impl SendPort for FakePort {
         _producer: &'a u32,
         plan: &'a SendPlan,
         _event: &'a OutgoingEvent,
+        template: Option<&'a Template>,
         _cancel: &'a AtomicBool,
         mut progress: impl FnMut(&SendProgress) + Send + 'a,
     ) -> impl Future<Output = SendSummary> + Send + 'a {
         *self.seen_pacing.lock().unwrap() = Some(plan.pacing());
+        *self.seen_placeholders.lock().unwrap() = template.map(Template::placeholder_count);
         let sending = self.sending;
         async move {
             let (sent, end, gap) = match sending {
@@ -177,6 +182,7 @@ fn request(pacing: Pacing) -> SendRequest {
             body: b"ping".to_vec(),
             content_type: None,
         },
+        template: None,
         plan: SendPlan::new(3, Routing::automatic(), pacing).unwrap(),
         cancel: Arc::new(AtomicBool::new(false)),
     }
@@ -261,6 +267,22 @@ async fn the_plan_reaches_the_send_with_its_pacing() {
     let (_, port) = run(FakePort::new(Sending::Completes(3)), request(pacing)).await;
 
     assert_eq!(*port.seen_pacing.lock().unwrap(), Some(pacing));
+}
+
+#[rstest::rstest]
+#[case::with_a_template(Some("{{person.email}} {{random.integer}}"), Some(2))]
+#[case::without_one(None, None)]
+#[tokio::test(start_paused = true)]
+async fn the_request_template_reaches_the_send(
+    #[case] source: Option<&str>,
+    #[case] expected: Option<usize>,
+) {
+    let mut request = request(Pacing::batched());
+    request.template = source.map(|source| Arc::new(Template::compile(source).unwrap()));
+
+    let (_, port) = run(FakePort::new(Sending::Completes(3)), request).await;
+
+    assert_eq!(*port.seen_placeholders.lock().unwrap(), expected);
 }
 
 #[tokio::test(start_paused = true)]

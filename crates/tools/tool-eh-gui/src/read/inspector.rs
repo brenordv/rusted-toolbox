@@ -2,7 +2,7 @@
 //! exporting one message. Each section owns one [`InspectorState`].
 
 use super::Selected;
-use super::rows::key_string;
+use super::rows::{cut_at_char_boundary, key_string};
 use crate::design::tokens::{INSPECTOR_MAX, INSPECTOR_MIN, INSPECTOR_WIDTH};
 use crate::state::{ListSection, ToastKind};
 use chrono::{DateTime, TimeDelta, Utc};
@@ -216,16 +216,12 @@ pub fn shown_body(body: &str) -> (&str, Option<String>) {
     if body.len() <= BODY_DISPLAY_CAP {
         return (body, None);
     }
-    let mut end = BODY_DISPLAY_CAP;
-    while !body.is_char_boundary(end) {
-        end -= 1;
-    }
     let caption = format!(
         "Showing the first {}. Copy body copies all {}.",
         format_bytes_to_string(BODY_DISPLAY_CAP as u64),
         format_bytes_to_string(body.len() as u64)
     );
-    (&body[..end], Some(caption))
+    (cut_at_char_boundary(body, BODY_DISPLAY_CAP), Some(caption))
 }
 
 /// `message` as pretty JSON, with its own field names.

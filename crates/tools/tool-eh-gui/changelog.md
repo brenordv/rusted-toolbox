@@ -10,6 +10,10 @@
   Ctrl/Cmd+1..3 pick a section. One producer per send, closed at the end; a send that does not
   stop within 30 s of a cancel is reported. Closing the window cancels a send and waits for it;
   a failed one reopens the window. Demo scenarios `send` and `send-paced`.
+- A Template switch on the Send body: `{{type option=value}}` placeholders get fresh mock values
+  in every event (mock-data-utils). A placeholder list beside the switch, a fixed six-line
+  Sample block with Regenerate, the compile error's line and column in the sample before any
+  press and as a field issue after one. Demo scenario `send-template`.
 - Every opening of the secrets file goes through one gate, so Save config, Connect, and Send
   never collide on its lock (Connect during a save is no longer refused).
 - Initial release (in progress): the window shell on Rune. A toolbar with the Read and Export

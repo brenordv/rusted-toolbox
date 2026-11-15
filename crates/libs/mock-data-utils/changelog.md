@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+- New `template` module: `Template::compile` turns text with `{{type option=value}}`
+  placeholders (`\{{` for a literal `{{`) into a template, checking every placeholder's type and
+  options up front; errors start with the placeholder's line and column and quote at most 40
+  characters. `render(max_bytes)` produces one instance with fresh values, failing past the cap
+  with an error that names the placeholder by position and type, never the template's text. At
+  most 100,000 placeholders per template. `placeholder_groups()` and `OPTIONS_HELP` describe the
+  syntax for help screens.
+- `length` is capped at 1 MiB (`MAX_LENGTH`) for `internet.password` and
+  `commerce.product-description`; a larger value is refused instead of attempting an allocation
+  big enough to abort the process. `mock internet.password -n 2000000` now exits 1.
+- `DataType::ALL`, `DataType::command()` (the dotted name), and `PartialEq`/`Eq` on `DataType`;
+  `from_command` looks names up in `ALL`.
+- `locale_is_inert`, moved here from tool-mock.
+
 ## 3.0.0
 - BREAKING: `MockOptions` gained a `locale: Locale` field, so literal construction needs the
   new field (use `Locale::default()` for the old behavior; every existing generator output is

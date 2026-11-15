@@ -76,6 +76,8 @@ pub enum Scenario {
     Send,
     /// The Send section sending 10 events one a second.
     SendPaced,
+    /// The Send section with Template on: an order template, idle, with its sample.
+    SendTemplate,
 }
 
 /// How fast a scenario's hub produces messages.
@@ -98,7 +100,7 @@ impl Pace {
 }
 
 impl Scenario {
-    const NAMES: [(&'static str, Scenario); 14] = [
+    const NAMES: [(&'static str, Scenario); 15] = [
         ("live", Self::Live),
         ("burst", Self::Burst),
         ("quiet", Self::Quiet),
@@ -113,6 +115,7 @@ impl Scenario {
         ("seeded-export", Self::SeededExport),
         ("send", Self::Send),
         ("send-paced", Self::SendPaced),
+        ("send-template", Self::SendTemplate),
     ];
 
     /// The scenario named `name`.
@@ -161,7 +164,8 @@ impl Scenario {
             | Self::SeededSearch
             | Self::SeededExport
             | Self::Send
-            | Self::SendPaced => false,
+            | Self::SendPaced
+            | Self::SendTemplate => false,
         }
     }
 
@@ -170,7 +174,7 @@ impl Scenario {
     /// sends count up.
     pub fn ticks(self) -> bool {
         match self {
-            Self::SeededExport | Self::Send | Self::SendPaced => true,
+            Self::SeededExport | Self::Send | Self::SendPaced | Self::SendTemplate => true,
             Self::Live
             | Self::Burst
             | Self::Quiet
@@ -218,7 +222,8 @@ impl Scenario {
             | Self::SeededSearch
             | Self::SeededExport
             | Self::Send
-            | Self::SendPaced => steady,
+            | Self::SendPaced
+            | Self::SendTemplate => steady,
         }
     }
 
@@ -290,6 +295,12 @@ pub fn initial_state(
             state.send.composer.pacing = PacingChoice::Paced;
             dispatch(&mut state, Input::Send(SendInput::SendPressed));
         }
+        Scenario::SendTemplate => {
+            compose_demo_send(&mut state, "100");
+            let composer = &mut state.send.composer;
+            composer.body.replace_text(ORDER_TEMPLATE);
+            composer.set_template(true);
+        }
         Scenario::Live
         | Scenario::Burst
         | Scenario::Quiet
@@ -300,6 +311,11 @@ pub fn initial_state(
     }
     state
 }
+
+/// An order body whose id, customer, email, and time are fresh in every event.
+const ORDER_TEMPLATE: &str = "{\n  \"orderId\": {{random.integer min=1000 max=9999}},\n  \
+    \"customer\": \"{{person.full-name}}\",\n  \"email\": \"{{person.email}}\",\n  \
+    \"placedAt\": \"{{random.datetime past}}\"\n}";
 
 /// The Send section with a JSON order body and `count` events.
 fn compose_demo_send(state: &mut AppState, count: &str) {
