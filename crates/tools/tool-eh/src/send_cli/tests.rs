@@ -241,6 +241,30 @@ fn the_dry_run_header_names_the_command_count_and_template() {
 }
 
 #[test]
+fn the_dry_run_header_counts_clock_placeholders() {
+    let job = DryRunJob {
+        template: Arc::new(compile_template(b"{{now}} {{utc-now}}").unwrap()),
+        count: 1,
+        body_source: BodySource::Inline,
+        body_len: 19,
+    };
+
+    let header = dry_run_header(&job).join("\n");
+
+    assert!(
+        header.contains("  - Template: yes, 2 placeholders"),
+        "{header}"
+    );
+}
+
+#[test]
+fn a_template_of_only_now_gets_no_notice() {
+    let template = compile_template(b"{\"at\": \"{{now}}\"}").unwrap();
+
+    assert!(template_notices(&template).is_empty());
+}
+
+#[test]
 fn a_template_body_that_is_not_utf8_names_the_offset() {
     let error = compile_template(b"ok \xff rest").unwrap_err();
 

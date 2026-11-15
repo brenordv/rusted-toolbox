@@ -202,10 +202,11 @@ the SDK client does not reliably close its connection.
 - The closure gets each event's zero-based index and builds its
   `OutgoingEvent` (body and content type); `OutgoingEvent`'s `Debug` shows the
   body length only. The free function `producer::next_event(&event, template,
-  cap)` covers a fixed body or a `mock_data_utils` template rendered fresh per
-  event: pass `|_| producer::next_event(&event, template, cap)`. Without a
-  template it returns `event` as given; with one, a render of at most `cap`
-  bytes under `event`'s content type.
+  cap, now)` covers a fixed body or a `mock_data_utils` template rendered fresh
+  per event: pass `|_| producer::next_event(&event, template, cap, Utc::now())`.
+  Without a template it returns `event` as given; with one, a render of at most
+  `cap` bytes under `event`'s content type, with `now` as the time its
+  `{{now}}` and `{{utc-now}}` placeholders show.
 - `SendPlan::new(count, routing, pacing)` takes 1 to 1,000,000 events.
   `Routing::automatic()` lets the service pick partitions;
   `Routing::partition_key(key)` sends every event with that key (one

@@ -80,7 +80,8 @@ pub(crate) struct SendArgs {
     pub yes: bool,
 
     /// Treat the body as a template: every {{type option=value}} placeholder
-    /// gets a fresh mock value in each event (see the list below)
+    /// gets a fresh mock value in each event, {{now}} and {{utc-now}} the time
+    /// the event is built (see the list below)
     #[arg(long = "template")]
     pub template: bool,
 

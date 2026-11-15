@@ -1,4 +1,5 @@
 use super::*;
+use chrono::SubsecRound;
 
 fn ready(body: &str) -> TemplateState {
     TemplateState::for_body(true, body)
@@ -34,6 +35,20 @@ fn a_body_that_compiles_is_ready_with_a_first_sample() {
     assert_eq!(template.placeholder_count(), 1);
     assert_eq!(sample.as_deref(), Ok("n=3"));
     assert_eq!(*generation, 0);
+}
+
+#[test]
+fn a_utc_now_sample_shows_the_time_it_was_rendered() {
+    let before = Utc::now().trunc_subsecs(3);
+
+    let state = ready("{{utc-now}}");
+
+    let after = Utc::now();
+    let TemplateState::Ready { sample, .. } = &state else {
+        panic!("expected Ready, got {state:?}");
+    };
+    let at = chrono::DateTime::parse_from_rfc3339(sample.as_deref().unwrap()).unwrap();
+    assert!(before <= at && at <= after, "{sample:?}");
 }
 
 #[test]

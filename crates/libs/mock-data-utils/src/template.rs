@@ -1,10 +1,12 @@
 //! Message templates: text with `{{type option=value}}` placeholders that each render to a
-//! fresh mock value.
+//! fresh value.
 //!
 //! A placeholder names a data type by its command (`{{person.email}}`) and takes options as
 //! space-separated words (`{{random.integer min=1 max=6}}`, `{{random.date past}}`). `\{{`
 //! writes a literal `{{`; everything else outside a placeholder, `}}` included, is copied as
-//! written. Values are inserted as generated, with no escaping.
+//! written. Values are inserted as generated, with no escaping. `{{now}}` and `{{utc-now}}`
+//! take no options and render the time passed to [`Template::render`] as RFC 3339 to the
+//! millisecond: local time with its UTC offset, or UTC ending in `Z`.
 //!
 //! Compiling checks every placeholder the way [`crate::generate_mock_data`] would, so a
 //! template that compiles renders without option errors. Every error starts with the
@@ -14,6 +16,7 @@
 use crate::models::{DataType, Locale, MockOptions};
 use crate::{generate_mock_data, locale_is_inert, validate};
 use anyhow::{Context, Result, anyhow, bail};
+use chrono::{DateTime, FixedOffset, Local, SecondsFormat, Utc};
 use std::fmt;
 
 /// The most characters of the template's text an error quotes.
@@ -32,7 +35,8 @@ length=N: internet.password, commerce.product-description (up to 1048576)
 age=N: person.birthday (years)
 range=N: random.date, random.datetime, random.timestamp (years, 1 to 100000)
 past, future: random.date, random.time, random.datetime, random.timestamp
-locale=CODE: person.* except birthday, internet.username, commerce.company, commerce.job-title, commerce.industry";
+locale=CODE: person.* except birthday, internet.username, commerce.company, commerce.job-title, commerce.industry
+now, utc-now: none; the current time, RFC 3339 in ms (now: local offset, utc-now: Z)";
 
 /// A compiled template. `Debug` shows its counts, never its text.
 pub struct Template {
@@ -44,6 +48,36 @@ pub struct Template {
 enum Segment {
     Literal(String),
     Mock { options: MockOptions, at: Position },
+    Clock { clock: Clock, at: Position },
+}
+
+/// A placeholder that renders the time passed to [`Template::render`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Clock {
+    Local,
+    Utc,
+}
+
+impl Clock {
+    const ALL: [Clock; 2] = [Clock::Local, Clock::Utc];
+
+    fn name(self) -> &'static str {
+        match self {
+            Clock::Local => "now",
+            Clock::Utc => "utc-now",
+        }
+    }
+}
+
+/// `now` at `offset` as RFC 3339 to the millisecond, always with a numeric offset.
+fn local_text(now: DateTime<Utc>, offset: FixedOffset) -> String {
+    now.with_timezone(&offset)
+        .to_rfc3339_opts(SecondsFormat::Millis, false)
+}
+
+/// `now` as RFC 3339 to the millisecond, ending in `Z`.
+fn utc_text(now: DateTime<Utc>) -> String {
+    now.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 /// Where a placeholder starts: 1-based line and column, the column counted in characters.
@@ -114,20 +148,28 @@ impl Template {
                     bail!("{at}: the template has more than {MAX_PLACEHOLDERS} placeholders");
                 }
                 let words = &after[..end];
-                let options = placeholder(words, at)?;
-                let inert = (options.data_type.command(), options.locale);
-                if locale_is_inert(options.locale, &options.data_type) && !noted.contains(&inert) {
-                    notes.push(format!(
-                        "{at}: locale={} has no effect on {}, which is not locale-aware",
-                        options.locale,
-                        options.data_type.command()
-                    ));
-                    noted.push(inert);
-                }
+                let segment = match clock(words, at)? {
+                    Some(clock) => Segment::Clock { clock, at },
+                    None => {
+                        let options = placeholder(words, at)?;
+                        let inert = (options.data_type.command(), options.locale);
+                        if locale_is_inert(options.locale, &options.data_type)
+                            && !noted.contains(&inert)
+                        {
+                            notes.push(format!(
+                                "{at}: locale={} has no effect on {}, which is not locale-aware",
+                                options.locale,
+                                options.data_type.command()
+                            ));
+                            noted.push(inert);
+                        }
+                        Segment::Mock { options, at }
+                    }
+                };
                 if !literal.is_empty() {
                     segments.push(Segment::Literal(std::mem::take(&mut literal)));
                 }
-                segments.push(Segment::Mock { options, at });
+                segments.push(segment);
                 placeholders += 1;
                 at.advance("{{");
                 at.advance(words);
@@ -155,31 +197,48 @@ impl Template {
         })
     }
 
-    /// One instance of the template, with a fresh value for every placeholder.
+    /// One instance of the template: a fresh mock value for every type placeholder, and `now`
+    /// for every `{{now}}` (in the local time zone) and `{{utc-now}}`.
     ///
     /// # Errors
     /// Fails when a generator fails, and once the output passes `max_bytes`. The error names
     /// the cap and, when a placeholder's value crossed it, that placeholder by its position and
     /// type; it never holds the template's own text.
-    pub fn render(&self, max_bytes: usize) -> Result<String> {
+    pub fn render(&self, max_bytes: usize, now: DateTime<Utc>) -> Result<String> {
         let mut out = String::new();
+        // Each clock kind is formatted once, so one render shows one instant and one offset.
+        let mut local = None;
+        let mut utc = None;
         for segment in &self.segments {
-            match segment {
+            let (value, at, name) = match segment {
                 Segment::Literal(text) => {
                     out.push_str(text);
                     if out.len() > max_bytes {
                         bail!("the rendered body passes the {max_bytes}-byte limit");
                     }
+                    continue;
                 }
                 Segment::Mock { options, at } => {
                     let name = options.data_type.command();
                     let value =
                         generate_mock_data(options).with_context(|| format!("{at}: {name}"))?;
-                    out.push_str(&value);
-                    if out.len() > max_bytes {
-                        bail!("{at}: {name}: the rendered body passes the {max_bytes}-byte limit");
-                    }
+                    (value, at, name)
                 }
+                Segment::Clock { clock, at } => {
+                    let value = match clock {
+                        Clock::Local => local
+                            .get_or_insert_with(|| {
+                                local_text(now, *now.with_timezone(&Local).offset())
+                            })
+                            .clone(),
+                        Clock::Utc => utc.get_or_insert_with(|| utc_text(now)).clone(),
+                    };
+                    (value, at, clock.name())
+                }
+            };
+            out.push_str(&value);
+            if out.len() > max_bytes {
+                bail!("{at}: {name}: the rendered body passes the {max_bytes}-byte limit");
             }
         }
         Ok(out)
@@ -198,7 +257,7 @@ impl Template {
 }
 
 /// The data types by prefix (`person`, `internet`, `random`, `commerce`), each with its
-/// commands in help order.
+/// commands in help order, then the `clock` group (`now`, `utc-now`).
 pub fn placeholder_groups() -> Vec<(&'static str, Vec<&'static str>)> {
     let mut groups: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
     for data_type in &DataType::ALL {
@@ -211,7 +270,25 @@ pub fn placeholder_groups() -> Vec<(&'static str, Vec<&'static str>)> {
             Some(_) | None => groups.push((prefix, vec![command])),
         }
     }
+    groups.push(("clock", Clock::ALL.map(Clock::name).to_vec()));
     groups
+}
+
+/// The clock one placeholder's `words` name, or `None` when they name something else (an
+/// empty placeholder included).
+fn clock(words: &str, at: Position) -> Result<Option<Clock>> {
+    let mut words = words.split_whitespace();
+    let Some(clock) = words
+        .next()
+        .and_then(|name| Clock::ALL.into_iter().find(|clock| clock.name() == name))
+    else {
+        return Ok(None);
+    };
+    if let Some(word) = words.next() {
+        let key = word.split_once('=').map_or(word, |(key, _)| key);
+        bail!("{at}: unknown option '{}' for {}", quote(key), clock.name());
+    }
+    Ok(Some(clock))
 }
 
 /// The options one placeholder's `words` (the text between its braces) describe.

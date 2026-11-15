@@ -17,7 +17,9 @@
 - A Template switch on the Send body: `{{type option=value}}` placeholders get fresh mock values
   in every event (mock-data-utils). A placeholder list beside the switch, a fixed six-line
   Sample block with Regenerate, the compile error's line and column in the sample before any
-  press and as a field issue after one. Demo scenario `send-template`.
+  press and as a field issue after one. Demo scenario `send-template`. `{{now}}` and
+  `{{utc-now}}` put the time each event is built into it; the list shows them as the clock
+  group.
 - Every opening of the secrets file goes through one gate, so Save config, Connect, and Send
   never collide on its lock (Connect during a save is no longer refused).
 - Initial release (in progress): the window shell on Rune. A toolbar with the Read and Export

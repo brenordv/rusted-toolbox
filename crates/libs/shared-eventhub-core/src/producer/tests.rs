@@ -570,6 +570,13 @@ async fn a_namespace_outside_the_allowlist_fails_before_any_network() {
 
 const RENDER_CAP: usize = 1024 * 1024;
 
+/// A fixed render time: the exact text a clock placeholder prints is the behavior under test.
+fn render_time() -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339("2026-11-14T23:46:40.123Z")
+        .unwrap()
+        .with_timezone(&Utc)
+}
+
 #[test]
 fn without_a_template_the_event_is_the_body_as_given() {
     let event = OutgoingEvent {
@@ -577,9 +584,23 @@ fn without_a_template_the_event_is_the_body_as_given() {
         content_type: Some("text/plain".to_owned()),
     };
 
-    let next = next_event(&event, None, RENDER_CAP).unwrap();
+    let next = next_event(&event, None, RENDER_CAP, render_time()).unwrap();
 
     assert_eq!(next, event);
+}
+
+#[test]
+fn a_clock_placeholder_renders_the_given_instant() {
+    let template = Template::compile("{\"at\": \"{{utc-now}}\"}").unwrap();
+    let event = OutgoingEvent {
+        body: Vec::new(),
+        content_type: Some("application/json".to_owned()),
+    };
+
+    let next = next_event(&event, Some(&template), RENDER_CAP, render_time()).unwrap();
+
+    assert_eq!(next.body, b"{\"at\": \"2026-11-14T23:46:40.123Z\"}");
+    assert_eq!(next.content_type.as_deref(), Some("application/json"));
 }
 
 #[test]
@@ -590,7 +611,7 @@ fn with_a_template_the_event_is_a_render_under_the_same_content_type() {
         content_type: Some("application/json".to_owned()),
     };
 
-    let next = next_event(&event, Some(&template), RENDER_CAP).unwrap();
+    let next = next_event(&event, Some(&template), RENDER_CAP, render_time()).unwrap();
 
     assert_eq!(next.body, b"{\"n\": 4}");
     assert_eq!(next.content_type.as_deref(), Some("application/json"));
@@ -604,7 +625,7 @@ fn a_render_past_the_cap_fails_naming_the_placeholder_and_not_the_text() {
         content_type: None,
     };
 
-    let error = next_event(&event, Some(&template), 32).unwrap_err();
+    let error = next_event(&event, Some(&template), 32, render_time()).unwrap_err();
 
     let rendered = format!("{error:#}");
     assert!(

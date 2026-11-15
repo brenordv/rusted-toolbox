@@ -380,6 +380,7 @@ fn the_send_long_help_lists_placeholders_and_options() {
     assert!(help.contains("person: person.first-name"), "{help}");
     assert!(help.contains("commerce.product-description"), "{help}");
     assert!(help.contains("min=N max=N"), "{help}");
+    assert!(help.contains("clock: now, utc-now"), "{help}");
 }
 
 #[test]

@@ -2,6 +2,7 @@
 
 use super::compose::BODY_CAP;
 use crate::read::rows::{cut_at_char_boundary, sentence};
+use chrono::Utc;
 use mock_data_utils::template::Template;
 use std::fmt;
 use std::sync::Arc;
@@ -110,7 +111,7 @@ impl TemplateState {
 
 fn sample_of(template: &Template) -> Result<String, String> {
     template
-        .render(BODY_CAP)
+        .render(BODY_CAP, Utc::now())
         .map_err(|error| format!("{error:#}"))
 }
 

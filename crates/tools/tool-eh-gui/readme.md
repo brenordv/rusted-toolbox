@@ -137,11 +137,12 @@ name it.
   batch: the SDK limits a single event to about half the event hub's publish limit (about 128 KB
   on Basic, 512 KB on Standard and Premium), and the send then fails with that message.
 - **Template** (the switch beside "Event body"): the body becomes a template, and every
-  `{{type option=value}}` placeholder gets a fresh mock value in each event, as with
-  `eh send --template` (the `eh` readme has the syntax and its limits). "Show placeholders" lists
-  the types and options. Under the editor a Sample block shows one render; Regenerate draws
-  another. While the template does not compile, the block says where and why, and a Send press
-  marks the editor and blocks the send until it is fixed. A sample that fails to render (a value
+  `{{type option=value}}` placeholder gets a fresh mock value in each event, and `{{now}}` and
+  `{{utc-now}}` the time the event is built, as with `eh send --template` (the `eh` readme has
+  the syntax and its limits). "Show placeholders" lists the types, the clock placeholders, and
+  the options. Under the editor a Sample block shows one render, with the time of that render;
+  Regenerate draws another. While the template does not compile, the block says where and why,
+  and a Send press marks the editor and blocks the send until it is fixed. A sample that fails to render (a value
   too large for 1 MiB, say) shows its error but does not block Send; the send then fails at its
   first event. Values go in unescaped, so a JSON template can break on a value holding `"`.
 - **Send** (Ctrl+Enter or Cmd+Enter from any Send field). The line beside it shows the run:
