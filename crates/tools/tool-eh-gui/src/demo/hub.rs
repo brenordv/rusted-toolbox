@@ -218,6 +218,13 @@ impl<S: MessageSink> Hub<S> {
     }
 }
 
+/// `count` messages as `scenario`'s hub generates them.
+pub fn generated(scenario: Scenario, count: usize) -> Vec<CapturedMessage> {
+    let mut generator = Generator::new(scenario.seed());
+    let ended = BTreeMap::new();
+    (0..count).map(|_| generator.next(&ended)).collect()
+}
+
 /// Deterministic messages: JSON, text, lossy and missing bodies, per-partition sequence
 /// numbers, enqueue times just before now.
 struct Generator {

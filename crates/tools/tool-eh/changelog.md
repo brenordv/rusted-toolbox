@@ -6,7 +6,9 @@
   txt, csv, or json.
 - Built on the official Azure SDK (`azure_messaging_eventhubs` 0.16.0): connection string,
   Entra ID (developer tools, managed identity, client secret), and Key Vault auth.
-- Time-window and regex filters on both subcommands; `--disk-mode off|immediate|at-end`.
+- Time-window and regex filters on both subcommands; `--disk-mode off|immediate|at-end`. The
+  timestamp parsing is `shared-eventhub-core`'s, so `--during` with a date alone suggests the
+  whole-day window as "from ...T00:00:00Z to ...T23:59:59.999Z".
 - `config.json` recall with secrets kept in the data folder's `secrets.redb`;
   `EH_CONNECTION_STRING` and `EH_CLIENT_SECRET` environment variables.
 - Exit codes 0 / 1 / 130; a partition that failed during a stopped run exits 1.

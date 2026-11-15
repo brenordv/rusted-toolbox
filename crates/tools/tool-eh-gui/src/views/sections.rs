@@ -1,11 +1,11 @@
-//! The Read and Export content areas and the sidebar. Capture and archive views fill these in
-//! later phases; for now each shows the empty state its connection state calls for.
+//! The Read and Export content areas and the sidebar. While a session captures, the Read area
+//! is the live list; otherwise each area shows the empty state its connection state calls for.
 
+use super::read;
 use crate::app::dispatch;
 use crate::design::tokens::{SPACE_LG, SPACE_SM};
 use crate::design::{icons, parts};
-use crate::state::{AppState, ConnectionState, FailureStage, Input, Section, ShownStats};
-use common_utils::string_utils::format_thousands;
+use crate::state::{AppState, ConnectionState, FailureStage, Input, Section};
 use rune::{El, col};
 use rune_kit::{Button, ButtonVariant, Kit};
 
@@ -17,20 +17,7 @@ fn connect_button(k: &Kit) -> El {
         .key("empty-connect")
 }
 
-/// "Received 12,403 · Stored 12,380".
-fn counts(k: &Kit, shown: ShownStats) -> El {
-    parts::live_numbers(
-        k,
-        &format!(
-            "Received {} · Stored {}",
-            format_thousands(shown.received),
-            format_thousands(shown.stored)
-        ),
-    )
-    .key("capture-counts")
-}
-
-pub fn read(s: &AppState, k: &Kit) -> El {
+pub fn read(s: &AppState, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
     match &s.connection {
         ConnectionState::Disconnected => parts::empty_state(
             k,
@@ -48,20 +35,9 @@ pub fn read(s: &AppState, k: &Kit) -> El {
             "Opening the archive and signing in to the event hub.",
             None,
         ),
-        ConnectionState::Connected {
-            partitions, shown, ..
-        } => parts::empty_state_with_note(
-            k,
-            "connected",
-            &icons::ANTENNA,
-            "Capturing",
-            &format!(
-                "Reading {} partitions into the archive in the data folder.",
-                partitions.len()
-            ),
-            Some(counts(k, *shown)),
-            None,
-        ),
+        ConnectionState::Connected { partitions, .. } => {
+            read::content(s, k, dark, partitions.len(), layer)
+        }
         ConnectionState::Stopping { .. } if s.still_finishing => parts::empty_state(
             k,
             "still-finishing",
@@ -122,14 +98,13 @@ pub fn export(k: &Kit) -> El {
     )
 }
 
-pub fn sidebar(s: &AppState, k: &Kit) -> El {
-    let (title, note) = match s.section {
-        Section::Read => ("Capture rules", "Rules come in a later version."),
-        Section::Export => ("Archive search", "Search comes in a later version."),
-    };
-    col()
-        .gap(SPACE_SM)
-        .px(SPACE_LG)
-        .child(parts::section_header(k, title))
-        .child(parts::caption(k, note))
+pub fn sidebar(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
+    match s.section {
+        Section::Read => read::rules::sidebar(s, k, layer),
+        Section::Export => col()
+            .gap(SPACE_SM)
+            .px(SPACE_LG)
+            .child(parts::section_header(k, "Archive search"))
+            .child(parts::caption(k, "Search comes in a later version.")),
+    }
 }

@@ -6,6 +6,7 @@
   search by time window and text, txt/csv/json exporters with an export log,
   the disk-write modes (`WritingSink`), and `config.json` with a separate
   secrets store.
+- `ExportFormat::extension` is public, for naming a single-message export.
 - A data folder that already holds files is used only when its `.gitignore`
   is eh's own `*`; config load errors redact the name in "unknown field" and
   "unknown variant" messages; `ExportOutcome::cancelled` says whether an

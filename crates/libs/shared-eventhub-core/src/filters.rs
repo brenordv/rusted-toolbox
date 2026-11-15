@@ -3,7 +3,7 @@
 
 use crate::models::CapturedMessage;
 use anyhow::Context;
-use chrono::{DateTime, Duration, SubsecRound, Timelike, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveTime, SubsecRound, Timelike, Utc};
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -205,6 +205,85 @@ pub fn contains_any_ci(haystack: &str, needles: &[String]) -> bool {
     needles
         .iter()
         .any(|needle| haystack.contains(&needle.to_lowercase()))
+}
+
+/// The timestamp shapes [`parse_time`] accepts, for error messages and help text.
+pub const TIME_SHAPES: &str = "an RFC3339 timestamp such as 2026-07-02T12:34:56Z, or a date such \
+                               as 2026-07-02 (midnight UTC)";
+
+/// An inclusive enqueue-time window whose start is not after its end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TimeWindow {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+}
+
+impl TimeWindow {
+    /// The window from `start` to `end`.
+    ///
+    /// # Errors
+    /// Fails when `start` is after `end`.
+    pub fn new(start: DateTime<Utc>, end: DateTime<Utc>) -> anyhow::Result<Self> {
+        if start > end {
+            anyhow::bail!("START is after END");
+        }
+        Ok(Self { start, end })
+    }
+}
+
+impl From<TimeWindow> for TimeFilter {
+    fn from(window: TimeWindow) -> Self {
+        Self::Between {
+            start: window.start,
+            end: window.end,
+        }
+    }
+}
+
+/// Parses an RFC3339 timestamp, or a `YYYY-MM-DD` date as midnight UTC.
+///
+/// # Errors
+/// Fails for any other shape, naming the accepted ones.
+pub fn parse_time(value: &str) -> anyhow::Result<DateTime<Utc>> {
+    match DateTime::parse_from_rfc3339(value) {
+        Ok(time) => Ok(time.with_timezone(&Utc)),
+        Err(_) => NaiveDate::parse_from_str(value, "%Y-%m-%d")
+            .map(|date| date.and_time(NaiveTime::MIN).and_utc())
+            .map_err(|_| anyhow::anyhow!("expected {TIME_SHAPES}")),
+    }
+}
+
+/// Parses the full RFC3339 timestamp a `During` filter needs: its granularity comes from the
+/// timestamp (see [`during_window`]), so a date alone, which would select its first hour, is
+/// refused.
+///
+/// # Errors
+/// Fails for a date alone (suggesting the whole-day window) and for any non-RFC3339 value.
+pub fn parse_time_with_granularity(value: &str) -> anyhow::Result<DateTime<Utc>> {
+    match DateTime::parse_from_rfc3339(value) {
+        Ok(time) => Ok(time.with_timezone(&Utc)),
+        Err(_) if NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok() => anyhow::bail!(
+            "a date alone would select its first hour only; for the whole day use a window \
+             from {value}T00:00:00Z to {value}T23:59:59.999Z"
+        ),
+        Err(_) => anyhow::bail!(
+            "expected an RFC3339 timestamp such as 2026-07-02T12:34:00Z (that minute)"
+        ),
+    }
+}
+
+/// Parses `START..END`, two [`parse_time`] values with `START` not after `END`.
+///
+/// # Errors
+/// Fails without the `..` separator, when either side does not parse, or when `START` is
+/// after `END`.
+pub fn parse_window(value: &str) -> anyhow::Result<TimeWindow> {
+    let Some((start, end)) = value.split_once("..") else {
+        anyhow::bail!("expected START..END, each {TIME_SHAPES}");
+    };
+    let start = parse_time(start).map_err(|error| anyhow::anyhow!("START: {error}"))?;
+    let end = parse_time(end).map_err(|error| anyhow::anyhow!("END: {error}"))?;
+    TimeWindow::new(start, end)
 }
 
 #[cfg(test)]
@@ -489,5 +568,85 @@ mod tests {
 
         assert_eq!(filters.lower_time_bound(), lower);
         assert_eq!(filters.upper_time_bound(), upper);
+    }
+
+    #[rstest]
+    #[case::utc("2026-07-02T12:00:00Z", at(12, 0, 0))]
+    #[case::offset("2026-07-02T14:00:00+02:00", at(12, 0, 0))]
+    #[case::date_only("2026-07-02", at(0, 0, 0))]
+    fn parse_time_accepts_rfc3339_and_dates(#[case] value: &str, #[case] expected: DateTime<Utc>) {
+        assert_eq!(parse_time(value).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::garbage("yesterday")]
+    #[case::no_zone("2026-07-02T12:00:00")]
+    fn parse_time_rejects_other_shapes_naming_the_accepted_ones(#[case] value: &str) {
+        let error = format!("{:#}", parse_time(value).unwrap_err());
+
+        assert!(error.contains("RFC3339"), "{error}");
+    }
+
+    #[test]
+    fn parse_time_with_granularity_rejects_a_date_and_suggests_the_whole_day() {
+        let error = format!(
+            "{:#}",
+            parse_time_with_granularity("2026-07-02").unwrap_err()
+        );
+
+        assert!(
+            error.contains("from 2026-07-02T00:00:00Z to 2026-07-02T23:59:59.999Z"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn parse_time_with_granularity_accepts_a_timestamp() {
+        assert_eq!(
+            parse_time_with_granularity("2026-07-02T12:00:00Z").unwrap(),
+            at(12, 0, 0)
+        );
+    }
+
+    #[test]
+    fn parse_time_with_granularity_rejects_garbage() {
+        assert!(parse_time_with_granularity("noon").is_err());
+    }
+
+    #[test]
+    fn parse_window_splits_start_and_end() {
+        let window = parse_window("2026-07-02..2026-07-02T01:00:00Z").unwrap();
+
+        assert_eq!(
+            window,
+            TimeWindow {
+                start: at(0, 0, 0),
+                end: at(1, 0, 0)
+            }
+        );
+    }
+
+    #[rstest]
+    #[case::no_separator("2026-07-02T01:00:00Z", "START..END")]
+    #[case::bad_start("x..2026-07-02T01:00:00Z", "START:")]
+    #[case::bad_end("2026-07-02T01:00:00Z..x", "END:")]
+    #[case::reversed("2026-07-02T02:00:00Z..2026-07-02T01:00:00Z", "START is after END")]
+    fn parse_window_rejects_bad_windows(#[case] value: &str, #[case] expected: &str) {
+        let error = format!("{:#}", parse_window(value).unwrap_err());
+
+        assert!(error.contains(expected), "{error}");
+    }
+
+    #[test]
+    fn a_time_window_becomes_an_inclusive_between_filter() {
+        let window = TimeWindow::new(at(1, 0, 0), at(2, 0, 0)).unwrap();
+
+        assert_eq!(
+            TimeFilter::from(window),
+            TimeFilter::Between {
+                start: at(1, 0, 0),
+                end: at(2, 0, 0)
+            }
+        );
     }
 }

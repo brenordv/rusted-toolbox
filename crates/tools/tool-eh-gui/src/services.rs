@@ -1,27 +1,33 @@
 //! What the UI asks of the outside world, and the production implementation over the tokio
 //! runtime, the archive slot, and Rune's `AppHandle`.
 
-use crate::app::run_effects;
+use crate::app::{apply_motion, run_effects};
 use crate::appearance::SystemAppearance;
-use crate::bridge::{EngineDone, EngineSession, UiDelivery, UiPort, spawn_session};
+use crate::bridge::{
+    EngineDone, EngineSession, FilterHook, SessionSink, UiDelivery, UiPort, spawn_session,
+};
+use crate::read::search::{REBUILD_DEBOUNCE, RebuildRequest, Rebuilt};
+use crate::read::{ExportOneRequest, ReadInput};
 use crate::state::{AppState, Input};
 use crate::tasks::StoreSlot;
 use anyhow::Context;
 use rune::AppHandle;
 use shared_eventhub_core::connection::EventHubTarget;
 use shared_eventhub_core::engine::CaptureEngine;
+use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_persistence::config::{
     SensitiveValues, ToolConfig, needs_stored_secret, resolve_target_with, save_config,
 };
-use shared_eventhub_persistence::export::{DiskWriteConfig, WritingSink};
+use shared_eventhub_persistence::export::{DiskWriteConfig, ExportOptions, WritingSink};
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::secrets::SecretsStore;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
+use tokio::task::JoinError;
 use tracing::{debug, error};
 
 /// A request to start a session: the config, the typed secrets, and the data folder it is for.
@@ -54,6 +60,10 @@ pub trait Services {
     fn reopen_window(&self);
     /// Closes the store, then ends the app.
     fn quit(&self);
+    /// Runs a quick-search rebuild off the UI thread; reports [`ReadInput::SearchRebuilt`].
+    fn rebuild_search(&self, request: RebuildRequest);
+    /// Writes one archived message to a file; reports [`ReadInput::ExportDone`].
+    fn export_one(&self, request: ExportOneRequest);
 }
 
 /// The production services.
@@ -75,6 +85,7 @@ impl ProdServices {
         window_failed: Arc<AtomicBool>,
     ) -> Self {
         spawn_tick(&rt, handle.clone(), window_failed);
+        spawn_list_flush(&rt, handle.clone());
         Self {
             handle,
             rt,
@@ -130,14 +141,143 @@ impl Services for ProdServices {
             handle.quit();
         });
     }
+
+    fn rebuild_search(&self, request: RebuildRequest) {
+        spawn_rebuild(&self.rt, self.handle.clone(), request);
+    }
+
+    fn export_one(&self, request: ExportOneRequest) {
+        spawn_export_one(
+            &self.rt,
+            self.handle.clone(),
+            Arc::clone(&self.slot),
+            request,
+        );
+    }
 }
 
-/// Applies `input` on the UI thread and runs its effects.
+/// Runs `request` after the typing pause (follow-ups don't wait), on a blocking thread, and
+/// posts the result. A scan whose search moved on posts nothing.
+pub(crate) fn spawn_rebuild(rt: &Handle, handle: AppHandle<AppState>, request: RebuildRequest) {
+    rt.spawn(async move {
+        if !request.follow_up {
+            tokio::time::sleep(REBUILD_DEBOUNCE).await;
+        }
+        if !request.is_current() {
+            return;
+        }
+        let (generation, matcher, upto, follow_up) = (
+            request.current,
+            request.matcher.clone(),
+            request.upto,
+            request.follow_up,
+        );
+        let started = Instant::now();
+        let scanned = request.rows.len();
+        let joined = tokio::task::spawn_blocking(move || request.scan()).await;
+        let Some(result) = scan_result(joined) else {
+            return;
+        };
+        let rebuilt = Rebuilt {
+            generation,
+            matcher,
+            result,
+            upto,
+            follow_up,
+            scanned,
+            elapsed_ms: started.elapsed().as_millis(),
+        };
+        apply_from_runtime(&handle, Input::Read(ReadInput::SearchRebuilt(rebuilt)));
+    });
+}
+
+/// A scan's outcome: its matches, `None` when its search moved on, or why the scan task died.
+pub(crate) fn scan_result(
+    joined: Result<Option<Vec<u64>>, JoinError>,
+) -> Option<Result<Vec<u64>, String>> {
+    match joined {
+        Ok(Some(matches)) => Some(Ok(matches)),
+        Ok(None) => None,
+        Err(error) => Some(Err(format!("the search stopped unexpectedly: {error}"))),
+    }
+}
+
+/// Writes `request`'s message from the archive of its data folder and posts the result.
+pub(crate) fn spawn_export_one(
+    rt: &Handle,
+    handle: AppHandle<AppState>,
+    slot: Arc<StoreSlot>,
+    request: ExportOneRequest,
+) {
+    rt.spawn(async move {
+        let ExportOneRequest {
+            session,
+            key,
+            options,
+            destination,
+            paths,
+            ..
+        } = request;
+        let result = export_one(&slot, &paths, key.clone(), options, destination)
+            .await
+            .map_err(|error| format!("{error:#}"));
+        apply_from_runtime(
+            &handle,
+            Input::Read(ReadInput::ExportDone {
+                session,
+                key,
+                result,
+                now: chrono::Utc::now(),
+            }),
+        );
+    });
+}
+
+async fn export_one(
+    slot: &StoreSlot,
+    paths: &DataPaths,
+    key: MessageKey,
+    options: ExportOptions,
+    destination: PathBuf,
+) -> anyhow::Result<()> {
+    let store = slot.acquire(paths).await?;
+    let joined =
+        tokio::task::spawn_blocking(move || store.export_one(&key, &options, &destination)).await;
+    export_result(joined)
+}
+
+/// A blocking export's outcome, with a task that died reported as a failure.
+pub(crate) fn export_result(joined: Result<anyhow::Result<()>, JoinError>) -> anyhow::Result<()> {
+    joined.context("Exporting the message stopped unexpectedly")?
+}
+
+/// Applies `input` on the UI thread, runs its effects, and moves its commit as it asks.
 pub(crate) fn apply_from_runtime(handle: &AppHandle<AppState>, input: Input) {
-    handle.update_if(move |state, _| {
+    handle.update_if(move |state, tx| {
         let outcome = state.apply(input);
+        apply_motion(&outcome, tx);
         run_effects(state, outcome.effects);
         outcome.changed
+    });
+}
+
+/// How often arrived rows move onto the list.
+const LIST_FLUSH_EVERY: Duration = Duration::from_millis(250);
+/// The flush cadence starts this far after the tick's, so a flush rarely shares a frame with
+/// the tick's digit roll.
+const LIST_FLUSH_OFFSET: Duration = Duration::from_millis(125);
+
+/// Posts [`ReadInput::ListFlush`] four times a second; a flush with nothing arrived redraws
+/// nothing.
+pub(crate) fn spawn_list_flush(rt: &Handle, handle: AppHandle<AppState>) {
+    rt.spawn(async move {
+        let first = tokio::time::Instant::now() + LIST_FLUSH_OFFSET;
+        let mut cadence = tokio::time::interval_at(first, LIST_FLUSH_EVERY);
+        cadence.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            cadence.tick().await;
+            apply_from_runtime(&handle, Input::Read(ReadInput::ListFlush));
+        }
     });
 }
 
@@ -183,11 +323,12 @@ pub(crate) struct AppPort(pub(crate) AppHandle<AppState>);
 
 impl UiPort for AppPort {
     fn deliver(&self, delivery: UiDelivery, ack: oneshot::Sender<()>) {
-        self.0.update_if(move |state, _| {
+        self.0.update_if(move |state, tx| {
             let outcome = state.apply(Input::Delivery(delivery));
             if ack.send(()).is_err() {
                 debug!("the forwarder ended before its delivery was applied");
             }
+            apply_motion(&outcome, tx);
             run_effects(state, outcome.effects);
             outcome.changed
         });
@@ -221,16 +362,24 @@ pub async fn prepare_session(
         request.config.capture.filters.clone(),
     );
     let (channels, run) = CaptureEngine::build(request.config.engine_config(target), sink.clone());
-    let finish = async move { sink.finish(|_| {}).await };
     Ok(spawn_session(
         rt,
         attempt,
         gate(start),
         channels,
         run,
-        finish,
+        SessionSink {
+            set_filters: filter_hook(&sink),
+            finish: async move { sink.finish(|_| {}).await },
+        },
         port,
     ))
+}
+
+/// A hook that points `sink`'s message-file filters at new capture filters.
+pub(crate) fn filter_hook(sink: &WritingSink) -> FilterHook {
+    let sink = sink.clone();
+    Arc::new(move |filters| sink.set_filters(filters))
 }
 
 /// Resolves once `start` fires. A start signal that never comes (its owner panicked) still lets

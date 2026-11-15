@@ -129,7 +129,7 @@ async fn a_thousand_events_arrive_in_order_in_batches_of_at_most_512() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, h.stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     let (deliveries, _) = collect(&mut h.recorded).await;
@@ -153,7 +153,7 @@ async fn no_second_delivery_arrives_before_the_first_is_acked() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, h.stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     events.send(skipped(0)).await.unwrap();
@@ -183,7 +183,7 @@ async fn a_withheld_ack_leaves_events_in_the_bounded_channel() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, h.stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     events.send(skipped(0)).await.unwrap();
@@ -213,7 +213,7 @@ async fn statistics_changes_coalesce_into_the_latest() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, h.stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     let (deliveries, _) = collect(&mut h.recorded).await;
@@ -240,7 +240,7 @@ async fn done_comes_after_every_delivery_and_carries_a_failed_finish() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, h.stats, end),
-        async { anyhow::bail!("the archive could not be read") },
+        test_support::sink(async { anyhow::bail!("the archive could not be read") }),
         h.port,
     );
     let (deliveries, done) = collect(&mut h.recorded).await;
@@ -266,7 +266,7 @@ async fn a_panicking_run_future_reports_the_panic_as_the_engine_error() {
         std::future::ready(()),
         h.channels,
         async { panic!("engine bug") },
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     let (_, done) = collect(&mut h.recorded).await;
@@ -289,7 +289,7 @@ async fn a_start_failure_reports_the_error_text() {
         std::future::ready(()),
         h.channels,
         async { Err(anyhow::anyhow!("connect refused").context("Failed to connect")) },
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     let (_, done) = collect(&mut h.recorded).await;
@@ -311,7 +311,7 @@ async fn a_dropped_ack_sender_ends_the_forwarder() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, h.stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     events.send(skipped(0)).await.unwrap();
@@ -338,7 +338,7 @@ async fn a_dead_statistics_watch_still_lets_events_through() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, unused_stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     let (deliveries, _) = collect(&mut h.recorded).await;
@@ -361,7 +361,7 @@ async fn every_delivery_and_the_done_carry_the_session_id() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, h.stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     let (deliveries, done) = collect(&mut h.recorded).await;
@@ -382,7 +382,7 @@ async fn stop_sends_the_stop_command() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, h.stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     session.stop();
@@ -405,7 +405,7 @@ async fn nothing_reaches_the_port_before_the_start_signal() {
         async move { drop(started.await) },
         h.channels,
         run_until(h.events, h.stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         h.port,
     );
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -428,7 +428,7 @@ async fn a_panicking_at_end_pass_still_reports_the_end() {
         std::future::ready(()),
         h.channels,
         async { Ok(summary(RunEnd::Stopped)) },
-        async { panic!("at-end bug") },
+        test_support::sink(async { panic!("at-end bug") }),
         h.port,
     );
     let (_, done) = collect(&mut h.recorded).await;
@@ -463,7 +463,7 @@ async fn a_panicking_forwarder_fails_a_clean_run() {
         std::future::ready(()),
         h.channels,
         run_until(h.events, h.stats, end),
-        finished_ok(),
+        test_support::sink(finished_ok()),
         Arc::new(PanickingPort(ends)),
     );
     let done = ended.recv().await.unwrap();
@@ -490,4 +490,37 @@ async fn stop_on_a_full_command_channel_is_handed_to_the_runtime() {
     }
 
     assert_eq!(received, 5);
+}
+
+fn contains(word: &str) -> CaptureFilters {
+    CaptureFilters {
+        time: None,
+        text: Some(shared_eventhub_core::filters::TextFilter::Contains(vec![
+            word.to_owned(),
+        ])),
+    }
+}
+
+#[tokio::test]
+async fn update_filters_sets_the_sink_filters_and_sends_one_command() {
+    let (session, mut commands, calls) = test_support::recorded_session(1, &Handle::current());
+
+    session.update_filters(contains("bacon"));
+
+    assert_eq!(*calls.lock().unwrap(), vec![contains("bacon")]);
+    assert!(matches!(
+        commands.recv().await,
+        Some(EngineCommand::UpdateFilters(filters)) if filters == contains("bacon")
+    ));
+    assert!(commands.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn update_filters_on_an_ended_session_still_updates_the_sink() {
+    let (session, commands, calls) = test_support::recorded_session(1, &Handle::current());
+    drop(commands);
+
+    session.update_filters(contains("eggs"));
+
+    assert_eq!(*calls.lock().unwrap(), vec![contains("eggs")]);
 }

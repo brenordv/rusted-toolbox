@@ -111,6 +111,96 @@ async fn a_client_secret_neither_typed_nor_stored_fails_naming_the_client() {
     );
 }
 
+fn one_message_options(destination: &std::path::Path) -> ExportOptions {
+    crate::read::inspector::export_options(
+        shared_eventhub_persistence::export::ExportFormat::Txt,
+        true,
+        destination,
+    )
+}
+
+fn unknown_key() -> MessageKey {
+    MessageKey {
+        partition_id: "0".to_owned(),
+        sequence_number: 7,
+    }
+}
+
+#[tokio::test]
+async fn exporting_a_message_the_archive_lacks_fails_and_writes_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = DataPaths::new(root.path().join("data"));
+    let slot = StoreSlot::new(paths.clone());
+    let destination = root.path().join("one.txt");
+
+    let error = export_one(
+        &slot,
+        &paths,
+        unknown_key(),
+        one_message_options(&destination),
+        destination.clone(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("No message is stored"),
+        "{error:#}"
+    );
+    assert!(!destination.exists());
+}
+
+#[tokio::test]
+async fn a_scan_task_that_dies_is_reported_as_a_failed_search() {
+    let joined = tokio::task::spawn_blocking(|| -> Option<Vec<u64>> { panic!("scan bug") }).await;
+
+    let result = scan_result(joined);
+
+    assert!(matches!(result, Some(Err(text)) if text.contains("stopped unexpectedly")));
+}
+
+#[test]
+fn a_scan_whose_search_moved_on_posts_nothing() {
+    assert!(scan_result(Ok(None)).is_none());
+}
+
+#[tokio::test]
+async fn an_export_task_that_dies_is_reported_as_a_failure() {
+    let joined =
+        tokio::task::spawn_blocking(|| -> anyhow::Result<()> { panic!("export bug") }).await;
+
+    let error = export_result(joined).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("stopped unexpectedly"),
+        "{error:#}"
+    );
+}
+
+#[tokio::test]
+async fn exporting_from_a_previous_data_folder_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let old = DataPaths::new(root.path().join("old"));
+    let slot = StoreSlot::new(DataPaths::new(root.path().join("new")));
+    let destination = root.path().join("one.txt");
+
+    let error = export_one(
+        &slot,
+        &old,
+        unknown_key(),
+        one_message_options(&destination),
+        destination.clone(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("data folder changed"),
+        "{error:#}"
+    );
+    assert!(!destination.exists());
+}
+
 #[tokio::test]
 async fn preparing_a_session_reports_a_store_that_cannot_open() {
     let root = tempfile::tempdir().unwrap();

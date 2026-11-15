@@ -1,12 +1,11 @@
 # eh-gui
 
 A desktop window for Azure Event Hubs: connect to an event hub and capture its events into the
-same local archive the `eh` CLI uses. This version is the window shell: connect, disconnect,
-and the archive filling up in the background, with the received and stored counts updated
-once a second. The live message list, capture rules, and archive search and export come in
-later versions; until then `eh export` writes the archive out.
+same local archive the `eh` CLI uses, watch them arrive in a live list, filter them, inspect
+one, copy it, or export it to a file. Archive search and bulk export come in a later version;
+until then `eh export` writes the archive out.
 
-Screenshots: to come with the message list.
+Screenshots: to come with the Export section.
 
 ```
 eh-gui                      # opens the window
@@ -32,6 +31,46 @@ outside it closes the sheet. It holds:
 Connect checks the fields first (namespace and event hub names use the same rules as `eh`).
 Secrets are typed into hidden fields with a show toggle; they are wiped after Connect and Save
 config, and never shown to screen readers.
+
+## Reading
+
+While a session captures, the Read section shows:
+
+- **Statistics**, refreshed once a second: received, rate, stored, duplicated, filtered out,
+  peak rate, time since the last message, and elapsed time. Press Received for the counts per
+  partition. A "UI dropped" tile appears when the list skipped messages under load; the
+  archive and the counts still include them. "Last message" turns the warning color after 30 seconds
+  without one (a quiet hub). When the engine stops sending updates altogether for three
+  feedback intervals, the connection pill reads "Not receiving updates".
+- **The message list**: the newest 5,000 messages (fewer with very large bodies: the list keeps
+  at most 256 MB of bodies). Older ones stay in the archive. New rows land up to four times a
+  second. While you are at the bottom the list follows new messages; scroll up and it stays
+  put, with a "↓ N new" pill that brings you back. Up, Down, Home, and End move the selection,
+  Escape clears it, and Ctrl+C (Cmd+C on macOS) copies the selected message's body.
+- **Filter rows** (Ctrl+F / Cmd+F): an ephemeral filter over the list, by text or, with `.*`,
+  a regular expression (case-insensitive, at most 1,000 characters). It looks at the whole
+  body, including what the preview cuts off, and the message and correlation ids. It changes
+  nothing captured or stored. Under a sustained burst a filter can trail the newest rows by a moment.
+- **The inspector**, when a message is selected: its metadata and properties, its body (the
+  first 256 KB; Copy body copies all of it), Copy as JSON, and Export, which writes that one
+  message as txt, csv, or json to a file you pick (with csv, mind spreadsheet apps that run
+  cells starting with `=`, `+`, `-`, or `@` as formulas). Exporting one message does not count
+  in the archive's export log.
+- **The session log**, in the connection pill's popover: partition errors and ends, with a
+  count on the pill until you open it.
+
+Copied bodies go to the system clipboard as plain text. On Windows, clipboard history and cloud
+clipboard sync keep copies of them, which matters for payloads holding personal data.
+
+### Capture rules
+
+The sidebar's capture rules decide which captured messages the list shows and the message
+files hold (the archive stores every message either way). A time rule takes an RFC3339
+timestamp or a date (`2026-07-02` is midnight UTC; During needs a full timestamp, as
+`eh read --during` does); a text rule takes comma-separated keywords or a regular expression.
+Apply rules sends them to the running session; rows already in the list stay. While no session
+runs, applied rules are kept for the next Connect, and Save config writes them to
+`config.json`. A recalled `config.json` fills them in at launch.
 
 ## Config
 
@@ -87,7 +126,9 @@ and `--log-level debug`; Rune prints every commit over the 8 ms budget on the te
 A dev-only binary runs the real window against a generated event hub and a temporary data folder
 (deleted on exit), with no namespace or credentials. Pick a scenario with `EH_GUI_DEMO` (default
 `live`): `live`, `burst`, `quiet`, `partition-fail`, `start-fail`, `slow-finish`,
-`seeded-empty`, `seeded-failed`, `seeded-connect`. Debug builds accept Rune's agent flags
+`seeded-empty`, `seeded-failed`, `seeded-connect`, `seeded-read` (a full list with a message
+selected), `seeded-search` (the same with a regex filter). The seeded Read states run no engine,
+so Disconnect there never finishes. Debug builds accept Rune's agent flags
 (`--snap`, `--script`, `--tree`, `--trace`, `--scene`); write their output under
 `target/eh-gui-demo/`, which git ignores.
 
@@ -122,3 +163,10 @@ Release builds of the workspace leave the demo out.
   window leaves, the process finishes and quits, and the log shows both lines.
 - Force a failure of the at-end pass: the window comes back with the error.
 - The log path in the pill's popover names the file being written.
+- Live hub: change the rules mid-run (Filtered out climbs); follow the tail under load; scroll
+  up and watch the pill; filter rows while messages stream; copy a body into an editor; export
+  one message to a chosen folder, over an existing file (the save dialog asks first).
+- Cut the network: "Not receiving updates" shows, and clears when updates resume; a quiet hub
+  only turns Last message the warning color.
+- Run with `RUNE_COMMIT_BUDGET_MS=8` under `EH_GUI_DEMO=burst`, and while opening and closing
+  the inspector: no commit over budget.

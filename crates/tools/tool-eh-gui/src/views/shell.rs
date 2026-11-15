@@ -1,12 +1,14 @@
 //! The window frame: toolbar with the section switch and the connection controls, the sidebar,
 //! the content area, and toasts.
 
-use super::sections;
+use super::{read, sections};
 use crate::app::dispatch;
 use crate::design::tokens::{
     POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE,
 };
 use crate::design::{Surface, icons, parts, surface};
+use crate::read::LogKind;
+use crate::read::rows::display_line;
 use crate::state::{AppState, ConnectionState, Input, Section, ToastKind};
 use common_cli::app_logger::FileLogging;
 use rune::{Color, Cx, El, col, row, text};
@@ -15,7 +17,7 @@ use rune_kit::{
     ToastRegion, Toolbar,
 };
 
-pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, layer: &mut Vec<El>) -> El {
+pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
     let sections = SegmentedControl::new(&Section::LABELS, Some(s.section.index()))
         .label("Section")
         .on_pick(|s: &mut AppState, index: usize, _| {
@@ -40,7 +42,7 @@ pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, layer: &mut Vec<El>) -> E
     let toolbar = Toolbar::new().leading(leading).trailing(trailing);
 
     let content = match s.section {
-        Section::Read => sections::read(s, k).key("read"),
+        Section::Read => sections::read(s, k, dark, layer).key("read"),
         Section::Export => sections::export(k).key("export"),
     };
     let main = col()
@@ -51,20 +53,25 @@ pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, layer: &mut Vec<El>) -> E
         .fill(surface(k, Surface::Content))
         .child(content);
 
-    SplitView::new(main)
-        .sidebar(
-            &s.sidebar,
-            |s: &mut AppState| &mut s.sidebar,
-            sections::sidebar(s, k),
-        )
+    let sidebar = sections::sidebar(s, k, layer);
+    let mut split = SplitView::new(main)
+        .sidebar(&s.sidebar, |s: &mut AppState| &mut s.sidebar, sidebar)
         .toolbar(toolbar)
         .titlebar_inset(cx.titlebar_inset())
-        .reduced_motion(cx.is_reduced_motion())
-        .build(k)
+        .reduced_motion(cx.is_reduced_motion());
+    if s.section == Section::Read {
+        split = split.inspector(
+            &s.read.inspector,
+            |s: &mut AppState| &mut s.read.inspector,
+            read::inspector(s, k),
+        );
+    }
+    split.build(k)
 }
 
-/// The pill's dot color and label for each connection state.
-fn pill_status(k: &Kit, connection: &ConnectionState) -> (Color, String) {
+/// The pill's dot color and label for each connection state; a connected session whose feed
+/// stopped says so.
+fn pill_status(k: &Kit, connection: &ConnectionState, feed_stale: bool) -> (Color, String) {
     match connection {
         ConnectionState::Disconnected => (k.c.icon_faint, "Not connected".to_owned()),
         ConnectionState::Connecting { session: None, .. } => {
@@ -73,6 +80,9 @@ fn pill_status(k: &Kit, connection: &ConnectionState) -> (Color, String) {
         ConnectionState::Connecting {
             session: Some(_), ..
         } => (k.c.warning.fg, "Connecting".to_owned()),
+        ConnectionState::Connected { .. } if feed_stale => {
+            (k.c.warning.fg, "Not receiving updates".to_owned())
+        }
         ConnectionState::Connected { partitions, .. } => (
             k.c.success.fg,
             format!("Connected · {} partitions", partitions.len()),
@@ -84,12 +94,21 @@ fn pill_status(k: &Kit, connection: &ConnectionState) -> (Color, String) {
 
 /// The connection pill; pressing it shows the data folder, log file, version, and any error.
 fn pill(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
-    let (dot, label) = pill_status(k, &s.connection);
-    let face = parts::pill_face(k, dot, &label)
+    let (dot, label) = pill_status(k, &s.connection, s.read.feed_stale);
+    let mut face = parts::pill_face(k, dot, &label);
+    if s.read.session_log_unseen > 0 {
+        face = face.child(parts::warning_count(k, s.read.session_log_unseen));
+    }
+    let face = face
         .key("pill")
         .role("button")
         .label(format!("Connection: {label}"))
-        .on_press(|s: &mut AppState| s.pill_open = !s.pill_open);
+        .on_press(|s: &mut AppState| {
+            s.pill_open = !s.pill_open;
+            if s.pill_open {
+                s.read.log_seen();
+            }
+        });
 
     let mut details = col()
         .gap(SPACE_MD)
@@ -100,6 +119,9 @@ fn pill(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
     if let ConnectionState::Failed(failure) = &s.connection {
         details = details.child(parts::detail_row(k, "Error", &failure.text));
     }
+    if !s.read.session_log.is_empty() {
+        details = details.child(session_log(s, k));
+    }
 
     Popover::new("pill-popover")
         .trigger(face)
@@ -109,6 +131,33 @@ fn pill(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
         .placement(Placement::Bottom)
         .on_close(|s: &mut AppState| s.pill_open = false)
         .build(k, layer)
+}
+
+/// The session's partition errors and ends, newest first.
+fn session_log(s: &AppState, k: &Kit) -> El {
+    let mut lines = col().gap(SPACE_SM).w_full();
+    for line in s.read.session_log.iter().rev() {
+        let what = match line.kind {
+            LogKind::Error => "Error",
+            LogKind::PartitionEnded => "Partition ended",
+        };
+        let partition = line
+            .partition
+            .as_deref()
+            .map_or(String::new(), |partition| {
+                format!(", partition {partition}")
+            });
+        lines = lines.child(parts::detail_row(
+            k,
+            &format!("{} · {what}{partition}", line.at.format("%H:%M:%S UTC")),
+            &display_line(line.text.chars()),
+        ));
+    }
+    col()
+        .gap(SPACE_SM)
+        .w_full()
+        .child(parts::section_header(k, "Session log"))
+        .child(lines)
 }
 
 fn log_detail(k: &Kit, logging: &FileLogging) -> El {

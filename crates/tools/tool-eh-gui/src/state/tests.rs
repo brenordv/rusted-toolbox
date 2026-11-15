@@ -2,7 +2,7 @@ use super::*;
 use crate::bridge::test_support::detached_session;
 use crate::form::SecretSource;
 use shared_eventhub_core::engine::{EngineCommand, PartitionEnd};
-use shared_eventhub_core::stats::StatsTracker;
+use shared_eventhub_core::stats::{StatsSnapshot, StatsTracker};
 use shared_eventhub_persistence::export::ExportOutcome;
 use std::collections::BTreeMap;
 use tokio::sync::mpsc;
@@ -116,6 +116,7 @@ impl Fixture {
 fn delivery(session: u64, event: EngineEvent) -> Input {
     Input::Delivery(UiDelivery {
         session,
+        at: Utc::now(),
         events: vec![event],
         stats: None,
     })
@@ -898,6 +899,7 @@ fn run_effects_without_services_reports_an_internal_error() {
 fn stats_delivery(session: u64, received: u64, stored: u64) -> Input {
     Input::Delivery(UiDelivery {
         session,
+        at: Utc::now(),
         events: Vec::new(),
         stats: Some(StatsSnapshot {
             received,
@@ -907,25 +909,12 @@ fn stats_delivery(session: u64, received: u64, stored: u64) -> Input {
     })
 }
 
-fn shown(received: u64, stored: u64) -> Option<ShownStats> {
-    Some(ShownStats { received, stored })
-}
-
-fn shown_of(state: &AppState) -> Option<ShownStats> {
-    if let ConnectionState::Connected { shown, .. } = &state.connection {
-        Some(*shown)
-    } else {
-        None
-    }
-}
-
-#[test]
-fn a_connected_session_shows_zero_counts_at_once() {
-    let mut f = fixture();
-
-    f.connected();
-
-    assert_eq!(shown_of(&f.state), shown(0, 0));
+fn shown_counts(state: &AppState) -> Option<(u64, u64)> {
+    state
+        .read
+        .shown
+        .as_ref()
+        .map(|shown| (shown.stats.received, shown.stats.stored))
 }
 
 #[test]
@@ -936,21 +925,22 @@ fn delivered_statistics_wait_for_the_next_tick() {
     let delivered = f.apply(stats_delivery(id, 12, 11));
 
     assert!(!delivered.changed);
-    assert_eq!(shown_of(&f.state), shown(0, 0));
+    assert_eq!(shown_counts(&f.state), None);
 }
 
 #[test]
-fn a_tick_shows_new_counts_once() {
+fn a_tick_shows_new_counts_once_and_animates_them() {
     let mut f = fixture();
     let (id, _) = f.connected();
     f.apply(stats_delivery(id, 12_403, 12_380));
+    let now = base_time();
 
-    let first = f.apply(Input::Tick(base_time()));
-    let second = f.apply(Input::Tick(base_time()));
+    let first = f.apply(Input::Tick(now));
+    let second = f.apply(Input::Tick(now));
 
-    assert!(first.changed);
+    assert!(first.changed && first.motion == Motion::Animated);
     assert!(!second.changed);
-    assert_eq!(shown_of(&f.state), shown(12_403, 12_380));
+    assert_eq!(shown_counts(&f.state), Some((12_403, 12_380)));
 }
 
 #[test]
@@ -962,20 +952,23 @@ fn statistics_before_the_session_connects_show_nothing() {
     let tick = f.apply(Input::Tick(base_time()));
 
     assert!(!tick.changed);
-    assert_eq!(shown_of(&f.state), None);
+    assert_eq!(shown_counts(&f.state), None);
 }
 
 #[test]
-fn an_ended_session_leaves_no_statistics_or_counts() {
+fn a_new_session_starts_with_no_statistics() {
     let mut f = fixture();
     let (id, _) = f.connected();
     f.apply(stats_delivery(id, 7, 7));
     f.apply(Input::Tick(base_time()));
     f.apply(Input::DisconnectPressed);
-
     f.apply(done(id, Ok(summary(RunEnd::Stopped, &[])), clean_finish()));
+    f.state.form.connection_string = typed_secret();
 
-    assert_eq!((&f.state.stats, shown_of(&f.state)), (&None, None));
+    f.preparing();
+
+    assert_eq!(f.state.read.stats, None);
+    assert_eq!(shown_counts(&f.state), None);
 }
 
 #[test]
@@ -986,8 +979,22 @@ fn another_sessions_statistics_are_ignored() {
     f.apply(stats_delivery(id + 1, 9, 9));
     f.apply(Input::Tick(base_time()));
 
-    assert_eq!(f.state.stats, None);
-    assert_eq!(shown_of(&f.state), shown(0, 0));
+    assert_eq!(f.state.read.stats, None);
+}
+
+#[test]
+fn entering_connected_animates_the_strip_in() {
+    let mut f = fixture();
+    let (id, _) = f.with_session();
+
+    let out = f.apply(delivery(
+        id,
+        EngineEvent::Started {
+            partitions: vec!["0".to_owned()],
+        },
+    ));
+
+    assert_eq!(out.motion, Motion::Animated);
 }
 
 #[test]
@@ -1003,4 +1010,142 @@ fn an_appearance_change_redraws_only_when_it_differs() {
         (true, false, true)
     );
     assert_eq!(f.state.system_dark, Some(true));
+}
+
+fn bacon_rules() -> shared_eventhub_core::filters::CaptureFilters {
+    shared_eventhub_core::filters::CaptureFilters {
+        time: None,
+        text: Some(shared_eventhub_core::filters::TextFilter::Contains(vec![
+            "bacon".to_owned(),
+        ])),
+    }
+}
+
+#[test]
+fn connect_starts_the_engine_with_the_applied_rules() {
+    let mut f = fixture();
+    f.state.read.rules_applied = bacon_rules();
+
+    let out = f.apply(Input::ConnectPressed);
+
+    let [Effect::PrepareSession { request, .. }] = out.effects.as_slice() else {
+        panic!("expected PrepareSession, got {:?}", out.effects);
+    };
+    assert_eq!(request.config.capture.filters, bacon_rules());
+}
+
+#[test]
+fn save_config_writes_the_applied_rules() {
+    let mut f = fixture();
+    f.state.read.rules_applied = bacon_rules();
+
+    let out = f.apply(Input::SavePressed);
+
+    let [Effect::SaveConfig(request)] = out.effects.as_slice() else {
+        panic!("expected SaveConfig, got {:?}", out.effects);
+    };
+    assert_eq!(request.config.capture.filters, bacon_rules());
+}
+
+#[test]
+fn applied_rules_reach_the_running_session() {
+    let mut f = fixture();
+    let (_, mut commands) = f.connected();
+    f.state.read.rules = crate::read::rules::RulesForm::from_filters(&bacon_rules());
+
+    let out = f.apply(Input::Read(ReadInput::ApplyRules));
+    crate::app::run_effects(&mut f.state, out.effects);
+
+    assert!(matches!(
+        commands.try_recv(),
+        Ok(EngineCommand::UpdateFilters(filters)) if filters == bacon_rules()
+    ));
+}
+
+#[test]
+fn a_delivered_message_waits_for_the_list_flush() {
+    let mut f = fixture();
+    let (id, _) = f.connected();
+
+    let delivered = f.apply(delivery(
+        id,
+        EngineEvent::Message(Box::new(crate::read::test_support::captured("0", 1, "a"))),
+    ));
+    let flushed = f.apply(Input::Read(ReadInput::ListFlush));
+
+    assert!(!delivered.changed);
+    assert!(flushed.changed && flushed.motion == Motion::Instant);
+    assert_eq!(f.state.read.rows.displayed().len(), 1);
+}
+
+#[test]
+fn partition_errors_and_ends_go_to_the_session_log() {
+    let mut f = fixture();
+    let (id, _) = f.connected();
+
+    f.apply(delivery(
+        id,
+        EngineEvent::Error {
+            partition_id: Some("2".to_owned()),
+            error: "link lost".to_owned(),
+            fatal: false,
+        },
+    ));
+    f.state.pill_open = true;
+    let out = f.apply(delivery(
+        id,
+        EngineEvent::PartitionEnded {
+            partition_id: "2".to_owned(),
+            end: PartitionEnd::Failed("link lost".to_owned()),
+        },
+    ));
+
+    assert!(out.changed);
+    assert_eq!(f.state.read.session_log.len(), 2);
+    assert_eq!(f.state.read.session_log_unseen, 1);
+}
+
+#[test]
+fn a_closed_window_waits_for_a_running_export_before_quitting() {
+    let mut f = fixture();
+    let key = shared_eventhub_core::models::MessageKey {
+        partition_id: "0".to_owned(),
+        sequence_number: 1,
+    };
+    f.state.read.export = crate::read::inspector::ExportPhase::Running {
+        session: 1,
+        key: key.clone(),
+        key_str: "p0-s1".to_owned(),
+    };
+
+    let closed = f.apply(Input::WindowClosed(base_time()));
+    let finished = f.apply(Input::Read(ReadInput::ExportDone {
+        session: 1,
+        key,
+        result: Ok(()),
+        now: base_time(),
+    }));
+
+    assert!(!has_quit(&closed));
+    assert!(has_quit(&finished));
+}
+
+#[test]
+fn a_failed_message_export_shows_a_danger_toast() {
+    let mut f = fixture();
+    let key = shared_eventhub_core::models::MessageKey {
+        partition_id: "0".to_owned(),
+        sequence_number: 1,
+    };
+
+    f.apply(Input::Read(ReadInput::ExportDone {
+        session: 1,
+        key,
+        result: Err("disk full".to_owned()),
+        now: base_time(),
+    }));
+
+    assert_eq!(f.state.toasts.len(), 1);
+    assert_eq!(f.state.toasts[0].kind, ToastKind::Danger);
+    assert!(f.state.toasts[0].text.contains("disk full"));
 }

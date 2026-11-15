@@ -1,14 +1,16 @@
 //! App parts: the styled pieces the kit lacks. Views compose these and kit components; styling
 //! happens only here and in the kit.
 
-use super::motion;
 use super::tokens::{
-    EMPTY_GLYPH_SIZE, HAIRLINE, ICON_SIZE, LIVE_DOT_SIZE, RADIUS_SHEET, SHEET_TOP, SHEET_WIDTH,
-    SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL, TYPE_BODY, TYPE_BODY_NUM,
-    TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_MONO, TYPE_TITLE,
+    COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT, HAIRLINE, ICON_SIZE,
+    LIST_ROW_HEIGHT, LIVE_DOT_SIZE, PRESS_SCALE, RADIUS_BADGE, RADIUS_SELECTION, RADIUS_SHEET,
+    RADIUS_TILE, SELECTION_INSET, SHEET_TOP, SHEET_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL,
+    SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION,
+    TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
 };
-use rune::{Color, El, Icon, Transition, col, el, icon, row, text};
-use rune_kit::{IconButton, IconButtonVariant, Kit};
+use super::{Surface, floating_tint, motion, selected_secondary_text, selection_fill, surface};
+use rune::{Color, El, Icon, SpringPair, Transition, col, el, icon, row, text};
+use rune_kit::{IconButton, IconButtonVariant, Kit, RollingText};
 
 /// The centered empty state that replaces a content area: glyph, title, one muted line, and at
 /// most one action. Enters once with a fade and a small rise.
@@ -110,6 +112,11 @@ pub fn detail_row(k: &Kit, label: &str, value: &str) -> El {
         )
 }
 
+/// A form label over a control that draws none of its own, such as a mode picker.
+pub fn field_label(k: &Kit, label: &str) -> El {
+    text(label).font(TYPE_LABEL).color(k.c.text_base)
+}
+
 /// A muted caption line, for form notes.
 pub fn caption(k: &Kit, line: &str) -> El {
     text(line).font(TYPE_CAPTION).color(k.c.text_muted).wrap()
@@ -207,4 +214,164 @@ pub fn section_header(k: &Kit, title: &str) -> El {
         .font(TYPE_HEADLINE)
         .color(k.c.text_base)
         .mt(SPACE_LG)
+}
+
+/// A stat tile: a caption over a metric whose digits roll on change. `order` staggers the
+/// tiles' entrance, which plays when the strip first appears.
+pub fn stat_tile(k: &Kit, key: &str, label: &str, value: Metric, order: usize) -> El {
+    let color = if value.warning {
+        k.c.warning.fg
+    } else {
+        k.c.text_base
+    };
+    col()
+        .key(key)
+        .gap(SPACE_XS)
+        .px(SPACE_MD)
+        .py(SPACE_SM)
+        .min_w(TILE_MIN_WIDTH)
+        .radius(RADIUS_TILE)
+        .fill(surface(k, Surface::Raised))
+        .border(HAIRLINE, k.c.border_weak)
+        .transition(
+            Transition::opacity()
+                .combined(Transition::offset(0.0, SPACE_SM))
+                .springs(motion::SURFACE_PAIR),
+        )
+        .enter_delay(order as f32 * TILE_STAGGER)
+        .child(text(label).font(TYPE_CAPTION).color(k.c.text_muted))
+        .child(
+            RollingText::new(format!("{key}-value"), value.text)
+                .value(value.number)
+                .font(TYPE_METRIC)
+                .color(color)
+                .spring(motion::CONTROL)
+                .build(k),
+        )
+}
+
+/// A stat tile's value: its text, the number it rolls by, and whether it warns.
+pub struct Metric {
+    pub text: String,
+    pub number: f64,
+    pub warning: bool,
+}
+
+/// A frosted capsule floating over content, for the new-messages pill.
+pub fn floating_pill(k: &Kit, key: &str, label: &str) -> El {
+    let mut pill = row()
+        .key(key)
+        .gap(SPACE_SM)
+        .center_y()
+        .px(SPACE_LG)
+        .h(FLOATING_HEIGHT)
+        .radius(FLOATING_HEIGHT / 2.0)
+        .backdrop_blur(FLOATING_BLUR)
+        .fill(floating_tint(k))
+        .border(HAIRLINE, k.c.border_weak)
+        .press_scale(PRESS_SCALE)
+        .transition(
+            Transition::opacity()
+                .combined(Transition::scale(0.96))
+                .springs(SpringPair::new(motion::CONTROL, motion::CONTROL_EXIT)),
+        )
+        .child(text(label).font(TYPE_LABEL).color(k.c.text_base));
+    for shadow in k.shadow_layers(&k.elevation.overlay) {
+        pill = pill.box_shadow(shadow);
+    }
+    pill
+}
+
+/// A small warning-colored count, as on the connection pill when the session log has news.
+pub fn warning_count(k: &Kit, count: u32) -> El {
+    row()
+        .center()
+        .h(COUNT_BADGE_HEIGHT)
+        .min_w(COUNT_BADGE_HEIGHT)
+        .px(SPACE_XS)
+        .radius(COUNT_BADGE_HEIGHT / 2.0)
+        .fill(k.c.warning.fg)
+        .child(
+            text(count.to_string())
+                .font(TYPE_CAPTION)
+                .color(k.c.bg_base),
+        )
+}
+
+/// A warning badge with a short text, for a message whose body is not plain UTF-8.
+pub fn warning_badge(k: &Kit, label: &str) -> El {
+    row()
+        .px(SPACE_SM)
+        .py(SPACE_XS)
+        .radius(RADIUS_BADGE)
+        .border(HAIRLINE, k.c.warning.fg)
+        .child(text(label).font(TYPE_CAPTION).color(k.c.warning.fg))
+}
+
+/// A list column header cell, `width` wide or taking the rest.
+pub fn column_header(k: &Kit, label: &str, width: Option<f32>) -> El {
+    cell(text(label).font(TYPE_CAPTION).color(k.c.text_muted), width)
+}
+
+/// A list cell holding a copyable value, `width` wide or taking the rest.
+pub fn list_cell(k: &Kit, value: &str, width: Option<f32>, selected: bool) -> El {
+    let color = if selected {
+        selected_secondary_text(k)
+    } else {
+        k.c.text_base
+    };
+    cell(text(value).font(TYPE_MONO).color(color).truncate(), width)
+}
+
+fn cell(content: El, width: Option<f32>) -> El {
+    let cell = row().center_y().min_w(0.0).px(SPACE_SM).child(content);
+    match width {
+        Some(width) => cell.w(width),
+        None => cell.grow(1.0),
+    }
+}
+
+/// A list row frame: 28 pt, the selection fill inset from the pane edges when selected.
+pub fn list_row(k: &Kit, cells: Vec<El>, selected: bool) -> El {
+    let mut inner = row()
+        .grow(1.0)
+        .min_w(0.0)
+        .h_full()
+        .center_y()
+        .radius(RADIUS_SELECTION)
+        .children(cells);
+    if selected {
+        inner = inner.fill(selection_fill(k));
+    }
+    row()
+        .w_full()
+        .h(LIST_ROW_HEIGHT)
+        .px(SELECTION_INSET)
+        .child(inner)
+}
+
+/// The hairline under a list's header or a strip.
+pub fn hairline(k: &Kit) -> El {
+    el().w_full().h(HAIRLINE).fill(k.c.border_weak)
+}
+
+/// A label over a selectable monospace value inside a card, for the inspector's metadata.
+pub fn metadata_card(k: &Kit, rows: Vec<El>) -> El {
+    col()
+        .w_full()
+        .gap(SPACE_MD)
+        .padding(SPACE_MD)
+        .radius(RADIUS_TILE)
+        .fill(surface(k, Surface::Raised))
+        .border(HAIRLINE, k.c.border_weak)
+        .children(rows)
+}
+
+/// A block of selectable monospace text, for a message body.
+pub fn body_text(k: &Kit, body: &str) -> El {
+    text(body)
+        .font(TYPE_MONO)
+        .color(k.c.text_base)
+        .wrap_anywhere()
+        .selectable(true)
 }

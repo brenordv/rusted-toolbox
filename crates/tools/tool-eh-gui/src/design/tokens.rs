@@ -70,6 +70,38 @@ pub const SHEET_WIDTH: f32 = 520.0;
 /// The sheet's top edge, below the toolbar band with room to spare.
 pub const SHEET_TOP: f32 = 72.0;
 pub const POPOVER_WIDTH: f32 = 360.0;
+/// Message list rows and its header (rune-kit's table sizes).
+pub const LIST_ROW_HEIGHT: f32 = 28.0;
+pub const LIST_HEADER_HEIGHT: f32 = 30.0;
+/// Message list column widths; the preview takes the rest.
+pub const COLUMN_ENQUEUED: f32 = 104.0;
+pub const COLUMN_PARTITION: f32 = 64.0;
+pub const COLUMN_SEQUENCE: f32 = 88.0;
+/// Wide enough for "300.00 KB".
+pub const COLUMN_SIZE: f32 = 88.0;
+/// A stat tile's narrowest: room for "12,403/s" in the metric type; the strip wraps past it.
+pub const TILE_MIN_WIDTH: f32 = 120.0;
+/// Inset of a selected row's highlight from the pane edges, and its radius.
+pub const SELECTION_INSET: f32 = 4.0;
+pub const RADIUS_SELECTION: f32 = 6.0;
+/// The selection fill: the accent at this alpha (rune-kit's table values).
+pub const SELECTION_ALPHA_DARK: f32 = 0.24;
+pub const SELECTION_ALPHA_LIGHT: f32 = 0.20;
+/// Floating overlays: backdrop blur and height (a capsule).
+pub const FLOATING_BLUR: f32 = 12.0;
+pub const FLOATING_HEIGHT: f32 = 32.0;
+/// Gap between stat tiles entering on the first connect, in seconds.
+pub const TILE_STAGGER: f32 = 0.04;
+/// Scroll viewport edge fade width.
+pub const EDGE_FADE: f32 = 16.0;
+/// The quick-search field's width.
+pub const SEARCH_WIDTH: f32 = 280.0;
+/// The rules sidebar's mode pickers.
+pub const SIDEBAR_FIELD_WIDTH: f32 = 220.0;
+/// A small count badge's height.
+pub const COUNT_BADGE_HEIGHT: f32 = 16.0;
+/// The press scale of floating controls.
+pub const PRESS_SCALE: f32 = 0.97;
 pub const WINDOW_SIZE: (f32, f32) = (1280.0, 800.0);
 /// The smallest window: the toolbar's controls fit side by side with the sidebar open.
 pub const WINDOW_MIN: (f32, f32) = (960.0, 600.0);

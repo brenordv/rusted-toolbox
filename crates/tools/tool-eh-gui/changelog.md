@@ -6,9 +6,18 @@
   popover), and the connect sheet with the three sign-in methods (connection string, Azure
   credential, Key Vault), config.json recall, Save config, and the Storage settings (data folder,
   message files). Connect opens the data folder's archive, resolves the target as `eh read`
-  does, and runs a capture session whose messages go to the archive; while it captures, the
-  Read section shows how many events were received and stored, once a second. The message list,
-  capture rules, and archive search come in later versions.
+  does, and runs a capture session whose messages go to the archive. Archive search comes in a
+  later version.
+- The Read section: a stats strip refreshed once a second (rolling digits; per-partition
+  counts behind Received; a UI-dropped tile; quiet-hub and "Not receiving updates" states), a
+  virtualized list of the newest 5,000 messages (and at most 256 MB of bodies) that follows the
+  tail, lands new rows up to four times a second, and offers a "↓ N new" pill once scrolled up;
+  keyboard selection and copy; a quick filter by text or regex over bodies and ids, rebuilt off
+  the UI thread; an inspector with metadata, a capped selectable body, Copy body, Copy as JSON,
+  and export of one message to a chosen file; and a session log in the connection pill.
+- Capture rules in the sidebar (time window and keywords or regex) apply to the running session
+  and its message files, or to the next Connect, and are saved with Save config and recalled
+  from `config.json`.
 - macOS draws the toolbar as the titlebar (traffic lights over it); Windows and Linux keep the
   system title bar.
 - The connect sheet sits under the toolbar and grows with the window; its fields scroll between
@@ -31,8 +40,8 @@
   selected rows in the primary text color.
 - Icons from Lucide 1.73.0 (ISC; license in `assets/icons/LICENSE`).
 - Dev-only demo mode (`--features demo`, binary `eh-gui-demo`): a generated event hub and a
-  temporary data folder, scenarios chosen with `EH_GUI_DEMO`, and Rune's agent flags in debug
-  builds. Release builds leave it out.
+  temporary data folder, scenarios chosen with `EH_GUI_DEMO` (including `seeded-read` and
+  `seeded-search`), and Rune's agent flags in debug builds. Release builds leave it out.
 - Built on Rune, pinned at rev `c4eda05889c984fff91ccd906e3c00cdfc4cae24` (pre-release, not on
   crates.io). Rune's `[patch.crates-io]` forks apply to the whole workspace:
   - winit 0.30.13: Windows window creation without a taskbar COM call and at the requested
