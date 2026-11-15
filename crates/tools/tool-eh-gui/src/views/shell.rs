@@ -3,21 +3,27 @@
 
 use super::{details, export, inspector, sections, send};
 use crate::app::dispatch;
+use crate::design::toast::{
+    TOAST_INSET_BOTTOM, TOAST_INSET_RIGHT, TOAST_WIDTH, ToastActions, ToastFace, card_key,
+    stack_extent, toast, toast_of_control, toast_presence, toast_size,
+};
 use crate::design::tokens::{
     FRAME_INSET, POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE,
 };
-use crate::design::{Surface, icons, parts, surface};
+use crate::design::{Surface, icons, motion, parts, surface};
 use crate::read::{LogKind, LogLine};
 use crate::state::{
-    AppState, ConnectionState, Input, ListSection, Pane, Section, SheetPurpose, ToastKind,
-    error_preview,
+    AppState, ConnectionState, Input, ListSection, Pane, Section, SheetPurpose, ToastBody,
+    ToastInput, ToastKind, error_preview,
 };
 use common_cli::app_logger::FileLogging;
-use rune::{Color, Cx, El, Tx, col, row, text};
+use rune::{Color, Cx, El, Key, KeyEvent, Tx, col, el, row, text};
+use rune_kit::toast_stack::VISIBLE;
 use rune_kit::{
-    Button, ButtonVariant, Kit, PaneState, Placement, Popover, SegmentedControl, SplitView, Toast,
-    ToastRegion, Toolbar,
+    Button, ButtonVariant, Kit, PaneState, Placement, Popover, SegmentedControl, SplitView,
+    ToastPlacement, Toolbar,
 };
+use tracing::debug;
 
 /// The key of the kit split view's root, the element that fills the window.
 const SHELL_KEY: &str = "shell";
@@ -282,46 +288,218 @@ fn connection_button(s: &AppState, k: &Kit) -> El {
     }
 }
 
-/// Toasts, bottom-right; each closes itself through its own id, and one whose text was cut
-/// short offers the whole text.
-pub fn toasts(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
-    if s.toasts.is_empty() {
-        return;
+/// How a toast card names itself.
+fn toast_title(kind: ToastKind) -> &'static str {
+    match kind {
+        ToastKind::Info => "Done",
+        ToastKind::Danger => "Something failed",
     }
-    let mut region = ToastRegion::new();
-    for toast in &s.toasts {
-        let id = toast.id;
-        let title = match toast.kind {
-            ToastKind::Info => "Done",
-            ToastKind::Danger => "Something failed",
-        };
-        let preview = error_preview(&toast.text);
-        let mut built = Toast::new(format!("toast-{id}"), title)
-            .description(preview.shown)
-            .on_close(move |s: &mut AppState| dispatch(s, Input::DismissToast(id)))
-            .closable();
-        if preview.cut {
-            built = built.action(
-                k,
-                "View details",
-                false,
-                move |s: &mut AppState, _: &mut Tx| open_toast(s, id),
-            );
-        }
-        region = region.toast(built.build(k));
-    }
-    layer.push(region.build(k));
 }
 
-/// Opens the whole text of toast `id`; nothing once it closed.
+/// A card's face as the view builds it: its preview, whether it offers the whole text, and
+/// its height.
+struct CardFace {
+    id: u64,
+    title: &'static str,
+    shown: String,
+    details: bool,
+    height: f32,
+    pulse: Option<u64>,
+}
+
+fn card_face(k: &Kit, id: u64, body: &ToastBody) -> CardFace {
+    let preview = error_preview(&body.text);
+    let (height, overflow) = toast_size(k, &preview.shown);
+    CardFace {
+        id,
+        title: toast_title(body.kind),
+        details: preview.cut || overflow,
+        shown: preview.shown,
+        height,
+        pulse: body.pulse,
+    }
+}
+
+/// The toasts, bottom right: a stack with the newest card in front and up to two older ones
+/// peeking above it, fanned out while the pointer is over it or after Alt+T. Cards come newest
+/// first in the tree, so Tab and assistive technology go from the front card up the deck,
+/// and paint oldest under.
+pub fn toasts(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
+    let stack = s.toasts();
+    if stack.entries().is_empty() {
+        return;
+    }
+    let faces: Vec<CardFace> = stack
+        .entries()
+        .iter()
+        .rev()
+        .map(|entry| card_face(k, entry.id, &entry.options))
+        .collect();
+    // Every face comes from an entry and `place` asks only about entries, so the lookup finds
+    // one; a miss would cost that card its height rather than the whole stack.
+    let height = |id: u64| match faces.iter().find(|face| face.id == id) {
+        Some(face) => face.height,
+        None => {
+            debug!(id, "no face for a toast; it takes no height");
+            0.0
+        }
+    };
+    let expanded = stack.stack().expanded();
+    let heights: Vec<f32> = faces.iter().map(|face| face.height).collect();
+    let mut region = el()
+        .key("toast-stack")
+        .role("region")
+        .label("Notifications")
+        .pin(
+            None,
+            None,
+            Some(TOAST_INSET_RIGHT),
+            Some(TOAST_INSET_BOTTOM),
+        )
+        .w(TOAST_WIDTH)
+        .h(stack_extent(&heights, expanded))
+        .motion(motion::CONTROL)
+        .on_hover_change(|s: &mut AppState, inside: bool, tx: &mut Tx| {
+            dispatch(s, Input::Toast(ToastInput::Pointer(inside)));
+            keep_toast_focus(s, tx);
+        })
+        .on_key(fold_toasts_on_escape);
+    for face in &faces {
+        // Faces come from the stack's own entries, so `place` finds each one; with
+        // `MAX_TOASTS` equal to the kit's `VISIBLE`, every entry also shows.
+        let Some(placement) = stack.place(face.id, height) else {
+            debug!(id = face.id, "a toast has no place in the stack");
+            continue;
+        };
+        if !placement.visible {
+            continue;
+        }
+        region = region.child(card(k, face, placement));
+    }
+    layer.push(region);
+}
+
+/// One card at `placement`, pinned to the stack's foot.
+fn card(k: &Kit, face: &CardFace, placement: ToastPlacement) -> El {
+    let id = face.id;
+    // Visible cards are the first VISIBLE from the front, so the order is 1 to VISIBLE.
+    let order = i16::try_from(VISIBLE.saturating_sub(placement.index)).unwrap_or(i16::MAX);
+    toast(
+        k,
+        id,
+        ToastFace {
+            title: face.title,
+            shown: &face.shown,
+            details: face.details,
+            pulse: face.pulse,
+        },
+        placement,
+        ToastActions {
+            close: move |s: &mut AppState, tx: &mut Tx| {
+                dispatch(s, Input::Toast(ToastInput::Dismiss(id)));
+                keep_toast_focus(s, tx);
+            },
+            details: move |s: &mut AppState, _: &mut Tx| open_toast(s, id),
+        },
+    )
+    .pin(Some(0.0), None, None, Some(0.0))
+    .offset(0.0, -placement.lift)
+    .scale(placement.scale)
+    .origin(0.5, 0.0)
+    .motion(motion::CONTROL)
+    .paint_order(order)
+    .transition(toast_presence())
+}
+
+/// Opens the whole text of toast `id`, holding new toasts while it shows; nothing once the
+/// toast closed.
 fn open_toast(s: &mut AppState, id: u64) {
-    let Some(toast) = s.toasts.iter().find(|toast| toast.id == id) else {
+    let Some(toast) = s.toasts().entries().iter().find(|toast| toast.id == id) else {
         return;
     };
-    let title = match toast.kind {
+    let title = match toast.options.kind {
         ToastKind::Info => "Details",
         ToastKind::Danger => "Error details",
     };
-    let text = toast.text.clone();
-    details::show(s, title, &text);
+    let text = toast.options.text.clone();
+    dispatch(
+        s,
+        Input::ShowDetails {
+            title: title.to_owned(),
+            text,
+            toast: Some(id),
+        },
+    );
+}
+
+/// The toast whose control has focus; `None` for any other focus.
+fn focused_toast(tx: &Tx) -> Option<u64> {
+    tx.focused().and_then(toast_of_control)
+}
+
+/// Whether toast `id`'s controls show and take focus: it is in the stack, in front or with the
+/// stack fanned out.
+fn toast_controls_shown(s: &AppState, id: u64) -> bool {
+    let stack = s.toasts();
+    let present = stack.entries().iter().any(|entry| entry.id == id);
+    let front = stack.front().map(|entry| entry.id) == Some(id);
+    present && (front || stack.stack().expanded())
+}
+
+/// Focus to the front card's first control (View details, else Close), or nowhere when no
+/// toast is left, showing the ring when the keyboard has been driving.
+fn focus_front_toast(s: &AppState, tx: &mut Tx) {
+    match s.toasts().front() {
+        Some(front) => {
+            let ring = tx.focus_visible();
+            tx.focus(card_key(front.id), ring);
+        }
+        None => tx.blur(),
+    }
+}
+
+/// Alt+T: fans the toasts out and focuses the front card's first control; false when there is
+/// nothing to fan out (no toast, the window closed, a details modal open).
+pub(crate) fn fan_out_toasts(s: &mut AppState, tx: &mut Tx) -> bool {
+    dispatch(s, Input::Toast(ToastInput::Hotkey));
+    let fanned = s.toasts().stack().expanded() && s.details().is_none();
+    if fanned {
+        focus_front_toast(s, tx);
+    }
+    fanned
+}
+
+/// Escape while the toasts are fanned out: folds them and keeps focus on a shown card; false
+/// (the key passes on) for any other key or a folded stack.
+pub(crate) fn fold_toasts_on_escape(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
+    let fold = matches!(key.key, Key::Escape) && s.toasts().stack().expanded();
+    if fold {
+        dispatch(s, Input::Toast(ToastInput::Escape));
+        keep_toast_focus(s, tx);
+    }
+    fold
+}
+
+/// Keeps focus on a toast control that takes it: focus on a control of a card that left, or
+/// one folded behind the front, moves to the front card. Focus anywhere else stays.
+pub(crate) fn keep_toast_focus(s: &AppState, tx: &mut Tx) {
+    let Some(id) = focused_toast(tx) else {
+        return;
+    };
+    if !toast_controls_shown(s, id) {
+        focus_front_toast(s, tx);
+    }
+}
+
+/// After the details modal opened from toast `opener` closed: when the toasts it held folded
+/// that card behind the front or pushed it out, focus goes to the front card; otherwise the
+/// modal hands focus back to the card's View details.
+pub(crate) fn return_toast_focus(s: &AppState, tx: &mut Tx, opener: Option<u64>) {
+    let Some(id) = opener else {
+        return;
+    };
+    if s.details().is_some() || toast_controls_shown(s, id) {
+        return;
+    }
+    focus_front_toast(s, tx);
 }

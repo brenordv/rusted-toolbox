@@ -1,6 +1,7 @@
 //! The error details modal, the "View details" button that opens it, and the openers for the
 //! failures more than one surface shows.
 
+use super::shell::return_toast_focus;
 use crate::app::dispatch;
 use crate::design::parts::{self, SheetFrame};
 use crate::design::tokens::{DETAILS_WIDTH, SPACE_SM, SPACE_XL};
@@ -21,7 +22,7 @@ pub const FAILURE_KEY: &str = "failure-details";
 /// The error details modal while it is open: the whole text in a scroll view, Copy error, and
 /// Done. Pushes the scrim and the sheet onto `layer`.
 pub fn modal(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
-    let Some(details) = &s.details else {
+    let Some(details) = s.details() else {
         return;
     };
     let body = col()
@@ -60,7 +61,7 @@ pub fn modal(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
         .child(
             Button::new("Done")
                 .variant(ButtonVariant::Submit)
-                .on_press(close)
+                .on_press_tx(close)
                 .build(k)
                 .key(DONE_KEY)
                 .default_button(),
@@ -79,13 +80,17 @@ pub fn modal(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
     );
 }
 
-fn close(s: &mut AppState) {
+/// Closes the modal. Toasts it held come in as it closes; when they folded or pushed out the
+/// card it opened from, focus goes to the front card instead of back to that card.
+fn close(s: &mut AppState, tx: &mut Tx) {
+    let opener = s.toast_hold();
     dispatch(s, Input::CloseDetails);
+    return_toast_focus(s, tx, opener);
 }
 
 /// Copies exactly what the modal shows; a plain copy, since failure text holds no credential.
 fn copy_details(s: &mut AppState, tx: &mut Tx) {
-    let Some(details) = &s.details else {
+    let Some(details) = s.details() else {
         return;
     };
     tx.copy(details.text.clone());
@@ -108,6 +113,7 @@ pub fn show(s: &mut AppState, title: &str, text: &str) {
         Input::ShowDetails {
             title: title.to_owned(),
             text: text.to_owned(),
+            toast: None,
         },
     );
 }

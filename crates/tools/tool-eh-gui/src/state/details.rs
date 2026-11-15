@@ -50,17 +50,31 @@ pub struct ErrorDetails {
     pub text: String,
     /// "Copied" shows until this instant.
     pub copied_until: Option<DateTime<Utc>>,
+    /// The toast card the modal opened from, while that card is in the stack.
+    pub toast: Option<u64>,
 }
 
 impl AppState {
-    /// Opens the details modal on `text` and closes the pill popover.
-    pub(super) fn show_details(&mut self, title: String, text: &str) {
-        debug!(title = %title, chars = text.chars().count(), "showing error details");
+    /// The error details modal's content while it is open.
+    pub fn details(&self) -> Option<&ErrorDetails> {
+        self.details.as_ref()
+    }
+
+    /// Opens the details modal on `text` and closes the pill popover. A `toast` that names a
+    /// card still in the stack holds new toasts until the modal closes. Details shown over open
+    /// ones keep the card the modal first opened from, the card it hands focus back to.
+    pub(super) fn show_details(&mut self, title: String, text: &str, toast: Option<u64>) {
+        let toast = match &self.details {
+            Some(open) => open.toast,
+            None => toast.filter(|id| self.toasts().entries().iter().any(|e| e.id == *id)),
+        };
+        debug!(title = %title, chars = text.chars().count(), ?toast, "showing error details");
         self.pill_open = false;
         self.details = Some(ErrorDetails {
             title,
             text: details_text(text),
             copied_until: None,
+            toast,
         });
     }
 

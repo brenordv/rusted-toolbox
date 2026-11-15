@@ -2,7 +2,7 @@
 //! are rune-motion's presets (`rune::Spring` re-exports the type but not the preset constants),
 //! all critically damped: nothing in this app bounces.
 
-use rune::{Spring, SpringPair};
+use rune::{Beat, Easing, Spring, SpringPair};
 
 /// Press feedback, toggles (rune-motion `INSTANT`).
 pub const FEEDBACK: Spring = Spring::new(0.10, 0.0);
@@ -18,3 +18,9 @@ pub const SURFACE: Spring = Spring::new(0.40, 0.0);
 pub const SURFACE_EXIT: Spring = Spring::new(0.32, 0.0);
 /// [`SURFACE`] with its exit, for presence transitions.
 pub const SURFACE_PAIR: SpringPair = SpringPair::new(SURFACE, SURFACE_EXIT);
+/// A toast shown again rings once: in over 0.18 s, out by 0.9 s (rune-kit's tab pulse).
+pub static TOAST_PULSE: [Beat; 3] = [
+    Beat::new(0.0).opacity(0.0),
+    Beat::new(0.18).opacity(1.0).easing(Easing::EASE_OUT),
+    Beat::new(0.9).opacity(0.0).easing(Easing::EASE_OUT),
+];

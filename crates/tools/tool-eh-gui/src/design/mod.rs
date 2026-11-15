@@ -16,6 +16,7 @@
 pub mod icons;
 pub mod motion;
 pub mod parts;
+pub mod toast;
 pub mod tokens;
 
 use rune::Color;

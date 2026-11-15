@@ -12,6 +12,7 @@ fn open(s: &mut AppState, text: &str) {
     s.apply(Input::ShowDetails {
         title: "Couldn't connect".to_owned(),
         text: text.to_owned(),
+        toast: None,
     });
 }
 

@@ -127,15 +127,22 @@ fn assert_failed_with_a_toast(h: &Harness) {
     assert!(matches!(h.state().connection, ConnectionState::Failed(_)));
     assert!(
         h.state()
-            .toasts
+            .toasts()
+            .entries()
             .iter()
-            .any(|toast| toast.kind == ToastKind::Danger)
+            .any(|toast| toast.options.kind == ToastKind::Danger)
     );
 }
 
 /// Everything shown or printed for `h`, for the absence checks.
 fn surfaces(h: &Harness) -> String {
-    let toasts: Vec<&str> = h.state().toasts.iter().map(|t| t.text.as_str()).collect();
+    let toasts: Vec<&str> = h
+        .state()
+        .toasts()
+        .entries()
+        .iter()
+        .map(|t| t.options.text.as_str())
+        .collect();
     format!(
         "{toasts:?}\n{:?}\n{}\n{:?}",
         h.state(),
@@ -160,8 +167,7 @@ fn copy_failure_details(h: &mut Harness) -> (String, Option<String>) {
     h.press(COPY_KEY);
     let shown = h
         .state()
-        .details
-        .as_ref()
+        .details()
         .map(|details| details.text.clone())
         .unwrap_or_default();
     (shown, h.clipboard_text())

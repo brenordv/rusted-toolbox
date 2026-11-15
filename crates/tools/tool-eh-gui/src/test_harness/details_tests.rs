@@ -56,21 +56,19 @@ fn labels_within(h: &Harness, within: &str) -> Vec<String> {
 }
 
 fn toast_key(h: &Harness) -> String {
-    format!("toast-{}", h.state().toasts[0].id)
+    format!("toast-{}", h.state().toasts().entries()[0].id)
 }
 
 fn details_text(h: &Harness) -> String {
     h.state()
-        .details
-        .as_ref()
+        .details()
         .map(|details| details.text.clone())
         .unwrap_or_default()
 }
 
 fn details_title(h: &Harness) -> String {
     h.state()
-        .details
-        .as_ref()
+        .details()
         .map(|details| details.title.clone())
         .unwrap_or_default()
 }
@@ -113,7 +111,7 @@ fn the_read_empty_state_shows_the_preview_of_a_long_failure_and_no_toast_repeats
     assert!(h.has_text(&error_preview(&failure).shown));
     assert!(!h.has_text(&failure));
     assert!(h.has_key(FAILURE_KEY));
-    assert!(h.state().toasts.is_empty());
+    assert!(h.state().toasts().entries().is_empty());
 }
 
 #[test]
@@ -145,7 +143,7 @@ fn done_and_return_close_the_modal(#[case] press: Option<&str>, #[case] key: Opt
     }
 
     assert!(!h.has_key(DIALOG));
-    assert!(h.state().details.is_none());
+    assert!(h.state().details().is_none());
 }
 
 #[test]
@@ -160,7 +158,7 @@ fn return_with_copy_error_focused_closes_and_space_copies() {
     h.key(Key::Enter);
 
     assert_eq!(copied.as_deref(), Some(long_text().as_str()));
-    assert!(h.state().details.is_none());
+    assert!(h.state().details().is_none());
 }
 
 #[test]
@@ -170,7 +168,7 @@ fn a_click_outside_the_panel_closes_the_modal() {
 
     h.press_at(4.0, WINDOW_SIZE.1 - 4.0);
 
-    assert!(h.state().details.is_none());
+    assert!(h.state().details().is_none());
 }
 
 #[test]
@@ -291,7 +289,7 @@ fn a_log_line_that_left_the_log_opens_nothing_and_moves_no_focus() {
     h.settle();
 
     assert_eq!(focus_before.as_deref(), Some(older.as_str()));
-    assert!(h.state().details.is_none());
+    assert!(h.state().details().is_none());
     assert!(h.state().pill_open);
     assert_eq!(super::focused_key(&h.rt), focus_before);
 }
@@ -388,6 +386,7 @@ fn the_send_shortcuts_do_nothing_while_the_modal_is_open() {
     h.deliver(Input::ShowDetails {
         title: "Error details".to_owned(),
         text: long_text(),
+        toast: None,
     });
 
     h.command(Key::Enter);
@@ -419,14 +418,17 @@ fn a_failed_save_opens_over_the_sheet_and_return_closes_only_the_modal() {
         mods: Mods::default(),
     });
     h.settle();
-    let after_return = (h.state().details.is_none(), h.state().sheet.is_some());
+    let after_return = (h.state().details().is_none(), h.state().sheet.is_some());
     h.press_named(&toast, "View details");
     h.key(Key::Escape);
-    let after_escape = (h.state().details.is_none(), h.state().sheet.is_some());
+    let after_escape = (h.state().details().is_none(), h.state().sheet.is_some());
     let focus = h.focused_label_within(&toast);
+    h.key(Key::Escape);
+    let folded_first = !h.state().toasts().stack().expanded() && h.state().sheet.is_some();
     h.key(Key::Escape);
 
     assert!(over_the_sheet);
+    assert!(folded_first);
     assert_eq!(after_return, (true, true));
     assert_eq!(
         h.calls

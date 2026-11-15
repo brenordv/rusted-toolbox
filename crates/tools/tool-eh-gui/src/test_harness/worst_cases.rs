@@ -4,15 +4,15 @@ use super::Harness;
 use super::builders::{export_state, send_state};
 use super::services::ServiceCall;
 use super::sweep_tests::{
-    Row, TOOLBAR, export_bulk_running, export_selected, failed_with, orders_form, read_selected,
-    send_done, send_template_invalid, taken,
+    Row, TOOLBAR, cut_dangers, export_bulk_running, export_selected, failed_with, orders_form,
+    read_selected, send_done, send_template_invalid, taken,
 };
 use crate::archive::ArchiveInput;
 use crate::archive::results::Results;
 use crate::bridge::UiDelivery;
 use crate::design::tokens::{INSPECTOR_MAX, SIDEBAR_MAX};
 use crate::send::compose::BODY_CAP;
-use crate::state::Input;
+use crate::state::{Input, ToastInput};
 use crate::views::SEND_BUTTON_KEY;
 use shared_eventhub_core::engine::EngineEvent;
 use shared_eventhub_core::producer::SendEnd;
@@ -113,7 +113,30 @@ fn widest_panes_on_export(size: (f32, f32)) -> Harness {
     h
 }
 
+/// Four cut danger toasts at once (three stay), fanned out.
+fn four_toasts_fanned(size: (f32, f32)) -> Harness {
+    let mut h = cut_dangers(size, 4);
+    h.deliver(Input::Toast(ToastInput::Hotkey));
+    h
+}
+
 pub(super) const WORST: &[Row] = &[
+    Row {
+        name: "four cut danger toasts at once, fanned out",
+        build: four_toasts_fanned,
+        reachable: &[
+            "toast-2-details",
+            "toast-3-details",
+            "toast-4-details",
+            "connect",
+            "pill",
+            TOOLBAR[0],
+            TOOLBAR[1],
+            TOOLBAR[2],
+        ],
+        disabled: &[],
+        covered: &[],
+    },
     Row {
         name: "a 1 MiB body",
         build: huge_body,

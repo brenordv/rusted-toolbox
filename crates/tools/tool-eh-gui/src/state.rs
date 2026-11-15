@@ -8,10 +8,12 @@ mod details;
 mod ending;
 mod panes;
 mod send;
+mod toasts;
 
 pub use details::{ERROR_PREVIEW_CHARS, ErrorDetails, ErrorPreview, error_preview};
 pub use ending::{Failure, FailureStage};
 pub use panes::{Pane, PaneFit};
+pub use toasts::{INFO_TOAST_SECS, MAX_TOASTS, ToastBody, ToastInput};
 
 use crate::archive::bulk::CancelReason;
 use crate::archive::{ArchiveEffect, ArchiveInput, ArchiveState};
@@ -136,19 +138,6 @@ pub enum ToastKind {
     Danger,
 }
 
-/// The most toasts shown at once; older ones leave first.
-const MAX_TOASTS: usize = 4;
-/// Ticks (seconds) an info toast stays; danger toasts stay until closed.
-const INFO_TOAST_TICKS: u8 = 6;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Toast {
-    pub id: u64,
-    pub kind: ToastKind,
-    pub text: String,
-    ticks_left: Option<u8>,
-}
-
 /// The result of the last Save config, shown as a caption in the sheet.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SaveStatus {
@@ -179,11 +168,13 @@ pub enum Input {
     SavePressed,
     ConfigSaved(Result<(), String>),
     DataFolderPicked(PathBuf),
-    DismissToast(u64),
-    /// Open the error details modal on the whole of `text`.
+    Toast(ToastInput),
+    /// Open the error details modal on the whole of `text`; `toast` names the card it opened
+    /// from, if any.
     ShowDetails {
         title: String,
         text: String,
+        toast: Option<u64>,
     },
     CloseDetails,
     /// The details modal's text reached the clipboard.
@@ -281,9 +272,9 @@ pub struct AppState {
     /// What happened to `config.json` at launch, for the sheet's caption.
     pub config_caption: Option<String>,
     pub file_logging: FileLogging,
-    pub toasts: Vec<Toast>,
+    toasts: toasts::Toasts,
     /// The error details modal; `None` while it is closed.
-    pub details: Option<ErrorDetails>,
+    details: Option<ErrorDetails>,
     /// Shown after the window reopened because the at-end pass ran past
     /// [`STILL_FINISHING_AFTER`]; offers Force quit.
     pub still_finishing: bool,
@@ -295,7 +286,6 @@ pub struct AppState {
     window_closed: bool,
     closed_at: Option<DateTime<Utc>>,
     next_attempt: u64,
-    next_toast: u64,
     /// Set once `Quit` was emitted; the app is ending and nothing asks again.
     quit_requested: bool,
 }
@@ -340,7 +330,7 @@ impl AppState {
             save_status: SaveStatus::Idle,
             config_caption,
             file_logging,
-            toasts: Vec::new(),
+            toasts: toasts::Toasts::default(),
             details: None,
             still_finishing: false,
             read: ReadState::default(),
@@ -350,26 +340,7 @@ impl AppState {
             window_closed: false,
             closed_at: None,
             next_attempt: 1,
-            next_toast: 1,
             quit_requested: false,
-        }
-    }
-
-    /// Shows a toast, dropping the oldest past [`MAX_TOASTS`].
-    pub fn toast(&mut self, kind: ToastKind, text: String) {
-        let ticks_left = match kind {
-            ToastKind::Info => Some(INFO_TOAST_TICKS),
-            ToastKind::Danger => None,
-        };
-        self.toasts.push(Toast {
-            id: self.next_toast,
-            kind,
-            text,
-            ticks_left,
-        });
-        self.next_toast += 1;
-        if self.toasts.len() > MAX_TOASTS {
-            self.toasts.remove(0);
         }
     }
 
@@ -379,6 +350,7 @@ impl AppState {
             changed: true,
             ..Outcome::default()
         };
+        let toasts_before = self.toast_mark();
         match input {
             Input::SectionPicked(section) => self.section = section,
             Input::OpenSheet(purpose) => self.open_sheet(purpose, &mut out),
@@ -388,8 +360,8 @@ impl AppState {
             Input::SavePressed => self.save_pressed(&mut out),
             Input::ConfigSaved(result) => self.config_saved(result),
             Input::DataFolderPicked(folder) => self.data_folder_picked(folder, &mut out),
-            Input::DismissToast(id) => self.toasts.retain(|toast| toast.id != id),
-            Input::ShowDetails { title, text } => self.show_details(title, &text),
+            Input::Toast(input) => self.toast_input(input, &mut out),
+            Input::ShowDetails { title, text, toast } => self.show_details(title, &text, toast),
             Input::CloseDetails => self.close_details(&mut out),
             Input::DetailsCopied(now) => self.details_copied(now, &mut out),
             Input::WindowClosed(at) => self.window_closed(at, &mut out),
@@ -405,6 +377,7 @@ impl AppState {
             Input::Archive(input) => self.archive_input(input, &mut out),
             Input::Send(input) => self.send_input(input, &mut out),
         }
+        self.settle_toasts(toasts_before, &mut out);
         self.quit_rule(&mut out);
         out
     }
@@ -608,6 +581,7 @@ impl AppState {
         self.closed_at = Some(at);
         self.close_sheet();
         self.details = None;
+        self.fold_toasts();
         self.archive.window_closed();
         self.send.request_cancel(CancelReason::WindowClosed);
         match std::mem::take(&mut self.connection) {
@@ -631,14 +605,7 @@ impl AppState {
     }
 
     fn tick(&mut self, now: DateTime<Utc>, out: &mut Outcome) {
-        let before = self.toasts.len();
-        for toast in &mut self.toasts {
-            if let Some(ticks) = &mut toast.ticks_left {
-                *ticks = ticks.saturating_sub(1);
-            }
-        }
-        self.toasts.retain(|toast| toast.ticks_left != Some(0));
-        out.changed = self.toasts.len() != before;
+        out.changed = self.tick_toasts();
         out.changed |= self.tick_details(now);
         let connected = match self.connection {
             ConnectionState::Connected { .. } => true,

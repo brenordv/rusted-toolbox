@@ -22,6 +22,8 @@ mod sequence_tests;
 #[cfg(test)]
 mod sweep_tests;
 #[cfg(test)]
+mod toast_tests;
+#[cfg(test)]
 mod worst_cases;
 
 use crate::bridge::UiDelivery;
@@ -34,7 +36,7 @@ use crate::views::{view, window_key};
 use chrono::{DateTime, TimeDelta, Utc};
 use rune::accesskit::Action;
 use rune::clipboard::MemoryClipboard;
-use rune::{Env, Key, KeyEvent, Mods, Runtime};
+use rune::{ElementInfo, Env, Key, KeyEvent, Mods, Runtime};
 use serde_json::Value;
 use services::{CallLog, ServiceCall};
 use shared_eventhub_core::engine::{EngineCommand, EngineEvent};
@@ -69,13 +71,20 @@ pub fn settle(rt: &mut Runtime<AppState>) {
     }
 }
 
-/// `[x, y, width, height]` of the element keyed `key`.
-pub fn rect(rt: &Runtime<AppState>, key: &str) -> [f32; 4] {
+/// The element keyed `key` that is not on its way out.
+///
+/// # Panics
+/// When nothing is keyed `key`.
+pub fn element(rt: &Runtime<AppState>, key: &str) -> ElementInfo {
     rt.elements()
         .into_iter()
         .find(|element| element.key.as_deref() == Some(key) && !element.exiting)
         .unwrap_or_else(|| panic!("no element keyed {key}"))
-        .rect
+}
+
+/// `[x, y, width, height]` of the element keyed `key`.
+pub fn rect(rt: &Runtime<AppState>, key: &str) -> [f32; 4] {
+    element(rt, key).rect
 }
 
 /// Presses `key` with no modifiers, then settles.
@@ -283,6 +292,25 @@ impl Harness {
             self.rt.frame(FRAME);
         }
         self.rt.pointer_up(x + dx, y);
+        self.settle();
+    }
+
+    /// The pointer moved to the centre of the element keyed `key`, then a settle.
+    ///
+    /// # Panics
+    /// When nothing is keyed `key`.
+    pub fn hover(&mut self, key: &str) {
+        let (x, y) = self
+            .rt
+            .find(key)
+            .unwrap_or_else(|| panic!("no element keyed {key}"));
+        self.rt.pointer_move(x, y);
+        self.settle();
+    }
+
+    /// The pointer left the window, then a settle.
+    pub fn pointer_away(&mut self) {
+        self.rt.pointer_leave();
         self.settle();
     }
 

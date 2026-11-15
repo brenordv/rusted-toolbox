@@ -422,9 +422,10 @@ async fn a_crafted_connection_string_reaches_no_error_surface() {
     assert!(!failure.text.contains(MARKER), "{}", failure.text);
     assert!(
         state
-            .toasts
+            .toasts()
+            .entries()
             .iter()
-            .all(|toast| !toast.text.contains(MARKER))
+            .all(|toast| !toast.options.text.contains(MARKER))
     );
 }
 

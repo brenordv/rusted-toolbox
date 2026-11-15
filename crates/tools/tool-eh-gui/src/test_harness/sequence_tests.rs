@@ -2,6 +2,7 @@ use super::Harness;
 use super::builders::{ORDERS, state, stopped};
 use super::journeys::orders;
 use super::services::ServiceCall;
+use super::toast_tests::focus_on_a_shown_card;
 use crate::archive::ArchiveInput;
 use crate::archive::bulk::BulkExport;
 use crate::archive::test_support::{cursor, messages, page};
@@ -15,10 +16,10 @@ use crate::read::search::RebuildRequest;
 use crate::read::test_support::captured;
 use crate::send::SendInput;
 use crate::send::run::SendRun;
-use crate::state::{Input, ListSection, Section};
+use crate::state::{Input, ListSection, MAX_TOASTS, Section};
 use rand::rngs::Xoshiro256PlusPlus;
 use rand::{Rng, SeedableRng};
-use rune::Key;
+use rune::{Key, KeyEvent, Mods};
 use shared_eventhub_core::engine::EngineEvent;
 use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_core::producer::{SendEnd, SendSummary};
@@ -75,6 +76,8 @@ struct Sequence {
     next_sequence: i64,
     cursor: SearchCursor,
     dialogs: TempDir,
+    /// Steps that ended with a card's details holding toasts.
+    held_steps: usize,
 }
 
 impl Drop for Sequence {
@@ -130,6 +133,7 @@ impl Sequence {
             next_sequence: 0,
             cursor: cursor(),
             dialogs: tempfile::tempdir().unwrap(),
+            held_steps: 0,
         };
         sequence.open_window();
         sequence
@@ -163,6 +167,9 @@ impl Sequence {
             self.trace.push(action);
             self.collect(finishing, locked);
             self.check();
+            if self.h.state().toast_hold().is_some() {
+                self.held_steps += 1;
+            }
         }
     }
 
@@ -171,7 +178,8 @@ impl Sequence {
         let closed = self.h.state().window_is_closed();
         let roll = self.below(100);
         match roll {
-            0..30 if !closed => self.press(),
+            0..27 if !closed => self.press(),
+            27..30 if !closed => self.pointer(),
             30..42 if !closed => self.key(),
             42..47 if !closed => self.paste(),
             47..52 if !closed => self.wheel(),
@@ -189,6 +197,11 @@ impl Sequence {
                 let now = self.h.now();
                 self.h.deliver(Input::WindowClosed(now));
                 "window closed".to_owned()
+            }
+            79..83 => {
+                self.h
+                    .deliver(Input::ConfigSaved(Err(LONG_FAILURE.to_owned())));
+                "a long failure toasts".to_owned()
             }
             _ => self.answer(),
         }
@@ -214,8 +227,19 @@ impl Sequence {
         format!("press {}", target.path)
     }
 
+    /// The pointer onto the toasts, or out of the window.
+    fn pointer(&mut self) -> String {
+        if self.below(2) == 0 && self.h.rt.find("toast-stack").is_some() {
+            self.h.hover("toast-stack");
+            "pointer over the toasts".to_owned()
+        } else {
+            self.h.pointer_away();
+            "pointer away".to_owned()
+        }
+    }
+
     fn key(&mut self) -> String {
-        let pick = self.below(10);
+        let pick = self.below(11);
         let (name, key, command) = match pick {
             0 => ("Escape", Key::Escape, false),
             1 => ("Tab", Key::Tab, false),
@@ -226,6 +250,17 @@ impl Sequence {
             6 => ("mod+2", Key::Command('2'), true),
             7 => ("mod+3", Key::Command('3'), true),
             8 => ("mod+enter", Key::Enter, true),
+            9 => {
+                self.h.rt.key(KeyEvent {
+                    key: Key::Text("t".into()),
+                    mods: Mods {
+                        alt: true,
+                        ..Mods::default()
+                    },
+                });
+                self.h.settle();
+                return "key alt+t".to_owned();
+            }
             _ => ("Enter", Key::Enter, false),
         };
         if command {
@@ -643,7 +678,7 @@ impl Sequence {
                 "{at}: a job runs on with the window closed"
             );
         }
-        if s.details.is_some() {
+        if s.details().is_some() {
             assert!(!s.pill_open, "{at}: the details beside the pill popover");
             let mounted = self
                 .h
@@ -654,9 +689,10 @@ impl Sequence {
             assert!(mounted, "{at}: details open with no modal mounted");
         }
         assert!(
-            !s.window_is_closed() || s.details.is_none(),
+            !s.window_is_closed() || s.details().is_none(),
             "{at}: details open with the window closed"
         );
+        self.check_toasts(&at);
         assert!(self.unfinished_sends.len() <= 1, "{at}: two sends at once");
         if let Some(run) = running_send(&s.send.run) {
             assert_eq!(
@@ -664,6 +700,43 @@ impl Sequence {
                 [run],
                 "{at}: the running send is not the open one"
             );
+        }
+    }
+}
+
+impl Sequence {
+    /// The toast invariants: the cap, a folded stack with the window closed, folded cards'
+    /// controls inert, focus only on a shown card, and the hold's queue.
+    fn check_toasts(&self, at: &str) {
+        let s = self.h.state();
+        let stack = s.toasts();
+        assert!(stack.entries().len() <= MAX_TOASTS, "{at}: past the cap");
+        assert!(
+            !s.window_is_closed() || !stack.stack().expanded(),
+            "{at}: fanned out with the window closed"
+        );
+        let front = stack.front().map(|entry| entry.id);
+        if !stack.stack().expanded() {
+            for entry in stack.entries().iter().filter(|e| Some(e.id) != front) {
+                let close = format!("toast-{}-close", entry.id);
+                let live =
+                    self.h.rt.elements().into_iter().any(|e| {
+                        e.key.as_deref() == Some(close.as_str()) && !e.exiting && !e.inert
+                    });
+                assert!(!live, "{at}: a folded card's Close takes presses");
+            }
+        }
+        assert!(
+            focus_on_a_shown_card(&self.h),
+            "{at}: focus on a folded or missing card: {:?}",
+            super::focused_key(&self.h.rt)
+        );
+        match s.toast_hold() {
+            None => assert_eq!(s.held_toasts(), 0, "{at}: toasts held with no hold"),
+            Some(id) => assert!(
+                stack.entries().iter().any(|entry| entry.id == id),
+                "{at}: the held card left"
+            ),
         }
     }
 }
@@ -683,6 +756,10 @@ fn a_seeded_sequence_keeps_every_invariant(#[case] seed: u64) {
     sequence.run(STEPS);
 
     assert_eq!(sequence.step + 1, STEPS);
+    assert!(
+        sequence.held_steps > 0,
+        "seed={seed}: no step held toasts under a card's details"
+    );
 }
 
 #[test]

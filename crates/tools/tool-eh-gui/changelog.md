@@ -1,6 +1,12 @@
 # Changelog
 
 ## 1.0.0
+- Toasts are a stack at the bottom right: the newest card in front, up to two older ones
+  peeking above it. The pointer over the stack or Alt+T fans it out, Escape or the pointer
+  leaving folds it; info toasts wait while it is fanned out. At most three toasts; the same text
+  again rings the front card instead of adding one. View details sits in a card's title row.
+  While the details of a toast are open, new toasts wait and come in when they close. Demo
+  scenarios `toast-stack` and `toast-stack-open`.
 - The content between the sidebar and an open inspector keeps at least 376 pt: a narrow window
   shows the inspector, then the sidebar, narrower, and they come back to their widths when it
   grows; a drag on a pane's edge starts from the width the pane shows. At 960x600 with the

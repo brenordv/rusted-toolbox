@@ -464,9 +464,10 @@ fn a_send_that_fails_with_the_window_closed_reopens_it_with_a_toast() {
     assert_eq!(quits(&h), 0);
     assert!(
         h.state()
-            .toasts
+            .toasts()
+            .entries()
             .iter()
-            .any(|toast| toast.text.contains("the hub refused the batch"))
+            .any(|toast| toast.options.text.contains("the hub refused the batch"))
     );
 }
 

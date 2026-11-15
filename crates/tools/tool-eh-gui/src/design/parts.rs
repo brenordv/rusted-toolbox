@@ -150,7 +150,7 @@ pub struct SheetFrame<'a> {
 pub fn sheet<S: 'static>(
     k: &Kit,
     frame: SheetFrame<'_>,
-    close: impl Fn(&mut S) + Clone + 'static,
+    close: impl Fn(&mut S, &mut Tx) + Clone + 'static,
     body: El,
     footer: El,
     layer: &mut Vec<El>,
@@ -161,7 +161,7 @@ pub fn sheet<S: 'static>(
         .label("Close")
         .build(k)
         .key("close")
-        .on_press(close.clone());
+        .on_press_tx(close.clone());
     let header = row()
         .key("header")
         .w_full()
@@ -200,7 +200,7 @@ pub fn sheet<S: 'static>(
     for shadow in k.shadow_layers(&k.elevation.overlay) {
         panel = panel.box_shadow(shadow);
     }
-    let panel = panel.modal(true, close).modal_click_outside(true);
+    let panel = panel.modal_tx(true, close).modal_click_outside(true);
 
     layer.push(
         el().key(format!("{key}-scrim"))

@@ -44,6 +44,19 @@ presses Done, even with Copy error focused; Space presses Copy error. A connecti
 export failure toasts only when the section that shows it isn't the one in the window. The
 details window has no resize handle; it grows with the app's window.
 
+### Toasts
+
+Toasts stack at the bottom right: the newest card in front, up to two older ones peeking above
+it. Move the pointer over the stack, or press Alt+T (Option+T on macOS) when no field has focus,
+to fan it out; Escape or moving the pointer away folds it. Alt+T puts focus on the front card's
+first button and Tab walks up the deck; Escape leaves focus on the front card. While the stack is
+fanned out, info toasts stop counting down. At most three toasts show; a fourth closes the
+oldest. The same toast again rings the front card once instead of adding a card. The stack folds
+when one toast is left, even under the pointer. While the details of a toast are open, new
+toasts wait and info toasts stop counting down. The new ones come in when the details close,
+and focus goes back to the toast's View details, or to the front card if the new ones folded or
+closed that toast.
+
 ## Reading
 
 While a session captures, the Read section shows:
@@ -309,6 +322,16 @@ EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --scri
 EH_GUI_DEMO=seeded-read cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase15/after-read-default-960.png
 ```
 
+Toasts: folded, the front card shows whole and two blank 12 pt edges peek above it; fanned
+out, three cards sit 12 pt apart with the top one clear of the toolbar at 960x600.
+
+```
+EH_GUI_DEMO=toast-stack cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase16/toast-stack-960.png
+EH_GUI_DEMO=toast-stack cargo run -p eh-gui --features demo --bin eh-gui-demo -- --snap target/eh-gui-demo/phase16/toast-stack-1280.png
+EH_GUI_DEMO=toast-stack-open cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase16/toast-stack-open-960.png
+EH_GUI_DEMO=toast-stack-open cargo run -p eh-gui --features demo --bin eh-gui-demo -- --snap target/eh-gui-demo/phase16/toast-stack-open-1280.png
+```
+
 Snapshots are dark: the app reads the system appearance itself, so `--theme light` changes
 nothing. With the system set to light, check in the real window: the sheet and popover scrims,
 the pane fills, the shadow and rim on the sheet, popovers, new-messages pill, and bulk bar, the
@@ -367,3 +390,11 @@ hub.
   selection (the sidebar narrows and comes back with the inspector); at 960 with the inspector
   at its widest and the sidebar closed, open the sidebar (the inspector narrows to 320 as it
   opens).
+- Toasts, with `RUNE_COMMIT_BUDGET_MS=8` (no commit over budget), from `EH_GUI_DEMO=toast-stack`:
+  move the pointer in and out of the three cards slowly (no flicker crossing the gaps between
+  fanned-out cards); close the front card. Under `EH_GUI_DEMO=start-fail`, switch to Export and
+  press Connect while the stack is folded and while it is fanned out (each failure toasts; the
+  same failure again rings the front card); turn the OS Reduce Motion setting on and fold and
+  fan out again (travel snaps, contents fade). With Narrator (or VoiceOver), open a toast's View
+  details, cause a failure while it is open, close it (the focused button reads its card's text,
+  then the new toast), and once more with nothing new while it is open.

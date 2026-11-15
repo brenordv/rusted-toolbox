@@ -22,7 +22,7 @@ use crate::services::{
     open_secrets, report_ready, spawn_bulk_export, spawn_export_one, spawn_list_flush,
     spawn_rebuild, spawn_search_archive, spawn_tick,
 };
-use crate::state::{AppState, Input, Section, SheetPurpose};
+use crate::state::{AppState, Input, Section, SheetPurpose, ToastInput, ToastKind};
 use crate::tasks::StoreSlot;
 use anyhow::Context;
 use common_cli::app_logger::FileLogging;
@@ -80,6 +80,10 @@ pub enum Scenario {
     SendPaced,
     /// The Send section with Template on: an order template, idle, with its sample.
     SendTemplate,
+    /// A failed Read session with three toasts, folded: two long failures and an info one.
+    ToastStack,
+    /// [`Scenario::ToastStack`] fanned out, as after Alt+T.
+    ToastStackOpen,
 }
 
 /// How fast a scenario's hub produces messages.
@@ -102,7 +106,7 @@ impl Pace {
 }
 
 impl Scenario {
-    const NAMES: [(&'static str, Scenario); 16] = [
+    const NAMES: [(&'static str, Scenario); 18] = [
         ("live", Self::Live),
         ("burst", Self::Burst),
         ("quiet", Self::Quiet),
@@ -119,6 +123,8 @@ impl Scenario {
         ("send", Self::Send),
         ("send-paced", Self::SendPaced),
         ("send-template", Self::SendTemplate),
+        ("toast-stack", Self::ToastStack),
+        ("toast-stack-open", Self::ToastStackOpen),
     ];
 
     /// The scenario named `name`.
@@ -169,7 +175,9 @@ impl Scenario {
             | Self::SeededExport
             | Self::Send
             | Self::SendPaced
-            | Self::SendTemplate => false,
+            | Self::SendTemplate
+            | Self::ToastStack
+            | Self::ToastStackOpen => false,
         }
     }
 
@@ -190,7 +198,9 @@ impl Scenario {
             | Self::ErrorDetails
             | Self::SeededConnect
             | Self::SeededRead
-            | Self::SeededSearch => self.is_live(),
+            | Self::SeededSearch
+            | Self::ToastStack
+            | Self::ToastStackOpen => self.is_live(),
         }
     }
 
@@ -229,7 +239,9 @@ impl Scenario {
             | Self::SeededExport
             | Self::Send
             | Self::SendPaced
-            | Self::SendTemplate => steady,
+            | Self::SendTemplate
+            | Self::ToastStack
+            | Self::ToastStackOpen => steady,
         }
     }
 
@@ -273,6 +285,7 @@ pub fn initial_state(
             drop(state.apply(Input::ShowDetails {
                 title: "Couldn't connect".to_owned(),
                 text: failure,
+                toast: None,
             }));
         }
         Scenario::SeededConnect => {
@@ -301,6 +314,11 @@ pub fn initial_state(
             composer.body.replace_text(ORDER_TEMPLATE);
             composer.set_template(true);
         }
+        Scenario::ToastStack => seed_toasts(&mut state),
+        Scenario::ToastStackOpen => {
+            seed_toasts(&mut state);
+            drop(state.apply(Input::Toast(ToastInput::Hotkey)));
+        }
         Scenario::Live
         | Scenario::Burst
         | Scenario::Quiet
@@ -310,6 +328,22 @@ pub fn initial_state(
         | Scenario::SeededEmpty => {}
     }
     state
+}
+
+/// A failed connect, then three toasts, oldest first: a long failure, an export that ended,
+/// and another long failure.
+fn seed_toasts(state: &mut AppState) {
+    seed_failure(state, demo_failure());
+    let long = vec![demo_failure(); 7].join(" ");
+    state.toast(ToastKind::Danger, format!("Partition 2 failed: {long}"));
+    state.toast(
+        ToastKind::Info,
+        "Exported 1,204 messages to exports/orders".to_owned(),
+    );
+    state.toast(
+        ToastKind::Danger,
+        format!("Could not save config.json: {long}"),
+    );
 }
 
 /// The demo's connect failure: a long, real-looking service refusal.
