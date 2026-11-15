@@ -16,6 +16,8 @@ mod details_tests;
 #[cfg(test)]
 mod journey_tests;
 #[cfg(test)]
+mod pane_tests;
+#[cfg(test)]
 mod sequence_tests;
 #[cfg(test)]
 mod sweep_tests;
@@ -259,6 +261,34 @@ impl Harness {
     pub fn press_at(&mut self, x: f32, y: f32) {
         self.rt.pointer_down(x, y);
         self.rt.pointer_up(x, y);
+        self.settle();
+    }
+
+    /// A drag from the centre of the element keyed `key`, `dx` points sideways in a few frames,
+    /// then a settle.
+    ///
+    /// # Panics
+    /// When nothing is keyed `key`.
+    pub fn drag(&mut self, key: &str, dx: f32) {
+        const STEPS: u8 = 4;
+        let (x, y) = self
+            .rt
+            .find(key)
+            .unwrap_or_else(|| panic!("no element keyed {key}"));
+        self.rt.pointer_down(x, y);
+        self.rt.frame(FRAME);
+        for step in 1..=STEPS {
+            self.rt
+                .pointer_move(x + dx * f32::from(step) / f32::from(STEPS), y);
+            self.rt.frame(FRAME);
+        }
+        self.rt.pointer_up(x + dx, y);
+        self.settle();
+    }
+
+    /// The window resized to `size` at scale 1, then a settle.
+    pub fn resize(&mut self, size: (f32, f32)) {
+        self.rt.set_viewport(size, 1.0);
         self.settle();
     }
 

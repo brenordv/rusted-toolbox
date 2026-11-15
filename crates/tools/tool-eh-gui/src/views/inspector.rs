@@ -90,6 +90,7 @@ pub fn inspector(s: &AppState, k: &Kit, section: ListSection) -> El {
             text(enqueued)
                 .font(TYPE_MONO)
                 .color(k.c.text_muted)
+                .wrap()
                 .selectable(true),
         );
     match message.body_kind {

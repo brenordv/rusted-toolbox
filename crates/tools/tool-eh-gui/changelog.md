@@ -1,6 +1,11 @@
 # Changelog
 
 ## 1.0.0
+- The content between the sidebar and an open inspector keeps at least 376 pt: a narrow window
+  shows the inspector, then the sidebar, narrower, and they come back to their widths when it
+  grows; a drag on a pane's edge starts from the width the pane shows. At 960x600 with the
+  sidebar open the inspector shows at 320 and its time line wraps. Demo scripts for the
+  snapshots in `demo-scripts/`.
 - Failure text in toasts, empty states, the connection popover, the Send action row, the bulk
   bar, and the connect sheet shows at most 140 characters; View details opens the whole text in
   a scrolling window with Copy error and Done (Escape closes it). A connection or bulk export

@@ -4,19 +4,23 @@
 use super::{details, export, inspector, sections, send};
 use crate::app::dispatch;
 use crate::design::tokens::{
-    POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE,
+    FRAME_INSET, POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE,
 };
 use crate::design::{Surface, icons, parts, surface};
 use crate::read::{LogKind, LogLine};
 use crate::state::{
-    AppState, ConnectionState, Input, ListSection, Section, SheetPurpose, ToastKind, error_preview,
+    AppState, ConnectionState, Input, ListSection, Pane, Section, SheetPurpose, ToastKind,
+    error_preview,
 };
 use common_cli::app_logger::FileLogging;
 use rune::{Color, Cx, El, Tx, col, row, text};
 use rune_kit::{
-    Button, ButtonVariant, Kit, Placement, Popover, SegmentedControl, SplitView, Toast,
+    Button, ButtonVariant, Kit, PaneState, Placement, Popover, SegmentedControl, SplitView, Toast,
     ToastRegion, Toolbar,
 };
+
+/// The key of the kit split view's root, the element that fills the window.
+const SHELL_KEY: &str = "shell";
 
 pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
     let sections = SegmentedControl::new(&Section::LABELS, Some(s.section.index()))
@@ -55,26 +59,50 @@ pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut V
         .fill(surface(k, Surface::Content))
         .child(content);
 
+    let window = cx.layout_with(SHELL_KEY, |rect| rect[2].floor());
+    let fit = window.map(|window| s.pane_fit(window, s.section.list()));
+    let shown = |pane: &PaneState, width: Option<f32>| {
+        let mut pane = *pane;
+        if let Some(width) = width {
+            pane.set_width(width);
+        }
+        pane
+    };
+
     let sidebar = sections::sidebar(s, k, layer);
     let split = SplitView::new(main)
-        .sidebar(&s.sidebar, |s: &mut AppState| &mut s.sidebar, sidebar)
+        .sidebar(
+            &shown(&s.sidebar, fit.map(|fit| fit.sidebar)),
+            |s: &mut AppState| s.held_pane(Pane::Sidebar),
+            sidebar,
+        )
         .toolbar(toolbar)
         .titlebar_inset(cx.titlebar_inset())
+        .frame_inset(FRAME_INSET)
         .reduced_motion(cx.is_reduced_motion());
+    let inspector_shown = fit.and_then(|fit| fit.inspector);
     let split = match s.section.list() {
         Some(ListSection::Read) => split.inspector(
-            &s.read.inspector.pane,
-            |s: &mut AppState| &mut s.read.inspector.pane,
+            &shown(&s.read.inspector.pane, inspector_shown),
+            |s: &mut AppState| s.held_pane(Pane::Inspector(ListSection::Read)),
             inspector::inspector(s, k, ListSection::Read),
         ),
         Some(ListSection::Export) => split.inspector(
-            &s.archive.inspector.pane,
-            |s: &mut AppState| &mut s.archive.inspector.pane,
+            &shown(&s.archive.inspector.pane, inspector_shown),
+            |s: &mut AppState| s.held_pane(Pane::Inspector(ListSection::Export)),
             inspector::inspector(s, k, ListSection::Export),
         ),
         None => split,
     };
-    split.build(k)
+    // The panes' handlers cannot read the view's layout, so they read this copy; no view
+    // reads it. The view reads the layout itself so the panes fit in the frame a resize lands
+    // in; between reports the copy can be a point off that read.
+    split
+        .build(k)
+        .on_layout_tx(|s: &mut AppState, rect: [f32; 4], tx: &mut Tx| {
+            s.window_width = Some(rect[2].floor());
+            tx.live_only();
+        })
 }
 
 /// The pill's dot color and label for each connection state; a connected session whose feed
