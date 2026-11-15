@@ -51,7 +51,8 @@ While a session captures, the Read section shows:
   a regular expression (case-insensitive, at most 1,000 characters). It looks at the whole
   body, including what the preview cuts off, and the message and correlation ids. It changes
   nothing captured or stored. Under a sustained burst a filter can trail the newest rows by a moment.
-- **The inspector**, when a message is selected: its metadata and properties, its body (the
+- **The inspector**, when a message is selected (its close button or Escape in the list closes
+  it): its metadata and properties, its body (the
   first 256 KB; Copy body copies all of it), Copy as JSON, and Export, which writes that one
   message as txt, csv, or json to a file you pick (with csv, mind spreadsheet apps that run
   cells starting with `=`, `+`, `-`, or `@` as formulas). Exporting one message does not count

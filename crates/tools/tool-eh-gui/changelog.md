@@ -14,7 +14,7 @@
   tail, lands new rows up to four times a second, and offers a "↓ N new" pill once scrolled up;
   keyboard selection and copy; a quick filter by text or regex over bodies and ids, rebuilt off
   the UI thread; an inspector with metadata, a capped selectable body, Copy body, Copy as JSON,
-  and export of one message to a chosen file; and a session log in the connection pill.
+  export of one message to a chosen file, and a close button; and a session log in the connection pill.
 - Capture rules in the sidebar (time window and keywords or regex) apply to the running session
   and its message files, or to the next Connect, and are saved with Save config and recalled
   from `config.json`.

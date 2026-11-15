@@ -12,7 +12,9 @@ use crate::read::{ReadInput, Selected};
 use crate::state::{AppState, Input};
 use chrono::Local;
 use rune::{El, FileDialogOptions, ScrollSpec, Tx, col, el, row, text};
-use rune_kit::{Button, ButtonVariant, Kit, ScrollBar, SegmentedControl, Switch};
+use rune_kit::{
+    Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl, Switch,
+};
 use shared_eventhub_core::models::BodyKind;
 use shared_eventhub_persistence::export::ExportFormat;
 
@@ -35,19 +37,32 @@ pub fn inspector(s: &AppState, k: &Kit) -> El {
                 at.with_timezone(&Local).format("%H:%M:%S%.3f")
             )
         });
+    let close = IconButton::new(k.glyph.close)
+        .variant(IconButtonVariant::Ghost)
+        .label("Close")
+        .on_press(|s: &mut AppState| dispatch(s, Input::Read(ReadInput::ClearSelection)))
+        .build(k)
+        .key("inspector-close");
+    let title = text(format!(
+        "Partition {} · #{}",
+        display_line(message.key.partition_id.chars()),
+        message.key.sequence_number
+    ))
+    .font(TYPE_TITLE)
+    .color(k.c.text_base)
+    .grow(1.0);
     let mut pane = col()
         .key("inspector")
         .w_full()
         .gap(SPACE_MD)
         .padding(SPACE_LG)
         .child(
-            text(format!(
-                "Partition {} · #{}",
-                display_line(message.key.partition_id.chars()),
-                message.key.sequence_number
-            ))
-            .font(TYPE_TITLE)
-            .color(k.c.text_base),
+            row()
+                .w_full()
+                .gap(SPACE_SM)
+                .center_y()
+                .child(title)
+                .child(close),
         )
         .child(
             text(enqueued)

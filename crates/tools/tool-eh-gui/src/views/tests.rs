@@ -460,6 +460,23 @@ fn the_find_shortcut_focuses_the_quick_search() {
 }
 
 #[test]
+fn the_inspector_close_button_clears_the_selection() {
+    let tokio = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut s = connected(&tokio);
+    with_rows(&mut s, 0, 3);
+    let mut rt = runtime(s);
+    press(&mut rt, "p0-s1");
+
+    press(&mut rt, "inspector-close");
+
+    assert!(rt.state.read.selected.is_none());
+    assert!(!rt.state.read.inspector.is_open());
+}
+
+#[test]
 fn clicking_a_row_opens_the_inspector_and_escape_closes_it() {
     let tokio = tokio::runtime::Builder::new_current_thread()
         .enable_all()
