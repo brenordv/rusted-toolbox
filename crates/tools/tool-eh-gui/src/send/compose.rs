@@ -3,7 +3,7 @@
 
 use super::template::TemplateState;
 use crate::read::rows::display_line;
-use common_utils::string_utils::format_thousands;
+use common_utils::string_utils::{format_thousands, non_blank};
 use mock_data_utils::template::Template;
 use rune::TextEdit;
 use shared_eventhub_core::producer::{
@@ -303,10 +303,9 @@ impl Composer {
     }
 
     fn event(&self) -> OutgoingEvent {
-        let content_type = self.content_type.text.trim();
         OutgoingEvent {
             body: self.body.text.as_bytes().to_vec(),
-            content_type: (!content_type.is_empty()).then(|| content_type.to_owned()),
+            content_type: non_blank(&self.content_type.text),
         }
     }
 

@@ -111,7 +111,7 @@ its earlier events are skipped.
 | `--newer-than T`, `--newer-or-equal T` | enqueued after (or at) `T` |
 | `--during T` | in the hour, minute, or second `T` names: `12:00:00` is the hour, `12:34:00` the minute, `12:34:56` the second |
 | `--between A..B` | enqueued from `A` to `B`, both included |
-| `--dump-filter a,b` | whose body contains `a` or `b`, ignoring case |
+| `--dump-filter a,b` | whose body contains `a` or `b`, ignoring case. Spaces around a keyword and empty items (`a,,b`, `a,`) are ignored; a list with no keyword left is refused |
 | `--filter-regex P` | whose body matches the regular expression `P`, ignoring case unless `P` starts with `(?-i)` |
 
 Times are RFC3339 (`2026-07-02T12:34:56Z`, `2026-07-02T14:34:56+02:00`) or a date
@@ -235,7 +235,7 @@ eh send -e orders --body ping -n 600 --interval-ms 1000
 | `--body-file PATH` | the body read from a file, byte for byte; `-` reads stdin. 20 MiB at most |
 | `-n, --count N` | how many events, 1 (default) to 1,000,000 |
 | `--partition-key KEY` | every event carries KEY: all land in one partition, in order. Without it, the service spreads events over partitions |
-| `--content-type TYPE` | the content type of every event |
+| `--content-type TYPE` | the content type of every event, trimmed; a blank TYPE sets none |
 | `--interval-ms MS` | one event every MS milliseconds (1 to 3,600,000) instead of full batches |
 | `--yes` | send to a target recalled from `config.json` without naming it again |
 

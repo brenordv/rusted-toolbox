@@ -468,7 +468,7 @@ fn debug_of_the_job_never_shows_a_secret() {
 fn export_takes_recalled_export_settings_and_its_own_filters_only() {
     let recalled = recalled_developer_config();
 
-    let job = export_job(ExportArgs::default(), Some(&recalled), ConfigSource::Loaded);
+    let job = export_job(ExportArgs::default(), Some(&recalled), ConfigSource::Loaded).unwrap();
 
     assert_eq!(job.export, recalled.storage.export);
     assert_eq!(job.base_data_folder, PathBuf::from("recalled-data"));
@@ -502,7 +502,7 @@ fn export_flags_beat_the_recalled_export_settings() {
         },
     };
 
-    let job = export_job(args, Some(&recalled), ConfigSource::Loaded);
+    let job = export_job(args, Some(&recalled), ConfigSource::Loaded).unwrap();
 
     assert_eq!(job.base_data_folder, PathBuf::from("flag-data"));
     assert_eq!(
@@ -531,10 +531,98 @@ fn export_flags_beat_the_recalled_export_settings() {
 
 #[test]
 fn export_defaults_apply_without_config() {
-    let job = export_job(ExportArgs::default(), None, ConfigSource::Missing);
+    let job = export_job(ExportArgs::default(), None, ConfigSource::Missing).unwrap();
 
     assert_eq!(job.export, ExportSettings::default());
     assert_eq!(job.base_data_folder, PathBuf::from(".eh-data"));
+}
+
+fn dump_filter(values: &[&str]) -> TextFilterArgs {
+    TextFilterArgs {
+        dump_filter: Some(values.iter().map(|value| (*value).to_owned()).collect()),
+        filter_regex: None,
+    }
+}
+
+fn keywords(values: &[&str]) -> Option<TextFilter> {
+    Some(TextFilter::Contains(
+        values.iter().map(|value| (*value).to_owned()).collect(),
+    ))
+}
+
+#[rstest]
+#[case::trailing_empty_dropped(&["a", ""], &["a"])]
+#[case::spaces_trimmed(&["error", " timeout"], &["error", "timeout"])]
+fn dump_filter_keywords_are_trimmed_and_empty_ones_dropped(
+    #[case] values: &[&str],
+    #[case] expected: &[&str],
+) {
+    let read = job(
+        ReadArgs {
+            target: developer(),
+            text: dump_filter(values),
+            ..ReadArgs::default()
+        },
+        None,
+        &Environment::default(),
+    )
+    .unwrap();
+    let export = export_job(
+        ExportArgs {
+            text: dump_filter(values),
+            ..ExportArgs::default()
+        },
+        None,
+        ConfigSource::Missing,
+    )
+    .unwrap();
+
+    assert_eq!(read.config.capture.filters.text, keywords(expected));
+    assert_eq!(export.filters.text, keywords(expected));
+}
+
+#[rstest]
+#[case::only_empty_items(&["", ""])]
+#[case::one_empty_item(&[""])]
+#[case::no_items(&[])]
+fn a_dump_filter_with_no_keyword_is_refused_for_read_and_export(#[case] values: &[&str]) {
+    let read = error_of(
+        ReadArgs {
+            target: developer(),
+            text: dump_filter(values),
+            ..ReadArgs::default()
+        },
+        None,
+        &Environment::default(),
+    );
+    let export = export_job(
+        ExportArgs {
+            text: dump_filter(values),
+            ..ExportArgs::default()
+        },
+        None,
+        ConfigSource::Missing,
+    )
+    .unwrap_err();
+
+    assert!(read.contains(NO_KEYWORD), "{read}");
+    assert!(export.to_string().contains(NO_KEYWORD), "{export:#}");
+}
+
+#[test]
+fn a_dump_filter_with_no_keyword_does_not_fall_back_to_the_recalled_filter() {
+    let recalled = recalled_developer_config();
+
+    let error = error_of(
+        ReadArgs {
+            text: dump_filter(&[""]),
+            ..ReadArgs::default()
+        },
+        Some(&recalled),
+        &Environment::default(),
+    );
+
+    assert!(error.contains(NO_KEYWORD), "{error}");
 }
 
 fn send_args(target: TargetArgs) -> SendArgs {
@@ -683,6 +771,22 @@ fn send_takes_the_count_routing_pacing_and_event_from_the_flags() {
     assert_eq!(job.event.body, b"x");
     assert_eq!(job.event.content_type.as_deref(), Some("application/json"));
     assert_eq!(job.body_source, BodySource::Inline);
+}
+
+#[rstest]
+#[case::trimmed(" application/json ", Some("application/json"))]
+#[case::empty("", None)]
+#[case::blank("  ", None)]
+fn send_content_type_is_trimmed_and_blank_means_none(
+    #[case] given: &str,
+    #[case] expected: Option<&str>,
+) {
+    let mut args = send_args(developer());
+    args.content_type = Some(given.to_owned());
+
+    let job = send(args, None, &Environment::default()).unwrap();
+
+    assert_eq!(job.event.content_type.as_deref(), expected);
 }
 
 #[test]

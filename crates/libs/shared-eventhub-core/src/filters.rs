@@ -30,9 +30,10 @@ pub enum TimeFilter {
 /// A condition on a message's body.
 ///
 /// Serializes as the pattern text (`{"Regex": "..."}`) and deserializes
-/// through [`TextFilter::regex`], so an invalid pattern in a saved filter is
-/// a load error rather than a runtime failure. Equality compares the pattern
-/// text, because compiled regexes have no equality of their own.
+/// through [`TextFilter::regex`] and [`TextFilter::keywords`], so an invalid
+/// pattern or a keyword list with no keyword in a saved filter is a load
+/// error rather than a runtime failure. Equality compares the pattern text,
+/// because compiled regexes have no equality of their own.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(try_from = "TextFilterRepr", into = "TextFilterRepr")]
 pub enum TextFilter {
@@ -60,6 +61,20 @@ impl TextFilter {
             .context("Invalid text filter regex")?;
 
         Ok(Self::Regex(regex))
+    }
+
+    /// A [`TextFilter::Contains`] over `items`, each trimmed, with empty ones
+    /// dropped; `None` when no keyword is left. Order and duplicates are kept.
+    /// An empty keyword would match every body, so none is ever kept.
+    pub fn keywords<'a>(items: impl IntoIterator<Item = &'a str>) -> Option<Self> {
+        let needles: Vec<String> = items
+            .into_iter()
+            .map(str::trim)
+            .filter(|needle| !needle.is_empty())
+            .map(str::to_owned)
+            .collect();
+
+        (!needles.is_empty()).then_some(Self::Contains(needles))
     }
 
     /// Returns `true` when `text` satisfies this filter.
@@ -92,7 +107,8 @@ impl TryFrom<TextFilterRepr> for TextFilter {
 
     fn try_from(repr: TextFilterRepr) -> anyhow::Result<Self> {
         match repr {
-            TextFilterRepr::Contains(needles) => Ok(Self::Contains(needles)),
+            TextFilterRepr::Contains(needles) => Self::keywords(needles.iter().map(String::as_str))
+                .context("A keyword filter needs at least one keyword"),
             TextFilterRepr::Regex(pattern) => Self::regex(&pattern),
         }
     }
@@ -532,6 +548,61 @@ mod tests {
         let result = serde_json::from_str::<TextFilter>(r#"{"Regex":"(unclosed"}"#);
 
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::kept_as_typed(vec!["a", "b"], vec!["a", "b"])]
+    #[case::trimmed(vec![" a ", "b "], vec!["a", "b"])]
+    #[case::empty_middle_dropped(vec!["a", "", "b"], vec!["a", "b"])]
+    #[case::trailing_empty_dropped(vec!["a", ""], vec!["a"])]
+    #[case::blank_dropped(vec!["a", " \t "], vec!["a"])]
+    #[case::duplicates_kept(vec!["a", "a"], vec!["a", "a"])]
+    fn keywords_trim_and_drop_empty_items(#[case] items: Vec<&str>, #[case] expected: Vec<&str>) {
+        let expected = expected.into_iter().map(String::from).collect();
+
+        assert_eq!(
+            TextFilter::keywords(items),
+            Some(TextFilter::Contains(expected))
+        );
+    }
+
+    #[rstest]
+    #[case::no_items(vec![])]
+    #[case::one_empty(vec![""])]
+    #[case::only_blanks(vec!["", " "])]
+    fn keywords_with_nothing_left_are_none(#[case] items: Vec<&str>) {
+        assert_eq!(TextFilter::keywords(items), None);
+    }
+
+    #[test]
+    fn keywords_with_a_trailing_empty_item_do_not_match_every_body() {
+        let filter = TextFilter::keywords(["a", ""]).unwrap();
+
+        assert!(!filter.is_match("zzz"));
+    }
+
+    #[test]
+    fn a_saved_keyword_filter_drops_its_empty_items_on_load() {
+        let filter: TextFilter = serde_json::from_str(r#"{"Contains":["a",""," b "]}"#).unwrap();
+
+        assert_eq!(
+            filter,
+            TextFilter::Contains(vec!["a".to_owned(), "b".to_owned()])
+        );
+    }
+
+    #[rstest]
+    #[case::one_empty(r#"{"Contains":[""]}"#)]
+    #[case::no_items(r#"{"Contains":[]}"#)]
+    fn a_saved_keyword_filter_with_no_keyword_fails_to_load(#[case] json: &str) {
+        let error = serde_json::from_str::<TextFilter>(json).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("A keyword filter needs at least one keyword"),
+            "{error}"
+        );
     }
 
     #[test]

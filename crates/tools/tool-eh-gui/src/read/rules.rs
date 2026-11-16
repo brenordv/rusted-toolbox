@@ -252,17 +252,11 @@ fn text_filter(draft: &DraftKey, issues: &mut RulesIssues) -> Option<TextFilter>
     match draft.text_mode {
         TextMode::None => None,
         TextMode::Contains => {
-            let needles: Vec<String> = text
-                .split(',')
-                .map(str::trim)
-                .filter(|needle| !needle.is_empty())
-                .map(str::to_owned)
-                .collect();
-            if needles.is_empty() {
+            let filter = TextFilter::keywords(text.split(','));
+            if filter.is_none() {
                 issues.text = Some("Enter one or more keywords, separated by commas".to_owned());
-                return None;
             }
-            Some(TextFilter::Contains(needles))
+            filter
         }
         TextMode::Regex => {
             if text.is_empty() {
