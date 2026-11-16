@@ -350,11 +350,11 @@ fn option_word(word: &str) -> (&str, Option<&str>) {
     }
 }
 
-/// Checks the value of `escape` on the placeholder `name`; `json` is the one escape. The error
-/// is the problem only; the caller puts the position in front.
+/// Checks the value of `escape` on the placeholder `name`; `json`, in any ASCII case, is the
+/// one escape. The error is the problem only; the caller puts the position in front.
 fn check_escape(value: Option<&str>, name: &str) -> Result<()> {
     match value {
-        Some("json") => Ok(()),
+        Some(value) if value.eq_ignore_ascii_case("json") => Ok(()),
         Some(other) => bail!("unknown escape '{}' for {name}; use json", quote(other)),
         None => bail!("'escape' needs a value, as in escape=json"),
     }
