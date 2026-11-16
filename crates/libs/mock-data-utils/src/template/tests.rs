@@ -508,6 +508,9 @@ fn segment_flags(source: &str) -> Vec<bool> {
 #[case::clock_with_escape("{{now escape=json}}", [true])]
 #[case::clock_without("{{utc-now}}", [false])]
 #[case::beside_a_locale("{{person.city locale=pt-br escape=json}}", [true])]
+#[case::mock_upper_case("{{person.last-name escape=JSON}}", [true])]
+#[case::mock_mixed_case("{{person.last-name escape=jSoN}}", [true])]
+#[case::clock_title_case("{{now escape=Json}}", [true])]
 fn compile_records_escape_json_on_the_segment(#[case] source: &str, #[case] flags: [bool; 1]) {
     assert_eq!(segment_flags(source), flags);
 }
@@ -524,9 +527,17 @@ fn escape_json_keeps_the_inert_locale_note() {
     "{{person.last-name escape=xml}}",
     "line 1, column 1: unknown escape 'xml' for person.last-name; use json"
 )]
-#[case::case_sensitive(
-    "{{person.last-name escape=JSON}}",
-    "line 1, column 1: unknown escape 'JSON' for person.last-name; use json"
+#[case::upper_case_key(
+    "{{person.last-name ESCAPE=json}}",
+    "line 1, column 1: unknown option 'ESCAPE' for person.last-name"
+)]
+#[case::upper_case_key_on_a_clock(
+    "{{now ESCAPE=json}}",
+    "line 1, column 1: unknown option 'ESCAPE' for now"
+)]
+#[case::twice_in_different_cases(
+    "{{person.email escape=json escape=JSON}}",
+    "line 1, column 1: 'escape' is given twice"
 )]
 #[case::empty(
     "{{person.email escape=}}",
