@@ -539,7 +539,9 @@ impl AppState {
     }
 
     /// Why the data folder cannot change now, or `None` when it can: nothing may be using the
-    /// current folder.
+    /// current folder. Two holders are left out: a search page in flight is discarded instead,
+    /// and a connect attempt abandoned while preparing lets go of its archive handle when it
+    /// ends.
     pub fn data_folder_lock(&self) -> Option<&'static str> {
         match &self.connection {
             ConnectionState::Disconnected | ConnectionState::Failed(_) => {}
@@ -554,6 +556,9 @@ impl AppState {
         }
         if self.archive.bulk.is_running() {
             return Some("The data folder can change once the bulk export ends.");
+        }
+        if self.read.export_running() || self.archive.inspector.export.is_running() {
+            return Some("The data folder can change once the message export ends.");
         }
         if self.send.is_running() {
             return Some("The data folder can change once the send ends.");

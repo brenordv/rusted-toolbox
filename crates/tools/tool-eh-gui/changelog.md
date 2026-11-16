@@ -1,6 +1,8 @@
 # Changelog
 
 ## 1.0.0
+- The data folder cannot change while a message export (Export… in the Read or Export
+  inspector) writes; the connect sheet disables Change and says why.
 - The Send sidebar has Correlation id and Properties fields after Pacing. Properties take one
   `key=value` per line, the syntax of `eh send --property`, in a monospace box four lines tall
   that breaks long values anywhere and scrolls inside once it holds text; a bad or repeated line

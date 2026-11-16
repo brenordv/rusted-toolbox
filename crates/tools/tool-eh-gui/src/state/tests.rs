@@ -3,7 +3,9 @@ use crate::archive::bulk::BulkExport;
 use crate::archive::test_support::{messages as archive_messages, page as archive_page};
 use crate::bridge::test_support::detached_session;
 use crate::form::SecretSource;
+use crate::read::inspector::ExportPhase;
 use shared_eventhub_core::engine::{EngineCommand, PartitionEnd};
+use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_core::stats::{StatsSnapshot, StatsTracker};
 use shared_eventhub_persistence::export::ExportOutcome;
 use std::collections::BTreeMap;
@@ -1277,6 +1279,176 @@ fn the_data_folder_lock_names_what_holds_the_folder() {
     assert!(free.is_none());
     assert!(exporting.is_some_and(|reason| reason.contains("bulk export")));
     assert!(connected.is_some_and(|reason| reason.contains("session")));
+}
+
+const MESSAGE_EXPORT_LOCK: &str = "The data folder can change once the message export ends.";
+
+impl Fixture {
+    fn export_phase(&self, section: ListSection) -> &ExportPhase {
+        match section {
+            ListSection::Read => &self.state.read.inspector.export,
+            ListSection::Export => &self.state.archive.inspector.export,
+        }
+    }
+
+    /// Export pressed on `section`'s selected message and a file picked; returns the export's
+    /// owner and key.
+    fn export_selected(&mut self, section: ListSection) -> (u64, MessageKey) {
+        self.apply(Input::inspector(section, InspectorInput::ExportPressed));
+        let (owner, key) = match self.export_phase(section) {
+            ExportPhase::Picking { owner, key, .. } => (*owner, key.clone()),
+            other => panic!("expected the save dialog, got {other:?}"),
+        };
+        self.apply(Input::inspector(
+            section,
+            InspectorInput::ExportAnswered {
+                owner,
+                key: key.clone(),
+                answer: Ok(Some(PathBuf::from("one.txt"))),
+            },
+        ));
+        (owner, key)
+    }
+
+    /// A message export from `section`'s inspector still writing while nothing else holds the
+    /// data folder (a Read export outlives its session); returns its owner and key.
+    fn message_export_running(&mut self, section: ListSection) -> (u64, MessageKey) {
+        let export = match section {
+            ListSection::Read => {
+                let (session, _) = self.connected();
+                self.apply(delivery(
+                    session,
+                    EngineEvent::Message(Box::new(crate::read::test_support::captured(
+                        "0", 1, "a",
+                    ))),
+                ));
+                self.apply(Input::Read(ReadInput::ListFlush));
+                self.apply(Input::Read(ReadInput::Select("p0-s1".to_owned())));
+                let export = self.export_selected(section);
+                self.apply(done(
+                    session,
+                    Ok(summary(RunEnd::Stopped, &[])),
+                    clean_finish(),
+                ));
+                export
+            }
+            ListSection::Export => {
+                self.searched(1);
+                self.apply(Input::Archive(ArchiveInput::Select("p0-s0".to_owned())));
+                self.export_selected(section)
+            }
+        };
+        assert!(self.export_phase(section).is_running());
+        export
+    }
+}
+
+fn message_export_done(
+    section: ListSection,
+    owner: u64,
+    key: MessageKey,
+    result: Result<(), String>,
+) -> Input {
+    Input::inspector(
+        section,
+        InspectorInput::ExportDone {
+            owner,
+            key,
+            result,
+            now: base_time(),
+        },
+    )
+}
+
+#[rstest::rstest]
+#[case::read(ListSection::Read)]
+#[case::export(ListSection::Export)]
+fn the_data_folder_lock_names_a_running_message_export(#[case] section: ListSection) {
+    let mut f = fixture();
+    f.message_export_running(section);
+
+    let reason = f.state.data_folder_lock();
+
+    assert_eq!(reason, Some(MESSAGE_EXPORT_LOCK));
+}
+
+#[test]
+fn an_open_message_export_dialog_leaves_the_data_folder_free() {
+    let mut f = fixture();
+    f.searched(1);
+    f.apply(Input::Archive(ArchiveInput::Select("p0-s0".to_owned())));
+
+    f.apply(Input::inspector(
+        ListSection::Export,
+        InspectorInput::ExportPressed,
+    ));
+
+    assert!(matches!(
+        f.state.archive.inspector.export,
+        ExportPhase::Picking { .. }
+    ));
+    assert!(f.state.data_folder_lock().is_none());
+}
+
+#[rstest::rstest]
+#[case::read(ListSection::Read)]
+#[case::export(ListSection::Export)]
+fn a_data_folder_pick_is_refused_while_a_message_export_runs(#[case] section: ListSection) {
+    let mut f = fixture();
+    f.message_export_running(section);
+    let folder = f.state.form.data_folder.clone();
+    let searched = f.state.archive.searched();
+
+    let out = f.apply(Input::DataFolderPicked(PathBuf::from("other")));
+
+    assert!(!out.changed && out.effects.is_empty());
+    assert_eq!(f.state.form.data_folder, folder);
+    assert_eq!(f.state.archive.searched(), searched);
+}
+
+#[rstest::rstest]
+#[case::read_exported(ListSection::Read, Ok(()))]
+#[case::read_failed(ListSection::Read, Err("disk full".to_owned()))]
+#[case::export_exported(ListSection::Export, Ok(()))]
+#[case::export_failed(ListSection::Export, Err("disk full".to_owned()))]
+fn only_its_own_export_done_frees_the_data_folder(
+    #[case] section: ListSection,
+    #[case] result: Result<(), String>,
+) {
+    let mut f = fixture();
+    let (owner, key) = f.message_export_running(section);
+
+    f.apply(message_export_done(
+        section,
+        owner.wrapping_add(1),
+        key.clone(),
+        Ok(()),
+    ));
+    let after_another = f.state.data_folder_lock();
+    f.apply(message_export_done(section, owner, key, result));
+    let picked = f.apply(Input::DataFolderPicked(PathBuf::from("other")));
+
+    assert_eq!(after_another, Some(MESSAGE_EXPORT_LOCK));
+    assert!(matches!(
+        picked.effects.as_slice(),
+        [Effect::SwitchDataFolder(_)]
+    ));
+}
+
+#[test]
+fn a_bulk_export_is_named_before_a_message_export() {
+    let mut f = fixture();
+    f.bulk_running();
+    f.apply(Input::Archive(ArchiveInput::Select("p0-s0".to_owned())));
+    f.export_selected(ListSection::Export);
+
+    let reason = f.state.data_folder_lock();
+
+    assert!(f.state.archive.inspector.export.is_running());
+    assert_eq!(
+        reason,
+        Some("The data folder can change once the bulk export ends.")
+    );
 }
 
 #[test]
