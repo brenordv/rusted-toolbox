@@ -47,10 +47,10 @@ locales produce non-ASCII local parts (mock data, matching fake's own localized 
 ```
 
 - A placeholder is `{{type option=value ...}}`: a command name, then options as words (`min=N`,
-  `max=N`, `length=N`, `precision=N`, `age=N`, `range=N`, `locale=CODE`, and the bare `past`
-  and `future`). Whitespace and newlines inside the braces don't matter. `OPTIONS_HELP` and
-  `placeholder_groups()` hold the help text for the syntax.
-- `{{now}}` and `{{utc-now}}` take no options and print `render`'s `now` as RFC 3339 to the
+  `max=N`, `length=N`, `precision=N`, `age=N`, `range=N`, `locale=CODE`, `escape=json`, and the
+  bare `past` and `future`). Whitespace and newlines inside the braces don't matter.
+  `OPTIONS_HELP` and `placeholder_groups()` hold the help text for the syntax.
+- `{{now}}` and `{{utc-now}}` take no options but `escape` and print `render`'s `now` as RFC 3339 to the
   millisecond (truncated): `{{now}}` in the local time zone with its offset
   (`2026-11-15T14:03:07.123-03:00`), `{{utc-now}}` in UTC (`2026-11-15T17:03:07.123Z`). Every
   one in a render shows the same instant. They are not data types, so `generate_mock_data` and
@@ -64,9 +64,15 @@ locales produce non-ASCII local parts (mock data, matching fake's own localized 
 - A non-default `locale` on a type that ignores it is not an error; `inert_locale_notes()`
   returns one note per type and locale pair (`locale_is_inert` is the rule).
 - `render` fails once the output passes `max_bytes`, naming the cap and, when a placeholder's
-  value crossed it, that placeholder by position and type; it never quotes the template.
-  Values are inserted as generated, with no escaping: fake's pt-br last names include
-  `D"ávila`, which breaks a JSON string.
+  value crossed it, that placeholder by position and type; it never quotes the template. The
+  cap counts a value after its escape.
+- Values are inserted as generated, with no escaping, unless the placeholder has `escape=json`:
+  fake's pt-br last names include `D"ávila`, which breaks a JSON string, and
+  `"{{person.last-name locale=pt-br escape=json}}"` renders it as `"D\"ávila"`. `escape=json`
+  escapes what RFC 8259 requires inside a string (`"`, `\`, and U+0000 to U+001F; `/` and
+  non-ASCII stay as they are) and works on every placeholder, the clock ones included. It is
+  for one level of JSON string between quotes you write: it does nothing for a placeholder
+  outside quotes, for JSON nested inside a JSON string, or for the template's own text.
 - `Debug` of a template shows its counts only.
 
 ## Contracts

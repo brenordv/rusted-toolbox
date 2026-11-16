@@ -286,13 +286,19 @@ fn placeholder_groups_cover_every_type_once_under_its_prefix_then_the_clock() {
 }
 
 #[test]
-fn options_help_names_the_clock_placeholders() {
+fn options_help_names_the_escape_and_the_clock_placeholders() {
+    let lines: Vec<&str> = OPTIONS_HELP.lines().collect();
+
     assert!(
-        OPTIONS_HELP
-            .lines()
+        lines
+            .iter()
+            .any(|line| line.starts_with("escape=json: every placeholder"))
+    );
+    assert!(
+        lines
             .last()
             .unwrap()
-            .starts_with("now, utc-now: none")
+            .starts_with("now, utc-now: escape only")
     );
 }
 
@@ -376,5 +382,195 @@ fn a_clock_value_past_the_cap_fails_naming_the_placeholder_and_not_the_text() {
     assert_eq!(
         error,
         "line 1, column 13: utc-now: the rendered body passes the 16-byte limit"
+    );
+}
+
+fn json_escaped(value: &str) -> String {
+    let mut out = String::new();
+    push_json_escaped(&mut out, value);
+    out
+}
+
+#[test]
+fn every_char_round_trips_and_only_quote_backslash_and_c0_controls_change() {
+    let mut changed = Vec::new();
+
+    for c in char::MIN..=char::MAX {
+        let text = c.to_string();
+        let escaped = json_escaped(&text);
+        let parsed: String = serde_json::from_str(&format!("\"{escaped}\"")).unwrap();
+        assert_eq!(parsed, text, "{c:?}");
+        if escaped != text {
+            changed.push(c);
+        }
+    }
+
+    let expected: Vec<char> = ('\u{0}'..='\u{1f}').chain(['"', '\\']).collect();
+    assert_eq!(changed, expected);
+}
+
+#[rstest]
+#[case::quote("\"", "\\\"")]
+#[case::backslash("\\", "\\\\")]
+#[case::line_feed("\n", "\\n")]
+#[case::carriage_return("\r", "\\r")]
+#[case::tab("\t", "\\t")]
+#[case::backspace("\u{8}", "\\b")]
+#[case::form_feed("\u{c}", "\\f")]
+#[case::nul("\u{0}", "\\u0000")]
+#[case::start_of_heading("\u{1}", "\\u0001")]
+#[case::unit_separator("\u{1f}", "\\u001f")]
+#[case::delete_kept("\u{7f}", "\u{7f}")]
+#[case::c1_kept("\u{85}", "\u{85}")]
+#[case::non_ascii_and_solidus_kept("ação/", "ação/")]
+#[case::empty("", "")]
+fn json_escaping_writes_rfc_8259_escapes(#[case] value: &str, #[case] escaped: &str) {
+    assert_eq!(json_escaped(value), escaped);
+}
+
+#[rstest]
+#[case::escaped(true, "a\\\"b")]
+#[case::as_generated(false, "a\"b")]
+fn push_value_escapes_only_when_asked(#[case] json: bool, #[case] expected: &str) {
+    let mut out = String::new();
+
+    push_value(&mut out, "a\"b", json, CAP).unwrap();
+
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn push_value_checks_the_cap_after_escaping() {
+    let quotes = "\"".repeat(10);
+    let mut escaped = String::new();
+    let mut plain = String::new();
+
+    let escaped_result = push_value(&mut escaped, &quotes, true, 15);
+    let plain_result = push_value(&mut plain, &quotes, false, 15);
+
+    assert_eq!(
+        format!("{:#}", escaped_result.unwrap_err()),
+        "the rendered body passes the 15-byte limit"
+    );
+    assert!(plain_result.is_ok());
+}
+
+#[test]
+fn an_escaped_value_inside_quotes_parses_as_json() {
+    let value = "say \"hi\" \\ a\\b\nnext\tcol \u{1} \u{1f} ação 🦀";
+    let mut body = String::from("{\"v\": \"");
+
+    push_value(&mut body, value, true, CAP).unwrap();
+    body.push_str("\"}");
+
+    let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(parsed["v"], value);
+}
+
+#[test]
+fn a_pt_br_last_name_template_with_escape_renders_valid_json_every_time() {
+    let template =
+        Template::compile("{\"n\": \"{{person.last-name locale=pt-br escape=json}}\"}").unwrap();
+
+    for _ in 0..2_000 {
+        let rendered = template.render(CAP, instant()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        assert!(!parsed["n"].as_str().unwrap().is_empty(), "{rendered}");
+    }
+}
+
+#[test]
+fn escape_json_on_a_clock_renders_the_same_text() {
+    let escaped = Template::compile("{{utc-now escape=json}} {{now escape=json}}").unwrap();
+    let plain = Template::compile("{{utc-now}} {{now}}").unwrap();
+
+    assert_eq!(
+        escaped.render(CAP, instant()).unwrap(),
+        plain.render(CAP, instant()).unwrap()
+    );
+}
+
+fn segment_flags(source: &str) -> Vec<bool> {
+    Template::compile(source)
+        .unwrap()
+        .segments
+        .iter()
+        .filter_map(|segment| match segment {
+            Segment::Literal(_) => None,
+            Segment::Mock { json, .. } | Segment::Clock { json, .. } => Some(*json),
+        })
+        .collect()
+}
+
+#[rstest]
+#[case::mock_with_escape("{{person.last-name escape=json}}", [true])]
+#[case::mock_without("{{person.last-name}}", [false])]
+#[case::clock_with_escape("{{now escape=json}}", [true])]
+#[case::clock_without("{{utc-now}}", [false])]
+#[case::beside_a_locale("{{person.city locale=pt-br escape=json}}", [true])]
+fn compile_records_escape_json_on_the_segment(#[case] source: &str, #[case] flags: [bool; 1]) {
+    assert_eq!(segment_flags(source), flags);
+}
+
+#[test]
+fn escape_json_keeps_the_inert_locale_note() {
+    let template = Template::compile("{{random.integer locale=pt-br escape=json}}").unwrap();
+
+    assert_eq!(template.inert_locale_notes().len(), 1);
+}
+
+#[rstest]
+#[case::unknown(
+    "{{person.last-name escape=xml}}",
+    "line 1, column 1: unknown escape 'xml' for person.last-name; use json"
+)]
+#[case::case_sensitive(
+    "{{person.last-name escape=JSON}}",
+    "line 1, column 1: unknown escape 'JSON' for person.last-name; use json"
+)]
+#[case::empty(
+    "{{person.email escape=}}",
+    "line 1, column 1: unknown escape '' for person.email; use json"
+)]
+#[case::bare(
+    "{{person.email escape}}",
+    "line 1, column 1: 'escape' needs a value, as in escape=json"
+)]
+#[case::twice(
+    "{{person.email escape=json escape=xml}}",
+    "line 1, column 1: 'escape' is given twice"
+)]
+#[case::unknown_on_a_clock(
+    "{{now escape=xml}}",
+    "line 1, column 1: unknown escape 'xml' for now; use json"
+)]
+#[case::twice_on_a_clock(
+    "{{utc-now escape=json escape=json}}",
+    "line 1, column 1: 'escape' is given twice"
+)]
+#[case::bare_on_a_clock(
+    "{{utc-now escape}}",
+    "line 1, column 1: 'escape' needs a value, as in escape=json"
+)]
+#[case::another_option_after_the_escape(
+    "{{now escape=json past}}",
+    "line 1, column 1: unknown option 'past' for now"
+)]
+fn escape_errors_name_the_line_column_and_problem(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(compile_error(source), expected);
+}
+
+#[test]
+fn a_long_unknown_escape_is_quoted_cut_short() {
+    let value = "x".repeat(80);
+
+    let error = compile_error(&format!("{{{{person.email escape={value}}}}}"));
+
+    assert!(
+        error.ends_with(&format!(
+            "unknown escape '{}…' for person.email; use json",
+            "x".repeat(QUOTE_LIMIT)
+        )),
+        "{error}"
     );
 }

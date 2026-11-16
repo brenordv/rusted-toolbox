@@ -315,10 +315,11 @@ eh send -e orders --template -n 500 --content-type application/json --body \
 
 - A placeholder names a type (`person.email`, `random.integer`, ...; `eh send --help` lists all
   32) and takes options as words: `min=N max=N` (`random.integer`, `random.float`),
-  `precision=N`, `length=N` (up to 1048576), `age=N`, `range=N`, `past`, `future`, and
-  `locale=CODE` (`pt-br`, `ja-jp`, ...). Options a type ignores are ignored; a locale a type
-  ignores prints a notice. Whitespace and newlines inside the braces don't matter.
-- `{{now}}` and `{{utc-now}}` take no options and put in the time the event is built, RFC 3339
+  `precision=N`, `length=N` (up to 1048576), `age=N`, `range=N`, `past`, `future`,
+  `locale=CODE` (`pt-br`, `ja-jp`, ...), and `escape=json` (below). Options a type ignores are
+  ignored; a locale a type ignores prints a notice. Whitespace and newlines inside the braces
+  don't matter.
+- `{{now}}` and `{{utc-now}}` take no options but `escape` and put in the time the event is built, RFC 3339
   to the millisecond: `{{now}}` in this machine's time zone with its offset
   (`2026-11-15T14:03:07.123-03:00`), `{{utc-now}}` in UTC (`2026-11-15T17:03:07.123Z`). Every one
   in an event shows the same instant. `{{now}}` reveals this machine's UTC offset; use
@@ -327,8 +328,15 @@ eh send -e orders --template -n 500 --content-type application/json --body \
 - `\{{` writes a literal `{{`; any other backslash stays as written. So a backslash right before
   a placeholder can't be written: `logs\\{{internet.username}}` sends
   `logs\{{internet.username}}`.
-- Values go in as generated, with no escaping. A JSON template breaks when a value holds `"` or
-  `\`, and some do: Brazilian last names include `D"ávila` (`{{person.last-name locale=pt-br}}`).
+- Values go in as generated, with no escaping, unless the placeholder has `escape=json`. A JSON
+  template breaks when a value holds `"` or `\`, and some do: Brazilian last names include
+  `D"ávila` (`{{person.last-name locale=pt-br}}`). Put `escape=json` on each placeholder inside
+  a JSON string: `"customer": "{{person.last-name locale=pt-br escape=json}}"` sends
+  `"customer": "D\"ávila"`. It escapes `"`, `\`, and U+0000 to U+001F (RFC 8259) and works
+  on every placeholder, `{{now}}` and `{{utc-now}}` included. It covers one level of JSON
+  string between quotes you write: not a placeholder outside quotes, JSON nested inside a JSON
+  string, or the template's own text. Any other escape is a compile error ("unknown escape
+  'xml' for person.last-name; use json").
 - The body must be UTF-8. A template that does not compile fails before anything is opened or
   saved, naming the line and column ("The --template body does not compile: line 3, column 14:
   unknown type 'person.fullname'"). A template holds at most 100,000 placeholders, and each
