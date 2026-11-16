@@ -33,7 +33,8 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
 }
 
 /// Keys no focused control took: the Send shortcuts (`mod+enter` while the Send section shows,
-/// `mod+1..3` to pick a section), and `mod+f`, which focuses the Read list's quick search.
+/// `mod+1..3` to pick a section), `mod+f`, which focuses the Read list's quick search, `alt+t`,
+/// which fans the toasts out and focuses the front card, and Escape, which folds them.
 pub fn window_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
     if send::send_keys(s, key, tx) {
         return true;
@@ -41,8 +42,12 @@ pub fn window_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
     let focus_search = Chord::parse("mod+f").is_ok_and(|chord| chord.matches_tx(key, tx));
     if focus_search {
         tx.focus(read::SEARCH_KEY, true);
+        return true;
     }
-    focus_search
+    if Chord::parse("alt+t").is_ok_and(|chord| chord.matches_tx(key, tx)) {
+        return shell::fan_out_toasts(s, tx);
+    }
+    shell::fold_toasts_on_escape(s, key, tx)
 }
 
 #[cfg(test)]

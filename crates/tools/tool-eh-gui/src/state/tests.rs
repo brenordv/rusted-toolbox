@@ -266,8 +266,14 @@ fn a_session_that_cannot_start_fails_with_its_cause_and_toasts_where_read_is_hid
         "The archive is in use by another eh or eh-gui"
     );
     assert_eq!(f.failure().stage, FailureStage::Starting);
-    assert_eq!(f.state.toasts.len(), toasts);
-    assert!(f.state.toasts.iter().all(|t| t.kind == ToastKind::Danger));
+    assert_eq!(f.state.toasts().entries().len(), toasts);
+    assert!(
+        f.state
+            .toasts()
+            .entries()
+            .iter()
+            .all(|t| t.options.kind == ToastKind::Danger)
+    );
 }
 
 #[test]
@@ -420,7 +426,7 @@ fn a_completed_run_disconnects_with_an_info_toast() {
     ));
 
     assert!(matches!(f.state.connection, ConnectionState::Disconnected));
-    assert_eq!(f.state.toasts[0].kind, ToastKind::Info);
+    assert_eq!(f.state.toasts().entries()[0].options.kind, ToastKind::Info);
 }
 
 #[test]
@@ -431,7 +437,7 @@ fn a_clean_stop_disconnects_without_a_toast() {
     f.apply(done(id, Ok(summary(RunEnd::Stopped, &[])), clean_finish()));
 
     assert!(matches!(f.state.connection, ConnectionState::Disconnected));
-    assert!(f.state.toasts.is_empty());
+    assert!(f.state.toasts().entries().is_empty());
 }
 
 #[test]
@@ -610,7 +616,7 @@ fn a_failed_run_toasts_only_where_read_is_not_the_section(
 
     assert_eq!(has_reopen(&out), closed);
     assert_eq!(f.failure().stage, FailureStage::Run);
-    assert_eq!(f.state.toasts.len(), toasts);
+    assert_eq!(f.state.toasts().entries().len(), toasts);
 }
 
 #[test]
@@ -721,45 +727,6 @@ fn a_data_folder_change_while_idle_switches_the_store() {
     };
     assert_eq!(paths, &DataPaths::new("captures"));
     assert_eq!(f.state.form.data_folder, "captures");
-}
-
-#[test]
-fn info_toasts_expire_after_their_ticks_and_danger_toasts_stay() {
-    let mut f = fixture();
-    f.state.toast(ToastKind::Info, "done".to_owned());
-    f.state.toast(ToastKind::Danger, "broken".to_owned());
-
-    for second in 0..INFO_TOAST_TICKS {
-        f.apply(Input::Tick(
-            base_time() + TimeDelta::seconds(i64::from(second)),
-        ));
-    }
-
-    assert_eq!(f.state.toasts.len(), 1);
-    assert_eq!(f.state.toasts[0].kind, ToastKind::Danger);
-}
-
-#[test]
-fn toasts_past_the_limit_drop_the_oldest() {
-    let mut f = fixture();
-
-    for index in 0..6 {
-        f.state.toast(ToastKind::Danger, index.to_string());
-    }
-
-    let texts: Vec<&str> = f.state.toasts.iter().map(|t| t.text.as_str()).collect();
-    assert_eq!(texts, ["2", "3", "4", "5"]);
-}
-
-#[test]
-fn a_dismissed_toast_leaves() {
-    let mut f = fixture();
-    f.state.toast(ToastKind::Danger, "broken".to_owned());
-    let id = f.state.toasts[0].id;
-
-    f.apply(Input::DismissToast(id));
-
-    assert!(f.state.toasts.is_empty());
 }
 
 #[test]
@@ -909,7 +876,10 @@ fn a_failed_save_keeps_the_secret_and_shows_why() {
         f.state.save_status,
         SaveStatus::Failed("belongs to another tool".to_owned())
     );
-    assert_eq!(f.state.toasts[0].kind, ToastKind::Danger);
+    assert_eq!(
+        f.state.toasts().entries()[0].options.kind,
+        ToastKind::Danger
+    );
     assert_eq!(typed_text(&f.state), SECRET);
 }
 
@@ -932,8 +902,13 @@ fn run_effects_without_services_reports_an_internal_error() {
 
     crate::app::run_effects(&mut f.state, out.effects);
 
-    assert_eq!(f.state.toasts.len(), 1);
-    assert!(f.state.toasts[0].text.starts_with("Internal error"));
+    assert_eq!(f.state.toasts().entries().len(), 1);
+    assert!(
+        f.state.toasts().entries()[0]
+            .options
+            .text
+            .starts_with("Internal error")
+    );
 }
 
 fn stats_delivery(session: u64, received: u64, stored: u64) -> Input {
@@ -1191,9 +1166,17 @@ fn a_failed_message_export_shows_a_danger_toast() {
         },
     ));
 
-    assert_eq!(f.state.toasts.len(), 1);
-    assert_eq!(f.state.toasts[0].kind, ToastKind::Danger);
-    assert!(f.state.toasts[0].text.contains("disk full"));
+    assert_eq!(f.state.toasts().entries().len(), 1);
+    assert_eq!(
+        f.state.toasts().entries()[0].options.kind,
+        ToastKind::Danger
+    );
+    assert!(
+        f.state.toasts().entries()[0]
+            .options
+            .text
+            .contains("disk full")
+    );
 }
 
 impl Fixture {
@@ -1252,12 +1235,13 @@ fn a_failed_bulk_export_toasts_only_where_its_bar_cannot_be_seen(
 
     f.apply(bulk_done(export, files_failed(false)));
 
-    assert_eq!(f.state.toasts.len(), toasts);
+    assert_eq!(f.state.toasts().entries().len(), toasts);
     assert!(
         f.state
-            .toasts
+            .toasts()
+            .entries()
             .iter()
-            .all(|t| t.kind == ToastKind::Danger && t.text.contains("disk full"))
+            .all(|t| t.options.kind == ToastKind::Danger && t.options.text.contains("disk full"))
     );
 }
 
@@ -1358,7 +1342,7 @@ fn a_failed_bulk_export_with_the_window_closed_reopens_it(
 
     assert!(has_reopen(&finished));
     assert!(!has_quit(&finished));
-    assert_eq!(f.state.toasts.len(), 1);
+    assert_eq!(f.state.toasts().entries().len(), 1);
 }
 
 #[test]
@@ -1371,7 +1355,7 @@ fn a_bulk_export_failing_with_the_window_closed_on_export_reopens_to_its_bar_wit
     let finished = f.apply(bulk_done(export, files_failed(false)));
 
     assert!(has_reopen(&finished));
-    assert!(f.state.toasts.is_empty());
+    assert!(f.state.toasts().entries().is_empty());
     assert!(matches!(f.state.archive.bulk, BulkExport::Done { .. }));
 }
 
@@ -1572,7 +1556,11 @@ fn a_failed_send_with_the_window_closed_reopens_it_with_a_danger_toast() {
 
     assert!(has_reopen(&out) && !has_quit(&out));
     assert_eq!(
-        f.state.toasts.last().map(|toast| toast.kind),
+        f.state
+            .toasts()
+            .entries()
+            .last()
+            .map(|toast| toast.options.kind),
         Some(ToastKind::Danger)
     );
 }
@@ -1742,5 +1730,5 @@ fn a_send_outcome_toasts_only_when_its_row_cannot_be_seen(
         shared_eventhub_core::producer::SendEnd::Completed,
     ));
 
-    assert_eq!(f.state.toasts.len(), toasts);
+    assert_eq!(f.state.toasts().entries().len(), toasts);
 }

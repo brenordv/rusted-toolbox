@@ -81,8 +81,10 @@ fn with_frame(app: App<AppState>) -> App<AppState> {
     app
 }
 
-fn on_close(state: &mut AppState, _: &mut Tx) {
+pub(crate) fn on_close(state: &mut AppState, tx: &mut Tx) {
+    let opener = state.toast_hold();
     dispatch(state, Input::WindowClosed(chrono::Utc::now()));
+    views::shell::return_toast_focus(state, tx, opener);
 }
 
 /// Reads `config.json` from `dir` into the form, with a caption that never quotes a value.

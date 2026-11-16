@@ -54,7 +54,7 @@ pub fn press_send(s: &mut AppState, tx: &mut Tx) {
 /// them while a sheet or the error details are open: `mod+enter` sends while the Send section
 /// shows, and `mod+1..3` pick a section. True when `key` was one of them and acted.
 pub fn send_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
-    if s.sheet.is_some() || s.details.is_some() {
+    if s.sheet.is_some() || s.details().is_some() {
         return false;
     }
     let chord = |text: &str| Chord::parse(text).is_ok_and(|chord| chord.matches_tx(key, tx));

@@ -9,7 +9,7 @@ use crate::form::{
     disk_write_index,
 };
 use crate::state::{AppState, Input, SaveStatus, SheetPurpose, ToastKind, error_preview};
-use rune::{El, FileDialogOptions, ScrollSpec, TextEdit, col, row, spacer};
+use rune::{El, FileDialogOptions, ScrollSpec, TextEdit, Tx, col, row, spacer};
 use rune_kit::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
     TextField, TextInput,
@@ -86,7 +86,7 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
             title,
             width: SHEET_WIDTH,
         },
-        |s: &mut AppState| dispatch(s, Input::CloseSheet),
+        |s: &mut AppState, _: &mut Tx| dispatch(s, Input::CloseSheet),
         scroller,
         footer(s, k, purpose),
         layer,

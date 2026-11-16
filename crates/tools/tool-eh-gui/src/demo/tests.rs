@@ -277,13 +277,17 @@ fn seeded_scenarios_reach_their_states_through_apply_and_render() {
     let read = seeded(Scenario::SeededRead, root.path(), &rt);
     let search = seeded(Scenario::SeededSearch, root.path(), &rt);
     let details = seeded(Scenario::ErrorDetails, root.path(), &rt);
+    let toasts = seeded(Scenario::ToastStack, root.path(), &rt);
+    let toasts_open = seeded(Scenario::ToastStackOpen, root.path(), &rt);
 
+    assert_eq!(toasts.toasts().entries().len(), 3);
+    assert!(!toasts.toasts().stack().expanded());
+    assert!(toasts_open.toasts().stack().expanded());
     assert!(matches!(failed.connection, ConnectionState::Failed(_)));
     assert!(matches!(details.connection, ConnectionState::Failed(_)));
     assert!(
         details
-            .details
-            .as_ref()
+            .details()
             .is_some_and(|open| open.text.chars().count() > 2_000)
     );
     assert!(connect.sheet.is_some() && connect.show_issues);
@@ -303,7 +307,16 @@ fn seeded_scenarios_reach_their_states_through_apply_and_render() {
     assert!(read.read.shown.is_some());
     assert!(search.read.list_len() > 0 && search.read.list_len() < 5_000);
     assert_eq!(search.read.search.rebuilding(), None);
-    for state in [failed, connect, empty, read, search, details] {
+    for state in [
+        failed,
+        connect,
+        empty,
+        read,
+        search,
+        details,
+        toasts,
+        toasts_open,
+    ] {
         let mut rt = rune::Runtime::new(
             state,
             crate::views::view,

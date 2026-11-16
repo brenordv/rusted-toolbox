@@ -1,18 +1,20 @@
 use super::builders::{ORDERS, export_state, send_state, state};
 use super::journeys::orders;
 use super::services::ServiceCall;
-use super::worst_cases::{WORST, long_connect_failure};
+use super::toast_tests::toasted;
+use super::worst_cases::{WORST, long_connect_failure, long_text};
 use super::{Harness, a11y_node, a11y_nodes, lists};
 use crate::archive::ArchiveInput;
 use crate::archive::results::Results;
 use crate::archive::test_support::{messages, page};
 use crate::design::tokens::{
-    CONTENT_MIN, INSPECTOR_MIN, LIST_ROW_HEIGHT, SIDEBAR_MIN, WINDOW_MIN, WINDOW_SIZE,
+    CONTENT_MIN, INSPECTOR_MIN, LIST_ROW_HEIGHT, SIDEBAR_MIN, SPACE_SM, TOOLBAR_HEIGHT, WINDOW_MIN,
+    WINDOW_SIZE,
 };
 use crate::form::{AuthChoice, CredentialChoice};
 use crate::read::test_support::captured;
 use crate::send::SendInput;
-use crate::state::{AppState, Input, SheetPurpose};
+use crate::state::{AppState, Input, SheetPurpose, ToastInput, ToastKind};
 use crate::views::SEND_BUTTON_KEY;
 use crate::views::details::{COPY_KEY, DONE_KEY, FAILURE_KEY};
 use rune::Runtime;
@@ -461,7 +463,57 @@ const ROWS: &[Row] = &[
         disabled: &[],
         covered: &["empty-connect", "connect"],
     },
+    Row {
+        name: "three cut danger toasts, folded",
+        build: toasts_folded,
+        reachable: &[
+            "toast-3-details",
+            "toast-3-close",
+            "connect",
+            "pill",
+            TOOLBAR[0],
+            TOOLBAR[1],
+            TOOLBAR[2],
+        ],
+        disabled: &[],
+        covered: &[],
+    },
+    Row {
+        name: "three cut danger toasts, fanned out",
+        build: toasts_fanned,
+        reachable: &[
+            "toast-1-details",
+            "toast-2-details",
+            "toast-3-details",
+            "toast-1-close",
+            "connect",
+            "pill",
+            TOOLBAR[0],
+            TOOLBAR[1],
+            TOOLBAR[2],
+        ],
+        disabled: &[],
+        covered: &[],
+    },
 ];
+
+/// `count` danger toasts with 2,000-character texts, cut in place.
+pub(super) fn cut_dangers(size: (f32, f32), count: usize) -> Harness {
+    let toasts: Vec<_> = (0..count)
+        .map(|n| (ToastKind::Danger, format!("{n}: {}", long_text())))
+        .collect();
+    toasted(size, &toasts)
+}
+
+fn toasts_folded(size: (f32, f32)) -> Harness {
+    cut_dangers(size, 3)
+}
+
+fn toasts_fanned(size: (f32, f32)) -> Harness {
+    let mut h = cut_dangers(size, 3);
+    h.deliver(Input::Toast(ToastInput::Hotkey));
+    h
+}
 
 fn details_open(size: (f32, f32)) -> Harness {
     let mut h = long_connect_failure(size);
@@ -551,7 +603,7 @@ fn accessibility_problems(row: &Row, h: &mut Harness) -> Vec<String> {
             None => problems.push(format!("{spec} is not in the tree")),
         }
     }
-    if h.state().sheet.is_some() || h.state().details.is_some() {
+    if h.state().sheet.is_some() || h.state().details().is_some() {
         for hidden in ["content", "pill", "send-content", "read-rows"] {
             if a11y_node(&tree, hidden).is_some() {
                 problems.push(format!("{hidden} is in the tree behind the modal"));
@@ -594,6 +646,11 @@ fn layout_problems(row: &Row, h: &mut Harness, size: (f32, f32)) -> Vec<String> 
         if inspector_open && size.0 - (x + w) < INSPECTOR_MIN - 0.5 {
             problems.push(format!("the inspector is {} wide", size.0 - (x + w)));
         }
+    }
+    if let Some(stack) = element(&h.rt, "toast-stack")
+        && stack.rect[1] < TOOLBAR_HEIGHT + SPACE_SM - 0.5
+    {
+        problems.push(format!("the toasts reach y {}", stack.rect[1]));
     }
     for list in ["read-list", "archive-list"] {
         if let Some(viewport) = element(&h.rt, list)

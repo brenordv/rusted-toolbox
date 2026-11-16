@@ -16,6 +16,7 @@ use crate::read::{ExportOneRequest, ReadInput};
 use crate::send::SendRequest;
 use crate::state::{AppState, Input};
 use crate::tasks::StoreSlot;
+use crate::views::shell::{keep_toast_focus, return_toast_focus};
 use anyhow::Context;
 use rune::{AppHandle, Tx};
 use shared_eventhub_core::connection::EventHubTarget;
@@ -432,11 +433,15 @@ pub(crate) fn apply_from_runtime(handle: &AppHandle<AppState>, input: Input) {
 }
 
 /// Applies `input`, moves its commit as it asks, and runs its effects; returns whether anything
-/// the view reads changed.
+/// the view reads changed. Focus on a toast control the input folded away or removed moves to
+/// the front card.
 pub(crate) fn apply_input(state: &mut AppState, tx: &mut Tx, input: Input) -> bool {
+    let opener = state.toast_hold();
     let outcome = state.apply(input);
     apply_motion(&outcome, tx);
     run_effects(state, outcome.effects);
+    return_toast_focus(state, tx, opener);
+    keep_toast_focus(state, tx);
     outcome.changed
 }
 
