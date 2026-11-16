@@ -33,6 +33,9 @@
   `mock_data_utils` template under the same content type, with the caller's `now` as the time
   `{{now}}` and `{{utc-now}}` show. Adds the `mock-data-utils` dependency.
 - `RunSummary::failed_partitions` lists the partitions that ended in `Failed`, in map order.
+- `TextFilter::keywords` builds a keyword filter with each item trimmed and empty items
+  dropped (`None` when no keyword is left), since an empty keyword matches every body. A saved
+  keyword filter loads through the same rule, and one with no keyword left fails to load.
 - Azure SDK pins: `azure_messaging_eventhubs` 0.16.0 on `azure_core`
   1.2.0-beta.2 (one `azure_core` shared with `shared-azure`'s
   `azure_identity` 1.1.0-beta.2 and `azure_security_keyvault_secrets`

@@ -23,6 +23,12 @@
   built into it (RFC 3339 to the millisecond, local with its offset or UTC with `Z`).
 - The export progress line (and the at-end message file line of `eh read`) is cleared when the
   summary follows, so the final counts print once; a failed export keeps its last counts.
+- `--dump-filter` follows eh-gui's keyword rule: each keyword is trimmed and empty items are
+  dropped, so a trailing or doubled comma (`--dump-filter error,`) no longer matches every
+  message, and a list with no keyword left (`--dump-filter ,`) is refused before anything is
+  opened. A keyword filter saved in `config.json` loads through the same rule, and one with no
+  keyword left is a `config.json` load error. `--content-type` is trimmed, and a blank value
+  sends no content type instead of an empty one.
 - Breaking, from 1.1.0 (the readme has the full table):
   - `eh-read` -> `eh read`, `eh-export` -> `eh export`; shared flags go before the
     subcommand.

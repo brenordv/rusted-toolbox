@@ -197,6 +197,16 @@ fn hostile_config_values_are_escaped_in_the_send_header() {
 }
 
 #[test]
+fn the_header_says_none_without_a_content_type() {
+    let mut job = job(Routing::automatic(), Pacing::batched(), BodySource::Inline);
+    job.event.content_type = None;
+
+    let header = send_header(&job).join("\n");
+
+    assert!(header.contains("  - Content type: none"), "{header}");
+}
+
+#[test]
 fn the_header_says_no_template_by_default() {
     let job = job(Routing::automatic(), Pacing::batched(), BodySource::Inline);
 

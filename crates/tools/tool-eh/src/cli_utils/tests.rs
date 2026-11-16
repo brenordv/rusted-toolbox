@@ -189,6 +189,43 @@ fn conflicting_filters_are_a_usage_error(#[case] argv: &[&str]) {
     assert_eq!(parse_error(argv), ErrorKind::ArgumentConflict);
 }
 
+#[rstest::rstest]
+#[case::trailing_comma(&["--dump-filter", "a,"], &["a"])]
+#[case::repeated_flag(&["--dump-filter", "a", "--dump-filter", "b"], &["a", "b"])]
+fn dump_filter_values_from_the_command_line_end_as_keywords(
+    #[case] filter_flags: &[&str],
+    #[case] expected: &[&str],
+) {
+    let mut argv = vec![
+        "eh",
+        "read",
+        "--auth",
+        "developer",
+        "--namespace",
+        "orders.servicebus.windows.net",
+        "-e",
+        "orders",
+    ];
+    argv.extend_from_slice(filter_flags);
+
+    let job = read_job(
+        read_args(&argv),
+        None,
+        &Environment::default(),
+        false,
+        PathBuf::from("."),
+        ConfigSource::Missing,
+    )
+    .unwrap();
+
+    assert_eq!(
+        job.config.capture.filters.text,
+        Some(TextFilter::Contains(
+            expected.iter().map(|value| (*value).to_owned()).collect()
+        ))
+    );
+}
+
 #[test]
 fn include_metadata_takes_only_true_or_false() {
     assert_eq!(

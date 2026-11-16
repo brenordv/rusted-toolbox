@@ -168,7 +168,8 @@ pub(crate) struct DataArgs {
 #[derive(Args, Debug, Default)]
 pub(crate) struct TextFilterArgs {
     /// Comma-separated keywords; a message matches when its body contains any
-    /// of them, ignoring case
+    /// of them, ignoring case. Spaces around a keyword and empty items are
+    /// ignored
     #[arg(long = "dump-filter", value_name = "KEYWORDS", value_delimiter = ',')]
     pub dump_filter: Option<Vec<String>>,
 
@@ -415,11 +416,9 @@ async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<Eh
             source,
         )
         .map(|job| EhCommand::Read(Box::new(job))),
-        Commands::Export(args) => Ok(EhCommand::Export(Box::new(export_job(
-            *args,
-            recalled.as_ref(),
-            source,
-        )))),
+        Commands::Export(args) => {
+            export_job(*args, recalled.as_ref(), source).map(|job| EhCommand::Export(Box::new(job)))
+        }
         Commands::Send(args) => {
             send_command(*args, recalled.as_ref(), &environment, working_dir, source)
         }

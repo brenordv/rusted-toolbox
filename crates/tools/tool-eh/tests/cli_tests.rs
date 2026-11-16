@@ -449,6 +449,32 @@ fn read_without_a_target_fails_before_touching_anything() {
 }
 
 #[test]
+fn a_dump_filter_with_no_keyword_fails_before_touching_anything() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "read",
+            "--no-config",
+            "-s",
+            &connection_string(),
+            "--dump-filter",
+            ",",
+        ],
+    );
+
+    let stderr = stderr_of(&output);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr.contains("--dump-filter needs at least one keyword"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains(SECRET_KEY), "{stderr}");
+    assert!(files_under(root.path()).is_empty());
+}
+
+#[test]
 fn a_data_folder_that_is_not_an_eh_folder_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let project = root.path().join("project");

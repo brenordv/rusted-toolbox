@@ -3,7 +3,7 @@
 //! The form holds no validation rules of its own: names go through the engine's validators, and
 //! required fields follow the config model (which fields each auth method reads).
 
-use common_utils::string_utils::SecretString;
+use common_utils::string_utils::{SecretString, non_blank};
 use rune::TextEdit;
 use shared_eventhub_core::connection::{
     DEFAULT_CONSUMER_GROUP, validated_event_hub_name, validated_namespace,
@@ -443,8 +443,8 @@ impl ConnectForm {
     pub fn to_config(&self) -> (ToolConfig, SensitiveValues) {
         let mut config = self.base.clone();
         config.target = TargetConfig {
-            namespace: optional(&self.namespace),
-            event_hub: optional(&self.event_hub),
+            namespace: non_blank(&self.namespace.text),
+            event_hub: non_blank(&self.event_hub.text),
             consumer_group: self.consumer_group.text.trim().to_owned(),
             auth: self.auth_config(),
         };
@@ -491,11 +491,6 @@ impl ConnectForm {
 
 fn required(edit: &TextEdit, message: &str) -> Option<String> {
     edit.text.trim().is_empty().then(|| message.to_owned())
-}
-
-fn optional(edit: &TextEdit) -> Option<String> {
-    let text = edit.text.trim();
-    (!text.is_empty()).then(|| text.to_owned())
 }
 
 /// An empty optional name is fine; anything typed must pass the engine's validator.

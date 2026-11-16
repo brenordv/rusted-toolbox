@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Added `string_utils::non_blank`: the text with the whitespace around it removed, or `None` when nothing is left.
+
 ## 2.2.0
 - Added `string_utils::SecretString`: redacting Debug/Display, and allows access to the actual value only via `expose()`. Should be used when dealing with connection strings, tokens, keys, etc. to prevent accidental logging.
 - Added `string_utils::format_thousands`: a count with comma thousands separators (`12,403`). `format_bytes_to_string` now groups its whole part with the same code.

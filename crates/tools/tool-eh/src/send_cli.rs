@@ -61,7 +61,8 @@ pub(crate) struct SendArgs {
     #[arg(long = "partition-key", value_name = "KEY")]
     pub partition_key: Option<String>,
 
-    /// Content type of every event, e.g. application/json
+    /// Content type of every event, e.g. application/json; trimmed, and a
+    /// blank value sets none
     #[arg(long = "content-type", value_name = "TYPE")]
     pub content_type: Option<String>,
 

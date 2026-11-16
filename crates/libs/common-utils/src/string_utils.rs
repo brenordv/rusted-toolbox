@@ -136,6 +136,12 @@ pub fn format_thousands(value: u64) -> String {
     group_thousands(&value.to_string())
 }
 
+/// `text` with the whitespace around it removed, or `None` when nothing is left.
+pub fn non_blank(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
 /// `digits` (a run of ASCII digits) with a comma between each group of three, from the right.
 fn group_thousands(digits: &str) -> String {
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
@@ -248,6 +254,17 @@ mod tests {
     #[case::largest(u64::MAX, "18,446,744,073,709,551,615")]
     fn format_thousands_cases(#[case] value: u64, #[case] expected: &str) {
         assert_eq!(format_thousands(value), expected);
+    }
+
+    #[rstest]
+    #[case::kept("application/json", Some("application/json"))]
+    #[case::trimmed("  application/json ", Some("application/json"))]
+    #[case::inner_spaces_kept(" a b ", Some("a b"))]
+    #[case::empty("", None)]
+    #[case::spaces("   ", None)]
+    #[case::tab("\t", None)]
+    fn non_blank_cases(#[case] text: &str, #[case] expected: Option<&str>) {
+        assert_eq!(non_blank(text).as_deref(), expected);
     }
 
     #[test]
