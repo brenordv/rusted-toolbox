@@ -118,6 +118,12 @@ pub const REVEAL_OFFSET: f32 = 6.0;
 pub const WINDOW_SIZE: (f32, f32) = (1280.0, 800.0);
 /// The smallest window: the toolbar's controls fit side by side with the sidebar open.
 pub const WINDOW_MIN: (f32, f32) = (960.0, 600.0);
+/// The content area's narrowest beside the side panes: what the smallest window leaves beside a
+/// default sidebar and the narrowest inspector. The message list's fixed columns fit; the
+/// preview column is a stub at this width.
+pub const CONTENT_MIN: f32 = WINDOW_MIN.0 - SIDEBAR_WIDTH - INSPECTOR_MIN;
+/// The window background beside the content where no pane borders it.
+pub const FRAME_INSET: f32 = 8.0;
 
 // Radius by role.
 pub const RADIUS_BADGE: f32 = 4.0;

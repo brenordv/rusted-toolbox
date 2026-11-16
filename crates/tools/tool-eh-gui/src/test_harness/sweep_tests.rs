@@ -6,7 +6,9 @@ use super::{Harness, a11y_node, a11y_nodes, lists};
 use crate::archive::ArchiveInput;
 use crate::archive::results::Results;
 use crate::archive::test_support::{messages, page};
-use crate::design::tokens::{INSPECTOR_MIN, SIDEBAR_MIN, WINDOW_MIN, WINDOW_SIZE};
+use crate::design::tokens::{
+    CONTENT_MIN, INSPECTOR_MIN, LIST_ROW_HEIGHT, SIDEBAR_MIN, WINDOW_MIN, WINDOW_SIZE,
+};
 use crate::form::{AuthChoice, CredentialChoice};
 use crate::read::test_support::captured;
 use crate::send::SendInput;
@@ -109,6 +111,13 @@ pub(super) fn taken<T>(h: &mut Harness, pick: impl Fn(&ServiceCall) -> Option<T>
         panic!("no such call in {calls:?}");
     };
     found
+}
+
+/// The Export section's results with a row selected, so its inspector is open.
+pub(super) fn export_selected(size: (f32, f32)) -> Harness {
+    let mut h = export_results(size);
+    h.deliver(Input::Archive(ArchiveInput::Select("p0-s1".to_owned())));
+    h
 }
 
 fn export_results(size: (f32, f32)) -> Harness {
@@ -578,12 +587,19 @@ fn layout_problems(row: &Row, h: &mut Harness, size: (f32, f32)) -> Vec<String> 
         if sidebar_open && x < SIDEBAR_MIN - 0.5 {
             problems.push(format!("the sidebar is {x} wide"));
         }
-        if w <= 0.0 {
+        if w < CONTENT_MIN - 0.5 {
             problems.push(format!("the content is {w} wide"));
         }
         let inspector_open = h.has_key("inspector");
         if inspector_open && size.0 - (x + w) < INSPECTOR_MIN - 0.5 {
             problems.push(format!("the inspector is {} wide", size.0 - (x + w)));
+        }
+    }
+    for list in ["read-list", "archive-list"] {
+        if let Some(viewport) = element(&h.rt, list)
+            && viewport.rect[3] < LIST_ROW_HEIGHT - 0.5
+        {
+            problems.push(format!("{list} is {} tall", viewport.rect[3]));
         }
     }
     problems

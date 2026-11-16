@@ -1,0 +1,5 @@
+{"events": [
+  {"t": 1.0, "type": "tap", "key": "p2-s164"},
+  {"t": 1.3, "type": "drag", "key": "sidebar-grip", "dx": 200, "dur": 0.3},
+  {"t": 2.0, "type": "drag", "key": "inspector-grip", "dx": -400, "dur": 0.3}
+]}

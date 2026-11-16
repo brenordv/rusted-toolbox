@@ -4,8 +4,8 @@ use super::Harness;
 use super::builders::{export_state, send_state};
 use super::services::ServiceCall;
 use super::sweep_tests::{
-    Row, TOOLBAR, export_bulk_running, failed_with, orders_form, read_selected, send_done,
-    send_template_invalid, taken,
+    Row, TOOLBAR, export_bulk_running, export_selected, failed_with, orders_form, read_selected,
+    send_done, send_template_invalid, taken,
 };
 use crate::archive::ArchiveInput;
 use crate::archive::results::Results;
@@ -104,6 +104,15 @@ fn widest_panes(size: (f32, f32)) -> Harness {
     h
 }
 
+fn widest_panes_on_export(size: (f32, f32)) -> Harness {
+    let mut h = export_selected(size);
+    h.rt.state.sidebar.set_width(SIDEBAR_MAX);
+    h.rt.state.archive.inspector.pane.set_width(INSPECTOR_MAX);
+    h.rt.invalidate();
+    h.settle();
+    h
+}
+
 pub(super) const WORST: &[Row] = &[
     Row {
         name: "a 1 MiB body",
@@ -151,6 +160,13 @@ pub(super) const WORST: &[Row] = &[
         name: "both panes at their widest",
         build: widest_panes,
         reachable: &["disconnect", "inspector-close", "export-message"],
+        disabled: &[],
+        covered: &[],
+    },
+    Row {
+        name: "both panes at their widest on Export",
+        build: widest_panes_on_export,
+        reachable: &["export-message", "inspector-close", "bulk-export"],
         disabled: &[],
         covered: &[],
     },

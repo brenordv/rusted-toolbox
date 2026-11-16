@@ -6,10 +6,12 @@
 
 mod details;
 mod ending;
+mod panes;
 mod send;
 
 pub use details::{ERROR_PREVIEW_CHARS, ErrorDetails, ErrorPreview, error_preview};
 pub use ending::{Failure, FailureStage};
+pub use panes::{Pane, PaneFit};
 
 use crate::archive::bulk::CancelReason;
 use crate::archive::{ArchiveEffect, ArchiveInput, ArchiveState};
@@ -263,6 +265,9 @@ pub struct AppState {
     /// The two kits, built once.
     pub ds: Ds,
     pub sidebar: PaneState,
+    /// The window's width at its last layout report, in whole points; `None` before the first.
+    /// Reports skip moves under half a point, so it can be a point off the window's width.
+    pub window_width: Option<f32>,
     /// Whether the connection pill's popover shows.
     pub pill_open: bool,
     pub section: Section,
@@ -325,6 +330,7 @@ impl AppState {
             services,
             ds: Ds::new(),
             sidebar: PaneState::new(SIDEBAR_WIDTH).range(SIDEBAR_MIN, SIDEBAR_MAX),
+            window_width: None,
             pill_open: false,
             section: Section::Read,
             connection: ConnectionState::Disconnected,

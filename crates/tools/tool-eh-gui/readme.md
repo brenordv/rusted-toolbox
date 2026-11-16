@@ -223,6 +223,10 @@ works). When no window can be created at all, eh-gui logs why and exits with cod
 
 - Windows and Linux keep the system title bar; on macOS the toolbar is the title bar.
 - The window can't be made smaller than 960x600.
+- Between the sidebar and an open inspector the content keeps at least 376 pt. A window too
+  narrow for both panes at the widths you set shows them narrower (the inspector first, then the
+  sidebar); they come back to your widths when the window grows. Dragging a pane's edge starts
+  from the width it shows.
 - Colors follow the system's light or dark setting while the app runs. On Windows eh-gui reads
   the setting itself once a second, so a switch shows within about a second; the title bar's
   own color is the system's.
@@ -290,6 +294,21 @@ EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --scal
 EH_GUI_DEMO=error-details cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/error-details-960.png
 ```
 
+The content minimum: the scripts in `demo-scripts/` drag both panes past their widest (and, on
+Export, select a row first). At 960x600 the content keeps 376 pt with the sidebar at 264 and the
+inspector at 320, every list column whole, and the list rows visible; at the default size the
+panes keep their widest widths. Rune prints no "scroll viewport ... is 0 pt tall" line.
+
+```
+EH_GUI_DEMO=seeded-read cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/widest-read.json --at 2.5 --snap target/eh-gui-demo/phase15/after-read-960.png
+EH_GUI_DEMO=seeded-read cargo run -p eh-gui --features demo --bin eh-gui-demo -- --script crates/tools/tool-eh-gui/demo-scripts/widest-read.json --at 2.5 --snap target/eh-gui-demo/phase15/after-read-1280.png
+EH_GUI_DEMO=seeded-export cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/widest-export.json --at 3.0 --snap target/eh-gui-demo/phase15/after-export-960.png
+EH_GUI_DEMO=seeded-export cargo run -p eh-gui --features demo --bin eh-gui-demo -- --script crates/tools/tool-eh-gui/demo-scripts/widest-export.json --at 3.0 --snap target/eh-gui-demo/phase15/after-export-1280.png
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/widest-send.json --at 1.5 --snap target/eh-gui-demo/phase15/after-send-960.png
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --script crates/tools/tool-eh-gui/demo-scripts/widest-send.json --at 1.5 --snap target/eh-gui-demo/phase15/after-send-1280.png
+EH_GUI_DEMO=seeded-read cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase15/after-read-default-960.png
+```
+
 Snapshots are dark: the app reads the system appearance itself, so `--theme light` changes
 nothing. With the system set to light, check in the real window: the sheet and popover scrims,
 the pane fills, the shadow and rim on the sheet, popovers, new-messages pill, and bulk bar, the
@@ -340,3 +359,11 @@ hub.
 - Template: turn it on with an order template, Regenerate a few samples, send 5 and see five
   different values in Read; type a broken placeholder and press Send (the editor and caption
   mark it); type into a large template with `RUNE_COMMIT_BUDGET_MS=8` (no commit over budget).
+- Pane widths, with `RUNE_COMMIT_BUDGET_MS=8` (no commit over budget): with a message selected
+  and both panes dragged to their widest, resize the window from 1280 to 960 wide and back (from
+  about 1276 the inspector's leading edge holds, with no ease, while the inspector narrows to 320
+  by about 1036; below that the sidebar narrows to 264 by 960; growing back, the panes return to
+  their widths); at 960 with the sidebar dragged to its widest, select a row and clear the
+  selection (the sidebar narrows and comes back with the inspector); at 960 with the inspector
+  at its widest and the sidebar closed, open the sidebar (the inspector narrows to 320 as it
+  opens).
