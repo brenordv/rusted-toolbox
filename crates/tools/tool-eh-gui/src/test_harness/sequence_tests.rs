@@ -16,7 +16,7 @@ use crate::read::search::RebuildRequest;
 use crate::read::test_support::captured;
 use crate::send::SendInput;
 use crate::send::run::SendRun;
-use crate::state::{Input, ListSection, MAX_TOASTS, Section};
+use crate::state::{AppState, Input, ListSection, MAX_TOASTS, Section};
 use rand::rngs::Xoshiro256PlusPlus;
 use rand::{Rng, SeedableRng};
 use rune::{Key, KeyEvent, Mods};
@@ -78,6 +78,8 @@ struct Sequence {
     dialogs: TempDir,
     /// Steps that ended with a card's details holding toasts.
     held_steps: usize,
+    /// Steps that ended with a message export as the only job running.
+    lone_export_steps: usize,
 }
 
 impl Drop for Sequence {
@@ -112,6 +114,27 @@ fn completed() -> SendSummary {
     }
 }
 
+/// Whether a session, a save, a message export in either section, a bulk export, or a send still
+/// runs: the jobs the quit waits for.
+fn jobs_running(s: &AppState) -> bool {
+    s.connection.session().is_some()
+        || s.save_status.is_saving()
+        || s.read.export_running()
+        || s.archive.busy()
+        || s.send.is_running()
+}
+
+/// Whether a message export runs with no other job holding the data folder, so only the lock's
+/// message export arm keeps the folder from changing.
+fn lone_message_export(s: &AppState) -> bool {
+    let exporting = s.read.export_running() || s.archive.inspector.export.is_running();
+    exporting
+        && !s.connection.is_active()
+        && !s.save_status.is_saving()
+        && !s.archive.bulk.is_running()
+        && !s.send.is_running()
+}
+
 /// The run a send in `run` belongs to, while it runs.
 fn running_send(run: &SendRun) -> Option<u64> {
     match run {
@@ -134,6 +157,7 @@ impl Sequence {
             cursor: cursor(),
             dialogs: tempfile::tempdir().unwrap(),
             held_steps: 0,
+            lone_export_steps: 0,
         };
         sequence.open_window();
         sequence
@@ -169,6 +193,9 @@ impl Sequence {
             self.check();
             if self.h.state().toast_hold().is_some() {
                 self.held_steps += 1;
+            }
+            if lone_message_export(self.h.state()) {
+                self.lone_export_steps += 1;
             }
         }
     }
@@ -623,13 +650,8 @@ impl Sequence {
         );
         if !finishing {
             let s = self.h.state();
-            let idle = s.connection.session().is_none()
-                && !s.save_status.is_saving()
-                && !s.read.export_running()
-                && !s.archive.busy()
-                && !s.send.is_running();
             assert!(
-                s.window_is_closed() && idle,
+                s.window_is_closed() && !jobs_running(s),
                 "seed={} step={}: Quit with the window open or a job running",
                 self.seed,
                 self.step
@@ -659,6 +681,10 @@ impl Sequence {
         assert!(
             !selected || inspector,
             "{at}: a selection without its inspector"
+        );
+        assert!(
+            !jobs_running(s) || s.data_folder_lock().is_some(),
+            "{at}: a job runs on the data folder and the folder is free to change"
         );
         if s.window_is_closed() {
             let send_flag = match &s.send.run {
@@ -748,8 +774,8 @@ fn rows_to_events(rows: Vec<shared_eventhub_core::models::CapturedMessage>) -> V
 }
 
 #[rstest::rstest]
-#[case::seed_1(1)]
-#[case::seed_3(3)]
+#[case::seed_64(64)]
+#[case::seed_72(72)]
 fn a_seeded_sequence_keeps_every_invariant(#[case] seed: u64) {
     let mut sequence = Sequence::new(seed);
 
@@ -759,6 +785,10 @@ fn a_seeded_sequence_keeps_every_invariant(#[case] seed: u64) {
     assert!(
         sequence.held_steps > 0,
         "seed={seed}: no step held toasts under a card's details"
+    );
+    assert!(
+        sequence.lone_export_steps > 0,
+        "seed={seed}: no step ended with a message export as the only job"
     );
 }
 
