@@ -1,6 +1,6 @@
-# CI runs the advisories and sources checks (deps-audit.yml passes
-# `check advisories sources`); the licenses and bans sections stay
-# unconfigured on purpose.
+# CI runs the advisories, sources and licenses checks (deps-audit.yml passes
+# `check advisories sources licenses`). The bans section stays unconfigured:
+# its duplicate-version and wildcard checks only warn.
 #
 # Vulnerability advisories error at the default severity. `unmaintained` is
 # scoped to workspace (direct) dependencies: the tree carries transitively
@@ -34,3 +34,27 @@ ignore = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-git = ["https://github.com/anomalyco/rune"]
+
+# Every crate in the dependency tree must carry one of these licenses. The list
+# is the set the tree needed on 2026-11-16, each one checked against the FSF's
+# license list as compatible with this workspace's GPL-3.0-only (the license of
+# every member; none sets `publish = false`, so `private.ignore` would not skip
+# them). For an `OR` expression only the licenses that satisfy it are listed,
+# never every alternative it names. A license is added here deliberately, never
+# to make a run pass. A pull request run checks the PR's own copy of this file,
+# so a change to `allow`, or a new exception or clarify entry, needs the owner's
+# review. Dev-dependencies are not checked (cargo-deny's `include-dev` default).
+[licenses]
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "GPL-3.0-only",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+# cargo-deny's default, stated.
+confidence-threshold = 0.8
