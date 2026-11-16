@@ -91,6 +91,15 @@ fn every_contract_pair_meets_its_minimum_in_both_appearances() {
             );
         }
 
+        for (name, fg) in [("fg", k.c.text_base), ("muted", k.c.text_muted)] {
+            contract.check(
+                &format!("{mode} {name} on the popover fill"),
+                fg,
+                k.c.surface_raised,
+                TEXT,
+            );
+        }
+
         let content = surface(k, Surface::Content);
         for level in [Surface::Window, Surface::Content] {
             contract.check(

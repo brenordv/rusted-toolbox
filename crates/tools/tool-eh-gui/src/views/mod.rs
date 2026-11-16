@@ -11,10 +11,13 @@ mod sections;
 mod send;
 pub(crate) mod shell;
 
-pub use read::SEARCH_KEY;
+pub use export::{BULK_METADATA_KEY, CONDENSE_KEY, LOCAL_TIME_KEY, SKIP_EXPORTED_KEY};
+pub use inspector::{EXPORT_METADATA_KEY, READ_METADATA_KEY};
+pub use read::{PARTITIONS_SCROLL_KEY, SEARCH_KEY};
 pub use send::sidebar::{CORRELATION_ID_KEY, COUNT_KEY, INTERVAL_KEY, PROPERTIES_KEY};
 pub use send::template::{PLACEHOLDERS_KEY, REGENERATE_KEY, SWITCH_KEY};
 pub use send::{BODY_KEY, SEND_BUTTON_KEY};
+pub use shell::PILL_SCROLL_KEY;
 
 use crate::state::AppState;
 use rune::{Chord, Cx, El, KeyEvent, Tx};

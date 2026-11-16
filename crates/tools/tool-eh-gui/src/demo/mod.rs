@@ -72,6 +72,9 @@ pub enum Scenario {
     SeededRead,
     /// [`Scenario::SeededRead`] with a regex quick search.
     SeededSearch,
+    /// Connected and filled like [`Scenario::SeededRead`], with no selection, over 32
+    /// partitions with eight-digit counts and six long partition errors in the session log.
+    SeededPartitions,
     /// The Export section over an archive of 6,000 messages, searched for everything.
     SeededExport,
     /// The Send section with a JSON body and a count of 1,000, batched, idle.
@@ -106,7 +109,7 @@ impl Pace {
 }
 
 impl Scenario {
-    const NAMES: [(&'static str, Scenario); 18] = [
+    const NAMES: [(&'static str, Scenario); 19] = [
         ("live", Self::Live),
         ("burst", Self::Burst),
         ("quiet", Self::Quiet),
@@ -125,6 +128,7 @@ impl Scenario {
         ("send-template", Self::SendTemplate),
         ("toast-stack", Self::ToastStack),
         ("toast-stack-open", Self::ToastStackOpen),
+        ("seeded-partitions", Self::SeededPartitions),
     ];
 
     /// The scenario named `name`.
@@ -172,6 +176,7 @@ impl Scenario {
             | Self::SeededConnect
             | Self::SeededRead
             | Self::SeededSearch
+            | Self::SeededPartitions
             | Self::SeededExport
             | Self::Send
             | Self::SendPaced
@@ -199,6 +204,7 @@ impl Scenario {
             | Self::SeededConnect
             | Self::SeededRead
             | Self::SeededSearch
+            | Self::SeededPartitions
             | Self::ToastStack
             | Self::ToastStackOpen => self.is_live(),
         }
@@ -236,6 +242,7 @@ impl Scenario {
             | Self::SeededConnect
             | Self::SeededRead
             | Self::SeededSearch
+            | Self::SeededPartitions
             | Self::SeededExport
             | Self::Send
             | Self::SendPaced
@@ -296,6 +303,7 @@ pub fn initial_state(
         }
         Scenario::SeededRead => seed::read(&mut state, rt, false),
         Scenario::SeededSearch => seed::read(&mut state, rt, true),
+        Scenario::SeededPartitions => seed::partitions(&mut state, rt),
         Scenario::SeededExport => {
             state.section = Section::Export;
             dispatch(&mut state, Input::Archive(ArchiveInput::SearchPressed));

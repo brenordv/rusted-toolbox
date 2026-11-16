@@ -13,7 +13,7 @@ use crate::bridge::UiDelivery;
 use crate::design::tokens::{INSPECTOR_MAX, SIDEBAR_MAX};
 use crate::send::compose::BODY_CAP;
 use crate::state::{Input, ToastInput};
-use crate::views::SEND_BUTTON_KEY;
+use crate::views::{EXPORT_METADATA_KEY, READ_METADATA_KEY, SEND_BUTTON_KEY};
 use shared_eventhub_core::engine::EngineEvent;
 use shared_eventhub_core::producer::SendEnd;
 use shared_eventhub_persistence::export::ExportOutcome;
@@ -182,14 +182,24 @@ pub(super) const WORST: &[Row] = &[
     Row {
         name: "both panes at their widest",
         build: widest_panes,
-        reachable: &["disconnect", "inspector-close", "export-message"],
+        reachable: &[
+            "disconnect",
+            "inspector-close",
+            "export-message",
+            READ_METADATA_KEY,
+        ],
         disabled: &[],
         covered: &[],
     },
     Row {
         name: "both panes at their widest on Export",
         build: widest_panes_on_export,
-        reachable: &["export-message", "inspector-close", "bulk-export"],
+        reachable: &[
+            "export-message",
+            "inspector-close",
+            "bulk-export",
+            EXPORT_METADATA_KEY,
+        ],
         disabled: &[],
         covered: &[],
     },

@@ -1,16 +1,14 @@
 //! The Template switch's parts of the Send section: the switch and its placeholder list in the
 //! body's caption row, and the sample block under the editor.
 
-use crate::design::parts;
+use crate::design::parts::{self, LabelSide};
 use crate::design::tokens::{SPACE_MD, SPACE_SM, SPACE_XS, TYPE_CAPTION, TYPE_MONO};
 use crate::read::rows::{display_line, sentence};
 use crate::send::template::{TemplateState, shown_sample};
 use crate::state::AppState;
 use mock_data_utils::template::{OPTIONS_HELP, placeholder_groups};
 use rune::{El, col, row, text};
-use rune_kit::{
-    Button, ButtonVariant, ControlSize, Kit, Placement, Popover, ScrollBar, Switch, popover,
-};
+use rune_kit::{Button, ButtonVariant, ControlSize, Kit, Placement, Popover, ScrollBar, popover};
 
 /// The Template switch's key.
 pub const SWITCH_KEY: &str = "send-template-switch";
@@ -29,22 +27,18 @@ const NO_PLACEHOLDERS: &str = "The template has no placeholders; every event is 
 pub fn switch_controls(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
     let composer = &s.send.composer;
     let on = composer.template().is_on();
-    let mut controls = row()
-        .gap(SPACE_SM)
-        .center_y()
-        .child(
-            Switch::new(on)
-                .label("Template")
-                .hide_label()
-                .on_toggle(|s: &mut AppState| {
-                    let composer = &mut s.send.composer;
-                    let on = !composer.template().is_on();
-                    composer.set_template(on);
-                })
-                .build(k)
-                .key(SWITCH_KEY),
-        )
-        .child(parts::field_label(k, "Template"));
+    let mut controls = row().gap(SPACE_SM).center_y().child(parts::labeled_switch(
+        k,
+        SWITCH_KEY,
+        "Template",
+        LabelSide::Trailing,
+        on,
+        |s: &mut AppState| {
+            let composer = &mut s.send.composer;
+            let on = !composer.template().is_on();
+            composer.set_template(on);
+        },
+    ));
     if on {
         controls = controls.child(placeholders(s, k, layer));
     }

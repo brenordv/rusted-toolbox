@@ -1,0 +1,4 @@
+{"events": [
+  {"t": 1.5, "type": "tap", "key": "bulk-options"},
+  {"t": 1.8, "type": "tap", "key": "bulk-options-panel/segment1"}
+]}

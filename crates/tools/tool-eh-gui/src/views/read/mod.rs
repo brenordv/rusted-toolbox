@@ -4,6 +4,8 @@
 pub mod rules;
 mod strip;
 
+pub use strip::PARTITIONS_SCROLL_KEY;
+
 pub(crate) use strip::short_duration;
 
 use super::message_list;

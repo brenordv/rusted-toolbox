@@ -5,14 +5,14 @@ use crate::app::dispatch;
 use crate::archive::ArchiveInput;
 use crate::archive::bulk::{BulkExport, counts_line, run_failed, stopped_text};
 use crate::archive::results::Results;
-use crate::design::parts;
+use crate::design::parts::{self, LabelSide};
 use crate::design::tokens::{SPACE_MD, SPACE_SM, SPACE_XS};
 use crate::state::{AppState, Input, error_preview};
 use crate::views::details;
 use crate::views::inspector::{CSV_CAPTION, FORMAT_LABELS, FORMATS};
 use common_cli::app_logger::FileLogging;
 use rune::{El, FileDialogOptions, Tx, col, row};
-use rune_kit::{Button, ButtonVariant, Kit, Placement, SegmentedControl, Spinner, Switch, popover};
+use rune_kit::{Button, ButtonVariant, Kit, Placement, SegmentedControl, Spinner, popover};
 use shared_eventhub_persistence::export::ExportFormat;
 
 /// The bar, when it shows: while an export runs or after it ended, and with results to export.
@@ -113,6 +113,15 @@ fn open_bulk_error(s: &mut AppState, _: &mut Tx) {
     details::show(s, title, &text);
 }
 
+/// The Export options "Include metadata" switch's key.
+pub const BULK_METADATA_KEY: &str = "bulk-metadata";
+/// The Export options "One file per month" switch's key.
+pub const CONDENSE_KEY: &str = "bulk-condense";
+/// The Export options "Local time" switch's key.
+pub const LOCAL_TIME_KEY: &str = "bulk-local-time";
+/// The Export options "Skip already exported" switch's key.
+pub const SKIP_EXPORTED_KEY: &str = "bulk-skip-exported";
+
 /// The element the options popover anchors to.
 const OPTIONS_ANCHOR: &str = "bulk-options-trigger";
 
@@ -163,8 +172,8 @@ fn idle(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> Vec<El> {
 fn options(s: &AppState, k: &Kit) -> El {
     let options = &s.archive.options;
     let index = FORMATS.iter().position(|format| *format == options.format);
-    let switch = |label: &str, on: bool, toggle: fn(&mut AppState)| {
-        Switch::new(on).label(label).on_toggle(toggle).build(k)
+    let switch = |key: &str, label: &str, on: bool, toggle: fn(&mut AppState)| {
+        parts::labeled_switch(k, key, label, LabelSide::Leading, on, toggle)
     };
     let destination = options.destination(&s.form.data_paths());
     let mut panel = col()
@@ -186,16 +195,32 @@ fn options(s: &AppState, k: &Kit) -> El {
         panel = panel.child(parts::caption(k, CSV_CAPTION));
     }
     panel
-        .child(switch("Include metadata", options.metadata, |s| {
-            s.archive.options.metadata = !s.archive.options.metadata;
-        }))
-        .child(switch("One file per month", options.condense, |s| {
-            s.archive.options.condense = !s.archive.options.condense;
-        }))
-        .child(switch("Local time", options.local_time, |s| {
-            s.archive.options.local_time = !s.archive.options.local_time;
-        }))
         .child(switch(
+            BULK_METADATA_KEY,
+            "Include metadata",
+            options.metadata,
+            |s| {
+                s.archive.options.metadata = !s.archive.options.metadata;
+            },
+        ))
+        .child(switch(
+            CONDENSE_KEY,
+            "One file per month",
+            options.condense,
+            |s| {
+                s.archive.options.condense = !s.archive.options.condense;
+            },
+        ))
+        .child(switch(
+            LOCAL_TIME_KEY,
+            "Local time",
+            options.local_time,
+            |s| {
+                s.archive.options.local_time = !s.archive.options.local_time;
+            },
+        ))
+        .child(switch(
+            SKIP_EXPORTED_KEY,
             "Skip already exported",
             options.skip_exported,
             |s| {

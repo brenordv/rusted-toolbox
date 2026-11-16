@@ -279,7 +279,24 @@ fn seeded_scenarios_reach_their_states_through_apply_and_render() {
     let details = seeded(Scenario::ErrorDetails, root.path(), &rt);
     let toasts = seeded(Scenario::ToastStack, root.path(), &rt);
     let toasts_open = seeded(Scenario::ToastStackOpen, root.path(), &rt);
+    let partitions = seeded(Scenario::SeededPartitions, root.path(), &rt);
 
+    let shown = partitions.read.shown.as_ref().unwrap();
+    assert_eq!(shown.stats.per_partition.len(), 32);
+    assert!(
+        shown
+            .stats
+            .per_partition
+            .values()
+            .all(|partition| partition.received >= 10_000_000)
+    );
+    assert!(
+        partitions
+            .read
+            .session_log
+            .iter()
+            .any(|line| crate::state::error_preview(&line.text).cut)
+    );
     assert_eq!(toasts.toasts().entries().len(), 3);
     assert!(!toasts.toasts().stack().expanded());
     assert!(toasts_open.toasts().stack().expanded());
@@ -316,6 +333,7 @@ fn seeded_scenarios_reach_their_states_through_apply_and_render() {
         details,
         toasts,
         toasts_open,
+        partitions,
     ] {
         let mut rt = rune::Runtime::new(
             state,

@@ -4,6 +4,8 @@
 mod bar;
 pub mod sidebar;
 
+pub use bar::{BULK_METADATA_KEY, CONDENSE_KEY, LOCAL_TIME_KEY, SKIP_EXPORTED_KEY};
+
 use super::{details, message_list};
 use crate::app::dispatch;
 use crate::archive::ArchiveInput;

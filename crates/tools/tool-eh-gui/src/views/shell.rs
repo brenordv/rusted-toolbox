@@ -7,9 +7,7 @@ use crate::design::toast::{
     TOAST_INSET_BOTTOM, TOAST_INSET_RIGHT, TOAST_WIDTH, ToastActions, ToastFace, card_key,
     stack_extent, toast, toast_of_control, toast_presence, toast_size,
 };
-use crate::design::tokens::{
-    FRAME_INSET, POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE,
-};
+use crate::design::tokens::{FRAME_INSET, SPACE_LG, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE};
 use crate::design::{Surface, icons, motion, parts, surface};
 use crate::read::{LogKind, LogLine};
 use crate::state::{
@@ -27,6 +25,8 @@ use tracing::debug;
 
 /// The key of the kit split view's root, the element that fills the window.
 const SHELL_KEY: &str = "shell";
+/// The connection popover's scroll viewport.
+pub const PILL_SCROLL_KEY: &str = "pill-popover-scroll";
 
 pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
     let sections = SegmentedControl::new(&Section::LABELS, Some(s.section.index()))
@@ -152,17 +152,16 @@ fn pill(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
             }
         });
 
-    let mut rows = col()
-        .gap(SPACE_MD)
-        .w(POPOVER_WIDTH)
-        .child(parts::detail_row(k, "Data folder", &s.form.data_folder))
-        .child(log_detail(k, &s.file_logging))
-        .child(parts::detail_row(k, "Version", env!("CARGO_PKG_VERSION")));
+    let mut rows = vec![
+        parts::detail_row(k, "Data folder", &s.form.data_folder),
+        log_detail(k, &s.file_logging),
+        parts::detail_row(k, "Version", env!("CARGO_PKG_VERSION")),
+    ];
     if let ConnectionState::Failed(failure) = &s.connection {
         let preview = error_preview(&failure.text);
-        rows = rows.child(parts::detail_row(k, "Error", &preview.shown));
+        rows.push(parts::detail_row(k, "Error", &preview.shown));
         if preview.cut {
-            rows = rows.child(details::button(
+            rows.push(details::button(
                 k,
                 "pill-error-details",
                 |s: &mut AppState, tx: &mut Tx| {
@@ -175,13 +174,14 @@ fn pill(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
         }
     }
     if !s.read.session_log.is_empty() {
-        rows = rows.child(session_log(s, k));
+        rows.push(session_log(s, k));
     }
 
     Popover::new("pill-popover")
         .trigger(face)
         .title("Connection")
-        .child(rows)
+        .padding(0.0)
+        .child(parts::popover_body(k, PILL_SCROLL_KEY, rows))
         .open(s.pill_open)
         .placement(Placement::Bottom)
         .on_close(|s: &mut AppState| s.pill_open = false)

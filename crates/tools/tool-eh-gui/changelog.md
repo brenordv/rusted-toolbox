@@ -1,6 +1,13 @@
 # Changelog
 
 ## 1.0.0
+- Every switch label (Metadata in both inspectors, the four Export options, Template) is drawn in
+  the readable form-label style, and a press on the label or beside the switch toggles it. The
+  connection and Received-per-partition popovers fit the kit's 320 pt surface: their paths and
+  errors wrap inside it, and a long body (many partitions, a long session log) scrolls inside
+  the window. A partition's line reads `12,345,678 · last 18:31:02 UTC`. Demo scenario
+  `seeded-partitions` (32 partitions, eight-digit counts, long partition errors); demo scripts
+  for the snapshots in `demo-scripts/`.
 - The data folder cannot change while a message export (Export… in the Read or Export
   inspector) writes; the connect sheet disables Change and says why.
 - The Send sidebar has Correlation id and Properties fields after Pacing. Properties take one

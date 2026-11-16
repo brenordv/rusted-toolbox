@@ -276,7 +276,8 @@ A dev-only binary runs the real window against a generated event hub and a tempo
 `live`): `live`, `burst`, `quiet`, `partition-fail`, `start-fail`, `slow-finish`,
 `seeded-empty`, `seeded-failed`, `error-details` (a 2,000-character connect failure with its
 details open), `seeded-connect`, `seeded-read` (a full list with a message
-selected), `seeded-search` (the same with a regex filter), `seeded-export` (the Export section
+selected), `seeded-search` (the same with a regex filter), `seeded-partitions` (connected over
+32 partitions with eight-digit counts and six long partition errors), `seeded-export` (the Export section
 over an archive of 6,000 generated messages, searched for everything; paging and bulk exports
 are real), `send` (the Send section with a JSON body, idle), `send-paced` (10 events one a
 second, already sending), `send-template` (Template on with an order template and its sample,
@@ -361,11 +362,27 @@ EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size
 EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --script crates/tools/tool-eh-gui/demo-scripts/send-metadata-empty.json --at 1.5 --snap target/eh-gui-demo/phase18/send-empty-1280x800.png
 ```
 
+Switch labels and the kit popovers: every switch label reads in the form-label style; the
+connection popover's paths, error, and session log wrap inside the surface and scroll with the
+thumb clear of the text; the partitions popover scrolls to partition 31 and each line reads
+`12,345,678 · last HH:MM:SS UTC`. The focus script tabs to the Template switch.
+
+```
+EH_GUI_DEMO=seeded-read cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase21/after-read-inspector.png
+EH_GUI_DEMO=seeded-export cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/phase21-options.json --at 2.5 --snap target/eh-gui-demo/phase21/after-export-options.png
+EH_GUI_DEMO=send-template cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/phase21-switch-focus.json --at 2.0 --snap target/eh-gui-demo/phase21/after-switch-focus.png
+EH_GUI_DEMO=seeded-failed cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/phase21-pill.json --at 1.0 --snap target/eh-gui-demo/phase21/after-pill-failed.png
+EH_GUI_DEMO=seeded-partitions cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/phase21-pill-scrolled.json --at 1.6 --snap target/eh-gui-demo/phase21/after-pill-log-scrolled.png
+EH_GUI_DEMO=seeded-partitions cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/phase21-partitions.json --at 1.0 --snap target/eh-gui-demo/phase21/after-partitions.png
+EH_GUI_DEMO=seeded-partitions cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/phase21-partitions-scrolled.json --at 1.6 --snap target/eh-gui-demo/phase21/after-partitions-scrolled.png
+```
+
 Snapshots are dark: the app reads the system appearance itself, so `--theme light` changes
 nothing. With the system set to light, check in the real window: the sheet and popover scrims,
 the pane fills, the shadow and rim on the sheet, popovers, new-messages pill, and bulk bar, the
-frosted pill and bar, the Template switch's label, danger and warning text in the send action
-row, and the list's selection highlight. A failed send has no demo scenario; check it on a live
+frosted pill and bar, the six switch labels (Metadata in both inspectors, the four Export
+options, Template), danger and warning text in the send action row, and the list's selection
+highlight. A failed send has no demo scenario; check it on a live
 hub.
 
 ## Exit codes
