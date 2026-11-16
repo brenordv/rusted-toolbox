@@ -177,7 +177,10 @@ name it.
   Regenerate draws another. While the template does not compile, the block says where and why,
   and a Send press marks the editor and blocks the send until it is fixed. A sample that fails to render (a value
   too large for 1 MiB, say) shows its error but does not block Send; the send then fails at its
-  first event. Values go in unescaped, so a JSON template can break on a value holding `"`.
+  first event. Values go in unescaped, so a JSON template can break on a value holding `"`,
+  unless the placeholder has `escape=json` (`"{{person.last-name locale=pt-br escape=json}}"`),
+  which escapes `"`, `\`, and U+0000 to U+001F for one level of JSON string between quotes
+  you write; "Show placeholders" lists it with the other options.
 - **Send** (Ctrl+Enter or Cmd+Enter from any Send field). The line beside it shows the run:
   connecting, then the sent count, the pacing, and the elapsed time; Cancel stops before the next
   batch or during a paced wait within about a tenth of a second. A batch already handed to the

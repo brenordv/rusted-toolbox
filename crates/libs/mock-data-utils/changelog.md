@@ -12,6 +12,11 @@
   with its UTC offset (`2026-11-15T14:03:07.123-03:00`), or UTC ending in `Z`. They take no
   options, and every one in a render shows the same instant. `placeholder_groups()` lists them as
   the `clock` group.
+- `escape=json` on any placeholder, the clock ones included, escapes its value for the inside
+  of a JSON string (RFC 8259: `"`, `\`, and U+0000 to U+001F). The value takes any ASCII case
+  (`json`, `Json`, `JSON`); the `escape` key is lowercase like every option. Any other escape is
+  a compile error ("unknown escape 'xml' for person.last-name; use json"). The cap counts the
+  escaped value. `OPTIONS_HELP` lists it.
 - Fixed: `length` for `internet.password` and `commerce.product-description` is capped at 1 MiB
   (`MAX_LENGTH`), and a larger value returns an error. Before, a large value could abort the
   process on the allocation or exhaust memory. `mock internet.password -n 2000000` now exits 1.

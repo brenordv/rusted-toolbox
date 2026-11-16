@@ -4,8 +4,10 @@
 //! A placeholder names a data type by its command (`{{person.email}}`) and takes options as
 //! space-separated words (`{{random.integer min=1 max=6}}`, `{{random.date past}}`). `\{{`
 //! writes a literal `{{`; everything else outside a placeholder, `}}` included, is copied as
-//! written. Values are inserted as generated, with no escaping. `{{now}}` and `{{utc-now}}`
-//! take no options and render the time passed to [`Template::render`] as RFC 3339 to the
+//! written. Values are inserted as generated, with no escaping unless the placeholder has
+//! `escape=json`, which escapes the value for the inside of a JSON string (RFC 8259 section
+//! 7: `"`, `\`, and U+0000 to U+001F). `{{now}}` and `{{utc-now}}` take no options but
+//! `escape` and render the time passed to [`Template::render`] as RFC 3339 to the
 //! millisecond: local time with its UTC offset, or UTC ending in `Z`.
 //!
 //! Compiling checks every placeholder the way [`crate::generate_mock_data`] would, so a
@@ -36,7 +38,8 @@ age=N: person.birthday (years)
 range=N: random.date, random.datetime, random.timestamp (years, 1 to 100000)
 past, future: random.date, random.time, random.datetime, random.timestamp
 locale=CODE: person.* except birthday, internet.username, commerce.company, commerce.job-title, commerce.industry
-now, utc-now: none; the current time, RFC 3339 in ms (now: local offset, utc-now: Z)";
+escape=json: every placeholder (escapes \", \\, and U+0000 to U+001F inside a JSON string)
+now, utc-now: escape only; the current time, RFC 3339 in ms (now: local offset, utc-now: Z)";
 
 /// A compiled template. `Debug` shows its counts, never its text.
 pub struct Template {
@@ -45,10 +48,19 @@ pub struct Template {
     notes: Vec<String>,
 }
 
+/// One piece of a compiled template. `json` is true when the placeholder has `escape=json`.
 enum Segment {
     Literal(String),
-    Mock { options: MockOptions, at: Position },
-    Clock { clock: Clock, at: Position },
+    Mock {
+        options: MockOptions,
+        at: Position,
+        json: bool,
+    },
+    Clock {
+        clock: Clock,
+        at: Position,
+        json: bool,
+    },
 }
 
 /// A placeholder that renders the time passed to [`Template::render`].
@@ -122,8 +134,8 @@ impl Template {
     ///
     /// # Errors
     /// Fails on the first problem, naming its line and column: a `{{` with no `}}` after it,
-    /// an empty placeholder, an unknown type or option, an option value that does not parse,
-    /// an option given twice, a value on `past` or `future`, every option combination
+    /// an empty placeholder, an unknown type, option, or escape, an option value that does not
+    /// parse, an option given twice, a value on `past` or `future`, every option combination
     /// [`crate::generate_mock_data`] refuses, and more than [`MAX_PLACEHOLDERS`]
     /// placeholders.
     pub fn compile(source: &str) -> Result<Self> {
@@ -149,9 +161,9 @@ impl Template {
                 }
                 let words = &after[..end];
                 let segment = match clock(words, at)? {
-                    Some(clock) => Segment::Clock { clock, at },
+                    Some((clock, json)) => Segment::Clock { clock, at, json },
                     None => {
-                        let options = placeholder(words, at)?;
+                        let (options, json) = placeholder(words, at)?;
                         let inert = (options.data_type.command(), options.locale);
                         if locale_is_inert(options.locale, &options.data_type)
                             && !noted.contains(&inert)
@@ -163,7 +175,7 @@ impl Template {
                             ));
                             noted.push(inert);
                         }
-                        Segment::Mock { options, at }
+                        Segment::Mock { options, at, json }
                     }
                 };
                 if !literal.is_empty() {
@@ -210,35 +222,25 @@ impl Template {
         let mut local = None;
         let mut utc = None;
         for segment in &self.segments {
-            let (value, at, name) = match segment {
-                Segment::Literal(text) => {
-                    out.push_str(text);
-                    if out.len() > max_bytes {
-                        bail!("the rendered body passes the {max_bytes}-byte limit");
-                    }
-                    continue;
-                }
-                Segment::Mock { options, at } => {
+            match segment {
+                Segment::Literal(text) => push_value(&mut out, text, false, max_bytes)?,
+                Segment::Mock { options, at, json } => {
                     let name = options.data_type.command();
                     let value =
                         generate_mock_data(options).with_context(|| format!("{at}: {name}"))?;
-                    (value, at, name)
+                    push_value(&mut out, &value, *json, max_bytes)
+                        .with_context(|| format!("{at}: {name}"))?;
                 }
-                Segment::Clock { clock, at } => {
+                Segment::Clock { clock, at, json } => {
                     let value = match clock {
-                        Clock::Local => local
-                            .get_or_insert_with(|| {
-                                local_text(now, *now.with_timezone(&Local).offset())
-                            })
-                            .clone(),
-                        Clock::Utc => utc.get_or_insert_with(|| utc_text(now)).clone(),
+                        Clock::Local => local.get_or_insert_with(|| {
+                            local_text(now, *now.with_timezone(&Local).offset())
+                        }),
+                        Clock::Utc => utc.get_or_insert_with(|| utc_text(now)),
                     };
-                    (value, at, clock.name())
+                    push_value(&mut out, value, *json, max_bytes)
+                        .with_context(|| format!("{at}: {}", clock.name()))?;
                 }
-            };
-            out.push_str(&value);
-            if out.len() > max_bytes {
-                bail!("{at}: {name}: the rendered body passes the {max_bytes}-byte limit");
             }
         }
         Ok(out)
@@ -274,9 +276,10 @@ pub fn placeholder_groups() -> Vec<(&'static str, Vec<&'static str>)> {
     groups
 }
 
-/// The clock one placeholder's `words` name, or `None` when they name something else (an
-/// empty placeholder included).
-fn clock(words: &str, at: Position) -> Result<Option<Clock>> {
+/// The clock one placeholder's `words` name and whether it has `escape=json`, or `None` when
+/// they name something else (an empty placeholder included). `escape` is a clock's only
+/// option.
+fn clock(words: &str, at: Position) -> Result<Option<(Clock, bool)>> {
     let mut words = words.split_whitespace();
     let Some(clock) = words
         .next()
@@ -284,15 +287,24 @@ fn clock(words: &str, at: Position) -> Result<Option<Clock>> {
     else {
         return Ok(None);
     };
-    if let Some(word) = words.next() {
-        let key = word.split_once('=').map_or(word, |(key, _)| key);
-        bail!("{at}: unknown option '{}' for {}", quote(key), clock.name());
+    let mut json = false;
+    for word in words {
+        let (key, value) = option_word(word);
+        if key != "escape" {
+            bail!("{at}: unknown option '{}' for {}", quote(key), clock.name());
+        }
+        if json {
+            bail!("{at}: 'escape' is given twice");
+        }
+        check_escape(value, clock.name()).with_context(|| at.to_string())?;
+        json = true;
     }
-    Ok(Some(clock))
+    Ok(Some((clock, json)))
 }
 
-/// The options one placeholder's `words` (the text between its braces) describe.
-fn placeholder(words: &str, at: Position) -> Result<MockOptions> {
+/// The options one placeholder's `words` (the text between its braces) describe, and whether
+/// it has `escape=json`.
+fn placeholder(words: &str, at: Position) -> Result<(MockOptions, bool)> {
     let mut words = words.split_whitespace();
     let Some(name) = words.next() else {
         bail!("{at}: the placeholder is empty");
@@ -311,20 +323,75 @@ fn placeholder(words: &str, at: Position) -> Result<MockOptions> {
         range: None,
         locale: Locale::En,
     };
+    let mut json = false;
     let mut given: Vec<&str> = Vec::new();
     for word in words {
-        let (key, value) = match word.split_once('=') {
-            Some((key, value)) => (key, Some(value)),
-            None => (word, None),
-        };
+        let (key, value) = option_word(word);
         if given.contains(&key) {
             bail!("{at}: '{}' is given twice", quote(key));
         }
-        set_option(&mut options, key, value).with_context(|| at.to_string())?;
+        if key == "escape" {
+            check_escape(value, options.data_type.command()).with_context(|| at.to_string())?;
+            json = true;
+        } else {
+            set_option(&mut options, key, value).with_context(|| at.to_string())?;
+        }
         given.push(key);
     }
     validate(&options, &options.data_type).with_context(|| at.to_string())?;
-    Ok(options)
+    Ok((options, json))
+}
+
+/// An option word split into its key and its value (`None` for a bare word).
+fn option_word(word: &str) -> (&str, Option<&str>) {
+    match word.split_once('=') {
+        Some((key, value)) => (key, Some(value)),
+        None => (word, None),
+    }
+}
+
+/// Checks the value of `escape` on the placeholder `name`; `json`, in any ASCII case, is the
+/// one escape. The error is the problem only; the caller puts the position in front.
+fn check_escape(value: Option<&str>, name: &str) -> Result<()> {
+    match value {
+        Some(value) if value.eq_ignore_ascii_case("json") => Ok(()),
+        Some(other) => bail!("unknown escape '{}' for {name}; use json", quote(other)),
+        None => bail!("'escape' needs a value, as in escape=json"),
+    }
+}
+
+/// Appends `value` to `out`, escaped for a JSON string when `json`, then fails when `out` has
+/// passed `max_bytes`. The error names the cap only; the caller names the placeholder.
+fn push_value(out: &mut String, value: &str, json: bool, max_bytes: usize) -> Result<()> {
+    if json {
+        push_json_escaped(out, value);
+    } else {
+        out.push_str(value);
+    }
+    if out.len() > max_bytes {
+        bail!("the rendered body passes the {max_bytes}-byte limit");
+    }
+    Ok(())
+}
+
+/// Appends `value` to `out` escaped for the inside of a JSON string (RFC 8259 section 7): the
+/// quotation mark, the reverse solidus, and U+0000 to U+001F, which are the characters JSON
+/// requires escaped. DEL, C1 controls, `/`, and non-ASCII text are copied as they are, which
+/// JSON allows.
+fn push_json_escaped(out: &mut String, value: &str) {
+    for c in value.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            '\u{0}'..='\u{1f}' => out.push_str(&format!("\\u{:04x}", u32::from(c))),
+            _ => out.push(c),
+        }
+    }
 }
 
 /// Sets option `key` to `value` (`None` for a bare word). The error is the problem only;

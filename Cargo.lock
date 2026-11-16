@@ -4974,6 +4974,7 @@ dependencies = [
  "fake",
  "rand 0.10.3",
  "rstest",
+ "serde_json",
 ]
 
 [[package]]

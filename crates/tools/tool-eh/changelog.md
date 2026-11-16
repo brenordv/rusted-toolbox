@@ -21,6 +21,8 @@
   sending, with no event hub and no `config.json` read. The header gains a Template line and
   `send --help` lists the placeholders. `{{now}}` and `{{utc-now}}` put the time each event is
   built into it (RFC 3339 to the millisecond, local with its offset or UTC with `Z`).
+  `escape=json` on a placeholder escapes its value for a JSON string (`"`, `\`, U+0000 to
+  U+001F), so a pt-br `D"ávila` stays valid JSON; `send --help` lists it.
 - The export progress line (and the at-end message file line of `eh read`) is cleared when the
   summary follows, so the final counts print once; a failed export keeps its last counts.
 - `--dump-filter` follows eh-gui's keyword rule: each keyword is trimmed and empty items are
