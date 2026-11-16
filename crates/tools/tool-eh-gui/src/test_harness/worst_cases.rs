@@ -1,10 +1,14 @@
 //! The layout sweep's worst cases: the largest inputs each surface takes.
 
 use super::Harness;
-use super::builders::send_state;
+use super::builders::{export_state, send_state};
+use super::services::ServiceCall;
 use super::sweep_tests::{
-    Row, TOOLBAR, failed_with, orders_form, read_selected, send_done, send_template_invalid,
+    Row, TOOLBAR, export_bulk_running, failed_with, orders_form, read_selected, send_done,
+    send_template_invalid, taken,
 };
+use crate::archive::ArchiveInput;
+use crate::archive::results::Results;
 use crate::bridge::UiDelivery;
 use crate::design::tokens::{INSPECTOR_MAX, SIDEBAR_MAX};
 use crate::send::compose::BODY_CAP;
@@ -12,9 +16,10 @@ use crate::state::Input;
 use crate::views::SEND_BUTTON_KEY;
 use shared_eventhub_core::engine::EngineEvent;
 use shared_eventhub_core::producer::SendEnd;
+use shared_eventhub_persistence::export::ExportOutcome;
 
 /// Words that wrap: about 2,000 characters.
-fn long_text() -> String {
+pub(super) fn long_text() -> String {
     "the hub refused the batch because the namespace is throttling this client; ".repeat(27)
 }
 
@@ -37,6 +42,37 @@ fn long_send_failure(size: (f32, f32)) -> Harness {
 /// A connect that failed with about 2,000 characters of error text.
 pub(super) fn long_connect_failure(size: (f32, f32)) -> Harness {
     failed_with(size, &long_text())
+}
+
+/// A bulk export that ended with one failed file and a long first error.
+pub(super) fn long_bulk_failure(size: (f32, f32)) -> Harness {
+    let mut h = export_bulk_running(size);
+    let export = taken(&mut h, |call| match call {
+        ServiceCall::BulkExport(request) => Some(request.export),
+        _ => None,
+    });
+    h.deliver(Input::Archive(ArchiveInput::BulkDone {
+        export,
+        elapsed_ms: 1,
+        result: Ok(ExportOutcome {
+            exported: 2,
+            failed: 1,
+            first_error: Some(long_text()),
+            ..ExportOutcome::default()
+        }),
+    }));
+    h
+}
+
+/// The Export section with an archive that could not be searched, for a long reason.
+pub(super) fn long_archive_error(size: (f32, f32)) -> Harness {
+    Harness::new(
+        export_state(Results::Unavailable {
+            generation: 1,
+            error: long_text(),
+        }),
+        size,
+    )
 }
 
 fn many_partitions_with_warnings(size: (f32, f32)) -> Harness {
@@ -86,7 +122,21 @@ pub(super) const WORST: &[Row] = &[
     Row {
         name: "a long send failure",
         build: long_send_failure,
-        reachable: &[SEND_BUTTON_KEY],
+        reachable: &[SEND_BUTTON_KEY, "send-details"],
+        disabled: &[],
+        covered: &[],
+    },
+    Row {
+        name: "a long bulk export failure",
+        build: long_bulk_failure,
+        reachable: &["bulk-done", "bulk-details"],
+        disabled: &[],
+        covered: &[],
+    },
+    Row {
+        name: "a long archive error",
+        build: long_archive_error,
+        reachable: &["archive-error-details", TOOLBAR[1]],
         disabled: &[],
         covered: &[],
     },

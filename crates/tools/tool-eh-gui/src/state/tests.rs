@@ -1,4 +1,5 @@
 use super::*;
+use crate::archive::bulk::BulkExport;
 use crate::archive::test_support::{messages as archive_messages, page as archive_page};
 use crate::bridge::test_support::detached_session;
 use crate::form::SecretSource;
@@ -243,10 +244,17 @@ fn a_started_session_is_held_and_the_typed_secret_cleared() {
     assert!(typed_text(&f.state).is_empty());
 }
 
-#[test]
-fn a_session_that_cannot_start_fails_with_its_cause_and_a_danger_toast() {
+#[rstest::rstest]
+#[case::read_shows_it_in_place(Section::Read, 0)]
+#[case::export_needs_a_toast(Section::Export, 1)]
+#[case::send_needs_a_toast(Section::Send, 1)]
+fn a_session_that_cannot_start_fails_with_its_cause_and_toasts_where_read_is_hidden(
+    #[case] section: Section,
+    #[case] toasts: usize,
+) {
     let mut f = fixture();
     let attempt = f.preparing();
+    f.state.section = section;
 
     f.apply(Input::SessionReady {
         attempt,
@@ -258,8 +266,8 @@ fn a_session_that_cannot_start_fails_with_its_cause_and_a_danger_toast() {
         "The archive is in use by another eh or eh-gui"
     );
     assert_eq!(f.failure().stage, FailureStage::Starting);
-    assert_eq!(f.state.toasts.len(), 1);
-    assert_eq!(f.state.toasts[0].kind, ToastKind::Danger);
+    assert_eq!(f.state.toasts.len(), toasts);
+    assert!(f.state.toasts.iter().all(|t| t.kind == ToastKind::Danger));
 }
 
 #[test]
@@ -574,6 +582,35 @@ fn a_failure_after_the_window_closed_reopens_it_and_a_second_close_quits() {
     assert!(has_reopen(&failed));
     assert!(!has_quit(&failed));
     assert!(has_quit(&closed_again));
+}
+
+#[rstest::rstest]
+#[case::read_shows_it_in_place(Section::Read, false, 0)]
+#[case::export_needs_a_toast(Section::Export, false, 1)]
+#[case::send_needs_a_toast(Section::Send, false, 1)]
+#[case::closed_on_read_reopens_on_it(Section::Read, true, 0)]
+#[case::closed_on_export_reopens_on_it(Section::Export, true, 1)]
+fn a_failed_run_toasts_only_where_read_is_not_the_section(
+    #[case] section: Section,
+    #[case] closed: bool,
+    #[case] toasts: usize,
+) {
+    let mut f = fixture();
+    let (id, _) = f.connected();
+    f.state.section = section;
+    if closed {
+        f.apply(Input::WindowClosed(base_time()));
+    }
+
+    let out = f.apply(done(
+        id,
+        Ok(summary(RunEnd::Stopped, &["0"])),
+        clean_finish(),
+    ));
+
+    assert_eq!(has_reopen(&out), closed);
+    assert_eq!(f.failure().stage, FailureStage::Run);
+    assert_eq!(f.state.toasts.len(), toasts);
 }
 
 #[test]
@@ -1202,6 +1239,28 @@ fn files_failed(cancelled: bool) -> Result<ExportOutcome, String> {
     })
 }
 
+#[rstest::rstest]
+#[case::the_bar_shows_it(Section::Export, 0)]
+#[case::the_bar_is_hidden(Section::Read, 1)]
+fn a_failed_bulk_export_toasts_only_where_its_bar_cannot_be_seen(
+    #[case] section: Section,
+    #[case] toasts: usize,
+) {
+    let mut f = fixture();
+    let export = f.bulk_running();
+    f.state.section = section;
+
+    f.apply(bulk_done(export, files_failed(false)));
+
+    assert_eq!(f.state.toasts.len(), toasts);
+    assert!(
+        f.state
+            .toasts
+            .iter()
+            .all(|t| t.kind == ToastKind::Danger && t.text.contains("disk full"))
+    );
+}
+
 #[test]
 fn the_data_folder_cannot_change_while_a_bulk_export_runs() {
     let mut f = fixture();
@@ -1300,6 +1359,20 @@ fn a_failed_bulk_export_with_the_window_closed_reopens_it(
     assert!(has_reopen(&finished));
     assert!(!has_quit(&finished));
     assert_eq!(f.state.toasts.len(), 1);
+}
+
+#[test]
+fn a_bulk_export_failing_with_the_window_closed_on_export_reopens_to_its_bar_without_a_toast() {
+    let mut f = fixture();
+    let export = f.bulk_running();
+    f.state.section = Section::Export;
+    f.apply(Input::WindowClosed(base_time()));
+
+    let finished = f.apply(bulk_done(export, files_failed(false)));
+
+    assert!(has_reopen(&finished));
+    assert!(f.state.toasts.is_empty());
+    assert!(matches!(f.state.archive.bulk, BulkExport::Done { .. }));
 }
 
 #[test]

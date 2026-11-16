@@ -3,6 +3,7 @@
 pub mod sidebar;
 pub mod template;
 
+use super::details;
 use crate::app::dispatch;
 use crate::design::tokens::{
     CAPTION_ROW_HEIGHT, ICON_SIZE, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS, TYPE_BODY,
@@ -13,7 +14,7 @@ use crate::read::rows::display_line;
 use crate::send::SendInput;
 use crate::send::compose::{BODY_CAP, SendField};
 use crate::send::run::SendRun;
-use crate::state::{AppState, Input, Section};
+use crate::state::{AppState, Input, Section, error_preview};
 use crate::views::read::short_duration;
 use common_utils::string_utils::{format_bytes_to_string, format_thousands};
 use rune::{
@@ -50,10 +51,10 @@ pub fn press_send(s: &mut AppState, tx: &mut Tx) {
 }
 
 /// The shortcuts that work while typing in the Send section and with nothing focused, none of
-/// them while a sheet is open: `mod+enter` sends while the Send section shows, and `mod+1..3`
-/// pick a section. True when `key` was one of them and acted.
+/// them while a sheet or the error details are open: `mod+enter` sends while the Send section
+/// shows, and `mod+1..3` pick a section. True when `key` was one of them and acted.
 pub fn send_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
-    if s.sheet.is_some() {
+    if s.sheet.is_some() || s.details.is_some() {
         return false;
     }
     let chord = |text: &str| Chord::parse(text).is_ok_and(|chord| chord.matches_tx(key, tx));
@@ -166,6 +167,9 @@ fn action_row(s: &AppState, k: &Kit) -> El {
                 .build(k)
                 .key("send-cancel"),
         );
+    }
+    if run_failure_cut(run) {
+        right = right.child(details::button(k, "send-details", open_send_failure));
     }
     right = right.child(
         Button::new("Send")
@@ -297,6 +301,54 @@ fn idle(s: &AppState, k: &Kit) -> (&'static str, String, Vec<El>) {
     )
 }
 
+/// The prefix of a close error, on screen and in its details.
+const CLOSE_FAILED: &str = "Closing the connection failed: ";
+
+/// Whether an ended run's failure or close error was cut short on the action row.
+fn run_failure_cut(run: &SendRun) -> bool {
+    match run {
+        SendRun::Done {
+            summary,
+            close_error,
+            ..
+        } => {
+            let failed = match &summary.end {
+                SendEnd::Failed(_) => run
+                    .outcome_line()
+                    .is_some_and(|line| error_preview(&line).cut),
+                SendEnd::Completed | SendEnd::Cancelled => false,
+            };
+            failed
+                || close_error
+                    .as_deref()
+                    .is_some_and(|error| error_preview(error).cut)
+        }
+        SendRun::Idle | SendRun::Preparing { .. } | SendRun::Sending { .. } => false,
+    }
+}
+
+/// Opens the ended run's outcome and close error in full; nothing once the run moved on.
+fn open_send_failure(s: &mut AppState, _: &mut Tx) {
+    let run = &s.send.run;
+    let (end, close_error) = match run {
+        SendRun::Done {
+            summary,
+            close_error,
+            ..
+        } => (&summary.end, close_error.as_deref()),
+        SendRun::Idle | SendRun::Preparing { .. } | SendRun::Sending { .. } => return,
+    };
+    let title = match end {
+        SendEnd::Failed(_) => "The send failed",
+        SendEnd::Completed | SendEnd::Cancelled => "Closing the connection failed",
+    };
+    let mut text = run.outcome_line().unwrap_or_default();
+    if let Some(error) = close_error {
+        text = format!("{text}\n\n{CLOSE_FAILED}{error}");
+    }
+    details::show(s, title, &text);
+}
+
 fn done(
     s: &AppState,
     k: &Kit,
@@ -304,6 +356,7 @@ fn done(
     close_error: Option<&str>,
 ) -> (&'static str, String, Vec<El>) {
     let line = s.send.run.outcome_line().unwrap_or_default();
+    let shown = error_preview(&line).shown;
     let (phase, first) = match end {
         SendEnd::Completed => (
             "done-completed",
@@ -320,7 +373,7 @@ fn done(
         SendEnd::Failed(_) => (
             "done-failed",
             row().min_w(0.0).child(
-                text(line.clone())
+                text(shown.clone())
                     .font(TYPE_BODY)
                     .color(k.c.danger.fg)
                     .wrap()
@@ -331,14 +384,11 @@ fn done(
     let mut block = col().gap(SPACE_SM).min_w(0.0).child(first);
     if let Some(error) = close_error {
         block = block.child(
-            text(format!(
-                "Closing the connection failed: {}",
-                display_line(error.chars())
-            ))
-            .font(TYPE_CAPTION)
-            .color(k.c.warning.fg)
-            .wrap(),
+            text(format!("{CLOSE_FAILED}{}", error_preview(error).shown))
+                .font(TYPE_CAPTION)
+                .color(k.c.warning.fg)
+                .wrap(),
         );
     }
-    (phase, line, vec![block])
+    (phase, shown, vec![block])
 }

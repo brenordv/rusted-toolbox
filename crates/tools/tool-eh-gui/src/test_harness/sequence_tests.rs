@@ -32,6 +32,10 @@ const STEP_FRAMES: usize = 3;
 const STEPS: usize = 300;
 const REPLAY_STEPS: usize = 100;
 const BODIES: [&str; 4] = ["order 7", "{\"refund\": 3}", "ping", "order shipped"];
+/// A failed prepare's text: long enough that its surfaces offer the details modal.
+const LONG_FAILURE: &str = "the archive is in use by another eh or eh-gui; close the other \
+    process that holds the data folder's archive.redb, or pick another data folder in the \
+    connect sheet, then connect again";
 
 /// A call the app made that the outside world has not finished answering.
 enum Open {
@@ -389,6 +393,8 @@ impl Sequence {
                 let ok = self.below(5) != 0;
                 let result = if ok {
                     Ok(detached_session(attempt, self.h.tokio().handle()).0)
+                } else if self.below(2) == 0 {
+                    Err(LONG_FAILURE.to_owned())
                 } else {
                     Err("the archive is in use by another eh".to_owned())
                 };
@@ -637,6 +643,20 @@ impl Sequence {
                 "{at}: a job runs on with the window closed"
             );
         }
+        if s.details.is_some() {
+            assert!(!s.pill_open, "{at}: the details beside the pill popover");
+            let mounted = self
+                .h
+                .rt
+                .elements()
+                .iter()
+                .any(|e| e.key.as_deref() == Some("details-dialog") && !e.exiting);
+            assert!(mounted, "{at}: details open with no modal mounted");
+        }
+        assert!(
+            !s.window_is_closed() || s.details.is_none(),
+            "{at}: details open with the window closed"
+        );
         assert!(self.unfinished_sends.len() <= 1, "{at}: two sends at once");
         if let Some(run) = running_send(&s.send.run) {
             assert_eq!(

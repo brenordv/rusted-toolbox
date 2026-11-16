@@ -66,7 +66,11 @@ pub const EMPTY_GLYPH_SIZE: f32 = 48.0;
 pub const LIVE_DOT_SIZE: f32 = 8.0;
 /// Hairlines: one logical point in the kit's weak border color.
 pub const HAIRLINE: f32 = 1.0;
+/// The focus ring an app part draws, the width the kit's own small controls use.
+pub const FOCUS_RING_WIDTH: f32 = 2.0;
 pub const SHEET_WIDTH: f32 = 520.0;
+/// The error details sheet's widest width, wider than a form sheet for long lines of text.
+pub const DETAILS_WIDTH: f32 = 720.0;
 /// The sheet's top edge, below the toolbar band with room to spare.
 pub const SHEET_TOP: f32 = 72.0;
 pub const POPOVER_WIDTH: f32 = 360.0;

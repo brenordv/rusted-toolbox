@@ -2,7 +2,6 @@
 
 use super::{ArchiveEffect, ArchiveOutcome, ArchiveState, text_mode};
 use crate::read::rules::rule_count;
-use crate::state::ToastKind;
 use common_utils::string_utils::format_thousands;
 use shared_eventhub_persistence::config::ExportSettings;
 use shared_eventhub_persistence::export::{ExportFormat, ExportOptions, ExportOutcome};
@@ -138,6 +137,11 @@ pub fn run_failed(result: &Result<ExportOutcome, String>) -> bool {
     }
 }
 
+/// The line for an export that `error` stopped.
+pub fn stopped_text(error: &str) -> String {
+    format!("The export stopped: {error}")
+}
+
 /// The toast for a run where `failed` files could not be written, the first with `error`.
 fn failed_files_text(failed: u64, error: &str) -> String {
     match failed {
@@ -270,7 +274,7 @@ impl ArchiveState {
             }
         };
         let failed = run_failed(&result);
-        let toast = match &result {
+        let failure = match &result {
             Ok(outcome) => {
                 info!(
                     export,
@@ -297,15 +301,12 @@ impl ArchiveState {
                     error = %error,
                     "bulk export stopped"
                 );
-                Some(format!("The export stopped: {error}"))
+                Some(stopped_text(error))
             }
         };
         self.bulk = BulkExport::Done { export, result };
         ArchiveOutcome {
-            toasts: toast
-                .map(|text| (ToastKind::Danger, text))
-                .into_iter()
-                .collect(),
+            bulk_failure: failure,
             run_failed: failed,
             ..ArchiveOutcome::changed()
         }

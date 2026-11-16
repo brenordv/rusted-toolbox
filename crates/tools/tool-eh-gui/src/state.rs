@@ -4,9 +4,11 @@
 //! (spawning work, quitting, reopening the window). It never touches a `Tx` or does I/O, so every
 //! transition is testable without a window.
 
+mod details;
 mod ending;
 mod send;
 
+pub use details::{ERROR_PREVIEW_CHARS, ErrorDetails, ErrorPreview, error_preview};
 pub use ending::{Failure, FailureStage};
 
 use crate::archive::bulk::CancelReason;
@@ -16,7 +18,7 @@ use crate::design::Ds;
 use crate::design::tokens::{SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH};
 use crate::form::{ConnectForm, PendingSave};
 use crate::read::inspector::InspectorInput;
-use crate::read::{LogKind, LogLine, ReadEffect, ReadInput, ReadState};
+use crate::read::{LogKind, ReadEffect, ReadInput, ReadState};
 use crate::send::{SendEffect, SendInput, SendState};
 use crate::services::{ConnectRequest, SaveRequest, Services};
 use chrono::{DateTime, TimeDelta, Utc};
@@ -176,6 +178,14 @@ pub enum Input {
     ConfigSaved(Result<(), String>),
     DataFolderPicked(PathBuf),
     DismissToast(u64),
+    /// Open the error details modal on the whole of `text`.
+    ShowDetails {
+        title: String,
+        text: String,
+    },
+    CloseDetails,
+    /// The details modal's text reached the clipboard.
+    DetailsCopied(DateTime<Utc>),
     WindowClosed(DateTime<Utc>),
     ForceQuit,
     Tick(DateTime<Utc>),
@@ -267,6 +277,8 @@ pub struct AppState {
     pub config_caption: Option<String>,
     pub file_logging: FileLogging,
     pub toasts: Vec<Toast>,
+    /// The error details modal; `None` while it is closed.
+    pub details: Option<ErrorDetails>,
     /// Shown after the window reopened because the at-end pass ran past
     /// [`STILL_FINISHING_AFTER`]; offers Force quit.
     pub still_finishing: bool,
@@ -323,6 +335,7 @@ impl AppState {
             config_caption,
             file_logging,
             toasts: Vec::new(),
+            details: None,
             still_finishing: false,
             read: ReadState::default(),
             archive: ArchiveState::default(),
@@ -370,6 +383,9 @@ impl AppState {
             Input::ConfigSaved(result) => self.config_saved(result),
             Input::DataFolderPicked(folder) => self.data_folder_picked(folder, &mut out),
             Input::DismissToast(id) => self.toasts.retain(|toast| toast.id != id),
+            Input::ShowDetails { title, text } => self.show_details(title, &text),
+            Input::CloseDetails => self.close_details(&mut out),
+            Input::DetailsCopied(now) => self.details_copied(now, &mut out),
             Input::WindowClosed(at) => self.window_closed(at, &mut out),
             Input::ForceQuit => self.force_quit(&mut out),
             Input::Tick(now) => self.tick(now, &mut out),
@@ -468,6 +484,9 @@ impl AppState {
         out.effects
             .extend(archive.effects.into_iter().map(Effect::Archive));
         out.changed = archive.changed;
+        if let Some(text) = archive.bulk_failure {
+            self.failure_toast(Section::Export, text);
+        }
         if archive.run_failed && self.window_closed {
             info!("a bulk export failed with the window closed; reopening it");
             self.reopen(out);
@@ -582,6 +601,7 @@ impl AppState {
         self.window_closed = true;
         self.closed_at = Some(at);
         self.close_sheet();
+        self.details = None;
         self.archive.window_closed();
         self.send.request_cancel(CancelReason::WindowClosed);
         match std::mem::take(&mut self.connection) {
@@ -613,6 +633,7 @@ impl AppState {
         }
         self.toasts.retain(|toast| toast.ticks_left != Some(0));
         out.changed = self.toasts.len() != before;
+        out.changed |= self.tick_details(now);
         let connected = match self.connection {
             ConnectionState::Connected { .. } => true,
             ConnectionState::Disconnected
@@ -693,7 +714,7 @@ impl AppState {
             }
             (true, Err(text)) => {
                 warn!(attempt, error = %text, "the session could not start");
-                self.toast(ToastKind::Danger, format!("Could not connect: {text}"));
+                self.failure_toast(Section::Read, format!("Could not connect: {text}"));
                 self.connection = ConnectionState::Failed(Failure::starting(text));
             }
             (false, Ok(session)) => {
@@ -758,13 +779,7 @@ impl AppState {
         text: String,
         out: &mut Outcome,
     ) {
-        let line = LogLine {
-            at,
-            kind,
-            partition,
-            text,
-        };
-        self.read.log(line, self.pill_open);
+        self.read.log(at, kind, partition, text, self.pill_open);
         out.changed = true;
     }
 
@@ -828,7 +843,7 @@ impl AppState {
             }
             Some(text) => {
                 warn!(session = done.session, error = %text, "the session failed");
-                self.toast(ToastKind::Danger, text.clone());
+                self.failure_toast(Section::Read, text.clone());
                 self.connection = ConnectionState::Failed(Failure { stage, text });
                 if self.window_closed {
                     self.reopen(out);
@@ -836,6 +851,16 @@ impl AppState {
             }
         }
         self.still_finishing = false;
+    }
+
+    /// Toasts a failure unless `shown_by`, the section whose content shows it in place (the
+    /// Read empty state, the bulk export bar), is the one in the window: a toast there would
+    /// repeat it and cover that section's controls in a small window. A failure that lands
+    /// with the window closed reopens it on the same section, so the section decides then too.
+    fn failure_toast(&mut self, shown_by: Section, text: String) {
+        if self.section != shown_by {
+            self.toast(ToastKind::Danger, text);
+        }
     }
 
     fn reopen(&mut self, out: &mut Outcome) {

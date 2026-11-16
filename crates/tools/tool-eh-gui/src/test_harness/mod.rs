@@ -12,6 +12,8 @@ pub mod services;
 #[cfg(test)]
 mod a11y_tests;
 #[cfg(test)]
+mod details_tests;
+#[cfg(test)]
 mod journey_tests;
 #[cfg(test)]
 mod sequence_tests;
@@ -29,6 +31,7 @@ use crate::state::{AppState, Input};
 use crate::views::{view, window_key};
 use chrono::{DateTime, TimeDelta, Utc};
 use rune::accesskit::Action;
+use rune::clipboard::MemoryClipboard;
 use rune::{Env, Key, KeyEvent, Mods, Runtime};
 use serde_json::Value;
 use services::{CallLog, ServiceCall};
@@ -198,17 +201,22 @@ pub struct Harness {
     pub settle_frames: usize,
     clock: DateTime<Utc>,
     tokio: tokio::runtime::Runtime,
+    clipboard: MemoryClipboard,
 }
 
 impl Harness {
-    /// `state` at `size`, with fresh recording services and the window's key handler.
+    /// `state` at `size`, with fresh recording services, the window's key handler, and an
+    /// in-memory clipboard.
     pub fn new(mut state: AppState, size: (f32, f32)) -> Self {
         let calls = builders::record(&mut state);
         let mut rt = runtime_at(state, size);
         rt.on_key = Some(window_key);
+        let clipboard = rune::clipboard::memory();
+        rt.use_clipboard(&clipboard);
         Self {
             rt,
             calls,
+            clipboard,
             settle_frames: SETTLE_FRAMES,
             clock: Utc::now(),
             tokio: tokio::runtime::Builder::new_current_thread()
@@ -252,6 +260,55 @@ impl Harness {
         self.rt.pointer_down(x, y);
         self.rt.pointer_up(x, y);
         self.settle();
+    }
+
+    /// Presses the element labeled `name` inside the element keyed `within`, for a control the
+    /// kit builds without a key.
+    ///
+    /// # Panics
+    /// When nothing keyed `within` holds an element labeled `name`.
+    pub fn press_named(&mut self, within: &str, name: &str) {
+        let inside = self.path_of(within);
+        let Some(target) = self.rt.elements().into_iter().find(|element| {
+            !element.exiting
+                && element.label.as_deref() == Some(name)
+                && element.path.starts_with(&format!("{inside}/"))
+        }) else {
+            panic!("nothing labeled {name} inside {within}");
+        };
+        let [x, y, w, h] = target.rect;
+        self.press_at(x + w / 2.0, y + h / 2.0);
+    }
+
+    /// The label of the focused element inside the element keyed `within`.
+    ///
+    /// # Panics
+    /// When nothing is keyed `within`.
+    pub fn focused_label_within(&self, within: &str) -> Option<String> {
+        let inside = self.path_of(within);
+        self.rt
+            .elements()
+            .into_iter()
+            .find(|element| element.focused && element.path.starts_with(&format!("{inside}/")))
+            .and_then(|element| element.label)
+    }
+
+    /// The text the app last copied, from the harness's in-memory clipboard.
+    pub fn clipboard_text(&self) -> Option<String> {
+        self.clipboard.text().map(|text| text.to_string())
+    }
+
+    /// The element path of the element keyed `key`.
+    ///
+    /// # Panics
+    /// When nothing is keyed `key`.
+    pub fn path_of(&self, key: &str) -> String {
+        self.rt
+            .elements()
+            .into_iter()
+            .find(|element| element.key.as_deref() == Some(key) && !element.exiting)
+            .map(|element| element.path)
+            .unwrap_or_else(|| panic!("no element keyed {key}"))
     }
 
     /// What an assistive client's click does on `key`: the keyboard and accessibility path.

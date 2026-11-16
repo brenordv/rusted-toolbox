@@ -64,6 +64,8 @@ pub enum Scenario {
     SeededEmpty,
     /// Failed, with a long error.
     SeededFailed,
+    /// Failed with a 2,000-character error, its details open.
+    ErrorDetails,
     /// The connect sheet open with validation errors.
     SeededConnect,
     /// Connected, 5,000 rows in the list, statistics, a JSON row selected.
@@ -100,7 +102,7 @@ impl Pace {
 }
 
 impl Scenario {
-    const NAMES: [(&'static str, Scenario); 15] = [
+    const NAMES: [(&'static str, Scenario); 16] = [
         ("live", Self::Live),
         ("burst", Self::Burst),
         ("quiet", Self::Quiet),
@@ -109,6 +111,7 @@ impl Scenario {
         ("slow-finish", Self::SlowFinish),
         ("seeded-empty", Self::SeededEmpty),
         ("seeded-failed", Self::SeededFailed),
+        ("error-details", Self::ErrorDetails),
         ("seeded-connect", Self::SeededConnect),
         ("seeded-read", Self::SeededRead),
         ("seeded-search", Self::SeededSearch),
@@ -159,6 +162,7 @@ impl Scenario {
             | Self::SlowFinish => true,
             Self::SeededEmpty
             | Self::SeededFailed
+            | Self::ErrorDetails
             | Self::SeededConnect
             | Self::SeededRead
             | Self::SeededSearch
@@ -183,6 +187,7 @@ impl Scenario {
             | Self::SlowFinish
             | Self::SeededEmpty
             | Self::SeededFailed
+            | Self::ErrorDetails
             | Self::SeededConnect
             | Self::SeededRead
             | Self::SeededSearch => self.is_live(),
@@ -217,6 +222,7 @@ impl Scenario {
             | Self::SlowFinish
             | Self::SeededEmpty
             | Self::SeededFailed
+            | Self::ErrorDetails
             | Self::SeededConnect
             | Self::SeededRead
             | Self::SeededSearch
@@ -260,19 +266,13 @@ pub fn initial_state(
         FileLogging::Off,
     );
     match scenario {
-        Scenario::SeededFailed => {
-            // A seeded state starts no session, so the effects of these inputs are not run.
-            drop(state.apply(Input::ConnectPressed));
-            drop(state.apply(Input::SessionReady {
-                attempt: 1,
-                result: Err(format!(
-                    "Failed to read the event hub properties of '{}/{}': the service rejected \
-                     the credential (401 Unauthorized). Check that the shared access policy \
-                     grants Listen on this event hub, that the key was not rotated, and that \
-                     the namespace allows public network access from this machine.",
-                    hub::DEMO_NAMESPACE,
-                    hub::DEMO_HUB
-                )),
+        Scenario::SeededFailed => seed_failure(&mut state, demo_failure()),
+        Scenario::ErrorDetails => {
+            let failure = vec![demo_failure(); 7].join("\n");
+            seed_failure(&mut state, failure.clone());
+            drop(state.apply(Input::ShowDetails {
+                title: "Couldn't connect".to_owned(),
+                text: failure,
             }));
         }
         Scenario::SeededConnect => {
@@ -310,6 +310,28 @@ pub fn initial_state(
         | Scenario::SeededEmpty => {}
     }
     state
+}
+
+/// The demo's connect failure: a long, real-looking service refusal.
+fn demo_failure() -> String {
+    format!(
+        "Failed to read the event hub properties of '{}/{}': the service rejected the \
+         credential (401 Unauthorized). Check that the shared access policy grants Listen on \
+         this event hub, that the key was not rotated, and that the namespace allows public \
+         network access from this machine.",
+        hub::DEMO_NAMESPACE,
+        hub::DEMO_HUB
+    )
+}
+
+/// `state` after a connect that failed with `failure`. A seeded state starts no session, so
+/// the effects of these inputs are not run.
+fn seed_failure(state: &mut AppState, failure: String) {
+    drop(state.apply(Input::ConnectPressed));
+    drop(state.apply(Input::SessionReady {
+        attempt: 1,
+        result: Err(failure),
+    }));
 }
 
 /// An order body whose id, customer, email, and time are fresh in every event.

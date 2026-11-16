@@ -1,6 +1,7 @@
 //! The view: a pure function of the state. Handlers dispatch inputs; nothing here does I/O.
 
 mod connect;
+pub mod details;
 mod export;
 mod inspector;
 mod message_list;
@@ -8,7 +9,7 @@ mod read;
 mod rules_form;
 mod sections;
 mod send;
-mod shell;
+pub(crate) mod shell;
 
 pub use read::SEARCH_KEY;
 pub use send::sidebar::{COUNT_KEY, INTERVAL_KEY};
@@ -26,6 +27,8 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
     let body = shell::shell(s, cx, k, dark, &mut layer);
     connect::sheet(s, k, &mut layer);
     shell::toasts(s, k, &mut layer);
+    // Last on the layer, so the details are the top modal, over the sheet and the toasts.
+    details::modal(s, k, &mut layer);
     rune_kit::root(body, layer)
 }
 

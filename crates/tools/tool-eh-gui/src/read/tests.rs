@@ -723,22 +723,23 @@ fn the_read_state_is_a_row_source_over_the_displayed_or_matching_rows() {
     assert_eq!(RowSource::epoch(&f.read), f.read.rows.epoch);
 }
 
-fn log_line(text: &str) -> LogLine {
-    LogLine {
-        at: Utc::now(),
-        kind: LogKind::Error,
-        partition: Some("2".to_owned()),
-        text: text.to_owned(),
-    }
+fn log_error(read: &mut ReadState, text: &str, popover_open: bool) {
+    read.log(
+        Utc::now(),
+        LogKind::Error,
+        Some("2".to_owned()),
+        text.to_owned(),
+        popover_open,
+    );
 }
 
 #[test]
 fn the_session_log_caps_and_counts_unseen_lines_while_its_popover_is_closed() {
     let mut f = fixture();
     for index in 0..SESSION_LOG_CAP + 5 {
-        f.read.log(log_line(&index.to_string()), false);
+        log_error(&mut f.read, &index.to_string(), false);
     }
-    f.read.log(log_line("seen"), true);
+    log_error(&mut f.read, "seen", true);
 
     assert_eq!(f.read.session_log.len(), SESSION_LOG_CAP);
     assert_eq!(f.read.session_log.front().unwrap().text, "6");
@@ -748,11 +749,30 @@ fn the_session_log_caps_and_counts_unseen_lines_while_its_popover_is_closed() {
 }
 
 #[test]
+fn log_ids_increase_past_the_cap_and_across_a_new_session() {
+    let mut f = fixture();
+    for index in 0..SESSION_LOG_CAP + 2 {
+        log_error(&mut f.read, &index.to_string(), false);
+    }
+    let before: Vec<u64> = f.read.session_log.iter().map(|line| line.id).collect();
+    f.read.start_session(2, Duration::from_secs(1));
+    log_error(&mut f.read, "next session", false);
+
+    assert!(before.windows(2).all(|pair| pair[0] < pair[1]));
+    assert_eq!(before.last(), Some(&((SESSION_LOG_CAP + 1) as u64)));
+    let after = f.read.session_log.back().unwrap().id;
+    assert!(
+        before.iter().all(|id| *id < after),
+        "{after} after {before:?}"
+    );
+}
+
+#[test]
 fn a_new_session_clears_the_list_and_keeps_the_rules_and_generation() {
     let mut f = fixture();
     f.arrive_and_flush(&["bacon"]);
     f.search("bacon", false);
-    f.read.log(log_line("x"), false);
+    log_error(&mut f.read, "x", false);
     f.read.rules_applied = CaptureFilters {
         time: None,
         text: Some(TextFilter::Contains(vec!["bacon".to_owned()])),
@@ -775,7 +795,7 @@ fn an_ended_session_drops_its_rows_and_keeps_its_log() {
     f.arrive_and_flush(&["a"]);
     f.apply(ReadInput::Select("p0-s0".to_owned()));
     f.read.search_edit = TextEdit::new("a");
-    f.read.log(log_line("x"), false);
+    log_error(&mut f.read, "x", false);
 
     f.read.end_session();
 
