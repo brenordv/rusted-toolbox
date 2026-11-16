@@ -73,7 +73,9 @@ pub const SHEET_WIDTH: f32 = 520.0;
 pub const DETAILS_WIDTH: f32 = 720.0;
 /// The sheet's top edge, below the toolbar band with room to spare.
 pub const SHEET_TOP: f32 = 72.0;
-pub const POPOVER_WIDTH: f32 = 360.0;
+/// The rows of a kit popover's body: the kit popover's 320 pt cap less its 12 pt inset on each
+/// side.
+pub const POPOVER_WIDTH: f32 = 296.0;
 /// A popover holding a form (pickers, switches, a folder with its Change button).
 pub const FORM_POPOVER_WIDTH: f32 = 460.0;
 /// Message list rows and its header (rune-kit's table sizes).
@@ -106,11 +108,13 @@ pub const SEARCH_WIDTH: f32 = 280.0;
 pub const SIDEBAR_FIELD_WIDTH: f32 = 220.0;
 /// The Send body's caption row: tall enough for a regular control, so a button appearing in it
 /// moves nothing.
-pub const CAPTION_ROW_HEIGHT: f32 = 28.0;
+pub const CAPTION_ROW_HEIGHT: f32 = CONTROL_HEIGHT;
 /// The lines a template sample shows before it scrolls; the block never grows past them.
 pub const SAMPLE_LINES: f32 = 6.0;
 /// The lines the Send properties editor shows before it scrolls; the box never grows past them.
 pub const PROPERTY_LINES: f32 = 4.0;
+/// A regular control's height, the smallest pointer target.
+pub const CONTROL_HEIGHT: f32 = 28.0;
 /// A small count badge's height.
 pub const COUNT_BADGE_HEIGHT: f32 = 16.0;
 /// The press scale of floating controls.

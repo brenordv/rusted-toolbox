@@ -1,14 +1,17 @@
 //! The stats strip: the session's counts and rates, refreshed once a second.
 
 use crate::design::parts::{self, Metric};
-use crate::design::tokens::{POPOVER_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM};
+use crate::design::tokens::{SPACE_LG, SPACE_MD, SPACE_SM};
 use crate::read::ShownStats;
 use crate::state::AppState;
 use chrono::{DateTime, TimeDelta, Utc};
 use common_utils::string_utils::format_thousands;
-use rune::{El, col, row};
+use rune::{El, row};
 use rune_kit::{Kit, Placement, Popover};
 use shared_eventhub_core::stats::StatsSnapshot;
+
+/// The partitions popover's scroll viewport.
+pub const PARTITIONS_SCROLL_KEY: &str = "partitions-popover-scroll";
 
 pub fn strip(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
     let fallback;
@@ -86,31 +89,37 @@ fn received(s: &AppState, k: &Kit, stats: &StatsSnapshot, layer: &mut Vec<El>) -
         .role("button")
         .label(format!("Received {}", format_thousands(stats.received)))
         .on_press(|s: &mut AppState| s.read.partitions_open = !s.read.partitions_open);
-    let mut details = col().gap(SPACE_MD).w(POPOVER_WIDTH);
-    for (partition, progress) in &stats.per_partition {
-        let last = progress
-            .last_received_at
-            .map_or("nothing yet".to_owned(), |at| {
-                at.format("%H:%M:%S UTC").to_string()
-            });
-        details = details.child(parts::detail_row(
-            k,
-            &format!("Partition {partition}"),
-            &format!(
-                "{} received, last at {last}",
-                format_thousands(progress.received)
-            ),
-        ));
-    }
+    let rows = stats
+        .per_partition
+        .iter()
+        .map(|(partition, progress)| {
+            parts::detail_row(
+                k,
+                &format!("Partition {partition}"),
+                &partition_line(progress.received, progress.last_received_at),
+            )
+        })
+        .collect();
     Popover::new("partitions-popover")
         .trigger(face)
         .title("Received per partition")
-        .child(details)
+        .padding(0.0)
+        .child(parts::popover_body(k, PARTITIONS_SCROLL_KEY, rows))
         .open(s.read.partitions_open)
         .placement(Placement::Bottom)
         .on_close(|s: &mut AppState| s.read.partitions_open = false)
         .build(k, layer)
         .grow(1.0)
+}
+
+/// A partition's received count and last arrival: `12,345,678 · last 18:31:02 UTC`, or
+/// `0 · nothing yet` before its first message. Short enough for a 296 pt row in any 12 pt mono.
+fn partition_line(received: u64, last: Option<DateTime<Utc>>) -> String {
+    let received = format_thousands(received);
+    match last {
+        Some(at) => format!("{received} · last {}", at.format("%H:%M:%S UTC")),
+        None => format!("{received} · nothing yet"),
+    }
 }
 
 fn count(value: u64) -> Metric {
@@ -169,5 +178,26 @@ pub(crate) fn short_duration(seconds: i64) -> String {
         (0, 0, s) => format!("{s}s"),
         (0, m, s) => format!("{m}m {s:02}s"),
         (h, m, _) => format!("{h}h {m:02}m"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[rstest::rstest]
+    #[case::received(Some((18, 31, 2)), "12,345,678 · last 18:31:02 UTC")]
+    #[case::nothing_yet(None, "12,345,678 · nothing yet")]
+    fn a_partition_line_is_the_count_then_the_last_arrival(
+        #[case] last: Option<(u32, u32, u32)>,
+        #[case] expected: &str,
+    ) {
+        let last =
+            last.map(|(h, m, s)| Utc.with_ymd_and_hms(2026, 1, 1, h, m, s).single().unwrap());
+
+        let line = partition_line(12_345_678, last);
+
+        assert_eq!(line, expected);
     }
 }

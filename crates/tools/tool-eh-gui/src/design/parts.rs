@@ -2,19 +2,20 @@
 //! happens only here and in the kit.
 
 use super::tokens::{
-    COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT, FOCUS_RING_WIDTH,
-    FORM_POPOVER_WIDTH, HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE, PRESS_SCALE,
-    RADIUS_BADGE, RADIUS_CONTROL, RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE, REVEAL_OFFSET,
-    SAMPLE_LINES, SELECTION_INSET, SHEET_TOP, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS,
-    SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY,
-    TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
+    CONTROL_HEIGHT, COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT,
+    FOCUS_RING_WIDTH, FORM_POPOVER_WIDTH, HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE,
+    POPOVER_WIDTH, PRESS_SCALE, RADIUS_BADGE, RADIUS_CONTROL, RADIUS_SELECTION, RADIUS_SHEET,
+    RADIUS_TILE, REVEAL_OFFSET, SAMPLE_LINES, SELECTION_INSET, SHEET_TOP, SPACE_LG, SPACE_MD,
+    SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY,
+    TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO,
+    TYPE_TITLE,
 };
 use super::{Surface, floating_tint, motion, selected_secondary_text, selection_fill, surface};
 use rune::{
     Color, El, Icon, KeyEvent, ScrollSpec, SpringPair, TextEdit, Transition, Tx, col, el, icon,
     row, spacer, text, text_input,
 };
-use rune_kit::{IconButton, IconButtonVariant, Kit, RollingText, ScrollBar};
+use rune_kit::{IconButton, IconButtonVariant, Kit, RollingText, ScrollBar, Switch, popover};
 
 /// The centered empty state that replaces a content area: glyph, title, one muted line, and at
 /// most one action button. Enters once with a fade and a small rise.
@@ -122,6 +123,71 @@ pub fn detail_row(k: &Kit, label: &str, value: &str) -> El {
 /// A form label over a control that draws none of its own, such as a mode picker.
 pub fn field_label(k: &Kit, label: &str) -> El {
     text(label).font(TYPE_LABEL).color(k.c.text_base)
+}
+
+/// Which side of a [`labeled_switch`] its label is drawn on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LabelSide {
+    /// The label, then the switch.
+    Leading,
+    /// The switch, then the label.
+    Trailing,
+}
+
+/// A kit switch keyed `key` with `label` drawn in the field-label style beside it, at least the
+/// control height tall. The whole row, label and gap included, toggles; the switch alone takes
+/// focus and Space, and is the one accessibility node, named by `label`.
+///
+/// The kit draws a switch's own label in its faint text color, under the 4.5:1 text floor, so
+/// the kit label stays hidden and is only the accessible name. Rune runs a press on the
+/// topmost element with a handler and never passes it to a parent, so the switch keeps its own
+/// toggle for its track and Space, and the row's toggle catches the label and the gap.
+pub fn labeled_switch<S: 'static>(
+    k: &Kit,
+    key: &str,
+    label: &str,
+    side: LabelSide,
+    on: bool,
+    toggle: impl Fn(&mut S) + Clone + 'static,
+) -> El {
+    let control = Switch::new(on)
+        .label(label)
+        .hide_label()
+        .on_toggle(toggle.clone())
+        .build(k)
+        .key(key);
+    let label_text = field_label(k, label)
+        .key(format!("{key}-label"))
+        .a11y_hidden();
+    let (first, second) = match side {
+        LabelSide::Leading => (label_text, control),
+        LabelSide::Trailing => (control, label_text),
+    };
+    row()
+        .key(format!("{key}-row"))
+        .role("none")
+        .gap(SPACE_SM)
+        .center_y()
+        .min_h(CONTROL_HEIGHT)
+        .on_press(toggle)
+        .child(first)
+        .child(second)
+}
+
+/// The body of a kit popover built with `padding(0.0)`: `rows`, [`POPOVER_WIDTH`] wide and
+/// inset 12 pt on every side, in a scroll viewport keyed `key` that shrinks with the surface
+/// to the window, so a long body scrolls instead of running past it.
+///
+/// The kit popover caps its surface at 320 pt, and its scroll bar draws over the viewport's
+/// right edge; the rows' own inset, rather than the popover's, keeps the thumb clear of text
+/// that wraps to the full width. The viewport must be the kit body's direct child to shrink.
+pub fn popover_body(k: &Kit, key: &str, rows: Vec<El>) -> El {
+    let rows = col()
+        .gap(SPACE_MD)
+        .w(POPOVER_WIDTH + 2.0 * SPACE_MD)
+        .padding(SPACE_MD)
+        .children(rows);
+    popover::fit_scroll(rows).key(key).scroll_bar(k)
 }
 
 /// A muted caption line, for form notes.

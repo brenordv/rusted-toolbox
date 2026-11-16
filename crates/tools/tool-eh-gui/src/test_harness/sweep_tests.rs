@@ -15,8 +15,8 @@ use crate::form::{AuthChoice, CredentialChoice};
 use crate::read::test_support::captured;
 use crate::send::SendInput;
 use crate::state::{AppState, Input, SheetPurpose, ToastInput, ToastKind};
-use crate::views::SEND_BUTTON_KEY;
 use crate::views::details::{COPY_KEY, DONE_KEY, FAILURE_KEY};
+use crate::views::{READ_METADATA_KEY, SEND_BUTTON_KEY};
 use rune::Runtime;
 use rune::accesskit::Action;
 use serde_json::Value;
@@ -302,7 +302,13 @@ const ROWS: &[Row] = &[
     Row {
         name: "read connected with a selection",
         build: read_selected,
-        reachable: &["disconnect", "inspector-close", "export-message", "p0-s39"],
+        reachable: &[
+            "disconnect",
+            "inspector-close",
+            "export-message",
+            READ_METADATA_KEY,
+            "p0-s39",
+        ],
         disabled: &["apply-rules"],
         covered: &[],
     },

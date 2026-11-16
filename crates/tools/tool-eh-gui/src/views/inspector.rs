@@ -3,7 +3,7 @@
 
 use super::message_list::{clear_selection_input, copy_selected_body};
 use crate::app::dispatch;
-use crate::design::parts;
+use crate::design::parts::{self, LabelSide};
 use crate::design::tokens::{SPACE_LG, SPACE_MD, SPACE_SM, TYPE_MONO, TYPE_TITLE};
 use crate::read::Selected;
 use crate::read::inspector::{
@@ -15,7 +15,7 @@ use crate::state::{AppState, Input, ListSection};
 use chrono::Local;
 use rune::{El, FileDialogOptions, ScrollSpec, Tx, col, el, row, text};
 use rune_kit::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl, Switch,
+    Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
 };
 use shared_eventhub_core::models::BodyKind;
 use shared_eventhub_persistence::export::ExportFormat;
@@ -26,6 +26,19 @@ pub const FORMAT_LABELS: [&str; 3] = ["txt", "csv", "json"];
 /// The caption under a csv pick.
 pub const CSV_CAPTION: &str =
     "Spreadsheet apps may run cells that start with =, +, - or @ as formulas.";
+
+/// The Read inspector's Metadata switch key.
+pub const READ_METADATA_KEY: &str = "read-metadata";
+/// The Export inspector's Metadata switch key.
+pub const EXPORT_METADATA_KEY: &str = "export-metadata";
+
+/// The key of `section`'s inspector Metadata switch.
+fn metadata_key(section: ListSection) -> &'static str {
+    match section {
+        ListSection::Read => READ_METADATA_KEY,
+        ListSection::Export => EXPORT_METADATA_KEY,
+    }
+}
 
 /// `section`'s inspector.
 pub fn inspector_of(s: &AppState, section: ListSection) -> &InspectorState {
@@ -236,15 +249,17 @@ fn export(state: &InspectorState, k: &Kit, section: ListSection) -> El {
                         })
                         .build(k),
                 )
-                .child(
-                    Switch::new(state.metadata)
-                        .label("Metadata")
-                        .on_toggle(move |s: &mut AppState| {
-                            let inspector = inspector_of_mut(s, section);
-                            inspector.metadata = !inspector.metadata;
-                        })
-                        .build(k),
-                ),
+                .child(parts::labeled_switch(
+                    k,
+                    metadata_key(section),
+                    "Metadata",
+                    LabelSide::Leading,
+                    state.metadata,
+                    move |s: &mut AppState| {
+                        let inspector = inspector_of_mut(s, section);
+                        inspector.metadata = !inspector.metadata;
+                    },
+                )),
         )
         .child(
             Button::new(label)

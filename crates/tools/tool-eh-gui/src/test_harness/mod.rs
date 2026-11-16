@@ -24,6 +24,8 @@ mod sequence_tests;
 #[cfg(test)]
 mod sweep_tests;
 #[cfg(test)]
+mod switch_tests;
+#[cfg(test)]
 mod toast_tests;
 #[cfg(test)]
 mod worst_cases;
