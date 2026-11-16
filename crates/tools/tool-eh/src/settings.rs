@@ -5,17 +5,20 @@
 use crate::cli_utils::{AuthArg, ExportArgs, ReadArgs, TargetArgs, TextFilterArgs, TimeFilterArgs};
 use crate::models::{BodySource, ConfigSource, Environment, ExportJob, ReadJob, SendJob};
 use crate::progress::target_label;
-use crate::send_cli::SendArgs;
+use crate::send_cli::{ArgText, SendArgs};
 use anyhow::{Context, Result, bail};
 use common_utils::string_utils::non_blank;
 use mock_data_utils::template::Template;
 use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
 use shared_eventhub_core::filters::{CaptureFilters, TextFilter, TimeFilter};
-use shared_eventhub_core::producer::{OutgoingEvent, Pacing, Routing, SendPlan};
+use shared_eventhub_core::producer::{
+    OutgoingEvent, Pacing, Routing, SendPlan, insert_property, parse_property,
+};
 use shared_eventhub_persistence::config::{
     AuthMethodConfig, CaptureConfig, CredentialKindConfig, DiskWriteSettings, ExportSettings,
     SensitiveValues, StorageConfig, StoredSecret, TargetConfig, ToolConfig,
 };
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -108,8 +111,9 @@ pub(crate) fn export_job(
 /// `--yes`.
 ///
 /// # Errors
-/// Fails as [`read_job`] does, when the recalled target is neither named
-/// nor confirmed, and when the partition key is blank.
+/// Fails when a `--property` is malformed or repeats a key (checked before
+/// anything else), as [`read_job`] does, when the recalled target is neither
+/// named nor confirmed, and when the partition key is blank.
 pub(crate) fn send_job(
     args: SendArgs,
     (body, body_source): (Vec<u8>, BodySource),
@@ -119,6 +123,7 @@ pub(crate) fn send_job(
     working_dir: PathBuf,
     config_source: ConfigSource,
 ) -> Result<SendJob> {
+    let properties = send_properties(&args.properties)?;
     let target = merge_target(&args.target, None, recalled, environment)?;
     check_recalled_destination(&args, &target, recalled, environment)?;
     let mut config = match recalled {
@@ -151,10 +156,24 @@ pub(crate) fn send_job(
         event: OutgoingEvent {
             body,
             content_type: args.content_type.as_deref().and_then(non_blank),
+            correlation_id: args.correlation_id.as_ref().and_then(|id| non_blank(&id.0)),
+            properties,
         },
         template,
         body_source,
     })
+}
+
+/// The `--property` values as one map. An error names the flag by its
+/// position on the command line ("--property 2: ...").
+fn send_properties(values: &[ArgText]) -> Result<BTreeMap<String, String>> {
+    let mut properties = BTreeMap::new();
+    for (index, text) in values.iter().enumerate() {
+        let flag = || format!("--property {}", index + 1);
+        let (key, value) = parse_property(&text.0).with_context(flag)?;
+        insert_property(&mut properties, key, value).with_context(flag)?;
+    }
+    Ok(properties)
 }
 
 /// Refuses a send in a folder with a `config.json` unless the run's

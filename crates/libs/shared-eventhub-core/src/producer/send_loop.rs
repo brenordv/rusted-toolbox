@@ -201,9 +201,8 @@ fn fill<B: PublishBatch>(
             }
             Ok(false) if added == 0 => {
                 return Err(SendEnd::Failed(format!(
-                    "event {index} (a {}-byte body) does not fit in one batch; \
-                     {SINGLE_EVENT_LIMIT}",
-                    event.body.len()
+                    "event {index} ({}) does not fit in one batch; {SINGLE_EVENT_LIMIT}",
+                    event.size_words()
                 )));
             }
             Ok(false) => {

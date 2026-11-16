@@ -109,6 +109,8 @@ pub const SIDEBAR_FIELD_WIDTH: f32 = 220.0;
 pub const CAPTION_ROW_HEIGHT: f32 = 28.0;
 /// The lines a template sample shows before it scrolls; the block never grows past them.
 pub const SAMPLE_LINES: f32 = 6.0;
+/// The lines the Send properties editor shows before it scrolls; the box never grows past them.
+pub const PROPERTY_LINES: f32 = 4.0;
 /// A small count badge's height.
 pub const COUNT_BADGE_HEIGHT: f32 = 16.0;
 /// The press scale of floating controls.

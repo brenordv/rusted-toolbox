@@ -1,5 +1,5 @@
-//! The composer: the event body, how many to send, where they go, and how fast, checked
-//! through core's own constructors.
+//! The composer: the event body, its metadata, how many to send, where they go, and how fast,
+//! checked through core's own constructors.
 
 use super::template::TemplateState;
 use crate::read::rows::display_line;
@@ -8,12 +8,17 @@ use mock_data_utils::template::Template;
 use rune::TextEdit;
 use shared_eventhub_core::producer::{
     MAX_SEND_COUNT, MAX_SEND_INTERVAL_MS, OutgoingEvent, Pacing, Routing, SendPlan,
+    insert_property, parse_property,
 };
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 /// The largest body the editor sends, in bytes.
 pub const BODY_CAP: usize = 1024 * 1024;
+/// The most properties text the composer parses, in bytes; it is parsed on every view build.
+pub const PROPERTIES_CAP: usize = 4 * 1024;
+const PROPERTIES_ISSUE: &str = "Properties are over 4 KB; remove some";
 /// The count a new composer starts with.
 const DEFAULT_COUNT: &str = "1";
 /// The interval a new composer starts with, in milliseconds.
@@ -75,6 +80,7 @@ pub enum SendField {
     PartitionKey,
     Count,
     Interval,
+    Properties,
     Body,
 }
 
@@ -85,19 +91,31 @@ pub struct SendIssues {
     pub partition_key: Option<String>,
     pub count: Option<String>,
     pub interval: Option<String>,
+    /// Properties text over its cap, or the first line that does not parse or repeats a key,
+    /// as typed (escape and cut it for display).
+    pub properties: Option<String>,
     /// A body over the editor's cap, or, under Template, a body that does not compile (an
     /// over-cap body is never compiled, so the two never meet).
     pub body: Option<String>,
 }
 
 impl SendIssues {
-    fn in_order(&self) -> [(SendField, &Option<String>); 5] {
+    fn in_order(&self) -> [(SendField, &Option<String>); 6] {
+        let SendIssues {
+            target,
+            partition_key,
+            count,
+            interval,
+            properties,
+            body,
+        } = self;
         [
-            (SendField::Target, &self.target),
-            (SendField::PartitionKey, &self.partition_key),
-            (SendField::Count, &self.count),
-            (SendField::Interval, &self.interval),
-            (SendField::Body, &self.body),
+            (SendField::Target, target),
+            (SendField::PartitionKey, partition_key),
+            (SendField::Count, count),
+            (SendField::Interval, interval),
+            (SendField::Properties, properties),
+            (SendField::Body, body),
         ]
     }
 
@@ -121,11 +139,14 @@ impl SendIssues {
     }
 }
 
-/// The fields of one send: body, content type, count, routing, and pacing. `Debug` prints no
-/// field text.
+/// The fields of one send: body, content type, metadata, count, routing, and pacing. `Debug`
+/// prints no field text.
 pub struct Composer {
     pub body: TextEdit,
     pub content_type: TextEdit,
+    pub correlation_id: TextEdit,
+    /// One `key=value` per line; blank lines are skipped.
+    pub properties: TextEdit,
     pub count: TextEdit,
     pub routing: RoutingChoice,
     pub partition_key: TextEdit,
@@ -145,8 +166,20 @@ pub struct Composer {
 
 impl std::fmt::Debug for Composer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let correlation_id = match non_blank(&self.correlation_id.text) {
+            Some(_) => "set",
+            None => "unset",
+        };
+        let property_lines = self
+            .properties
+            .text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .count();
         f.debug_struct("Composer")
             .field("body_len", &self.body.text.len())
+            .field("correlation_id", &correlation_id)
+            .field("property_lines", &property_lines)
             .field("routing", &self.routing)
             .field("pacing", &self.pacing)
             .field("template", &self.template)
@@ -159,6 +192,8 @@ impl Default for Composer {
         Self {
             body: TextEdit::new(""),
             content_type: TextEdit::new(""),
+            correlation_id: TextEdit::new(""),
+            properties: TextEdit::new(""),
             count: TextEdit::new(DEFAULT_COUNT),
             routing: RoutingChoice::Automatic,
             partition_key: TextEdit::new(""),
@@ -179,6 +214,41 @@ pub struct Composed {
     pub plan: SendPlan,
     pub event: OutgoingEvent,
     pub template: Option<Arc<Template>>,
+}
+
+/// What a valid composer's checks produced: the plan and the parsed properties. `Debug` shows
+/// the plan and the property count, never a key or value.
+pub struct Validated {
+    pub plan: SendPlan,
+    pub properties: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for Validated {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Validated")
+            .field("plan", &self.plan)
+            .field("property_count", &self.properties.len())
+            .finish()
+    }
+}
+
+/// The properties `text` holds, one `key=value` per line with blank lines skipped, or the issue:
+/// the cap, or "Line N: ..." for the first line that does not parse or repeats a key (lines
+/// counted as typed, blank ones included).
+fn parse_properties(text: &str) -> Result<BTreeMap<String, String>, String> {
+    if text.len() > PROPERTIES_CAP {
+        return Err(PROPERTIES_ISSUE.to_owned());
+    }
+    let mut properties = BTreeMap::new();
+    for (index, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let issue = |error: anyhow::Error| format!("Line {}: {error:#}", index + 1);
+        let (key, value) = parse_property(line).map_err(issue)?;
+        insert_property(&mut properties, key, value).map_err(issue)?;
+    }
+    Ok(properties)
 }
 
 /// A whole number typed as ASCII digits, spaces around it allowed; `None` for anything else,
@@ -251,24 +321,26 @@ impl Composer {
     ///
     /// # Errors
     /// Returns the issues of every part that is wrong.
-    pub fn compose(&self, target_ready: bool) -> Result<Composed, SendIssues> {
-        self.validate(target_ready).map(|plan| Composed {
+    pub fn compose(&self, target_ready: bool) -> Result<Composed, Box<SendIssues>> {
+        let Validated { plan, properties } = self.validate(target_ready)?;
+        Ok(Composed {
             plan,
-            event: self.event(),
+            event: self.event(properties),
             template: self.template.template().cloned(),
         })
     }
 
-    /// The plan the composer describes, or what is wrong with it, without copying the body.
-    /// Validity is decided by core's constructors; `target_ready` says whether the connection
-    /// form names a usable event hub.
+    /// The plan and properties the composer describes, or what is wrong with it, without
+    /// copying the body. Validity is decided by core's constructors and parser; `target_ready`
+    /// says whether the connection form names a usable event hub.
     ///
     /// # Errors
     /// Returns the issues of every part that is wrong.
-    pub fn validate(&self, target_ready: bool) -> Result<SendPlan, SendIssues> {
+    pub fn validate(&self, target_ready: bool) -> Result<Validated, Box<SendIssues>> {
         let count = digits(&self.count.text);
         let routing = self.routing();
         let pacing = self.pacing();
+        let properties = parse_properties(&self.properties.text);
         let plan = match (count, &routing, pacing) {
             (Some(count), Some(routing), Some(pacing)) => {
                 Some(SendPlan::new(count, routing.clone(), pacing))
@@ -287,25 +359,31 @@ impl Composer {
             partition_key: routing.is_none().then(|| KEY_ISSUE.to_owned()),
             count: (!count_ok).then(count_issue),
             interval: pacing.is_none().then(interval_issue),
+            properties: properties.as_ref().err().cloned(),
             body: (self.body.text.len() > BODY_CAP)
                 .then(|| BODY_ISSUE.to_owned())
                 .or_else(|| self.template.issue().map(str::to_owned)),
         };
-        match plan {
-            Some(Ok(plan)) if issues.is_empty() => Ok(plan),
-            Some(Ok(_)) | Some(Err(_)) | None => Err(issues),
+        match (plan, properties) {
+            (Some(Ok(plan)), Ok(properties)) if issues.is_empty() => {
+                Ok(Validated { plan, properties })
+            }
+            (Some(Ok(_)) | Some(Err(_)) | None, Ok(_) | Err(_)) => Err(Box::new(issues)),
         }
     }
 
     /// What is wrong with the composer, or no issues.
     pub fn issues(&self, target_ready: bool) -> SendIssues {
-        self.validate(target_ready).err().unwrap_or_default()
+        self.validate(target_ready)
+            .map_or_else(|issues| *issues, |_| SendIssues::default())
     }
 
-    fn event(&self) -> OutgoingEvent {
+    fn event(&self, properties: BTreeMap<String, String>) -> OutgoingEvent {
         OutgoingEvent {
             body: self.body.text.as_bytes().to_vec(),
             content_type: non_blank(&self.content_type.text),
+            correlation_id: non_blank(&self.correlation_id.text),
+            properties,
         }
     }
 

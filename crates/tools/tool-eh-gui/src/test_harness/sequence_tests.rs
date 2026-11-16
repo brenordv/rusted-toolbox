@@ -749,7 +749,7 @@ fn rows_to_events(rows: Vec<shared_eventhub_core::models::CapturedMessage>) -> V
 
 #[rstest::rstest]
 #[case::seed_1(1)]
-#[case::seed_2(2)]
+#[case::seed_3(3)]
 fn a_seeded_sequence_keeps_every_invariant(#[case] seed: u64) {
     let mut sequence = Sequence::new(seed);
 

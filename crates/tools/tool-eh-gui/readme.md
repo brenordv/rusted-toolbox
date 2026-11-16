@@ -156,6 +156,15 @@ name it.
   send delays the next one, never a burst to catch up, and throttling or SDK retries stretch the
   interval. The first paced event goes at once. Count and pacing are per send and never saved to
   `config.json`, as with `eh send --interval-ms`.
+- **Correlation id** and **Properties** (after Pacing): the correlation id of every event
+  (trimmed; blank sets none) and its string application properties, one `key=value` per line,
+  the same syntax as `eh send --property` (split at the first `=`, key and value trimmed, an
+  empty value allowed, blank lines skipped, each key once, 4 KB at most). The Properties box
+  stays four lines tall and scrolls inside once it holds text; while the pointer is over a
+  filled box, the wheel scrolls the box rather than the sidebar. A Send press with a bad line
+  names it ("Line 3: no '=' (write it as key=value)", "Line 5: the key 'run' is given twice")
+  and moves focus there. Both are per send and never saved to `config.json`. They go to the hub
+  as plain text: never put a secret in them. Read's inspector shows both on a received event.
 - **Event body**: a monospace editor; Return types a newline. Bodies over 1 MiB don't fit the
   editor (use `eh send --body-file`). A body that fits the editor can still be too large for one
   batch: the SDK limits a single event to about half the event hub's publish limit (about 128 KB
@@ -249,7 +258,10 @@ works). When no window can be created at all, eh-gui logs why and exits with cod
 eh-gui logs to a file by default, at info, because a window has no visible console. The file is
 `~/.eh-gui/logs/eh-gui.log`; the connection pill's popover shows the exact path, or why file
 logging is unavailable. `RUST_LOG` overrides the level (`RUST_LOG=warn` writes a sparse file),
-and `--log-level disabled` turns logging off.
+and `--log-level disabled` turns logging off. eh-gui's own lines never hold a property or a
+correlation id, but the SDK's trace level (`RUST_LOG=azure_messaging_eventhubs=trace`) writes
+every received message's AMQP properties to the file, correlation and message ids included;
+application properties are redacted in standard builds.
 
 To look at rendering cost, run from a terminal with `RUNE_PERF_WARN=1 RUNE_COMMIT_BUDGET_MS=8`
 and `--log-level debug`; Rune prints every commit over the 8 ms budget on the terminal.
@@ -330,6 +342,20 @@ EH_GUI_DEMO=toast-stack cargo run -p eh-gui --features demo --bin eh-gui-demo --
 EH_GUI_DEMO=toast-stack cargo run -p eh-gui --features demo --bin eh-gui-demo -- --snap target/eh-gui-demo/phase16/toast-stack-1280.png
 EH_GUI_DEMO=toast-stack-open cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase16/toast-stack-open-960.png
 EH_GUI_DEMO=toast-stack-open cargo run -p eh-gui --features demo --bin eh-gui-demo -- --snap target/eh-gui-demo/phase16/toast-stack-open-1280.png
+```
+
+Event metadata: the `send` scenario seeds a correlation id and two properties. The scripts
+scroll the sidebar to them, type a bad line and press Send, type a long value with no spaces
+into a sidebar dragged to its narrowest, and clear the field. The Properties box stays four
+lines tall, a long value breaks inside it, the bad line's caption sits under the box above the
+hint, and the empty box shows `key=value` faint with the hint under it.
+
+```
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase18/send-top-960x600.png
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/send-metadata-scrolled.json --at 1.2 --snap target/eh-gui-demo/phase18/send-scrolled-960x600.png
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/send-metadata-issue.json --at 2.5 --snap target/eh-gui-demo/phase18/send-issue-960x600.png
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/send-metadata-long.json --at 3.0 --snap target/eh-gui-demo/phase18/send-long-960x600.png
+EH_GUI_DEMO=send cargo run -p eh-gui --features demo --bin eh-gui-demo -- --script crates/tools/tool-eh-gui/demo-scripts/send-metadata-empty.json --at 1.5 --snap target/eh-gui-demo/phase18/send-empty-1280x800.png
 ```
 
 Snapshots are dark: the app reads the system appearance itself, so `--theme light` changes

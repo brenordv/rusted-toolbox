@@ -29,6 +29,11 @@
   opened. A keyword filter saved in `config.json` loads through the same rule, and one with no
   keyword left is a `config.json` load error. `--content-type` is trimmed, and a blank value
   sends no content type instead of an empty one.
+- `eh send --property KEY=VALUE` (repeatable) adds a string application property to every
+  event and `--correlation-id ID` sets its correlation id (trimmed; blank sets none). A malformed
+  or repeated property fails before anything is opened, naming the flag's position and never a
+  value; neither flag is saved to `config.json` or allowed with `--dry-run`. `--app-header` shows
+  the correlation id and up to five property keys.
 - Breaking, from 1.1.0 (the readme has the full table):
   - `eh-read` -> `eh read`, `eh-export` -> `eh export`; shared flags go before the
     subcommand.

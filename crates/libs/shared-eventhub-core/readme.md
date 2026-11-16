@@ -200,13 +200,21 @@ the SDK client does not reliably close its connection.
 `elapsed`, and `SendEnd::Completed`, `Cancelled`, or `Failed(reason)`):
 
 - The closure gets each event's zero-based index and builds its
-  `OutgoingEvent` (body and content type); `OutgoingEvent`'s `Debug` shows the
-  body length only. The free function `producer::next_event(&event, template,
-  cap, now)` covers a fixed body or a `mock_data_utils` template rendered fresh
-  per event: pass `|_| producer::next_event(&event, template, cap, Utc::now())`.
-  Without a template it returns `event` as given; with one, a render of at most
-  `cap` bytes under `event`'s content type, with `now` as the time its
-  `{{now}}` and `{{utc-now}}` placeholders show.
+  `OutgoingEvent`: body, content type, correlation id (the AMQP message's
+  `correlation-id`), and string application properties (a `BTreeMap`, empty
+  for none). `OutgoingEvent`'s `Debug` shows the body length, the content
+  type, whether an id is set, and the property count, never the id or a
+  property. `producer::parse_property("key=value")` splits at the first `=`
+  and trims both sides (an empty value is allowed, an empty key is not), and
+  `producer::insert_property` refuses a repeated key (the SDK would keep only
+  the last value); neither error holds a value, so a front end can prefix
+  its own position ("Line 3: ", "--property 2: "). The free function
+  `producer::next_event(&event, template, cap, now)` covers a fixed body or a
+  `mock_data_utils` template rendered fresh per event: pass
+  `|_| producer::next_event(&event, template, cap, Utc::now())`. Without a
+  template it returns `event` as given; with one, a render of at most `cap`
+  bytes under `event`'s content type, correlation id, and properties, with
+  `now` as the time its `{{now}}` and `{{utc-now}}` placeholders show.
 - `SendPlan::new(count, routing, pacing)` takes 1 to 1,000,000 events.
   `Routing::automatic()` lets the service pick partitions;
   `Routing::partition_key(key)` sends every event with that key (one
@@ -223,7 +231,9 @@ the SDK client does not reliably close its connection.
 - The first failure ends the run: an event that does not fit an empty batch
   (the SDK sizes a batch's first event twice, so one event can use only about
   half the publish limit: about 128 KB on Basic, 512 KB on Standard and
-  Premium), a failed batch creation, a failing `next` closure, or a send the SDK
+  Premium; properties and the correlation id count toward the size, and the
+  error names how many properties there are and whether an id is set), a
+  failed batch creation, a failing `next` closure, or a send the SDK
   gave up on. Nothing is retried on top of the SDK's own retries, and a failed
   batch is not counted.
 - `sent` counts events in batches the service accepted or did not refuse:

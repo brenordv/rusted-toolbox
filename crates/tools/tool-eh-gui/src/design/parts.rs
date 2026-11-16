@@ -466,6 +466,30 @@ pub fn metadata_card(k: &Kit, rows: Vec<El>) -> El {
 /// The fewest lines the body editor shows.
 const BODY_EDITOR_MIN_LINES: f32 = 8.0;
 
+/// How tall a mono editor is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EditorHeight {
+    /// At least `min_lines` mono lines tall, growing to the space it is given.
+    Fill { min_lines: f32 },
+    /// Exactly `lines` mono lines tall, never growing.
+    Fixed { lines: f32 },
+}
+
+/// What a mono editor shows beyond its text.
+#[derive(Clone, Copy, Debug)]
+pub struct EditorSpec<'a> {
+    /// The shell's key; focus moves there.
+    pub key: &'a str,
+    /// The accessible name.
+    pub label: &'a str,
+    /// The faint text an empty editor shows.
+    pub placeholder: &'a str,
+    /// The accessible description, when there is one.
+    pub description: Option<&'a str>,
+    pub invalid: bool,
+    pub height: EditorHeight,
+}
+
 /// A multi-line monospace editor for an event body: the kit field's look, at least
 /// [`BODY_EDITOR_MIN_LINES`] tall, growing to the space it is given and scrolling past it. The
 /// box never springs as lines are typed. There is no `on_submit`, and `on_key` sees every key
@@ -482,39 +506,92 @@ pub fn body_editor<S: 'static>(
     on_key: impl Fn(&mut S, &KeyEvent, &mut Tx) -> bool + 'static,
     on_change: impl Fn(&mut S, &mut Tx) + 'static,
 ) -> El {
+    let spec = EditorSpec {
+        key,
+        label: "Event body",
+        placeholder: "Event body",
+        description: None,
+        invalid,
+        height: EditorHeight::Fill {
+            min_lines: BODY_EDITOR_MIN_LINES,
+        },
+    };
+    mono_editor(k, spec, edit, access, on_key, on_change)
+}
+
+/// A multi-line monospace editor for short `key=value` lines: the body editor's look, a fixed
+/// `spec.height` that never grows, long lines broken anywhere (values such as ids and URLs have
+/// no spaces), and a viewport that scrolls only once there is text, so an empty box never takes
+/// the wheel from a scrolling pane around it. `on_key` sees every key first, as in
+/// [`body_editor`].
+pub fn lines_editor<S: 'static>(
+    k: &Kit,
+    spec: EditorSpec<'_>,
+    edit: &TextEdit,
+    access: fn(&mut S) -> &mut TextEdit,
+    on_key: impl Fn(&mut S, &KeyEvent, &mut Tx) -> bool + 'static,
+) -> El {
+    mono_editor(k, spec, edit, access, on_key, |_: &mut S, _: &mut Tx| {})
+}
+
+/// The shared build of [`body_editor`] and [`lines_editor`].
+fn mono_editor<S: 'static>(
+    k: &Kit,
+    spec: EditorSpec<'_>,
+    edit: &TextEdit,
+    access: fn(&mut S) -> &mut TextEdit,
+    on_key: impl Fn(&mut S, &KeyEvent, &mut Tx) -> bool + 'static,
+    on_change: impl Fn(&mut S, &mut Tx) + 'static,
+) -> El {
     let c = &k.c;
-    let field = text_input(edit, TYPE_MONO)
+    let mut field = text_input(edit, TYPE_MONO)
         .key("input")
         .w_full()
         .color(c.text_base)
-        .placeholder("Event body", c.text_faint)
+        .placeholder(spec.placeholder, c.text_faint)
         .caret(c.text_base, k.selection())
-        .label("Event body")
-        .invalid(invalid)
+        .label(spec.label)
+        .invalid(spec.invalid)
         .on_edit(access)
         .on_input_key(on_key)
         .on_input_change(on_change);
-    let viewport = col()
-        .key("scroll")
-        .w_full()
-        .grow(1.0)
-        .min_h(BODY_EDITOR_MIN_LINES * TYPE_MONO.line_px())
-        .scroll(ScrollSpec {
-            stick_bottom: false,
-        })
-        .child(field)
-        .scroll_bar(k);
+    if let Some(description) = spec.description {
+        field = field.description(description);
+    }
+    let line = TYPE_MONO.line_px();
+    // (viewport, whether it scrolls, whether the shell grows to the space it is given)
+    let (viewport, scrolls, fills) = match spec.height {
+        EditorHeight::Fill { min_lines } => (
+            col().grow(1.0).min_h(min_lines * line).child(field),
+            true,
+            true,
+        ),
+        EditorHeight::Fixed { lines } => (
+            col().h(lines * line).child(field.wrap_anywhere()),
+            !edit.text.is_empty(),
+            false,
+        ),
+    };
+    let mut viewport = viewport.key("scroll").w_full();
+    if scrolls {
+        viewport = viewport
+            .scroll(ScrollSpec {
+                stick_bottom: false,
+            })
+            .scroll_bar(k);
+    }
     let mut shell = col()
-        .key(key)
+        .key(spec.key)
         .role("textbox")
         .w_full()
-        .grow(1.0)
-        .min_h(0.0)
         .padding(SPACE_SM)
         .radius(RADIUS_CONTROL)
         .fill(c.bg_base)
         .child(viewport);
-    if invalid {
+    if fills {
+        shell = shell.grow(1.0).min_h(0.0);
+    }
+    if spec.invalid {
         shell = shell.outline(HAIRLINE, -HAIRLINE, c.danger.fg);
     } else if edit.focused {
         shell = shell.outline(HAIRLINE, -HAIRLINE, c.border_focus);

@@ -237,11 +237,25 @@ eh send -e orders --body ping -n 600 --interval-ms 1000
 | `--partition-key KEY` | every event carries KEY: all land in one partition, in order. Without it, the service spreads events over partitions |
 | `--content-type TYPE` | the content type of every event, trimmed; a blank TYPE sets none |
 | `--interval-ms MS` | one event every MS milliseconds (1 to 3,600,000) instead of full batches |
+| `--property KEY=VALUE` | an application property on every event, repeatable; split at the first `=`, key and value trimmed, an empty value allowed, each key once. Every value is a string |
+| `--correlation-id ID` | the correlation id of every event, trimmed; a blank ID sets none |
 | `--yes` | send to a target recalled from `config.json` without naming it again |
+
+```bash
+eh send -e orders --body ping --property source=load-test --property run=7 --correlation-id run-7
+```
 
 The run prints where it sends before the first event ("Sending 500 event(s) to
 my-ns.servicebus.windows.net/orders, automatic routing..."), a progress line, and a summary.
-`--count` and `--interval-ms` are never saved to `config.json`.
+`--count`, `--interval-ms`, `--property`, and `--correlation-id` are never saved to
+`config.json`. A malformed or repeated `--property` fails before anything is opened, naming the
+flag by its position ("--property 2: no '=' (write it as key=value)", "--property 3: the key
+'run' is given twice"). `--app-header` lists the correlation id and up to five property keys,
+never a value.
+
+**Properties and the correlation id are plain text.** They go to the hub as written, anyone who
+can read the event hub sees them, and they stay in your shell history. Never put a secret in
+them.
 
 **A recalled target must be named.** A cloned repository can ship a `config.json` that points
 at someone else's event hub, and with Entra ID auth your own identity would write there. So in
@@ -326,8 +340,9 @@ eh send -e orders --template -n 500 --content-type application/json --body \
 event hub, no target flags, and no `config.json` are read, and nothing is written. Each event's
 lines print with control characters escaped, a blank line between events, and stderr ends with
 "Dry run: 3 event(s) rendered, nothing sent." It can't be combined with `--save-config`,
-`--partition-key`, `--interval-ms`, or `--yes`. Piping into `head` ends it quietly; Ctrl-C stops
-it between events (exit 130). `--app-header` prints its lines before the events, on stdout.
+`--partition-key`, `--interval-ms`, `--property`, `--correlation-id`, or `--yes`. Piping into
+`head` ends it quietly; Ctrl-C stops it between events (exit 130). `--app-header` prints its
+lines before the events, on stdout.
 
 ### Live checks (manual, against a dev event hub)
 
@@ -350,6 +365,8 @@ The test suite never contacts Azure. Before relying on `send`:
 10. `--template -n 5` with the order template above: `eh export -f json` shows five different
     order ids and emails.
 11. `--template --dry-run -n 1000 ... | head -3` ends quietly with exit 0 (on Windows too).
+12. `--property source=load-test --property run=7 --correlation-id run-7`: `eh export -f json`
+    and the eh-gui inspector show both properties and the correlation id.
 
 ## Exit codes
 
@@ -364,7 +381,10 @@ The test suite never contacts Azure. Before relying on `send`:
 
 `eh --log-level debug --log-to-file read ...` writes connection, partition, and archive
 details to a log file without disturbing the progress line. Log output never contains
-message bodies or secrets.
+message bodies or secrets. A `--property` error names the repeated key, so a log file can hold
+one; property values and correlation ids never reach `eh`'s own log lines. The SDK's trace level
+(`RUST_LOG=azure_messaging_eventhubs=trace`) prints every received message's AMQP properties,
+correlation and message ids included; application properties are redacted in standard builds.
 
 ## Coming from eh-read and eh-export
 

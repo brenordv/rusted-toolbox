@@ -1,6 +1,6 @@
 use super::*;
 use crate::cli_utils::{DataArgs, DiskModeArg, FormatArg};
-use crate::send_cli::BodyText;
+use crate::send_cli::ArgText;
 use chrono::{DateTime, TimeZone, Utc};
 use common_utils::string_utils::SecretString;
 use rstest::rstest;
@@ -629,11 +629,13 @@ fn send_args(target: TargetArgs) -> SendArgs {
     SendArgs {
         target,
         data: DataArgs::default(),
-        body: Some(BodyText("x".to_owned())),
+        body: Some(ArgText("x".to_owned())),
         body_file: None,
         count: 3,
         partition_key: None,
         content_type: None,
+        properties: Vec::new(),
+        correlation_id: None,
         interval_ms: None,
         yes: false,
         template: false,
@@ -787,6 +789,63 @@ fn send_content_type_is_trimmed_and_blank_means_none(
     let job = send(args, None, &Environment::default()).unwrap();
 
     assert_eq!(job.event.content_type.as_deref(), expected);
+}
+
+#[test]
+fn send_takes_the_properties_and_correlation_id_from_the_flags() {
+    let mut args = send_args(developer());
+    args.properties = vec![
+        ArgText("source=load-test".to_owned()),
+        ArgText(" run = 7 ".to_owned()),
+    ];
+    args.correlation_id = Some(ArgText(" trace-1 ".to_owned()));
+
+    let job = send(args, None, &Environment::default()).unwrap();
+
+    assert_eq!(
+        job.event.properties.into_iter().collect::<Vec<_>>(),
+        [
+            ("run".to_owned(), "7".to_owned()),
+            ("source".to_owned(), "load-test".to_owned())
+        ]
+    );
+    assert_eq!(job.event.correlation_id.as_deref(), Some("trace-1"));
+}
+
+#[rstest]
+#[case::empty("")]
+#[case::blank("  ")]
+fn a_blank_correlation_id_means_none(#[case] given: &str) {
+    let mut args = send_args(developer());
+    args.correlation_id = Some(ArgText(given.to_owned()));
+
+    let job = send(args, None, &Environment::default()).unwrap();
+
+    assert_eq!(job.event.correlation_id, None);
+}
+
+#[rstest]
+#[case::no_equals(&["a=b", "secret-value"], "--property 2: no '=' (write it as key=value)")]
+#[case::no_key(&["=secret-value"], "--property 1: no key before '='")]
+#[case::repeated(
+    &["run=secret-one", "x=y", "run=secret-two"],
+    "--property 3: the key 'run' is given twice"
+)]
+fn a_bad_property_fails_naming_its_flag_and_no_value(
+    #[case] values: &[&str],
+    #[case] expected: &str,
+) {
+    let mut args = send_args(developer());
+    args.properties = values
+        .iter()
+        .map(|value| ArgText((*value).to_owned()))
+        .collect();
+
+    let error = send(args, None, &Environment::default()).unwrap_err();
+
+    let rendered = format!("{error:#}");
+    assert_eq!(rendered, expected);
+    assert!(!rendered.contains("secret"), "{rendered}");
 }
 
 #[test]

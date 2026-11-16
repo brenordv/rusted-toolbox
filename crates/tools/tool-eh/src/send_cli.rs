@@ -9,6 +9,7 @@ use clap::{ArgGroup, Args};
 use common_cli::header_format::format_config_item;
 use mock_data_utils::template::{OPTIONS_HELP, Template, placeholder_groups};
 use shared_eventhub_core::producer::{MAX_SEND_COUNT, MAX_SEND_INTERVAL_MS};
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::io::Read;
@@ -38,9 +39,9 @@ pub(crate) struct SendArgs {
         long = "body",
         value_name = "TEXT",
         group = "body_source",
-        value_parser = parse_body_text
+        value_parser = parse_arg_text
     )]
-    pub body: Option<BodyText>,
+    pub body: Option<ArgText>,
 
     /// Read the event body from a file (sent byte for byte); `-` reads stdin
     #[arg(long = "body-file", value_name = "PATH", group = "body_source")]
@@ -65,6 +66,19 @@ pub(crate) struct SendArgs {
     /// blank value sets none
     #[arg(long = "content-type", value_name = "TYPE")]
     pub content_type: Option<String>,
+
+    /// An application property on every event, as KEY=VALUE (repeatable;
+    /// split at the first =, key and value trimmed, each key once). Sent as
+    /// plain text: never put a secret here
+    // The value parser cannot fail: clap's own validation error would print
+    // the raw value unescaped, so `send_job` parses these and reports through
+    // main's escaped error path.
+    #[arg(long = "property", value_name = "KEY=VALUE", value_parser = parse_arg_text)]
+    pub properties: Vec<ArgText>,
+
+    /// Correlation id of every event; trimmed, and a blank value sets none
+    #[arg(long = "correlation-id", value_name = "ID", value_parser = parse_arg_text)]
+    pub correlation_id: Option<ArgText>,
 
     /// Send one event every MS milliseconds (start to start) instead of in
     /// full batches
@@ -91,7 +105,14 @@ pub(crate) struct SendArgs {
     #[arg(
         long = "dry-run",
         requires = "template",
-        conflicts_with_all = ["save_config", "partition_key", "interval_ms", "yes"]
+        conflicts_with_all = [
+            "save_config",
+            "partition_key",
+            "interval_ms",
+            "yes",
+            "properties",
+            "correlation_id"
+        ]
     )]
     pub dry_run: bool,
 }
@@ -145,6 +166,27 @@ fn template_line(template: Option<&Template>) -> String {
         },
         None => "no".to_owned(),
     }
+}
+
+/// The most property keys the header names.
+const HEADER_KEYS: usize = 5;
+
+/// "none", or the count and the first [`HEADER_KEYS`] keys: "7: a, b, c, d,
+/// e and 2 more". Values never show.
+fn properties_line(properties: &BTreeMap<String, String>) -> String {
+    if properties.is_empty() {
+        return "none".to_owned();
+    }
+    let keys: Vec<&str> = properties
+        .keys()
+        .take(HEADER_KEYS)
+        .map(String::as_str)
+        .collect();
+    let mut line = format!("{}: {}", properties.len(), keys.join(", "));
+    if properties.len() > HEADER_KEYS {
+        line.push_str(&format!(" and {} more", properties.len() - HEADER_KEYS));
+    }
+    line
 }
 
 fn body_line(source: &BodySource, bytes: usize) -> String {
@@ -202,19 +244,19 @@ fn read_capped(reader: impl Read, cap: u64, what: &str) -> anyhow::Result<Vec<u8
     Ok(body)
 }
 
-/// The `--body` text. `Debug` shows its length only, so a parsed command
-/// line never prints the body.
+/// A flag's text that `Debug` shows by length only (the body, a property, a
+/// correlation id), so a parsed command line never prints it.
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct BodyText(pub String);
+pub(crate) struct ArgText(pub String);
 
-impl fmt::Debug for BodyText {
+impl fmt::Debug for ArgText {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "BodyText({} bytes)", self.0.len())
+        write!(formatter, "ArgText({} bytes)", self.0.len())
     }
 }
 
-fn parse_body_text(value: &str) -> Result<BodyText, Infallible> {
-    Ok(BodyText(value.to_owned()))
+fn parse_arg_text(value: &str) -> Result<ArgText, Infallible> {
+    Ok(ArgText(value.to_owned()))
 }
 
 /// The `--app-header` lines for a send run. The body is described by its
@@ -243,6 +285,11 @@ pub(crate) fn send_header(job: &SendJob) -> Vec<String> {
             "Content type",
             job.event.content_type.as_deref().unwrap_or("none"),
         ),
+        item(
+            "Correlation id",
+            job.event.correlation_id.as_deref().unwrap_or("none"),
+        ),
+        item("Properties", properties_line(&job.event.properties)),
         item("Save config", job.save_config),
         item("config.json", config_source_name(job.config_source)),
     ]

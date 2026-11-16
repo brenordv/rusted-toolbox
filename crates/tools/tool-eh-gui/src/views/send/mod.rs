@@ -18,8 +18,8 @@ use crate::state::{AppState, Input, Section, error_preview};
 use crate::views::read::short_duration;
 use common_utils::string_utils::{format_bytes_to_string, format_thousands};
 use rune::{
-    Chord, El, Key, KeyEvent, LiveRegion, Mods, SpringPair, Transition, Tx, col, icon, row, spacer,
-    text,
+    Chord, El, Key, KeyEvent, LiveRegion, Mods, SpringPair, TextEdit, Transition, Tx, col, icon,
+    row, spacer, text,
 };
 use rune_kit::{Button, ButtonVariant, Kit, RollingText, Spinner};
 use shared_eventhub_core::producer::SendEnd;
@@ -38,15 +38,31 @@ pub fn field_key(field: SendField) -> &'static str {
         SendField::PartitionKey => sidebar::PARTITION_KEY_KEY,
         SendField::Count => sidebar::COUNT_KEY,
         SendField::Interval => sidebar::INTERVAL_KEY,
+        SendField::Properties => sidebar::PROPERTIES_KEY,
         SendField::Body => BODY_KEY,
     }
 }
 
-/// Presses Send and moves focus to the first part with an issue, if the press found any.
+/// The element scrolled into view when focus moves to `field`: the field's group with its issue,
+/// the destination block for the target, or the body editor.
+fn issue_block_key(field: SendField) -> String {
+    match field {
+        SendField::Target => "send-destination".to_owned(),
+        SendField::PartitionKey
+        | SendField::Count
+        | SendField::Interval
+        | SendField::Properties => format!("{}-group", field_key(field)),
+        SendField::Body => BODY_KEY.to_owned(),
+    }
+}
+
+/// Presses Send and moves focus to the first part with an issue, if the press found any,
+/// scrolling the sidebar until that part and its issue show.
 pub fn press_send(s: &mut AppState, tx: &mut Tx) {
     dispatch(s, Input::Send(SendInput::SendPressed));
     if let Some(field) = s.send.take_focus() {
         tx.focus(field_key(field), true);
+        tx.scroll_into_view(issue_block_key(field));
     }
 }
 
@@ -74,24 +90,33 @@ pub fn send_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
     false
 }
 
-/// The body editor's keys: the Send shortcuts, and Return (with or without Shift) typing a
-/// newline. A field without `on_submit` hands a plain Return to the window's default button,
-/// and the Send section has none, so the body types the newline itself.
-fn body_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
-    if send_keys(s, key, tx) {
-        return true;
-    }
+/// Types a newline into `edit` for Return, with or without Shift; true when `key` was one. A
+/// multi-line field without `on_submit` hands a plain Return to the window's default button, and
+/// the Send section has none, so its editors type the newline themselves.
+fn type_newline(key: &KeyEvent, edit: &mut TextEdit) -> bool {
     let newline = key.key == Key::Enter
         && Mods {
             shift: key.mods.shift,
             ..Mods::default()
         } == key.mods;
     if newline {
-        let composer = &mut s.send.composer;
-        composer.body.insert("\n");
-        composer.refresh_template();
+        edit.insert("\n");
     }
     newline
+}
+
+/// The body editor's keys: the Send shortcuts, and Return typing a newline, after which the
+/// template follows the new text (the field's change hook does not run for this edit).
+fn body_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
+    if send_keys(s, key, tx) {
+        return true;
+    }
+    let composer = &mut s.send.composer;
+    let typed = type_newline(key, &mut composer.body);
+    if typed {
+        composer.refresh_template();
+    }
+    typed
 }
 
 pub fn content(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {

@@ -1,0 +1,8 @@
+{"events": [
+  {"t": 0.3, "type": "wheel", "key": "send-destination", "dy": -600},
+  {"t": 0.5, "type": "tap", "key": "send-properties"},
+  {"t": 0.7, "type": "key", "name": "End", "cmd": true},
+  {"t": 0.8, "type": "key", "name": "Enter"},
+  {"t": 0.9, "type": "type", "text": "no equals"},
+  {"t": 1.5, "type": "tap", "key": "send-button"}
+]}

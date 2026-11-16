@@ -180,7 +180,7 @@ fn request(pacing: Pacing) -> SendRequest {
         },
         event: OutgoingEvent {
             body: b"ping".to_vec(),
-            content_type: None,
+            ..OutgoingEvent::default()
         },
         template: None,
         plan: SendPlan::new(3, Routing::automatic(), pacing).unwrap(),

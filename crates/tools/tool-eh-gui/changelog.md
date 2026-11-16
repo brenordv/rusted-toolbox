@@ -1,6 +1,13 @@
 # Changelog
 
 ## 1.0.0
+- The Send sidebar has Correlation id and Properties fields after Pacing. Properties take one
+  `key=value` per line, the syntax of `eh send --property`, in a monospace box four lines tall
+  that breaks long values anywhere and scrolls inside once it holds text; a bad or repeated line
+  is an issue naming it. Both go on every event of the send and are never saved. The `send` demo
+  scenario seeds both; demo scripts for the snapshots in `demo-scripts/`.
+- A Send press with an issue moves focus to the first field with one and scrolls the sidebar to
+  it and its issue.
 - Toasts are a stack at the bottom right: the newest card in front, up to two older ones
   peeking above it. The pointer over the stack or Alt+T fans it out, Escape or the pointer
   leaving folds it; info toasts wait while it is fanned out. At most three toasts; the same text
