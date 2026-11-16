@@ -302,6 +302,9 @@ pub fn initial_state(
         }
         Scenario::Send => {
             compose_demo_send(&mut state, "1000");
+            let composer = &mut state.send.composer;
+            composer.correlation_id.replace_text("demo-run-7");
+            composer.properties.replace_text("source=load-test\nrun=7");
         }
         Scenario::SendPaced => {
             compose_demo_send(&mut state, "10");

@@ -12,7 +12,7 @@ mod send;
 pub(crate) mod shell;
 
 pub use read::SEARCH_KEY;
-pub use send::sidebar::{COUNT_KEY, INTERVAL_KEY};
+pub use send::sidebar::{CORRELATION_ID_KEY, COUNT_KEY, INTERVAL_KEY, PROPERTIES_KEY};
 pub use send::template::{PLACEHOLDERS_KEY, REGENERATE_KEY, SWITCH_KEY};
 pub use send::{BODY_KEY, SEND_BUTTON_KEY};
 

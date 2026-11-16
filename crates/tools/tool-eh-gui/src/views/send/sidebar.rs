@@ -1,14 +1,14 @@
 //! The Send sidebar: where the events go, how they are routed, and the message settings.
 
-use super::send_keys;
+use super::{send_keys, type_newline};
 use crate::app::dispatch;
-use crate::design::parts;
-use crate::design::tokens::{SIDEBAR_FIELD_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM};
+use crate::design::parts::{self, EditorHeight, EditorSpec};
+use crate::design::tokens::{PROPERTY_LINES, SIDEBAR_FIELD_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM};
 use crate::send::Destination;
 use crate::send::compose::{PacingChoice, RoutingChoice};
 use crate::send::run::SendRun;
-use crate::state::{AppState, Input, SheetPurpose};
-use rune::{El, ScrollSpec, TextEdit, col, row};
+use crate::state::{AppState, Input, SheetPurpose, error_preview};
+use rune::{El, KeyEvent, ScrollSpec, TextEdit, Tx, col, row};
 use rune_kit::{Button, ButtonVariant, Kit, ScrollBar, Select, SelectAppearance, TextInput};
 
 /// The Edit… (or Set up…) button's key.
@@ -17,6 +17,10 @@ pub const PARTITION_KEY_KEY: &str = "send-partition-key";
 pub const COUNT_KEY: &str = "send-count";
 pub const INTERVAL_KEY: &str = "send-interval";
 pub const CONTENT_TYPE_KEY: &str = "send-content-type";
+pub const CORRELATION_ID_KEY: &str = "send-correlation-id";
+/// The Properties editor's key.
+pub const PROPERTIES_KEY: &str = "send-properties";
+const PROPERTIES_HINT: &str = "One key=value per line";
 
 const STORED_WORDS: &str = "the hub in the saved connection string";
 
@@ -94,6 +98,16 @@ pub fn sidebar(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
                 .child(parts::caption(k, "One event per interval, start to start")),
         ));
     }
+    form = form
+        .child(field(
+            k,
+            CORRELATION_ID_KEY,
+            "Correlation id",
+            &composer.correlation_id,
+            &None,
+            |s| &mut s.send.composer.correlation_id,
+        ))
+        .child(properties(k, &composer.properties, &issues.properties));
     col()
         .key("send-sidebar-scroll")
         .w_full()
@@ -216,6 +230,42 @@ fn pacing_select(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
             composer.pacing_open = false;
         })
         .build(k, layer)
+}
+
+/// The Properties field: its label, the fixed-height lines editor, its issue cut to a short
+/// line, and the syntax hint.
+fn properties(k: &Kit, edit: &TextEdit, issue: &Option<String>) -> El {
+    let spec = EditorSpec {
+        key: PROPERTIES_KEY,
+        label: "Properties",
+        placeholder: "key=value",
+        description: Some(PROPERTIES_HINT),
+        invalid: issue.is_some(),
+        height: EditorHeight::Fixed {
+            lines: PROPERTY_LINES,
+        },
+    };
+    let mut group = col()
+        .key(format!("{PROPERTIES_KEY}-group"))
+        .gap(SPACE_SM)
+        .w_full()
+        .child(parts::field_label(k, "Properties"))
+        .child(parts::lines_editor(
+            k,
+            spec,
+            edit,
+            |s: &mut AppState| &mut s.send.composer.properties,
+            properties_keys,
+        ));
+    if let Some(issue) = issue {
+        group = group.child(parts::issue(k, &error_preview(issue).shown));
+    }
+    group.child(parts::caption(k, PROPERTIES_HINT))
+}
+
+/// The Properties editor's keys: the Send shortcuts, and Return typing a newline.
+fn properties_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
+    send_keys(s, key, tx) || type_newline(key, &mut s.send.composer.properties)
 }
 
 /// A labelled single-line field whose key handler takes the Send shortcuts, with its issue

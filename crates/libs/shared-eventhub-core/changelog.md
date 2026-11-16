@@ -33,6 +33,11 @@
   `mock_data_utils` template under the same content type, with the caller's `now` as the time
   `{{now}}` and `{{utc-now}}` show. Adds the `mock-data-utils` dependency.
 - `RunSummary::failed_partitions` lists the partitions that ended in `Failed`, in map order.
+- `OutgoingEvent` carries a correlation id and string application properties (and derives
+  `Default`); `next_event` keeps both on a rendered event. `producer::parse_property` and
+  `producer::insert_property` parse `key=value` and refuse a repeated key, with errors that hold
+  no value. An event too large for a batch names its property count and whether it carries a
+  correlation id.
 - `TextFilter::keywords` builds a keyword filter with each item trimmed and empty items
   dropped (`None` when no keyword is left), since an empty keyword matches every body. A saved
   keyword filter loads through the same rule, and one with no keyword left fails to load.

@@ -484,6 +484,113 @@ fn regenerate_bumps_the_generation_of_a_compiled_template() {
 }
 
 #[test]
+fn properties_and_the_correlation_id_reach_the_event() {
+    let mut send = ready();
+    send.composer
+        .properties
+        .replace_text("source = load-test\n\n  \nrun=7\r\nnote=");
+    send.composer.correlation_id.replace_text(" trace-1 ");
+
+    let event = send.composer.compose(true).unwrap().event;
+
+    assert_eq!(
+        event.properties.into_iter().collect::<Vec<_>>(),
+        [
+            ("note".to_owned(), String::new()),
+            ("run".to_owned(), "7".to_owned()),
+            ("source".to_owned(), "load-test".to_owned())
+        ]
+    );
+    assert_eq!(event.correlation_id.as_deref(), Some("trace-1"));
+}
+
+#[rstest]
+#[case::empty("")]
+#[case::blank("   ")]
+fn a_blank_correlation_id_and_empty_properties_send_none(#[case] text: &str) {
+    let mut send = ready();
+    send.composer.correlation_id.replace_text(text);
+    send.composer.properties.replace_text(text);
+
+    let event = send.composer.compose(true).unwrap().event;
+
+    assert_eq!(event.correlation_id, None);
+    assert!(event.properties.is_empty());
+}
+
+#[rstest]
+#[case::no_equals("a=b\n\nsecret-text", "Line 3: no '=' (write it as key=value)")]
+#[case::no_key("=secret-text", "Line 1: no key before '='")]
+#[case::repeated(
+    "run=secret-1\nx=y\nrun=secret-2",
+    "Line 3: the key 'run' is given twice"
+)]
+fn a_bad_properties_line_is_its_issue_naming_the_line(#[case] text: &str, #[case] expected: &str) {
+    let mut send = ready();
+    send.composer.properties.replace_text(text);
+
+    let issues = send.composer.issues(true);
+
+    assert_eq!(issues.properties.as_deref(), Some(expected));
+    assert_eq!(issues.first(), Some(SendField::Properties));
+    assert_eq!(issues.len(), 1);
+}
+
+#[test]
+fn properties_over_the_cap_are_refused_before_any_line_is_parsed() {
+    let mut send = ready();
+    let text = format!("ab\n{}", "x".repeat(super::compose::PROPERTIES_CAP));
+    send.composer.properties.replace_text(text);
+
+    let issues = send.composer.issues(true);
+
+    assert_eq!(
+        issues.properties.as_deref(),
+        Some("Properties are over 4 KB; remove some")
+    );
+}
+
+#[test]
+fn properties_at_the_cap_are_parsed() {
+    let mut send = ready();
+    let key = "k".repeat(super::compose::PROPERTIES_CAP - 1);
+    send.composer.properties.replace_text(format!("{key}="));
+
+    assert!(send.composer.issues(true).is_empty());
+}
+
+#[test]
+fn a_press_with_a_properties_issue_asks_for_the_properties_field_and_sends_nothing() {
+    let mut send = ready();
+    send.composer.properties.replace_text("no equals");
+
+    let out = apply(&mut send, SendInput::SendPressed);
+
+    assert!(out.effects.is_empty() && out.changed);
+    assert_eq!(send.shown_issues().len(), 1);
+    assert_eq!(send.take_focus(), Some(SendField::Properties));
+}
+
+#[test]
+fn debug_of_the_composer_and_its_checks_hides_metadata_text() {
+    let mut send = ready();
+    send.composer
+        .properties
+        .replace_text("customer=zyxwv\nrun=7");
+    send.composer.correlation_id.replace_text("trace-abc");
+    let validated = send.composer.validate(true).unwrap();
+
+    let rendered = format!("{:?} {validated:?}", send.composer);
+
+    for hidden in ["customer", "zyxwv", "trace-abc"] {
+        assert!(!rendered.contains(hidden), "{hidden} in {rendered}");
+    }
+    assert!(rendered.contains("property_lines: 2"), "{rendered}");
+    assert!(rendered.contains("property_count: 2"), "{rendered}");
+    assert!(rendered.contains("correlation_id: \"set\""), "{rendered}");
+}
+
+#[test]
 fn no_target_is_the_first_issue() {
     let mut send = SendState::default();
     send.composer.count.replace_text("0");

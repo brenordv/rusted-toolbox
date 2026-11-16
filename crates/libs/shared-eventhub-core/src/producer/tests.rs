@@ -1,5 +1,6 @@
 use super::*;
 use crate::connection::DEFAULT_CONSUMER_GROUP;
+use azure_messaging_eventhubs::models::{AmqpSimpleValue, MessageId};
 use rstest::rstest;
 use shared_azure::auth::{AuthMethod, CredentialKind};
 use std::sync::Mutex;
@@ -133,8 +134,16 @@ impl Publisher for FakePublisher {
 fn event(body: &str) -> OutgoingEvent {
     OutgoingEvent {
         body: body.as_bytes().to_vec(),
-        content_type: None,
+        ..OutgoingEvent::default()
     }
+}
+
+/// Two properties, `run` and `source`.
+fn two_properties() -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("run".to_owned(), "7".to_owned()),
+        ("source".to_owned(), "load-test".to_owned()),
+    ])
 }
 
 fn plan(count: u64) -> SendPlan {
@@ -206,7 +215,10 @@ async fn an_event_too_large_for_an_empty_batch_fails_naming_it() {
     .await;
 
     let reason = failure(&summary);
-    assert!(reason.contains("event 0 (a 2-byte body)"), "{reason}");
+    assert!(
+        reason.contains("event 0 (a 2-byte body) does not fit"),
+        "{reason}"
+    );
     assert!(
         reason.contains("about half the event hub's publish limit"),
         "{reason}"
@@ -214,6 +226,50 @@ async fn an_event_too_large_for_an_empty_batch_fails_naming_it() {
     assert_eq!(summary.sent, 0);
     assert_eq!(asked, [0]);
     assert!(publisher.sent_bodies().is_empty());
+}
+
+#[rstest]
+#[case::one_property(1, false, "event 0 (a 2-byte body and 1 property) does not fit")]
+#[case::two_properties(2, false, "event 0 (a 2-byte body and 2 properties) does not fit")]
+#[case::an_id(0, true, "event 0 (a 2-byte body and a correlation id) does not fit")]
+#[case::both(
+    2,
+    true,
+    "event 0 (a 2-byte body, 2 properties, and a correlation id) does not fit"
+)]
+#[tokio::test(start_paused = true)]
+async fn an_event_too_large_with_metadata_names_what_it_carries_but_no_text(
+    #[case] count: usize,
+    #[case] with_id: bool,
+    #[case] expected: &str,
+) {
+    let publisher = FakePublisher::new(3);
+    let properties: BTreeMap<String, String> =
+        [("k-secret-a", "v-secret-a"), ("k-secret-b", "v-secret-b")]
+            .into_iter()
+            .take(count)
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+            .collect();
+    let correlation_id = with_id.then(|| "id-secret".to_owned());
+
+    let summary = send_loop::run(
+        &publisher,
+        &plan(1),
+        |_| {
+            Ok(OutgoingEvent {
+                properties: properties.clone(),
+                correlation_id: correlation_id.clone(),
+                ..event("e0")
+            })
+        },
+        &AtomicBool::new(false),
+        |_| {},
+    )
+    .await;
+
+    let reason = failure(&summary);
+    assert!(reason.contains(expected), "{reason}");
+    assert!(!reason.contains("secret"), "{reason}");
 }
 
 #[tokio::test(start_paused = true)]
@@ -511,12 +567,35 @@ fn an_outgoing_event_converts_with_its_body_and_content_type() {
     let outgoing = OutgoingEvent {
         body: b"{\"orderId\": 1}".to_vec(),
         content_type: Some("application/json".to_owned()),
+        ..OutgoingEvent::default()
     };
 
     let data = outgoing.to_event_data();
 
     assert_eq!(data.body(), Some(&b"{\"orderId\": 1}"[..]));
     assert_eq!(data.content_type(), Some("application/json"));
+    assert_eq!(data.correlation_id(), None);
+    assert_eq!(data.properties(), None);
+}
+
+#[test]
+fn an_outgoing_event_converts_with_its_correlation_id_and_properties() {
+    let outgoing = OutgoingEvent {
+        correlation_id: Some("run-7".to_owned()),
+        properties: two_properties(),
+        ..event("{}")
+    };
+
+    let data = outgoing.to_event_data();
+
+    assert_eq!(
+        data.correlation_id(),
+        Some(&MessageId::String("run-7".to_owned()))
+    );
+    let properties = data.properties().unwrap();
+    assert_eq!(properties.len(), 2);
+    assert_eq!(properties["run"], AmqpSimpleValue::from("7"));
+    assert_eq!(properties["source"], AmqpSimpleValue::from("load-test"));
 }
 
 #[test]
@@ -524,6 +603,7 @@ fn debug_of_an_outgoing_event_never_shows_the_body() {
     let outgoing = OutgoingEvent {
         body: b"card-4111".to_vec(),
         content_type: Some("text/plain".to_owned()),
+        ..OutgoingEvent::default()
     };
 
     let rendered = format!("{outgoing:?}");
@@ -531,6 +611,77 @@ fn debug_of_an_outgoing_event_never_shows_the_body() {
     assert!(!rendered.contains("card"), "{rendered}");
     assert!(!rendered.contains("4111"), "{rendered}");
     assert!(rendered.contains("body_len: 9"), "{rendered}");
+}
+
+#[test]
+fn debug_of_an_outgoing_event_counts_properties_and_hides_them_and_the_id() {
+    let outgoing = OutgoingEvent {
+        correlation_id: Some("trace-abc".to_owned()),
+        properties: two_properties(),
+        ..event("x")
+    };
+
+    let rendered = format!("{outgoing:?}");
+
+    for hidden in ["trace-abc", "run", "7", "source", "load-test"] {
+        assert!(!rendered.contains(hidden), "{hidden} in {rendered}");
+    }
+    assert!(rendered.contains("correlation_id: \"set\""), "{rendered}");
+    assert!(rendered.contains("property_count: 2"), "{rendered}");
+}
+
+#[rstest]
+#[case::plain("a=b", "a", "b")]
+#[case::spaced(" a = b ", "a", "b")]
+#[case::empty_value("a=", "a", "")]
+#[case::first_equals_splits("a=b=c", "a", "b=c")]
+fn a_property_splits_at_the_first_equals_sign_and_trims(
+    #[case] text: &str,
+    #[case] key: &str,
+    #[case] value: &str,
+) {
+    assert_eq!(
+        parse_property(text).unwrap(),
+        (key.to_owned(), value.to_owned())
+    );
+}
+
+#[rstest]
+#[case::no_equals("secretab", "no '=' (write it as key=value)")]
+#[case::no_key("=secret", "no key before '='")]
+#[case::blank_key("  =secret", "no key before '='")]
+fn a_bad_property_fails_without_its_text(#[case] text: &str, #[case] expected: &str) {
+    let error = parse_property(text).unwrap_err();
+
+    assert_eq!(format!("{error:#}"), expected);
+}
+
+#[test]
+fn distinct_property_keys_are_kept_in_key_order() {
+    let mut properties = BTreeMap::new();
+
+    insert_property(&mut properties, "source".to_owned(), "cli".to_owned()).unwrap();
+    insert_property(&mut properties, "run".to_owned(), "7".to_owned()).unwrap();
+
+    assert_eq!(
+        properties.into_iter().collect::<Vec<_>>(),
+        [
+            ("run".to_owned(), "7".to_owned()),
+            ("source".to_owned(), "cli".to_owned())
+        ]
+    );
+}
+
+#[test]
+fn a_repeated_property_key_fails_naming_the_key_but_no_value() {
+    let mut properties = BTreeMap::new();
+    insert_property(&mut properties, "run".to_owned(), "first-value".to_owned()).unwrap();
+
+    let error =
+        insert_property(&mut properties, "run".to_owned(), "second-value".to_owned()).unwrap_err();
+
+    assert_eq!(format!("{error:#}"), "the key 'run' is given twice");
+    assert_eq!(properties["run"], "first-value");
 }
 
 fn assert_send<T: Send>(_: &T) {}
@@ -582,6 +733,7 @@ fn without_a_template_the_event_is_the_body_as_given() {
     let event = OutgoingEvent {
         body: b"{{person.email}}".to_vec(),
         content_type: Some("text/plain".to_owned()),
+        ..OutgoingEvent::default()
     };
 
     let next = next_event(&event, None, RENDER_CAP, render_time()).unwrap();
@@ -593,8 +745,8 @@ fn without_a_template_the_event_is_the_body_as_given() {
 fn a_clock_placeholder_renders_the_given_instant() {
     let template = Template::compile("{\"at\": \"{{utc-now}}\"}").unwrap();
     let event = OutgoingEvent {
-        body: Vec::new(),
         content_type: Some("application/json".to_owned()),
+        ..OutgoingEvent::default()
     };
 
     let next = next_event(&event, Some(&template), RENDER_CAP, render_time()).unwrap();
@@ -609,6 +761,7 @@ fn with_a_template_the_event_is_a_render_under_the_same_content_type() {
     let event = OutgoingEvent {
         body: b"ignored".to_vec(),
         content_type: Some("application/json".to_owned()),
+        ..OutgoingEvent::default()
     };
 
     let next = next_event(&event, Some(&template), RENDER_CAP, render_time()).unwrap();
@@ -618,12 +771,25 @@ fn with_a_template_the_event_is_a_render_under_the_same_content_type() {
 }
 
 #[test]
+fn a_rendered_event_keeps_the_correlation_id_and_properties() {
+    let template = Template::compile("{{random.integer min=4 max=4}}").unwrap();
+    let event = OutgoingEvent {
+        correlation_id: Some("run-7".to_owned()),
+        properties: two_properties(),
+        ..event("ignored")
+    };
+
+    let next = next_event(&event, Some(&template), RENDER_CAP, render_time()).unwrap();
+
+    assert_eq!(next.body, b"4");
+    assert_eq!(next.correlation_id.as_deref(), Some("run-7"));
+    assert_eq!(next.properties, two_properties());
+}
+
+#[test]
 fn a_render_past_the_cap_fails_naming_the_placeholder_and_not_the_text() {
     let template = Template::compile("secret-literal {{internet.password length=64}}").unwrap();
-    let event = OutgoingEvent {
-        body: Vec::new(),
-        content_type: None,
-    };
+    let event = OutgoingEvent::default();
 
     let error = next_event(&event, Some(&template), 32, render_time()).unwrap_err();
 

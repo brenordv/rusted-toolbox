@@ -273,6 +273,39 @@ fn send_flags_land_in_their_fields() {
 }
 
 #[test]
+fn repeated_property_flags_arrive_raw_in_order_with_the_correlation_id() {
+    let args = send_args(&[
+        "eh",
+        "send",
+        "--body",
+        "x",
+        "--property",
+        "c=d",
+        "--property",
+        "no equals sign",
+        "--correlation-id",
+        "trace-1",
+    ]);
+
+    let properties: Vec<&str> = args.properties.iter().map(|text| text.0.as_str()).collect();
+    assert_eq!(properties, ["c=d", "no equals sign"]);
+    assert_eq!(
+        args.correlation_id.map(|id| id.0).as_deref(),
+        Some("trace-1")
+    );
+}
+
+#[test]
+fn a_bad_property_fails_before_any_target_is_named() {
+    let error = send_command_for(&["eh", "send", "--body", "x", "--property", "ab"]).unwrap_err();
+
+    assert_eq!(
+        format!("{error:#}"),
+        "--property 1: no '=' (write it as key=value)"
+    );
+}
+
+#[test]
 fn send_defaults_to_one_batched_event() {
     let args = send_args(&["eh", "send", "--body-file", "-"]);
 
@@ -295,6 +328,8 @@ fn send_defaults_to_one_batched_event() {
 #[case::dry_run_with_partition_key(&["eh", "send", "--body", "x", "--template", "--dry-run", "--partition-key", "k"], ErrorKind::ArgumentConflict)]
 #[case::dry_run_with_interval(&["eh", "send", "--body", "x", "--template", "--dry-run", "--interval-ms", "5"], ErrorKind::ArgumentConflict)]
 #[case::dry_run_with_yes(&["eh", "send", "--body", "x", "--template", "--dry-run", "--yes"], ErrorKind::ArgumentConflict)]
+#[case::dry_run_with_property(&["eh", "send", "--body", "x", "--template", "--dry-run", "--property", "a=b"], ErrorKind::ArgumentConflict)]
+#[case::dry_run_with_correlation_id(&["eh", "send", "--body", "x", "--template", "--dry-run", "--correlation-id", "c"], ErrorKind::ArgumentConflict)]
 fn bad_send_arguments_are_usage_errors(#[case] argv: &[&str], #[case] expected: ErrorKind) {
     assert_eq!(parse_error(argv), expected);
 }

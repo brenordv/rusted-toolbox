@@ -12,6 +12,8 @@ use azure_messaging_eventhubs::models::EventData;
 use azure_messaging_eventhubs::{EventDataBatch, EventDataBatchOptions, ProducerClient};
 use chrono::{DateTime, Utc};
 use mock_data_utils::template::Template;
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
@@ -26,38 +28,115 @@ pub const MAX_SEND_INTERVAL_MS: u64 = 3_600_000;
 /// The longest pause between two paced events.
 pub const MAX_SEND_INTERVAL: Duration = Duration::from_millis(MAX_SEND_INTERVAL_MS);
 
-/// One event to publish. `Debug` shows the body's length and the content
-/// type, never the body.
-#[derive(Clone, PartialEq, Eq)]
+/// One event to publish. `Debug` shows the body's length, the content type,
+/// whether a correlation id is set, and how many properties there are; never
+/// the body, the id, or a property key or value.
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct OutgoingEvent {
     pub body: Vec<u8>,
     pub content_type: Option<String>,
+    /// Sent as the AMQP message's `correlation-id`.
+    pub correlation_id: Option<String>,
+    /// String application properties; empty means none.
+    pub properties: BTreeMap<String, String>,
 }
 
 impl fmt::Debug for OutgoingEvent {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let correlation_id = match self.correlation_id {
+            Some(_) => "set",
+            None => "unset",
+        };
         formatter
             .debug_struct("OutgoingEvent")
             .field("body_len", &self.body.len())
             .field("content_type", &self.content_type)
+            .field("correlation_id", &correlation_id)
+            .field("property_count", &self.properties.len())
             .finish()
     }
 }
 
 impl OutgoingEvent {
-    /// The SDK event for this body and content type.
+    /// The SDK event for this body, content type, correlation id, and
+    /// properties.
     fn to_event_data(&self) -> EventData {
-        let builder = EventData::builder().with_body(self.body.clone());
-        match &self.content_type {
-            Some(content_type) => builder.with_content_type(content_type.clone()).build(),
-            None => builder.build(),
+        let mut builder = EventData::builder().with_body(self.body.clone());
+        if let Some(content_type) = &self.content_type {
+            builder = builder.with_content_type(content_type.clone());
+        }
+        if let Some(correlation_id) = &self.correlation_id {
+            builder = builder.with_correlation_id(correlation_id.clone());
+        }
+        for (key, value) in &self.properties {
+            builder = builder.add_property(key.clone(), value.as_str());
+        }
+        builder.build()
+    }
+
+    /// What the event carries, for an error about its size: "a 10-byte body", then "2
+    /// properties" and "a correlation id" when it has them ("a 10-byte body, 2 properties, and
+    /// a correlation id").
+    fn size_words(&self) -> String {
+        let body = format!("a {}-byte body", self.body.len());
+        let properties = match self.properties.len() {
+            0 => None,
+            1 => Some("1 property".to_owned()),
+            count => Some(format!("{count} properties")),
+        };
+        let id = self.correlation_id.as_ref().map(|_| "a correlation id");
+        match (properties, id) {
+            (None, None) => body,
+            (Some(properties), None) => format!("{body} and {properties}"),
+            (None, Some(id)) => format!("{body} and {id}"),
+            (Some(properties), Some(id)) => format!("{body}, {properties}, and {id}"),
+        }
+    }
+}
+
+/// One property as written on a command line or a line of a form field:
+/// `key=value`, split at the first `=`, key and value trimmed. The value may
+/// be empty; the key may not.
+///
+/// # Errors
+/// Fails with "no '=' (write it as key=value)" or "no key before '='"; the
+/// error never holds the text, so a front end can put its own prefix ("Line
+/// 3: ", "--property 2: ") before it.
+pub fn parse_property(text: &str) -> anyhow::Result<(String, String)> {
+    let Some((key, value)) = text.split_once('=') else {
+        anyhow::bail!("no '=' (write it as key=value)");
+    };
+    let key = key.trim();
+    if key.is_empty() {
+        anyhow::bail!("no key before '='");
+    }
+    Ok((key.to_owned(), value.trim().to_owned()))
+}
+
+/// Adds one property to `properties`. A repeated key is refused rather than
+/// replacing the earlier value, since the SDK keeps one value per key.
+///
+/// # Errors
+/// Fails with "the key '<key>' is given twice" when `key` is already there;
+/// the error never holds a value.
+pub fn insert_property(
+    properties: &mut BTreeMap<String, String>,
+    key: String,
+    value: String,
+) -> anyhow::Result<()> {
+    match properties.entry(key) {
+        Entry::Occupied(entry) => anyhow::bail!("the key '{}' is given twice", entry.key()),
+        Entry::Vacant(entry) => {
+            entry.insert(value);
+            Ok(())
         }
     }
 }
 
 /// The event to send: `event` as given, or with `template` a fresh render
 /// of it (at most `cap` bytes, with `now` as the time its `{{now}}` and
-/// `{{utc-now}}` placeholders show) under `event`'s content type.
+/// `{{utc-now}}` placeholders show) under `event`'s content type,
+/// correlation id, and properties.
 ///
 /// # Errors
 /// Fails when the render fails; the error names the placeholder by its
@@ -72,6 +151,8 @@ pub fn next_event(
         Some(template) => Ok(OutgoingEvent {
             body: template.render(cap, now)?.into_bytes(),
             content_type: event.content_type.clone(),
+            correlation_id: event.correlation_id.clone(),
+            properties: event.properties.clone(),
         }),
         None => Ok(event.clone()),
     }

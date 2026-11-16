@@ -15,11 +15,13 @@ fn args(body: Option<&str>, body_file: Option<PathBuf>) -> SendArgs {
     SendArgs {
         target: TargetArgs::default(),
         data: DataArgs::default(),
-        body: body.map(|body| BodyText(body.to_owned())),
+        body: body.map(|body| ArgText(body.to_owned())),
         body_file,
         count: 1,
         partition_key: None,
         content_type: None,
+        properties: Vec::new(),
+        correlation_id: None,
         interval_ms: None,
         yes: false,
         template: false,
@@ -47,6 +49,7 @@ fn job(routing: Routing, pacing: Pacing, body_source: BodySource) -> SendJob {
         event: OutgoingEvent {
             body: b"secret-body".to_vec(),
             content_type: Some("application/json".to_owned()),
+            ..OutgoingEvent::default()
         },
         template: None,
         body_source,
@@ -136,7 +139,20 @@ fn debug_of_the_send_arguments_shows_the_body_length_only() {
     let rendered = format!("{:?}", args(Some("card-4111"), None));
 
     assert!(!rendered.contains("card-4111"), "{rendered}");
-    assert!(rendered.contains("BodyText(9 bytes)"), "{rendered}");
+    assert!(rendered.contains("ArgText(9 bytes)"), "{rendered}");
+}
+
+#[test]
+fn debug_of_the_send_arguments_hides_properties_and_the_correlation_id() {
+    let mut args = args(Some("x"), None);
+    args.properties = vec![ArgText("customer=zyxwv".to_owned())];
+    args.correlation_id = Some(ArgText("trace-abc".to_owned()));
+
+    let rendered = format!("{args:?}");
+
+    assert!(!rendered.contains("customer"), "{rendered}");
+    assert!(!rendered.contains("zyxwv"), "{rendered}");
+    assert!(!rendered.contains("trace-abc"), "{rendered}");
 }
 
 #[test]
@@ -204,6 +220,61 @@ fn the_header_says_none_without_a_content_type() {
     let header = send_header(&job).join("\n");
 
     assert!(header.contains("  - Content type: none"), "{header}");
+}
+
+#[test]
+fn the_header_says_none_without_a_correlation_id_or_properties() {
+    let job = job(Routing::automatic(), Pacing::batched(), BodySource::Inline);
+
+    let header = send_header(&job).join("\n");
+
+    assert!(header.contains("  - Correlation id: none"), "{header}");
+    assert!(header.contains("  - Properties: none"), "{header}");
+}
+
+#[test]
+fn the_header_names_the_correlation_id_and_property_keys_but_no_value() {
+    let mut job = job(Routing::automatic(), Pacing::batched(), BodySource::Inline);
+    job.event.correlation_id = Some("abc".to_owned());
+    job.event.properties = [("c", "secret-d"), ("a", "secret-b")]
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .into();
+
+    let header = send_header(&job).join("\n");
+
+    assert!(header.contains("  - Correlation id: abc"), "{header}");
+    assert!(header.contains("  - Properties: 2: a, c"), "{header}");
+    assert!(!header.contains("secret-"), "{header}");
+}
+
+#[test]
+fn the_header_names_five_property_keys_and_counts_the_rest() {
+    let mut job = job(Routing::automatic(), Pacing::batched(), BodySource::Inline);
+    job.event.properties = ["a", "b", "c", "d", "e", "f", "g"]
+        .map(|key| (key.to_owned(), String::new()))
+        .into();
+
+    let header = send_header(&job).join("\n");
+
+    assert!(
+        header.contains("  - Properties: 7: a, b, c, d, e and 2 more"),
+        "{header}"
+    );
+}
+
+#[test]
+fn hostile_property_keys_and_ids_are_escaped_in_the_send_header() {
+    let mut job = job(Routing::automatic(), Pacing::batched(), BodySource::Inline);
+    job.config.target.namespace = Some("orders".to_owned());
+    job.config.storage.base_data_folder = "data".to_owned();
+    job.event.correlation_id = Some(HOSTILE.to_owned());
+    job.event.properties = [(HOSTILE.to_owned(), String::new())].into();
+
+    let header = send_header(&job).join("\n");
+
+    assert!(!header.contains('\u{1b}'), "{header:?}");
+    assert!(!header.contains('\r'), "{header:?}");
+    assert_eq!(header.matches("\\u{1b}").count(), 2, "{header:?}");
 }
 
 #[test]

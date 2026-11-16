@@ -352,7 +352,7 @@ fn send_request(count: u64, pacing: shared_eventhub_core::producer::Pacing) -> S
         },
         event: shared_eventhub_core::producer::OutgoingEvent {
             body: b"ping".to_vec(),
-            content_type: None,
+            ..shared_eventhub_core::producer::OutgoingEvent::default()
         },
         template: None,
         plan: shared_eventhub_core::producer::SendPlan::new(
