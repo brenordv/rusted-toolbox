@@ -1723,7 +1723,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("old.txt");
         fs::write(&path, "ancient").unwrap();
-        filetime::set_file_mtime(&path, filetime::FileTime::from_unix_time(-1_000, 0)).unwrap();
+        let pre_epoch = std::time::UNIX_EPOCH - std::time::Duration::from_secs(1_000);
+        fs::set_times(&path, std::fs::FileTimes::new().set_modified(pre_epoch)).unwrap();
 
         let response = warp::test::request()
             .method("GET")

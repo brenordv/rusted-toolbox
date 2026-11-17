@@ -11,11 +11,6 @@
 [advisories]
 unmaintained = "workspace"
 ignore = [
-    # No fixed release exists (Marvin timing sidechannel in the rsa crate).
-    # Reached only through whisper's peer-to-peer encryption between two
-    # local terminals; exploiting it needs an oracle timing many
-    # decryptions, which that usage does not expose.
-    { id = "RUSTSEC-2023-0071", reason = "rsa: no safe upgrade exists; whisper's local peer-to-peer usage exposes no timing oracle" },
     # No age release moves past p256/elliptic-curve 0.13, which pin
     # crypto-bigint 0.5 (the fix is 0.7.6). age reaches it only through
     # its p256tag and mlkem768p256tag recipient types; shared-crypto

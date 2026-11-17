@@ -1,6 +1,7 @@
-use filetime::{FileTime, set_file_times};
-use std::fs;
+use filetime::FileTime;
+use std::fs::{self, FileTimes};
 use std::process::Command;
+use std::time::{Duration, UNIX_EPOCH};
 use tempfile::TempDir;
 
 /// Helper function to get the path to the touch binary.
@@ -14,12 +15,16 @@ fn get_touch_binary_path() -> &'static str {
 /// makes "updated" and "unchanged" assertions unambiguous regardless of when
 /// the file was created.
 fn pin_file_times(path: &std::path::Path) -> (FileTime, FileTime) {
-    let pinned = FileTime::from_unix_time(946_684_800, 0); // 2000-01-01 00:00:00 UTC
-    set_file_times(path, pinned, pinned).unwrap();
+    let pinned = UNIX_EPOCH + Duration::from_secs(946_684_800); // 2000-01-01 00:00:00 UTC
+    fs::set_times(
+        path,
+        FileTimes::new().set_accessed(pinned).set_modified(pinned),
+    )
+    .unwrap();
     let metadata = fs::metadata(path).unwrap();
     (
-        FileTime::from_last_access_time(&metadata),
-        FileTime::from_last_modification_time(&metadata),
+        FileTime::from(metadata.accessed().unwrap()),
+        FileTime::from(metadata.modified().unwrap()),
     )
 }
 
@@ -49,8 +54,8 @@ fn test_cli_time_option_access_only() {
 
     // Check that only access time was updated
     let metadata = fs::metadata(&file_path).unwrap();
-    let new_atime = FileTime::from_last_access_time(&metadata);
-    let new_mtime = FileTime::from_last_modification_time(&metadata);
+    let new_atime = FileTime::from(metadata.accessed().unwrap());
+    let new_mtime = FileTime::from(metadata.modified().unwrap());
 
     assert_ne!(
         new_atime, original_atime,
@@ -88,8 +93,8 @@ fn test_cli_time_option_modify_only() {
 
     // Check that only modification time was updated
     let metadata = fs::metadata(&file_path).unwrap();
-    let new_atime = FileTime::from_last_access_time(&metadata);
-    let new_mtime = FileTime::from_last_modification_time(&metadata);
+    let new_atime = FileTime::from(metadata.accessed().unwrap());
+    let new_mtime = FileTime::from(metadata.modified().unwrap());
 
     assert_eq!(
         new_atime, original_atime,
@@ -127,8 +132,8 @@ fn test_cli_time_option_atime_alias() {
 
     // Check that only access time was updated
     let metadata = fs::metadata(&file_path).unwrap();
-    let new_atime = FileTime::from_last_access_time(&metadata);
-    let new_mtime = FileTime::from_last_modification_time(&metadata);
+    let new_atime = FileTime::from(metadata.accessed().unwrap());
+    let new_mtime = FileTime::from(metadata.modified().unwrap());
 
     assert_ne!(
         new_atime, original_atime,
@@ -166,8 +171,8 @@ fn test_cli_time_option_mtime_alias() {
 
     // Check that only modification time was updated
     let metadata = fs::metadata(&file_path).unwrap();
-    let new_atime = FileTime::from_last_access_time(&metadata);
-    let new_mtime = FileTime::from_last_modification_time(&metadata);
+    let new_atime = FileTime::from(metadata.accessed().unwrap());
+    let new_mtime = FileTime::from(metadata.modified().unwrap());
 
     assert_eq!(
         new_atime, original_atime,
@@ -205,8 +210,8 @@ fn test_cli_time_option_use_alias() {
 
     // Check that only access time was updated
     let metadata = fs::metadata(&file_path).unwrap();
-    let new_atime = FileTime::from_last_access_time(&metadata);
-    let new_mtime = FileTime::from_last_modification_time(&metadata);
+    let new_atime = FileTime::from(metadata.accessed().unwrap());
+    let new_mtime = FileTime::from(metadata.modified().unwrap());
 
     assert_ne!(
         new_atime, original_atime,
@@ -243,8 +248,8 @@ fn test_cli_default_behavior_updates_both() {
 
     // Check that both times were updated
     let metadata = fs::metadata(&file_path).unwrap();
-    let new_atime = FileTime::from_last_access_time(&metadata);
-    let new_mtime = FileTime::from_last_modification_time(&metadata);
+    let new_atime = FileTime::from(metadata.accessed().unwrap());
+    let new_mtime = FileTime::from(metadata.modified().unwrap());
 
     assert_ne!(
         new_atime, original_atime,
