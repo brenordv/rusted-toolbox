@@ -54,7 +54,7 @@ Dependency versions live in one place: the root `Cargo.toml`.
 
 ## Continuous integration
 - `.github/workflows/ci.yml` runs on every push to `master` and every PR: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets --locked -- -D warnings` on Linux, plus `cargo test --workspace --locked` on Windows, Linux, and macOS.
-- `.github/workflows/deps-audit.yml` runs `cargo deny check advisories` (RustSec database, config in `deny.toml`) weekly and whenever a PR or push touches a manifest, `Cargo.lock`, `deny.toml`, or the workflow itself.
+- `.github/workflows/deps-audit.yml` runs `cargo deny --all-features --locked check advisories sources licenses` (RustSec database, allowed git sources, license allow list; config in `deny.toml`) weekly and whenever a PR, or a push to `master`, touches a manifest, `Cargo.lock`, `deny.toml`, or the workflow itself. A PR run checks the PR's own `deny.toml`, so it is advisory: a change to the license `allow` list or an `exceptions` or `clarify` entry needs the owner's review. A plain `cargo deny check` also runs `bans`, which is not configured and only warns (duplicate crate versions).
 - `.github/dependabot.yml` keeps the SHA-pinned actions in the workflows fresh with weekly PRs.
 - `.github/workflows/release.yml` runs on `v*` tags: it builds release binaries on each OS and attaches archives to a GitHub Release.
 - `rust-toolchain.toml` pins the toolchain to a specific version (currently 1.99, bumped deliberately alongside a clippy/fmt pass) and ensures `rustfmt` and `clippy` are available.

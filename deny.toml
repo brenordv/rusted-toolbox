@@ -1,6 +1,6 @@
-# CI runs the advisories and sources checks (deps-audit.yml passes
-# `check advisories sources`); the licenses and bans sections stay
-# unconfigured on purpose.
+# CI runs the advisories, sources and licenses checks (deps-audit.yml passes
+# `check advisories sources licenses`). The bans section stays unconfigured:
+# its duplicate-version and wildcard checks only warn.
 #
 # Vulnerability advisories error at the default severity. `unmaintained` is
 # scoped to workspace (direct) dependencies: the tree carries transitively
@@ -34,3 +34,49 @@ ignore = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-git = ["https://github.com/anomalyco/rune"]
+
+# Every crate in the dependency tree must carry one of these licenses, or one
+# that its entry in `exceptions` allows. The list is the set the tree needed on
+# 2026-11-16, each one checked against the FSF's license list as a software
+# license compatible with this workspace's GPL-3.0-only (the license of
+# every member; none sets `publish = false`, so `private.ignore` would not skip
+# them). For an `OR` expression only the licenses that satisfy it are listed,
+# never every alternative it names. A license is added here deliberately, never
+# to make a run pass. A pull request run checks the PR's own copy of this file,
+# so a change to `allow`, or a new exception or clarify entry, needs the owner's
+# review. Dev-dependencies are not checked (cargo-deny's `include-dev` default).
+[licenses]
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "ISC",
+    "MIT",
+    # GPL-compatible through MPL-2.0 section 3.3, unless a crate is marked
+    # "Incompatible With Secondary Licenses"; cargo-deny can't see that notice.
+    "MPL-2.0",
+    "NCSA",
+    "Unicode-3.0",
+    "Zlib",
+]
+# A license the FSF list doesn't recommend for software, or doesn't name, is
+# allowed for one crate here and never in `allow`, so it covers no other crate.
+# An entry matches every version of its crate; a later release under some other
+# license outside `allow` still fails the check.
+exceptions = [
+    # CC0-1.0 is GPL-compatible, but the FSF doesn't recommend it for software
+    # (it has no patent grant).
+    { crate = "notify", allow = ["CC0-1.0"] },
+    # OFL-1.1 and the Ubuntu Font Licence cover the font files egui bundles; the
+    # crate's code is MIT OR Apache-2.0.
+    { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+    # CDLA-Permissive-2.0 is a data license covering the Mozilla CA root
+    # certificates these crates ship for TLS.
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+    { crate = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+]
+# cargo-deny's default, stated.
+confidence-threshold = 0.8
