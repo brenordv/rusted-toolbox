@@ -10,7 +10,6 @@ use shared_eventhub_core::cancel::{CANCEL_POLL, flag_set};
 use shared_eventhub_core::producer::{
     EventHubProducer, SendEnd, SendPlan, SendProgress, SendSummary, next_event, open_producer,
 };
-use shared_eventhub_persistence::paths::DataPaths;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -28,15 +27,14 @@ const STOPPING: &str =
 /// Fails when the target cannot be resolved or saved, the producer cannot be
 /// opened, the run failed, or the producer fails to close.
 pub async fn run(job: SendJob, shutdown: &AtomicBool) -> anyhow::Result<RunOutcome> {
-    let paths = DataPaths::new(&job.config.storage.base_data_folder);
     let mut renderer = Renderer::terminal(false);
     let target = prepare_target(
         &TargetSetup {
             config: &job.config,
             given: &job.secrets,
-            paths: &paths,
+            paths: &job.paths,
             save_config: job.save_config,
-            working_dir: &job.working_dir,
+            home: &job.home,
         },
         &mut renderer,
     )?;

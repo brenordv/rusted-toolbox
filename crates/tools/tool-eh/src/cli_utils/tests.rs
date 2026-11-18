@@ -6,7 +6,9 @@ use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
 use shared_eventhub_persistence::config::{
     AuthMethodConfig, CredentialKindConfig, SensitiveValues, StoredSecret, TargetConfig,
 };
-use std::path::PathBuf;
+use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::workspace::{ProfileName, Workspace};
+use std::path::{Path, PathBuf};
 
 fn parse(argv: &[&str]) -> CliArgs {
     CliArgs::try_parse_from(argv).unwrap()
@@ -19,22 +21,42 @@ fn parse_error(argv: &[&str]) -> ErrorKind {
 fn read_args(argv: &[&str]) -> ReadArgs {
     match parse(argv).command {
         Commands::Read(args) => *args,
-        Commands::Export(_) | Commands::Send(_) => panic!("expected the read subcommand"),
+        Commands::Export(_) | Commands::Send(_) | Commands::Profile(_) => {
+            panic!("expected the read subcommand")
+        }
     }
 }
 
 fn export_args(argv: &[&str]) -> ExportArgs {
     match parse(argv).command {
         Commands::Export(args) => *args,
-        Commands::Read(_) | Commands::Send(_) => panic!("expected the export subcommand"),
+        Commands::Read(_) | Commands::Send(_) | Commands::Profile(_) => {
+            panic!("expected the export subcommand")
+        }
     }
 }
 
 fn send_args(argv: &[&str]) -> SendArgs {
     match parse(argv).command {
         Commands::Send(args) => *args,
-        Commands::Read(_) | Commands::Export(_) => panic!("expected the send subcommand"),
+        Commands::Read(_) | Commands::Export(_) | Commands::Profile(_) => {
+            panic!("expected the send subcommand")
+        }
     }
+}
+
+fn here() -> ConfigHome {
+    ConfigHome::CurrentFolder(PathBuf::from("."))
+}
+
+/// A profile home named `name` under the workspace `root`, as the workspace
+/// finds it.
+async fn profile_home(root: &Path, name: &str) -> ConfigHome {
+    let profile = Workspace::at(root.to_owned())
+        .profile(&ProfileName::parse(name).unwrap())
+        .await
+        .unwrap();
+    ConfigHome::Profile(profile)
 }
 
 const HOSTILE: &str = "orders\r\u{1b}]52;c;cHduZWQ=\u{7}";
@@ -213,7 +235,7 @@ fn dump_filter_values_from_the_command_line_end_as_keywords(
         None,
         &Environment::default(),
         false,
-        PathBuf::from("."),
+        here(),
         ConfigSource::Missing,
     )
     .unwrap();
@@ -339,7 +361,7 @@ fn send_command_for(argv: &[&str]) -> Result<EhCommand> {
         send_args(argv),
         None,
         &Environment::default(),
-        PathBuf::from("."),
+        here(),
         ConfigSource::Missing,
     )
 }
@@ -432,7 +454,7 @@ fn a_dry_run_flag_without_a_template_is_refused() {
         args,
         None,
         &Environment::default(),
-        PathBuf::from("."),
+        here(),
         ConfigSource::Missing,
     )
     .unwrap_err();
@@ -485,7 +507,7 @@ fn debug_of_the_parsed_arguments_redacts_the_connection_string() {
 #[test]
 fn a_foreign_config_gets_a_one_line_notice() {
     assert_eq!(
-        config_notice(ConfigSource::Foreign, None).as_deref(),
+        config_notice(ConfigSource::Foreign, None, &here()).as_deref(),
         Some("config.json here is not an eh config; ignored")
     );
 }
@@ -494,7 +516,7 @@ fn a_foreign_config_gets_a_one_line_notice() {
 #[case::missing(ConfigSource::Missing)]
 #[case::disabled(ConfigSource::Disabled)]
 fn no_config_means_no_notice(#[case] source: ConfigSource) {
-    assert_eq!(config_notice(source, None), None);
+    assert_eq!(config_notice(source, None, &here()), None);
 }
 
 #[test]
@@ -508,7 +530,7 @@ fn a_recalled_config_notice_shows_target_and_folders() {
         },
     });
 
-    let notice = config_notice(ConfigSource::Loaded, Some(&config)).unwrap();
+    let notice = config_notice(ConfigSource::Loaded, Some(&config), &here()).unwrap();
 
     assert_eq!(
         notice,
@@ -520,21 +542,36 @@ fn a_recalled_config_notice_shows_target_and_folders() {
 
 #[test]
 fn hostile_config_values_are_escaped_in_the_notice() {
-    let notice = config_notice(ConfigSource::Loaded, Some(&hostile_config())).unwrap();
+    let notice = config_notice(ConfigSource::Loaded, Some(&hostile_config()), &here()).unwrap();
 
     assert_escaped(&notice);
 }
 
-#[test]
-fn hostile_config_values_are_escaped_in_the_read_header() {
-    let job = ReadJob {
-        config: hostile_config(),
+fn read_job_at(config: ToolConfig, home: ConfigHome) -> ReadJob {
+    ReadJob {
+        paths: home.data_paths(&config.storage.base_data_folder),
+        config,
         secrets: SensitiveValues::default(),
         save_config: false,
         verbose: false,
-        working_dir: PathBuf::from("."),
+        home,
         config_source: ConfigSource::Loaded,
-    };
+    }
+}
+
+fn export_job_at(home: ConfigHome) -> ExportJob {
+    ExportJob {
+        paths: home.data_paths("data"),
+        home,
+        export: Default::default(),
+        filters: Default::default(),
+        config_source: ConfigSource::Missing,
+    }
+}
+
+#[test]
+fn hostile_config_values_are_escaped_in_the_read_header() {
+    let job = read_job_at(hostile_config(), here());
 
     let header = read_header(&job).join("\n");
 
@@ -547,12 +584,7 @@ fn hostile_config_values_are_escaped_in_the_read_header() {
 
 #[test]
 fn the_export_header_names_the_resolved_export_folder() {
-    let job = ExportJob {
-        base_data_folder: PathBuf::from("data"),
-        export: Default::default(),
-        filters: Default::default(),
-        config_source: ConfigSource::Missing,
-    };
+    let job = export_job_at(here());
 
     let header = export_header(&job).join("\n");
 
@@ -562,4 +594,160 @@ fn the_export_header_names_the_resolved_export_folder() {
         "{header}"
     );
     assert!(header.contains("  - config.json: none"), "{header}");
+    assert!(!header.contains("  - Profile:"), "{header}");
+}
+
+fn developer_config() -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        namespace: Some("orders.servicebus.windows.net".to_owned()),
+        event_hub: Some("orders".to_owned()),
+        consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+        auth: AuthMethodConfig::Credential {
+            credential: CredentialKindConfig::DeveloperTools,
+        },
+    })
+}
+
+#[test]
+fn without_a_profile_the_read_header_folders_are_the_configured_text() {
+    let job = read_job_at(developer_config(), here());
+
+    let header = read_header(&job).join("\n");
+
+    let dump = Path::new(".eh-data").join("inbound").display().to_string();
+    assert!(header.contains("  - Data folder: .eh-data\n"), "{header}");
+    assert!(
+        header.contains(&format!("  - Dump folder: {dump}\n")),
+        "{header}"
+    );
+    assert!(!header.contains("  - Profile:"), "{header}");
+}
+
+#[tokio::test]
+async fn a_profile_puts_every_header_folder_inside_the_profile_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let home = profile_home(root.path(), "orders-dev").await;
+    let data = root.path().join("orders-dev").join(".eh-data");
+
+    let read = read_header(&read_job_at(developer_config(), home.clone())).join("\n");
+    let export = export_header(&export_job_at(home)).join("\n");
+
+    assert!(read.contains("  - Profile: orders-dev"), "{read}");
+    assert!(
+        read.contains(&format!("  - Data folder: {}", data.display())),
+        "{read}"
+    );
+    assert!(
+        read.contains(&format!(
+            "  - Dump folder: {}",
+            data.join("inbound").display()
+        )),
+        "{read}"
+    );
+    let export_folder = root.path().join("orders-dev").join("data").join("exports");
+    assert!(export.contains("  - Profile: orders-dev"), "{export}");
+    assert!(
+        export.contains(&format!("  - Export folder: {}", export_folder.display())),
+        "{export}"
+    );
+}
+
+#[tokio::test]
+async fn a_profile_notice_names_the_profile_and_its_resolved_folders() {
+    let root = tempfile::tempdir().unwrap();
+    let home = profile_home(root.path(), "orders-dev").await;
+    let data = root.path().join("orders-dev").join(".eh-data");
+
+    let notice = config_notice(ConfigSource::Loaded, Some(&developer_config()), &home).unwrap();
+
+    assert_eq!(
+        notice,
+        format!(
+            "Using profile orders-dev: namespace orders.servicebus.windows.net, event hub orders, \
+             auth developer tools credential, consumer group $Default, data folder '{}', dump \
+             folder '{}' (flags override these)",
+            data.display(),
+            data.join("inbound").display()
+        )
+    );
+}
+
+#[tokio::test]
+async fn hostile_values_are_escaped_in_a_profile_notice_and_header() {
+    let root = tempfile::tempdir().unwrap();
+    let home = profile_home(root.path(), "orders").await;
+
+    let notice = config_notice(ConfigSource::Loaded, Some(&hostile_config()), &home).unwrap();
+    let header = read_header(&read_job_at(hostile_config(), home)).join("\n");
+
+    assert_escaped(&notice);
+    assert_escaped(&header);
+}
+
+#[test]
+fn the_profile_flag_parses_on_every_data_subcommand() {
+    let read = read_args(&["eh", "read", "--profile", "p"]);
+    let export = export_args(&["eh", "export", "--profile", "p"]);
+    let send = send_args(&["eh", "send", "--body", "x", "--profile", "p"]);
+
+    for data in [&read.data, &export.data, &send.data] {
+        assert_eq!(data.profile.as_deref(), Some("p"));
+    }
+}
+
+#[test]
+fn profile_list_parses() {
+    let args = parse(&["eh", "profile", "list"]);
+
+    assert!(matches!(
+        args.command,
+        Commands::Profile(ProfileArgs {
+            command: ProfileCommand::List
+        })
+    ));
+}
+
+#[rstest::rstest]
+#[case::with_a_data_folder(&["eh", "read", "--profile", "p", "-b", "x"])]
+#[case::with_no_config(&["eh", "export", "--profile", "p", "--no-config"])]
+#[case::with_a_dry_run(&["eh", "send", "--template", "--dry-run", "--body", "x", "--profile", "p"])]
+fn the_profile_flag_conflicts_with_the_flags_that_read_no_profile(#[case] argv: &[&str]) {
+    assert_eq!(parse_error(argv), ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn the_profile_list_header_names_the_workspace() {
+    let root = tempfile::tempdir().unwrap();
+
+    let header = profile_header(&Workspace::at(root.path().to_owned())).join("\n");
+
+    assert!(header.contains("  - Command: profile list"), "{header}");
+    assert!(
+        header.contains(&format!("  - Workspace: {}", root.path().display())),
+        "{header}"
+    );
+}
+
+#[test]
+fn a_saved_run_without_a_profile_keeps_a_relative_data_folder_relative() {
+    let job = read_job(
+        ReadArgs {
+            target: TargetArgs {
+                auth: Some(AuthArg::Developer),
+                namespace: Some("orders.servicebus.windows.net".to_owned()),
+                event_hub: Some("orders".to_owned()),
+                ..TargetArgs::default()
+            },
+            ..ReadArgs::default()
+        },
+        None,
+        &Environment::default(),
+        false,
+        ConfigHome::CurrentFolder(PathBuf::from("work")),
+        ConfigSource::Missing,
+    )
+    .unwrap();
+
+    assert_eq!(job.paths, DataPaths::new(".eh-data"));
+    assert_eq!(job.config.storage.base_data_folder, ".eh-data");
 }

@@ -36,6 +36,14 @@
   or repeated property fails before anything is opened, naming the flag's position and never a
   value; neither flag is saved to `config.json` or allowed with `--dry-run`. `--app-header` shows
   the correlation id and up to five property keys.
+- Profiles: saved connections in a workspace (`.eh/profiles` in the home folder, or the absolute
+  folder in `EH_WORKSPACE`), one folder each with its `config.json` and data folder.
+  `--profile NAME` on `read`, `send`, and `export` uses one instead of the current folder's
+  `config.json`; with `--save-config` it creates or updates the profile, and a connection string
+  given on that run records its namespace and event hub. `eh profile list` shows each profile's
+  target and auth. `send` trusts a profile that names its namespace and event hub without
+  `--namespace`/`-e`/`--yes`. `--profile` can't be combined with `-b`, `--no-config`, or
+  `--dry-run`. Runs without `--profile` are unchanged.
 - Breaking, from 1.1.0 (the readme has the full table):
   - `eh-read` -> `eh read`, `eh-export` -> `eh export`; shared flags go before the
     subcommand.

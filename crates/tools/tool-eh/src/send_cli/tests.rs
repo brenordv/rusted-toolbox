@@ -5,6 +5,8 @@ use shared_eventhub_core::producer::{OutgoingEvent, Pacing, Routing, SendPlan};
 use shared_eventhub_persistence::config::{
     AuthMethodConfig, CredentialKindConfig, SensitiveValues, TargetConfig, ToolConfig,
 };
+use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::workspace::ConfigHome;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
@@ -43,7 +45,8 @@ fn job(routing: Routing, pacing: Pacing, body_source: BodySource) -> SendJob {
         config,
         secrets: SensitiveValues::default(),
         save_config: false,
-        working_dir: PathBuf::from("."),
+        home: ConfigHome::CurrentFolder(PathBuf::from(".")),
+        paths: DataPaths::new(HOSTILE),
         config_source: ConfigSource::Loaded,
         plan: SendPlan::new(3, routing, pacing).unwrap(),
         event: OutgoingEvent {
@@ -267,6 +270,7 @@ fn hostile_property_keys_and_ids_are_escaped_in_the_send_header() {
     let mut job = job(Routing::automatic(), Pacing::batched(), BodySource::Inline);
     job.config.target.namespace = Some("orders".to_owned());
     job.config.storage.base_data_folder = "data".to_owned();
+    job.paths = DataPaths::new("data");
     job.event.correlation_id = Some(HOSTILE.to_owned());
     job.event.properties = [(HOSTILE.to_owned(), String::new())].into();
 

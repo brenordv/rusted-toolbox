@@ -19,10 +19,17 @@ fn connection_string() -> String {
     )
 }
 
+/// Runs eh in `cwd` with the workspace `<cwd>/profiles`, so no test reads or
+/// writes the real one.
 fn eh(cwd: &Path, args: &[&str]) -> Output {
+    eh_with_workspace(cwd, &cwd.join("profiles"), args)
+}
+
+fn eh_with_workspace(cwd: &Path, workspace: &Path, args: &[&str]) -> Output {
     Command::new(EXE)
         .args(args)
         .current_dir(cwd)
+        .env("EH_WORKSPACE", workspace)
         .env_remove("EH_CONNECTION_STRING")
         .env_remove("EH_CLIENT_SECRET")
         .env_remove("RUST_LOG")
@@ -127,6 +134,9 @@ fn help_exits_zero_and_lists_the_subcommands_and_key_flags() {
         assert!(output.status.success(), "{}", stderr_of(output));
     }
     assert!(stdout_of(&top).contains("read") && stdout_of(&top).contains("export"));
+    assert!(stdout_of(&top).contains("profile"), "{}", stdout_of(&top));
+    assert!(stdout_of(&read).contains("--profile <NAME>"));
+    assert!(stdout_of(&export).contains("--profile <NAME>"));
     assert!(stdout_of(&read).contains("--connection-string"));
     assert!(stdout_of(&read).contains("--disk-mode"));
     assert!(stdout_of(&export).contains("--export-format"));
@@ -385,6 +395,7 @@ fn a_body_piped_on_stdin_is_read_before_the_target_is_checked() {
     let mut child = Command::new(EXE)
         .args(["--app-header", "send", "--body-file", "-"])
         .current_dir(root.path())
+        .env("EH_WORKSPACE", root.path().join("profiles"))
         .env_remove("EH_CONNECTION_STRING")
         .env_remove("EH_CLIENT_SECRET")
         .env_remove("RUST_LOG")
@@ -754,6 +765,7 @@ fn a_connection_string_variable_that_is_not_unicode_fails_naming_it() {
     let output = Command::new(EXE)
         .args(["read"])
         .current_dir(root.path())
+        .env("EH_WORKSPACE", root.path().join("profiles"))
         .env("EH_CONNECTION_STRING", not_unicode())
         .env_remove("EH_CLIENT_SECRET")
         .output()
@@ -810,6 +822,252 @@ fn a_foreign_config_json_is_ignored_with_a_notice_and_never_overwritten() {
         std::fs::read_to_string(root.path().join("config.json")).unwrap(),
         foreign
     );
+}
+
+/// A temp folder with a current folder `here` (where eh runs) and a
+/// workspace `profiles` beside it.
+struct ProfileFixture {
+    root: tempfile::TempDir,
+}
+
+impl ProfileFixture {
+    fn new() -> Self {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("here")).unwrap();
+        Self { root }
+    }
+
+    fn here(&self) -> PathBuf {
+        self.root.path().join("here")
+    }
+
+    fn workspace(&self) -> PathBuf {
+        self.root.path().join("profiles")
+    }
+
+    fn eh(&self, args: &[&str]) -> Output {
+        eh_with_workspace(&self.here(), &self.workspace(), args)
+    }
+
+    /// Writes an eh `config.json` naming the test hub into the profile
+    /// folder `name`.
+    fn write_profile(&self, name: &str) -> PathBuf {
+        let dir = self.workspace().join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            format!(
+                r#"{{"tool":"eh","schema_version":1,"target":{{"namespace":"{NAMESPACE}","event_hub":"{HUB}","auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}}}}"#
+            ),
+        )
+        .unwrap();
+        dir
+    }
+}
+
+#[test]
+fn profile_list_on_an_empty_workspace_says_there_are_none() {
+    let fixture = ProfileFixture::new();
+
+    let output = fixture.eh(&["profile", "list"]);
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "No profiles in '{}' yet. Save one with: eh read --profile NAME --save-config \
+             <target flags>\n",
+            fixture.workspace().display()
+        )
+    );
+}
+
+#[test]
+fn profile_list_fails_when_the_workspace_is_a_file() {
+    let fixture = ProfileFixture::new();
+    std::fs::write(fixture.workspace(), "not a folder").unwrap();
+
+    let output = fixture.eh(&["profile", "list"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("Failed to list the workspace"),
+        "{}",
+        stderr_of(&output)
+    );
+}
+
+#[tokio::test]
+async fn save_config_with_a_profile_creates_it_and_a_later_run_recalls_it() {
+    let fixture = ProfileFixture::new();
+    let profile = fixture.workspace().join("p");
+    let data = profile.join(".eh-data");
+    seed_archive(&data).await;
+    let held = MessageStore::open(&DataPaths::new(&data)).unwrap();
+    let connection_string = connection_string();
+
+    let saving = fixture.eh(&[
+        "read",
+        "--profile",
+        "p",
+        "--save-config",
+        "-s",
+        &connection_string,
+        "-e",
+        HUB,
+    ]);
+    let recalling = fixture.eh(&["--app-header", "read", "--profile", "p"]);
+    let listing = fixture.eh(&["profile", "list"]);
+    held.close().await.unwrap();
+
+    for output in [&saving, &recalling] {
+        assert_eq!(output.status.code(), Some(1), "{}", stderr_of(output));
+        assert!(
+            stderr_of(output).contains("in use by another eh or eh-gui"),
+            "{}",
+            stderr_of(output)
+        );
+        assert!(!stderr_of(output).contains(SECRET_KEY));
+        assert!(!stdout_of(output).contains(SECRET_KEY));
+    }
+    let saved = std::fs::read_to_string(profile.join("config.json")).unwrap();
+    assert!(!saved.contains(SECRET_KEY), "{saved}");
+    assert!(
+        saved.contains(&format!("\"namespace\": \"{NAMESPACE}\"")),
+        "{saved}"
+    );
+    assert!(
+        saved.contains(&format!("\"event_hub\": \"{HUB}\"")),
+        "{saved}"
+    );
+    assert!(data.join("secrets.redb").exists());
+    assert!(
+        stderr_of(&saving).contains("Saved profile p; the connection string is stored in"),
+        "{}",
+        stderr_of(&saving)
+    );
+    let header = stdout_of(&recalling);
+    assert!(header.contains("  - Profile: p"), "{header}");
+    assert!(
+        header.contains(&format!(
+            "  - Target: namespace {NAMESPACE}, event hub {HUB}"
+        )),
+        "{header}"
+    );
+    assert!(
+        stderr_of(&recalling).contains("Using profile p:"),
+        "{}",
+        stderr_of(&recalling)
+    );
+    assert_eq!(listing.status.code(), Some(0), "{}", stderr_of(&listing));
+    assert!(
+        stdout_of(&listing).contains(&format!(
+            "  p  namespace {NAMESPACE}, event hub {HUB}, auth connection string (stored)"
+        )),
+        "{}",
+        stdout_of(&listing)
+    );
+    assert!(files_under(&fixture.here()).is_empty());
+}
+
+#[test]
+fn export_with_a_profile_reads_the_profiles_data_folder_only() {
+    let fixture = ProfileFixture::new();
+    let profile = fixture.write_profile("p");
+
+    let output = fixture.eh(&["export", "--profile", "p"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains(&format!(
+            "No archive in '{}'",
+            profile.join(".eh-data").display()
+        )),
+        "{stderr}"
+    );
+    assert!(!fixture.here().join(".eh-data").exists());
+}
+
+#[test]
+fn a_profile_run_logs_the_profile_once_logging_is_up() {
+    let fixture = ProfileFixture::new();
+    fixture.write_profile("p");
+
+    let output = fixture.eh(&["--log-level", "info", "export", "--profile", "p"]);
+
+    let stderr = stderr_of(&output);
+    assert_eq!(
+        stderr.matches("Using profile profile=p dir=").count(),
+        1,
+        "{stderr}"
+    );
+}
+
+#[test]
+fn export_with_a_missing_profile_fails_without_the_save_hint() {
+    let fixture = ProfileFixture::new();
+
+    let output = fixture.eh(&["export", "--profile", "missing"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(stderr.contains("No profile named missing in"), "{stderr}");
+    assert!(
+        stderr.contains("`eh profile list` shows the saved ones"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("--save-config"), "{stderr}");
+}
+
+#[rstest::rstest]
+#[case::parent("../x", "A profile name uses letters")]
+#[case::device("con", "con is a device name on Windows")]
+fn a_bad_profile_name_fails_and_creates_nothing(#[case] name: &str, #[case] expected: &str) {
+    let fixture = ProfileFixture::new();
+
+    let output = fixture.eh(&[
+        "read",
+        "--profile",
+        name,
+        "--save-config",
+        "-s",
+        &connection_string(),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains(expected),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(!fixture.workspace().exists());
+    assert!(files_under(fixture.root.path()).is_empty());
+}
+
+#[tokio::test]
+async fn a_working_folder_moved_into_the_workspace_is_a_profile() {
+    let fixture = ProfileFixture::new();
+    let profile = fixture.write_profile("moved");
+    seed_archive(&profile.join(".eh-data")).await;
+
+    let listing = fixture.eh(&["profile", "list"]);
+    let export = fixture.eh(&["export", "--profile", "moved"]);
+
+    assert!(
+        stdout_of(&listing).contains("  moved  namespace"),
+        "{}",
+        stdout_of(&listing)
+    );
+    assert!(export.status.success(), "{}", stderr_of(&export));
+    assert!(
+        stdout_of(&export).contains("Exported: 3 |"),
+        "{}",
+        stdout_of(&export)
+    );
+    let files = files_under(&profile.join(".eh-data").join("exports"));
+    assert_eq!(files.len(), 3, "{files:?}");
+    assert!(files_under(&fixture.here()).is_empty());
 }
 
 /// Ctrl-C delivered to a running `eh export` as a real SIGINT. Unix only:
@@ -897,6 +1155,7 @@ mod interrupt {
         let mut child = Command::new(EXE)
             .args(["export"])
             .current_dir(root.path())
+            .env("EH_WORKSPACE", root.path().join("profiles"))
             .env_remove("EH_CONNECTION_STRING")
             .env_remove("EH_CLIENT_SECRET")
             .env_remove("RUST_LOG")

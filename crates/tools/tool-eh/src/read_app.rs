@@ -9,7 +9,6 @@ use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
 use shared_eventhub_core::engine::{CaptureEngine, RunEnd};
 use shared_eventhub_persistence::export::{DiskWriteMode, ExportOutcome, WritingSink};
-use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::store::MessageStore;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -24,24 +23,24 @@ use std::sync::{Arc, Mutex, PoisonError};
 /// opened, the run cannot start, a partition failed, message files could not
 /// be written, or the archive fails to close.
 pub async fn run(job: ReadJob, shutdown: &AtomicBool) -> anyhow::Result<RunOutcome> {
-    let paths = DataPaths::new(&job.config.storage.base_data_folder);
+    let paths = &job.paths;
     let mut renderer = Renderer::terminal(job.verbose);
     let target = prepare_target(
         &TargetSetup {
             config: &job.config,
             given: &job.secrets,
-            paths: &paths,
+            paths,
             save_config: job.save_config,
-            working_dir: &job.working_dir,
+            home: &job.home,
         },
         &mut renderer,
     )?;
 
-    let store = MessageStore::open(&paths)?;
+    let store = MessageStore::open(paths)?;
     let disk_write = &job.config.storage.disk_write;
     let sink = WritingSink::new(
         store,
-        job.config.disk_write_config(&paths),
+        job.config.disk_write_config(paths),
         job.config.capture.filters.clone(),
     );
 

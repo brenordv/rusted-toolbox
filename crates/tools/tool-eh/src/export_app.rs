@@ -4,7 +4,6 @@ use crate::models::{ExportJob, RunOutcome};
 use crate::progress::{ExportProgressLine, display, export_summary_block};
 use anyhow::{Context, anyhow};
 use shared_eventhub_persistence::export::{ExportOptions, ExportOutcome};
-use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::search::SearchQuery;
 use shared_eventhub_persistence::store::MessageStore;
 use std::io::{self, Write};
@@ -18,14 +17,14 @@ use std::sync::atomic::AtomicBool;
 /// Fails when the data folder has no archive, the archive cannot be opened
 /// or read, any message file fails to write, or the archive fails to close.
 pub async fn run(job: ExportJob, shutdown: &Arc<AtomicBool>) -> anyhow::Result<RunOutcome> {
-    let paths = DataPaths::new(&job.base_data_folder);
+    let paths = &job.paths;
     if !paths.archive_db().exists() {
         anyhow::bail!(
             "No archive in '{}'; run `eh read` with this data folder first",
             display(paths.base().display().to_string())
         );
     }
-    let store = MessageStore::open(&paths)?;
+    let store = MessageStore::open(paths)?;
 
     let query = SearchQuery {
         filters: job.filters.clone(),

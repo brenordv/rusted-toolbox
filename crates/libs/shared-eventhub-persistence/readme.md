@@ -199,6 +199,32 @@ run's sink and engine settings.
 Treat `config.json` and the data folder like a script: a cloned repo that
 ships both could point `eh read` at someone else's event hub and dump folders.
 
+## Workspace (profiles)
+
+`workspace::Workspace` is a folder of saved connection profiles, one subfolder
+each, laid out like a working directory (`config.json` beside its data
+folder). `Workspace::locate` uses the absolute folder in `EH_WORKSPACE`, or
+`<home>/.eh/profiles`; a relative `EH_WORKSPACE` is an error.
+
+- `ProfileName::parse` allows 1 to 64 ASCII letters, digits, `-`, `_`, and
+  `.`, starting with a letter or digit, not ending with `.`, and not a Windows
+  device name (`CON`, `NUL.txt`, `com1`, ...). A name holds no separator or
+  `..`, so it cannot leave the workspace. Its errors never quote a name that
+  fails the character rule.
+- `Workspace::profile` finds a folder whose name matches ignoring ASCII case
+  (two matches are an error) and otherwise names `<root>/<name>`; it never
+  creates anything.
+- `Workspace::list` returns every subfolder holding an eh `config.json`,
+  sorted ignoring case: `Ready` with the config, or `CannotLoad` with the
+  redacted load error or a "rename it" reason for a folder name that is not a
+  valid profile name. Files, broken links, and folders without an eh
+  `config.json` are skipped. It logs one summary line, not one per profile.
+- `ConfigHome` is where a run's `config.json` lives: the current folder or a
+  profile. `data_paths` places a relative data folder inside the profile
+  folder; under the current folder it stays relative, as it always was.
+
+Links inside the workspace are followed: only its owner writes there.
+
 ## Diagnostics
 
 Events go through `tracing` and never carry message bodies or secrets:

@@ -24,4 +24,8 @@
   `ToolConfig::disk_write_config` builds a capture run's disk-write settings for a data folder,
   and `DataPaths::export_dir` places the export folder in the data folder (an absolute one as
   given).
+- `workspace`: the folder of saved connection profiles (`Workspace::locate` reads `EH_WORKSPACE`
+  or uses `<home>/.eh/profiles`), `ProfileName` (a name safe as a folder on every platform),
+  finding a profile ignoring case, listing profiles without a log line per profile, and
+  `ConfigHome`, whose `data_paths` places a relative data folder inside a profile folder.
 - Dependency: `redb` 4.6.0.

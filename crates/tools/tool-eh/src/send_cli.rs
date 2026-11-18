@@ -1,7 +1,7 @@
 //! `eh send` arguments, loading the body they name, templates, and the run
 //! header.
 
-use crate::cli_utils::{DataArgs, TargetArgs, config_source_name, item};
+use crate::cli_utils::{DataArgs, TargetArgs, command_lines, config_source_name, item};
 use crate::models::{BodySource, DryRunJob, SendJob};
 use crate::progress::{describe_auth, display, target_label};
 use anyhow::Context;
@@ -111,7 +111,8 @@ pub(crate) struct SendArgs {
             "interval_ms",
             "yes",
             "properties",
-            "correlation_id"
+            "correlation_id",
+            "profile"
         ]
     )]
     pub dry_run: bool,
@@ -271,11 +272,11 @@ pub(crate) fn send_header(job: &SendJob) -> Vec<String> {
         Some(interval) => format!("one event every {} ms", interval.as_millis()),
         None => "batched".to_owned(),
     };
-    vec![
-        item("Command", "send"),
+    let mut lines = command_lines("send", &job.home);
+    lines.extend([
         format_config_item("Target", target_label(&config.target)),
         format_config_item("Auth", describe_auth(&config.target.auth)),
-        item("Data folder", &config.storage.base_data_folder),
+        item("Data folder", job.paths.base().display()),
         item("Count", job.plan.count()),
         format_config_item("Routing", routing),
         item("Pacing", pacing),
@@ -292,7 +293,8 @@ pub(crate) fn send_header(job: &SendJob) -> Vec<String> {
         item("Properties", properties_line(&job.event.properties)),
         item("Save config", job.save_config),
         item("config.json", config_source_name(job.config_source)),
-    ]
+    ]);
+    lines
 }
 
 /// The `--app-header` lines for a dry run.

@@ -6,6 +6,9 @@ use common_utils::string_utils::SecretString;
 use rstest::rstest;
 use shared_eventhub_core::filters::TimeWindow;
 use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat};
+use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::workspace::{ProfileName, Workspace};
+use std::path::{Path, PathBuf};
 
 const CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=listen;SharedAccessKey=c2VjcmV0";
 const ENV_CONNECTION_STRING: &str =
@@ -25,9 +28,22 @@ fn job(
         recalled,
         environment,
         false,
-        PathBuf::from("."),
+        here(),
         ConfigSource::Missing,
     )
+}
+
+fn here() -> ConfigHome {
+    ConfigHome::CurrentFolder(PathBuf::from("."))
+}
+
+/// A profile home named `name` under the workspace `root`.
+async fn profile_home(root: &Path, name: &str) -> ConfigHome {
+    let profile = Workspace::at(root.to_owned())
+        .profile(&ProfileName::parse(name).unwrap())
+        .await
+        .unwrap();
+    ConfigHome::Profile(profile)
 }
 
 fn error_of(args: ReadArgs, recalled: Option<&ToolConfig>, environment: &Environment) -> String {
@@ -250,7 +266,7 @@ fn flags_beat_the_recalled_config_field_by_field() {
         consumer_group: Some("flag-group".to_owned()),
         data: DataArgs {
             base_data_folder: Some("flag-data".to_owned()),
-            no_config: false,
+            ..DataArgs::default()
         },
         partitions: vec!["0".to_owned(), "1".to_owned()],
         feedback_interval: Some(2),
@@ -468,10 +484,16 @@ fn debug_of_the_job_never_shows_a_secret() {
 fn export_takes_recalled_export_settings_and_its_own_filters_only() {
     let recalled = recalled_developer_config();
 
-    let job = export_job(ExportArgs::default(), Some(&recalled), ConfigSource::Loaded).unwrap();
+    let job = export_job(
+        ExportArgs::default(),
+        Some(&recalled),
+        here(),
+        ConfigSource::Loaded,
+    )
+    .unwrap();
 
     assert_eq!(job.export, recalled.storage.export);
-    assert_eq!(job.base_data_folder, PathBuf::from("recalled-data"));
+    assert_eq!(job.paths, DataPaths::new("recalled-data"));
     assert_eq!(job.filters, CaptureFilters::default());
 }
 
@@ -481,7 +503,7 @@ fn export_flags_beat_the_recalled_export_settings() {
     let args = ExportArgs {
         data: DataArgs {
             base_data_folder: Some("flag-data".to_owned()),
-            no_config: false,
+            ..DataArgs::default()
         },
         format: Some(FormatArg::Json),
         export_folder: Some("flag-exports".to_owned()),
@@ -502,9 +524,9 @@ fn export_flags_beat_the_recalled_export_settings() {
         },
     };
 
-    let job = export_job(args, Some(&recalled), ConfigSource::Loaded).unwrap();
+    let job = export_job(args, Some(&recalled), here(), ConfigSource::Loaded).unwrap();
 
-    assert_eq!(job.base_data_folder, PathBuf::from("flag-data"));
+    assert_eq!(job.paths, DataPaths::new("flag-data"));
     assert_eq!(
         job.export,
         ExportSettings {
@@ -531,10 +553,70 @@ fn export_flags_beat_the_recalled_export_settings() {
 
 #[test]
 fn export_defaults_apply_without_config() {
-    let job = export_job(ExportArgs::default(), None, ConfigSource::Missing).unwrap();
+    let job = export_job(ExportArgs::default(), None, here(), ConfigSource::Missing).unwrap();
 
     assert_eq!(job.export, ExportSettings::default());
-    assert_eq!(job.base_data_folder, PathBuf::from(".eh-data"));
+    assert_eq!(job.paths, DataPaths::new(".eh-data"));
+}
+
+#[tokio::test]
+async fn under_a_profile_the_recalled_data_folder_sits_inside_the_profile_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let home = profile_home(root.path(), "orders").await;
+    let recalled = recalled_developer_config();
+
+    let read = job_at(ReadArgs::default(), &recalled, home.clone());
+    let export = export_job(
+        ExportArgs::default(),
+        Some(&recalled),
+        home.clone(),
+        ConfigSource::Loaded,
+    )
+    .unwrap();
+    let send = send_at(
+        send_args(TargetArgs::default()),
+        &recalled,
+        home,
+        &Environment::default(),
+    )
+    .unwrap();
+
+    let inside = root.path().join("orders").join("recalled-data");
+    assert_eq!(read.paths.base(), inside);
+    assert_eq!(export.paths.base(), inside);
+    assert_eq!(send.paths.base(), inside);
+    assert_eq!(read.config.storage.base_data_folder, "recalled-data");
+    assert_eq!(send.config.storage.base_data_folder, "recalled-data");
+}
+
+#[tokio::test]
+async fn an_absolute_recalled_data_folder_is_kept_with_or_without_a_profile() {
+    let root = tempfile::tempdir().unwrap();
+    let absolute = tempfile::tempdir().unwrap();
+    let mut recalled = recalled_developer_config();
+    recalled.storage.base_data_folder = absolute.path().to_str().unwrap().to_owned();
+
+    let in_profile = job_at(
+        ReadArgs::default(),
+        &recalled,
+        profile_home(root.path(), "orders").await,
+    );
+    let here = job_at(ReadArgs::default(), &recalled, here());
+
+    assert_eq!(in_profile.paths.base(), absolute.path());
+    assert_eq!(here.paths.base(), absolute.path());
+}
+
+fn job_at(args: ReadArgs, recalled: &ToolConfig, home: ConfigHome) -> ReadJob {
+    read_job(
+        args,
+        Some(recalled),
+        &Environment::default(),
+        false,
+        home,
+        ConfigSource::Loaded,
+    )
+    .unwrap()
 }
 
 fn dump_filter(values: &[&str]) -> TextFilterArgs {
@@ -573,6 +655,7 @@ fn dump_filter_keywords_are_trimmed_and_empty_ones_dropped(
             ..ExportArgs::default()
         },
         None,
+        here(),
         ConfigSource::Missing,
     )
     .unwrap();
@@ -601,6 +684,7 @@ fn a_dump_filter_with_no_keyword_is_refused_for_read_and_export(#[case] values: 
             ..ExportArgs::default()
         },
         None,
+        here(),
         ConfigSource::Missing,
     )
     .unwrap_err();
@@ -654,7 +738,24 @@ fn send(
         None,
         recalled,
         environment,
-        PathBuf::from("."),
+        here(),
+        ConfigSource::Loaded,
+    )
+}
+
+fn send_at(
+    args: SendArgs,
+    recalled: &ToolConfig,
+    home: ConfigHome,
+    environment: &Environment,
+) -> Result<SendJob> {
+    send_job(
+        args,
+        (b"x".to_vec(), BodySource::Inline),
+        None,
+        Some(recalled),
+        environment,
+        home,
         ConfigSource::Loaded,
     )
 }
@@ -1035,6 +1136,97 @@ fn debug_of_the_send_job_never_shows_a_secret() {
     for rendered in [rendered_args, format!("{job:?}")] {
         assert!(!rendered.contains("SharedAccessKey"), "{rendered}");
     }
+}
+
+#[tokio::test]
+async fn a_profile_that_names_its_namespace_and_hub_sends_without_naming_them_again() {
+    let root = tempfile::tempdir().unwrap();
+    let mut recalled = recalled_connection_string_config();
+    recalled.target.namespace = Some("orders.servicebus.windows.net".to_owned());
+
+    let job = send_at(
+        send_args(TargetArgs::default()),
+        &recalled,
+        profile_home(root.path(), "orders").await,
+        &Environment::default(),
+    )
+    .unwrap();
+
+    assert_eq!(job.config.target, recalled.target);
+}
+
+#[tokio::test]
+async fn a_profile_that_names_only_its_hub_is_refused_naming_the_profile() {
+    let root = tempfile::tempdir().unwrap();
+
+    let error = send_at(
+        send_args(TargetArgs::default()),
+        &recalled_connection_string_config(),
+        profile_home(root.path(), "orders").await,
+        &Environment::default(),
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "This run would send to namespace (from the connection string), event hub recalled-hub, \
+         taken from profile orders. Name it with --namespace and -e, or pass --yes."
+    );
+}
+
+#[tokio::test]
+async fn an_auth_flag_that_drops_a_profiles_names_still_needs_the_destination_named() {
+    let root = tempfile::tempdir().unwrap();
+    let mut recalled = recalled_connection_string_config();
+    recalled.target.namespace = Some("orders.servicebus.windows.net".to_owned());
+    let args = send_args(TargetArgs {
+        auth: Some(AuthArg::ConnectionString),
+        ..TargetArgs::default()
+    });
+
+    let error = send_at(
+        args,
+        &recalled,
+        profile_home(root.path(), "orders").await,
+        &Environment::default(),
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "This run would send to namespace (from the connection string), event hub (from the \
+         connection string), taken from the connection string saved in the data folder. Name it \
+         with --namespace and -e, or pass --yes."
+    );
+}
+
+#[rstest]
+#[case::named(
+    TargetArgs {
+        namespace: Some("orders.servicebus.windows.net".to_owned()),
+        event_hub: Some("recalled-hub".to_owned()),
+        ..TargetArgs::default()
+    },
+    false
+)]
+#[case::confirmed(TargetArgs::default(), true)]
+#[tokio::test]
+async fn a_profile_that_names_only_its_hub_sends_once_named_or_confirmed(
+    #[case] target: TargetArgs,
+    #[case] yes: bool,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let mut args = send_args(target);
+    args.yes = yes;
+
+    let sent = send_at(
+        args,
+        &recalled_connection_string_config(),
+        profile_home(root.path(), "orders").await,
+        &Environment::default(),
+    );
+
+    assert!(sent.is_ok(), "{sent:?}");
 }
 
 #[test]
