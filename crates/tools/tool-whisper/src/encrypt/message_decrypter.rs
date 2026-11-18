@@ -1,15 +1,15 @@
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use rsa::{Pkcs1v15Encrypt, RsaPrivateKey};
+use rsa::{Pkcs1v15Encrypt, PrivateKey};
 use tracing::debug;
 
 #[derive(Clone)]
 pub struct MessageDecrypter {
-    private_key: RsaPrivateKey,
+    private_key: PrivateKey,
 }
 
 impl MessageDecrypter {
-    pub fn new(private_key: RsaPrivateKey) -> Self {
+    pub fn new(private_key: PrivateKey) -> Self {
         Self { private_key }
     }
 
@@ -25,19 +25,16 @@ impl MessageDecrypter {
 mod tests {
     use super::*;
     use crate::encrypt::message_encrypter::MessageEncrypter;
-    use rand06_compat::Rand0_6CompatExt;
-    use rsa::RsaPublicKey;
+    use rsa::PublicKey;
     use std::sync::LazyLock;
 
-    static TEST_KEYPAIR: LazyLock<(RsaPrivateKey, RsaPublicKey)> = LazyLock::new(|| {
-        let rng = rand::rng();
-        let mut rng06 = rng.compat();
-        let private_key = RsaPrivateKey::new(&mut rng06, 2048).expect("key generation");
-        let public_key = RsaPublicKey::from(&private_key);
+    static TEST_KEYPAIR: LazyLock<(PrivateKey, PublicKey)> = LazyLock::new(|| {
+        let private_key = PrivateKey::new(&mut rand::rng(), 2048).expect("key generation");
+        let public_key = PublicKey::from(&private_key);
         (private_key, public_key)
     });
 
-    fn test_keypair() -> (RsaPrivateKey, RsaPublicKey) {
+    fn test_keypair() -> (PrivateKey, PublicKey) {
         TEST_KEYPAIR.clone()
     }
 

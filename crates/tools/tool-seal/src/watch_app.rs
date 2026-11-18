@@ -490,7 +490,7 @@ mod tests {
         } else {
             now + offset_from_now
         };
-        filetime::set_file_mtime(path, filetime::FileTime::from_system_time(target)).unwrap();
+        std::fs::set_times(path, std::fs::FileTimes::new().set_modified(target)).unwrap();
     }
 
     #[test]

@@ -27,7 +27,6 @@ warp = { workspace = true }
 zip = { workspace = true }
 
 [dev-dependencies]
-filetime = { workspace = true }
 http-body-util = { workspace = true }
 tempfile = { workspace = true }
 warp = { workspace = true, features = ["test"] }

@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.1
+- On Windows, `seal watch` could hang while stopping. It is now built with `notify` 8.2.2, which stops the watcher from re-arming reads on closed handles, the cause of a deadlock when Windows reused them.
+
 ## 1.0.0
 - Initial release: `keygen` (identity file with atomic overwrite guard, public key on
   stdout, or the full identity to stdout with a stderr notice), `encrypt` (repeatable

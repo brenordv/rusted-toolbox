@@ -145,7 +145,7 @@ Press Esc to stop editing, Enter to send
 ### System messages
 Local status lines appear in the message pane prefixed with `[system]`:
 - `message not sent: exceeds N bytes`: the typed message is longer than the encryption limit and was not transmitted.
-- `incoming message dropped: ...`: a frame arrived but could not be decrypted; the message is skipped and the session keeps running.
+- `incoming message dropped: ...`: a frame arrived but could not be decrypted; the message is skipped and the session keeps running. A corrupted frame can also show up as a line of garbled text instead, because decryption answers bad padding with synthetic bytes rather than an error.
 - `receiving stopped: ...`: a frame could not be read (for example, its header announced a size over the 64 KiB cap). The stream is desynchronized at that point, so the receive side shuts down and no further messages arrive; sending still works.
 - `peer disconnected`: the other side closed the connection.
 

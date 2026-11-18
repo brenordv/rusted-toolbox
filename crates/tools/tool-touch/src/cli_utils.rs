@@ -365,8 +365,8 @@ fn get_reference_times(
         std::fs::metadata(ref_file)?
     };
 
-    let atime = FileTime::from_last_access_time(&metadata);
-    let mtime = FileTime::from_last_modification_time(&metadata);
+    let atime = FileTime::from(metadata.accessed()?);
+    let mtime = FileTime::from(metadata.modified()?);
 
     Ok((atime, mtime))
 }

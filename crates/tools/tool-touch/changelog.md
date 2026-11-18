@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.1
+- On Windows, touch can now update a read-only file's timestamps. It used to fail with an access-denied error because the file was opened for writing first; the timestamps are now set with attribute-only access.
+- On Windows, a `-d` or `-t` date before 1601-01-01 (where Windows file time starts) now exits with an `out of range` error instead of crashing.
+
 ## 2.2.0
 - `-d` accepts the offset-aware T-separated ISO forms: `2024-01-15T10:30:45+0900`, with a
   `.`/`,` fraction, a `+09:00` colon offset, or a space before the offset. Only the
