@@ -38,7 +38,7 @@ use crate::services::apply_input;
 use crate::state::{AppState, Input};
 use crate::views::{view, window_key};
 use chrono::{DateTime, TimeDelta, Utc};
-use rune::accesskit::Action;
+use rune::accesskit::{Action, Role};
 use rune::clipboard::MemoryClipboard;
 use rune::{ElementInfo, Env, Key, KeyEvent, Mods, Runtime};
 use serde_json::Value;
@@ -198,6 +198,33 @@ pub fn a11y_node<'a>(tree: &'a Value, key: &str) -> Option<&'a Value> {
     a11y_nodes(tree)
         .into_iter()
         .find(|node| node["key"].as_str() == Some(key))
+}
+
+/// The text runs of the multi-line field whose value is `value`, top to bottom: each run's text
+/// and the byte length of each of its characters. They come from
+/// [`Runtime::accessibility_tree`], since [`Runtime::accessibility_json`] leaves runs out.
+///
+/// # Panics
+/// When no multi-line field holds `value`.
+pub fn text_runs(rt: &Runtime<AppState>, value: &str) -> Vec<(String, Vec<u8>)> {
+    let tree = rt.accessibility_tree();
+    let (_, field) = tree
+        .nodes
+        .iter()
+        .find(|(_, node)| node.role() == Role::MultilineTextInput && node.value() == Some(value))
+        .unwrap_or_else(|| panic!("no multi-line field holds {value:?}"));
+    field
+        .children()
+        .iter()
+        .filter_map(|id| tree.nodes.iter().find(|(node_id, _)| node_id == id))
+        .filter(|(_, node)| node.role() == Role::TextRun)
+        .map(|(_, run)| {
+            (
+                run.value().unwrap_or_default().to_owned(),
+                run.character_lengths().to_vec(),
+            )
+        })
+        .collect()
 }
 
 /// Whether `node` lists `word` under `field` (`states` or `actions`).

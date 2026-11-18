@@ -83,12 +83,17 @@ rfd = { version = "0.18.0" }
 rsa = { version = "0.10.0", features = ["pkcs1v15"] }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
 # Rune is pre-release and not on crates.io (the crates.io `rune` is an unrelated scripting
-# language), so it is a git dependency pinned to one reviewed dev rev. `tooling` and
-# `keys-overlay` stay off: they write element trees, message bodies included, to disk.
-rune = { git = "https://github.com/anomalyco/rune", rev = "c4eda05889c984fff91ccd906e3c00cdfc4cae24", default-features = false, features = [
+# language), so it is a git dependency pinned to one reviewed rev. The rev is on a fork
+# (brenordv/rune, branch `c4eda05-fixes`, tag `c4eda05-fixes-1`): anomalyco/rune's dev rev
+# c4eda05 plus two commits and nothing else. On Windows a dead key's character types (winit's
+# `KeyEvent::text`), and a multi-line field's blank line is one accessible text run holding its
+# line break (upstream gives the line before the last a run shorter than its character lengths,
+# and a UI Automation read of it aborts the app). `tooling` and `keys-overlay` stay off: they
+# write element trees, message bodies included, to disk.
+rune = { git = "https://github.com/brenordv/rune", rev = "2d53dba90f22d7e450a8e4363007aa36168629ae", default-features = false, features = [
     "accessibility", "dbus", "embedded-fonts", "metal-backend", "svg", "native-file-dialog",
 ] }
-rune-kit = { git = "https://github.com/anomalyco/rune", rev = "c4eda05889c984fff91ccd906e3c00cdfc4cae24" }
+rune-kit = { git = "https://github.com/brenordv/rune", rev = "2d53dba90f22d7e450a8e4363007aa36168629ae" }
 rusqlite = { version = "0.43.0", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -122,10 +127,12 @@ http-body-util = "0.1.5"
 rstest = "0.28.0"
 tempfile = "3.27.0"
 
-# Rune's vendored forks, copied from Rune's root Cargo.toml at the pinned rev: Cargo applies a
-# dependency's [patch] only inside that dependency's own workspace, so an app building Rune
-# repeats it. [patch] applies to this whole workspace, so seal-gui's eframe stack builds on these
-# forks too. Each fork is the crates.io crate plus Rune's committed vendor/<name>.patch:
+# Rune's vendored forks, copied from Rune's root Cargo.toml at anomalyco/rune's c4eda05: Cargo
+# applies a dependency's [patch] only inside that dependency's own workspace, so an app building
+# Rune repeats it. The Rune fork above changes no vendored crate, so these stay on anomalyco's
+# c4eda05; a fork commit that touches `vendor/` moves them to the fork's rev. [patch] applies
+# to this whole workspace, so seal-gui's eframe stack builds on these forks too. Each fork is the
+# crates.io crate plus Rune's committed vendor/<name>.patch:
 # - winit: Windows window creation without the TaskbarList call and at the requested position;
 #   a macOS IME reconversion API; Wayland touchpad scroll deltas scaled by 12, which every winit
 #   app here (seal-gui included) gets on Wayland.

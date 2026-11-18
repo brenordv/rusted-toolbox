@@ -20,15 +20,17 @@ ignore = [
 ]
 
 # Every crate comes from crates.io except Rune (eh-gui's UI framework), which is
-# not published there and is pinned to one reviewed git rev. Its repository also
-# serves the forks in the root Cargo.toml's [patch.crates-io]. Advisory data does
-# not cover git or patched crates, so each Rune bump repeats a manual review of
+# not published there. Rune's own crates come from a fork (brenordv/rune) pinned to
+# one reviewed rev: anomalyco/rune's c4eda05 plus two fixes. The forks in the root
+# Cargo.toml's [patch.crates-io] come from anomalyco/rune at c4eda05. Advisory data
+# does not cover git or patched crates, so each Rune bump repeats a manual review of
 # those forks instead; this check stops any other git source from arriving
-# unreviewed.
+# unreviewed, and every git source must name a commit (`rev`), not a branch or tag.
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/anomalyco/rune"]
+required-git-spec = "rev"
+allow-git = ["https://github.com/anomalyco/rune", "https://github.com/brenordv/rune"]
 
 # Every crate in the dependency tree must carry one of these licenses, or one
 # that its entry in `exceptions` allows. The list is the set the tree needed on

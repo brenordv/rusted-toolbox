@@ -108,8 +108,15 @@
 - Dev-only demo mode (`--features demo`, binary `eh-gui-demo`): a generated event hub and a
   temporary data folder, scenarios chosen with `EH_GUI_DEMO` (including `seeded-read`,
   `seeded-search`, and `seeded-export`), and Rune's agent flags in debug builds. Release builds leave it out.
-- Built on Rune, pinned at rev `c4eda05889c984fff91ccd906e3c00cdfc4cae24` (pre-release, not on
-  crates.io). Rune's `[patch.crates-io]` forks apply to the whole workspace:
+- Built on Rune (pre-release, not on crates.io), pinned to rev
+  `2d53dba90f22d7e450a8e4363007aa36168629ae` of a fork, `brenordv/rune` (branch `c4eda05-fixes`,
+  tag `c4eda05-fixes-1`): anomalyco/rune's rev `c4eda05889c984fff91ccd906e3c00cdfc4cae24` plus two
+  commits and nothing else. On Windows a dead key's character types, so quotes type on
+  US-International (`'` then Space, `'` twice); a blank line in a multi-line field is one
+  accessible text run holding its line break, so a UI Automation read of the Send body's blank
+  lines no longer aborts the app. The c4eda05 review below covers the rest of that tree, the
+  vendored tiny-skia-path included, which now comes from the fork unchanged. Rune's
+  `[patch.crates-io]` forks stay on anomalyco/rune at c4eda05 and apply to the whole workspace:
   - winit 0.30.13: Windows window creation without a taskbar COM call and at the requested
     position; a macOS IME reconversion API; Wayland touchpad scroll deltas scaled by 12.
   - wgpu-hal 30.0.1: DX12 adapter exposure, the shader compiler (FXC) loaded on first compile,
