@@ -170,6 +170,27 @@ fn send_without_a_target_fails_before_touching_anything() {
     assert!(files_under(root.path()).is_empty());
 }
 
+/// A send to a namespace that does not exist ends in a connection error (exit 1). The TLS
+/// connector is built before the connect, so a missing rustls default would show here as a
+/// panic (exit 101) in a build that enables more than one rustls provider. Its only network use
+/// is a DNS lookup that finds no such host.
+#[test]
+fn a_send_to_a_namespace_that_does_not_exist_fails_to_connect_without_a_panic() {
+    let root = tempfile::tempdir().unwrap();
+    let unreachable = "Endpoint=sb://eh-tests-no-such-namespace.servicebus.windows.net/;\
+                       SharedAccessKeyName=x;SharedAccessKey=eA==;EntityPath=orders";
+
+    let output = eh(
+        root.path(),
+        &["send", "--no-config", "-s", unreachable, "--body", "x"],
+    );
+
+    let stderr = stderr_of(&output);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(!stderr.contains("CryptoProvider"), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
 #[test]
 fn a_missing_body_file_fails_before_the_target_or_config_is_touched() {
     let root = tempfile::tempdir().unwrap();

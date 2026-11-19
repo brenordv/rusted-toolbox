@@ -41,6 +41,10 @@
 - `TextFilter::keywords` builds a keyword filter with each item trimmed and empty items
   dropped (`None` when no keyword is left), since an empty keyword matches every body. A saved
   keyword filter loads through the same rule, and one with no keyword left fails to load.
+- `tls::install_crypto_provider` sets rustls's aws-lc-rs provider as the process default (and
+  says whether it was the call that set it). A binary built alongside crates that enable
+  rustls's `ring` provider has no default otherwise, and the Event Hubs connection's
+  `ClientConfig::builder()` panics. Adds the `rustls` 0.23.46 dependency.
 - Azure SDK pins: `azure_messaging_eventhubs` 0.16.0 on `azure_core`
   1.2.0-beta.2 (one `azure_core` shared with `shared-azure`'s
   `azure_identity` 1.1.0-beta.2 and `azure_security_keyvault_secrets`

@@ -17,18 +17,25 @@ ignore = [
     # builds only x25519 recipients and identities, so the affected
     # arithmetic never runs.
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via age 0.12.1's p256 tag recipients: no safe upgrade; seal uses only x25519" },
+    # An "unmaintained" notice with no vulnerability, CVE, or fixed release
+    # (issued 2026-11-17, every version affected). chrono is a direct
+    # dependency of many members, so leaving it means a move to jiff or time
+    # across the workspace, planned as its own work.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (informational, no vulnerability); no safe upgrade; replacing it is a separate migration" },
 ]
 
 # Every crate comes from crates.io except Rune (eh-gui's UI framework), which is
-# not published there and is pinned to one reviewed git rev. Its repository also
-# serves the forks in the root Cargo.toml's [patch.crates-io]. Advisory data does
-# not cover git or patched crates, so each Rune bump repeats a manual review of
+# not published there. Rune's own crates come from a fork (brenordv/rune) pinned to
+# one reviewed rev: anomalyco/rune's c4eda05 plus two fixes. The forks in the root
+# Cargo.toml's [patch.crates-io] come from anomalyco/rune at c4eda05. Advisory data
+# does not cover git or patched crates, so each Rune bump repeats a manual review of
 # those forks instead; this check stops any other git source from arriving
-# unreviewed.
+# unreviewed, and every git source must name a commit (`rev`), not a branch or tag.
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/anomalyco/rune"]
+required-git-spec = "rev"
+allow-git = ["https://github.com/anomalyco/rune", "https://github.com/brenordv/rune"]
 
 # Every crate in the dependency tree must carry one of these licenses, or one
 # that its entry in `exceptions` allows. The list is the set the tree needed on

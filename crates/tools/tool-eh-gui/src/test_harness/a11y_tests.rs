@@ -2,12 +2,12 @@ use super::sweep_tests::{
     export_not_searched, orders_form, read_disconnected, read_selected, send_idle,
     send_sending_run, sheet, sheet_send_target,
 };
-use super::{Harness, a11y_node, has_key, lists};
+use super::{Harness, a11y_node, has_key, lists, text_runs};
 use crate::design::tokens::WINDOW_SIZE;
 use crate::form::AuthChoice;
 use crate::send::SendInput;
 use crate::state::{Input, SheetPurpose};
-use crate::views::SEND_BUTTON_KEY;
+use crate::views::{BODY_KEY, SEND_BUTTON_KEY};
 
 const MARKER: &str = "marker-55219";
 
@@ -54,6 +54,26 @@ fn an_assistive_click_does_what_a_press_does(
 
     assert_eq!(effect(&pressed), expected);
     assert_eq!(effect(&activated), expected);
+}
+
+#[rstest::rstest]
+#[case::only_a_newline("\n")]
+#[case::blank_line_before_the_last("{\n\n")]
+#[case::blank_line_between_two("{\n\n}")]
+fn a_blank_line_in_the_body_keeps_its_accessible_text_whole(#[case] body: &str) {
+    let mut h = send_idle(WINDOW_SIZE);
+    h.type_into(BODY_KEY, body);
+
+    let runs = text_runs(&h.rt, body);
+
+    let joined: String = runs.iter().map(|(text, _)| text.as_str()).collect();
+    let bytes = |lengths: &[u8]| lengths.iter().map(|&n| usize::from(n)).sum::<usize>();
+    assert_eq!(joined, body);
+    assert!(
+        runs.iter()
+            .all(|(text, lengths)| text.len() == bytes(lengths)),
+        "a run's text is not as long as its characters: {runs:?}"
+    );
 }
 
 #[test]
