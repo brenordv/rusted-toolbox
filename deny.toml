@@ -17,6 +17,11 @@ ignore = [
     # builds only x25519 recipients and identities, so the affected
     # arithmetic never runs.
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via age 0.12.1's p256 tag recipients: no safe upgrade; seal uses only x25519" },
+    # An "unmaintained" notice with no vulnerability, CVE, or fixed release
+    # (issued 2026-11-17, every version affected). chrono is a direct
+    # dependency of many members, so leaving it means a move to jiff or time
+    # across the workspace, planned as its own work.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (informational, no vulnerability); no safe upgrade; replacing it is a separate migration" },
 ]
 
 # Every crate comes from crates.io except Rune (eh-gui's UI framework), which is
