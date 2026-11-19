@@ -2,6 +2,7 @@ use super::*;
 use shared_eventhub_core::engine::{PartitionEnd, RunSummary};
 use shared_eventhub_core::stats::StatsSnapshot;
 use shared_eventhub_persistence::export::DiskWriteConfig;
+use shared_eventhub_persistence::paths::DataPaths;
 use std::collections::BTreeMap;
 
 fn summary(end: RunEnd, partitions: &[(&str, PartitionEnd)]) -> LoopEnd {

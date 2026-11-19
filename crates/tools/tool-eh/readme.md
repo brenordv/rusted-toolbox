@@ -11,6 +11,8 @@ sends test events.
   never connects to Azure.
 - `eh send` publishes one body to an event hub a given number of times, as fast as batches
   go or one event every N milliseconds.
+- `eh profile list` shows the connections saved as profiles; `--profile NAME` runs any of the
+  three against one of them (see "Profiles").
 
 `eh` replaces `eh-read` and `eh-export` 1.1.0 (see "Coming from eh-read and eh-export").
 
@@ -192,6 +194,59 @@ ignores the file.
 - A `config.json` without `"tool": "eh"` belongs to another tool: `eh` ignores it (with a
   notice) and never overwrites it.
 
+## Profiles
+
+A profile is a saved connection you can use from any folder. Each one is a folder in the
+workspace that looks like a working folder: a `config.json` and, beside it, its data folder.
+
+```
+<workspace>/
+  orders-dev/
+    config.json
+    .eh-data/        archive.redb, secrets.redb
+  billing-prod/
+    config.json
+    .eh-data/
+```
+
+The workspace is `.eh/profiles` in your home folder. Set `EH_WORKSPACE` to an absolute folder
+path to keep it elsewhere (archives grow with what you capture). It must be a folder only you
+can write to: not a repository, a synced or shared folder, or a network share.
+
+```bash
+# Save a profile: --save-config with --profile writes to the profile, creating it
+eh read --profile orders-dev --save-config -e orders
+# (connection string in EH_CONNECTION_STRING; -s works too, but lands in shell history)
+
+# Use it from anywhere
+eh read --profile orders-dev
+eh export --profile orders-dev -f csv
+eh send --profile orders-dev --body ping
+
+eh profile list
+```
+
+- `--profile NAME` reads the profile's `config.json` instead of the current folder's, and its
+  data folder (a relative one, like the default `.eh-data`, sits inside the profile folder).
+  Flags still win over what it recalls. Without `--profile`, nothing changes.
+- A run with `--profile` and no `--save-config` needs the profile to exist; `eh profile list`
+  shows the saved ones.
+- Saving a profile with a connection string you give on that run (`-s` or
+  `EH_CONNECTION_STRING`) records the namespace and event hub that string names, so the
+  profile names its destination. A string with no `EntityPath` needs `-e`, or the save fails
+  before anything is written.
+- `eh profile list` shows each profile's name, target, and auth method; a profile whose
+  `config.json` can't be loaded is listed with the reason.
+- Names: letters, digits, `-`, `_`, and `.`, starting with a letter or digit, not ending with
+  `.`, at most 64 characters, and not a Windows device name (`con`, `nul`, `com1`, ...). Names
+  match ignoring case, so `Orders` and `orders` are one profile.
+- `-b`, `--no-config`, and `send --dry-run` can't be combined with `--profile`: a profile's
+  data folder is the one its `config.json` names.
+- To make a profile from a folder you set up yourself, close `eh` and `eh-gui`, then move or
+  copy that folder into the workspace under the profile's name. Its `.eh-data` comes along.
+- Secrets work as in any data folder: `secrets.redb` in the profile's data folder, not
+  encrypted. Prefer Entra ID auth, which stores no secret.
+
 ## Exporting
 
 ```bash
@@ -263,7 +318,10 @@ a folder with a `config.json`, `send` refuses to run until the destination comes
 `--yes` confirms it: a connection string you give (`-s` or `EH_CONNECTION_STRING`), a vault you
 name (`--keyvault-url`), or `--namespace` and `-e` together. A saved connection string or Key
 Vault secret must then match both, so a string without an `EntityPath` can't keep its own
-namespace under an `-e` you typed.
+namespace under an `-e` you typed. A profile whose `config.json` names the namespace and the
+event hub counts as named: it lives in your own workspace, and a stored string must match both
+names. An auth flag (`--auth`, `-s`, `--keyvault-url`) replaces those names, so with one the
+usual rule applies again.
 
 **Rights, least privilege first.** Give an Entra ID identity the Azure Event Hubs Data Sender
 role at event hub scope, or use a SAS rule with only the Send right on the event hub. Never use

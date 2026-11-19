@@ -6,6 +6,8 @@ use mock_data_utils::template::Template;
 use shared_eventhub_core::filters::CaptureFilters;
 use shared_eventhub_core::producer::{OutgoingEvent, SendPlan};
 use shared_eventhub_persistence::config::{ExportSettings, SensitiveValues, ToolConfig};
+use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::workspace::{ConfigHome, Workspace};
 use std::env::VarError;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -72,6 +74,20 @@ pub enum EhCommand {
     Send(Box<SendJob>),
     /// `send --dry-run`: render the template, send nothing.
     DryRun(Box<DryRunJob>),
+    /// `profile list`: the saved profiles in this workspace.
+    ProfileList(Workspace),
+}
+
+impl EhCommand {
+    /// Where the run's `config.json` lives; `None` for a run that reads none.
+    pub fn home(&self) -> Option<&ConfigHome> {
+        match self {
+            Self::Read(job) => Some(&job.home),
+            Self::Export(job) => Some(&job.home),
+            Self::Send(job) => Some(&job.home),
+            Self::DryRun(_) | Self::ProfileList(_) => None,
+        }
+    }
 }
 
 /// Where the body of `eh send` came from.
@@ -94,7 +110,10 @@ pub struct SendJob {
     pub config: ToolConfig,
     pub secrets: SensitiveValues,
     pub save_config: bool,
-    pub working_dir: PathBuf,
+    /// Where `config.json` is read and saved.
+    pub home: ConfigHome,
+    /// The data folder, resolved from `home`.
+    pub paths: DataPaths,
     pub config_source: ConfigSource,
     pub plan: SendPlan,
     /// The body as given (the template's source under `--template`) and the
@@ -127,14 +146,19 @@ pub struct ReadJob {
     pub save_config: bool,
     pub verbose: bool,
     /// Where `config.json` is read and saved.
-    pub working_dir: PathBuf,
+    pub home: ConfigHome,
+    /// The data folder, resolved from `home`.
+    pub paths: DataPaths,
     pub config_source: ConfigSource,
 }
 
 /// An export run over a data folder's archive.
 #[derive(Clone, Debug)]
 pub struct ExportJob {
-    pub base_data_folder: PathBuf,
+    /// Where `config.json` was read.
+    pub home: ConfigHome,
+    /// The data folder, resolved from `home`.
+    pub paths: DataPaths,
     pub export: ExportSettings,
     pub filters: CaptureFilters,
     pub config_source: ConfigSource,

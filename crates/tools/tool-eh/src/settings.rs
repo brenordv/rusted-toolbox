@@ -4,7 +4,7 @@
 
 use crate::cli_utils::{AuthArg, ExportArgs, ReadArgs, TargetArgs, TextFilterArgs, TimeFilterArgs};
 use crate::models::{BodySource, ConfigSource, Environment, ExportJob, ReadJob, SendJob};
-use crate::progress::target_label;
+use crate::progress::{display, target_label};
 use crate::send_cli::{ArgText, SendArgs};
 use anyhow::{Context, Result, bail};
 use common_utils::string_utils::non_blank;
@@ -18,8 +18,8 @@ use shared_eventhub_persistence::config::{
     AuthMethodConfig, CaptureConfig, CredentialKindConfig, DiskWriteSettings, ExportSettings,
     SensitiveValues, StorageConfig, StoredSecret, TargetConfig, ToolConfig,
 };
+use shared_eventhub_persistence::workspace::ConfigHome;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,7 +42,7 @@ pub(crate) fn read_job(
     recalled: Option<&ToolConfig>,
     environment: &Environment,
     verbose: bool,
-    working_dir: PathBuf,
+    home: ConfigHome,
     config_source: ConfigSource,
 ) -> Result<ReadJob> {
     let target = merge_target(
@@ -55,13 +55,15 @@ pub(crate) fn read_job(
     config.capture = merge_capture(&args, recalled.map(|recalled| &recalled.capture))?;
     config.storage = merge_read_storage(&args, recalled.map(|recalled| &recalled.storage));
     let secrets = given_secrets(&config, &args.target, environment);
+    let paths = home.data_paths(&config.storage.base_data_folder);
 
     Ok(ReadJob {
         config,
         secrets,
         save_config: args.target.save_config,
         verbose,
-        working_dir,
+        home,
+        paths,
         config_source,
     })
 }
@@ -74,6 +76,7 @@ pub(crate) fn read_job(
 pub(crate) fn export_job(
     args: ExportArgs,
     recalled: Option<&ToolConfig>,
+    home: ConfigHome,
     config_source: ConfigSource,
 ) -> Result<ExportJob> {
     let storage = recalled
@@ -89,12 +92,14 @@ pub(crate) fn export_job(
         skip_already_exported: !args.ignore_export_log && defaults.skip_already_exported,
     };
 
+    let base_data_folder = args
+        .data
+        .base_data_folder
+        .unwrap_or(storage.base_data_folder);
+
     Ok(ExportJob {
-        base_data_folder: PathBuf::from(
-            args.data
-                .base_data_folder
-                .unwrap_or(storage.base_data_folder),
-        ),
+        paths: home.data_paths(&base_data_folder),
+        home,
         export,
         filters: CaptureFilters {
             time: time_filter(&args.time),
@@ -108,7 +113,8 @@ pub(crate) fn export_job(
 /// consumer group is kept, so saving does not lose it); every other setting
 /// is the recalled config's except the data folder. A target recalled from
 /// `config.json` must be named on the command line or confirmed with
-/// `--yes`.
+/// `--yes`, unless it comes from a profile that names its namespace and
+/// event hub.
 ///
 /// # Errors
 /// Fails when a `--property` is malformed or repeats a key (checked before
@@ -120,12 +126,12 @@ pub(crate) fn send_job(
     template: Option<Arc<Template>>,
     recalled: Option<&ToolConfig>,
     environment: &Environment,
-    working_dir: PathBuf,
+    home: ConfigHome,
     config_source: ConfigSource,
 ) -> Result<SendJob> {
     let properties = send_properties(&args.properties)?;
     let target = merge_target(&args.target, None, recalled, environment)?;
-    check_recalled_destination(&args, &target, recalled, environment)?;
+    check_recalled_destination(&args, &target, recalled, environment, &home)?;
     let mut config = match recalled {
         Some(recalled) => ToolConfig {
             target,
@@ -145,12 +151,14 @@ pub(crate) fn send_job(
         None => Pacing::batched(),
     };
     let secrets = given_secrets(&config, &args.target, environment);
+    let paths = home.data_paths(&config.storage.base_data_folder);
 
     Ok(SendJob {
         config,
         secrets,
         save_config: args.target.save_config,
-        working_dir,
+        home,
+        paths,
         config_source,
         plan: SendPlan::new(args.count, routing, pacing)?,
         event: OutgoingEvent {
@@ -185,14 +193,29 @@ fn send_properties(values: &[ArgText]) -> Result<BTreeMap<String, String>> {
 /// would otherwise keep its own namespace under any `-e`), when
 /// connection-string auth uses a string given by `-s` or
 /// `EH_CONNECTION_STRING` rather than one stored in the data folder, or when
-/// Key Vault auth names its vault with `--keyvault-url`.
+/// Key Vault auth names its vault with `--keyvault-url`. A profile's
+/// `config.json` that names both the namespace and the event hub counts as
+/// named while the merged `target` still carries both names: the profile
+/// lives in the user's own workspace, and those names pin any stored
+/// connection string. An auth flag replaces the recalled names, so with one
+/// the profile earns no trust.
 fn check_recalled_destination(
     args: &SendArgs,
     target: &TargetConfig,
     recalled: Option<&ToolConfig>,
     environment: &Environment,
+    home: &ConfigHome,
 ) -> Result<()> {
-    if recalled.is_none() || args.yes {
+    let Some(recalled) = recalled else {
+        return Ok(());
+    };
+    let profile = home.profile_name();
+    let profile_pins_destination = profile.is_some()
+        && recalled.target.namespace.is_some()
+        && recalled.target.event_hub.is_some()
+        && target.namespace.is_some()
+        && target.event_hub.is_some();
+    if args.yes || profile_pins_destination {
         return Ok(());
     }
     let flags = &args.target;
@@ -206,10 +229,10 @@ fn check_recalled_destination(
     if given || (flags.namespace.is_some() && flags.event_hub.is_some()) {
         return Ok(());
     }
-    let source = if flags.has_auth_flags() {
-        "the connection string saved in the data folder"
-    } else {
-        "this folder's config.json"
+    let source = match (flags.has_auth_flags(), profile) {
+        (true, _) => "the connection string saved in the data folder".to_owned(),
+        (false, Some(name)) => format!("profile {}", display(name)),
+        (false, None) => "this folder's config.json".to_owned(),
     };
     bail!(
         "This run would send to {}, taken from {source}. Name it with --namespace and -e, or \

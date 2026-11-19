@@ -325,12 +325,35 @@ pub enum ConfigLoad {
     Loaded(Box<ToolConfig>),
 }
 
-/// Reads `config.json` from `dir`.
+/// Reads `config.json` from `dir`, logging what it found.
 ///
 /// # Errors
 /// Fails when the file cannot be read, or when it is marked as this tool's
 /// but does not match the config schema.
 pub async fn load_config(dir: &Path) -> anyhow::Result<ConfigLoad> {
+    let loaded = read_config(dir).await?;
+    let path = dir.join(CONFIG_FILE_NAME);
+    match &loaded {
+        ConfigLoad::Missing => {}
+        ConfigLoad::Foreign => {
+            info!(path = %path.display(), "Ignoring a config.json that is not an eh config");
+        }
+        ConfigLoad::Loaded(config) => info!(
+            path = %path.display(),
+            namespace = config.target.namespace.as_deref().unwrap_or(""),
+            event_hub = config.target.event_hub.as_deref().unwrap_or(""),
+            auth = auth_method_name(&config.target.auth),
+            "Loaded config.json"
+        ),
+    }
+    Ok(loaded)
+}
+
+/// Reads `config.json` from `dir`; logs nothing.
+///
+/// # Errors
+/// As [`load_config`].
+pub(crate) async fn read_config(dir: &Path) -> anyhow::Result<ConfigLoad> {
     let path = dir.join(CONFIG_FILE_NAME);
     let bytes = match tokio::fs::read(&path).await {
         Ok(bytes) => bytes,
@@ -346,7 +369,6 @@ pub async fn load_config(dir: &Path) -> anyhow::Result<ConfigLoad> {
     let text = String::from_utf8_lossy(&bytes);
     let text = text.trim_start_matches('\u{FEFF}');
     if !is_ours(text) {
-        info!(path = %path.display(), "Ignoring a config.json that is not an eh config");
         return Ok(ConfigLoad::Foreign);
     }
 
@@ -364,13 +386,6 @@ pub async fn load_config(dir: &Path) -> anyhow::Result<ConfigLoad> {
             config.schema_version
         );
     }
-    info!(
-        path = %path.display(),
-        namespace = config.target.namespace.as_deref().unwrap_or(""),
-        event_hub = config.target.event_hub.as_deref().unwrap_or(""),
-        auth = auth_method_name(&config.target.auth),
-        "Loaded config.json"
-    );
     Ok(ConfigLoad::Loaded(Box::new(config)))
 }
 

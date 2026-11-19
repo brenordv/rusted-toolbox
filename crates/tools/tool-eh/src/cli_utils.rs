@@ -1,4 +1,6 @@
+use crate::home::{LoadedHome, Saving, load_home};
 use crate::models::{ConfigSource, DryRunJob, EhCommand, Environment, ExportJob, ReadJob};
+use crate::profile_app::{ProfileArgs, ProfileCommand, profile_header};
 use crate::progress::{
     describe_auth, describe_text_filter, describe_time_filter, display, target_label,
 };
@@ -16,12 +18,12 @@ use common_utils::string_utils::{SecretString, escape_for_terminal_display};
 use shared_eventhub_core::filters::{
     TextFilter, TimeWindow, parse_time, parse_time_with_granularity, parse_window,
 };
-use shared_eventhub_persistence::config::{ConfigLoad, ToolConfig, load_config};
+use shared_eventhub_persistence::config::ToolConfig;
 use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat};
-use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::workspace::{ConfigHome, Workspace};
 use std::fmt::Display;
-use std::path::PathBuf;
 use std::sync::Arc;
+use tracing::info;
 
 /// Azure Event Hubs CLI: captures events into a local archive, exports them,
 /// and sends test events.
@@ -70,6 +72,15 @@ enum Commands {
         A target recalled from config.json must be named again with --namespace and -e, or \
         confirmed with --yes.", after_long_help = template_help())]
     Send(Box<SendArgs>),
+
+    /// Saved connection profiles in the workspace
+    #[command(after_help = "Examples:\n  \
+        eh profile list\n  \
+        eh read --profile orders-dev --save-config -e orders   (saves it; string in EH_CONNECTION_STRING)\n  \
+        eh read --profile orders-dev\n\n\
+        The workspace is EH_WORKSPACE (an absolute folder path), or .eh/profiles in your home \
+        folder.")]
+    Profile(ProfileArgs),
 }
 
 /// Where the event hub is and how to authenticate to it.
@@ -152,7 +163,7 @@ impl AuthArg {
     }
 }
 
-/// The data folder and whether to read `config.json`.
+/// The data folder and which `config.json` to read.
 #[derive(Args, Debug, Default)]
 pub(crate) struct DataArgs {
     /// Data folder holding the archive and the secrets file [default: .eh-data]
@@ -162,6 +173,18 @@ pub(crate) struct DataArgs {
     /// Ignore config.json in the current folder
     #[arg(long = "no-config")]
     pub no_config: bool,
+
+    /// Use the saved profile NAME (its config.json and data folder) instead
+    /// of this folder's config.json; with --save-config, save to it,
+    /// creating it if needed
+    // A plain String: the name rules are checked after clap, because a clap
+    // value-parser error prints the raw value unescaped.
+    #[arg(
+        long = "profile",
+        value_name = "NAME",
+        conflicts_with_all = ["base_data_folder", "no_config"]
+    )]
+    pub profile: Option<String>,
 }
 
 /// Body text conditions.
@@ -341,15 +364,16 @@ impl From<FormatArg> for ExportFormat {
     }
 }
 
-/// Parses the command line, loads `config.json`, merges and validates the
-/// settings, and boots logging (printing the header from the merged
-/// settings when `--app-header` is set). The config notice prints to stderr
-/// whether or not the merge succeeds.
+/// Parses the command line, loads `config.json` (from the current folder or
+/// a profile), merges and validates the settings, and boots logging
+/// (printing the header from the merged settings when `--app-header` is
+/// set). The config notice prints to stderr whether or not the merge
+/// succeeds.
 ///
 /// # Errors
-/// Fails when an environment variable is not Unicode, when `config.json`
-/// cannot be read or is an invalid eh config, or when the merged settings
-/// are invalid.
+/// Fails when an environment variable is not Unicode, when the profile
+/// cannot be found, when `config.json` cannot be read or is an invalid eh
+/// config, or when the merged settings are invalid.
 pub async fn initialize() -> Result<EhCommand> {
     let args = CliArgs::parse();
     let (notice, resolved) = resolve(args.command, args.common.verbose).await;
@@ -363,6 +387,11 @@ pub async fn initialize() -> Result<EhCommand> {
                 false,
                 Some(|| print_header(&command)),
             );
+            if let Some(home) = command.home()
+                && let Some(name) = home.profile_name()
+            {
+                info!(profile = %name, dir = %home.dir().display(), "Using profile");
+            }
             print_notice(notice.as_deref());
             Ok(command)
         }
@@ -387,43 +416,68 @@ async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<Eh
         Ok(environment) => environment,
         Err(error) => return (None, Err(error)),
     };
-    let working_dir = get_current_dir();
-    // A dry run resolves no target, so it never reads config.json.
-    let no_config = match &command {
-        Commands::Read(args) => args.data.no_config,
-        Commands::Export(args) => args.data.no_config,
-        Commands::Send(args) => args.data.no_config || args.dry_run,
-    };
-    let (recalled, source) = if no_config {
-        (None, ConfigSource::Disabled)
-    } else {
-        match load_config(&working_dir).await {
-            Ok(ConfigLoad::Missing) => (None, ConfigSource::Missing),
-            Ok(ConfigLoad::Foreign) => (None, ConfigSource::Foreign),
-            Ok(ConfigLoad::Loaded(config)) => (Some(*config), ConfigSource::Loaded),
-            Err(error) => return (None, Err(error)),
+    match command {
+        Commands::Read(args) => {
+            let loaded = home_for(
+                &args.data,
+                saving(args.target.save_config),
+                !args.data.no_config,
+            )
+            .await;
+            with_home(loaded, |home, recalled, source| {
+                read_job(*args, recalled, &environment, verbose, home, source)
+                    .map(|job| EhCommand::Read(Box::new(job)))
+            })
         }
-    };
-
-    let notice = config_notice(source, recalled.as_ref());
-    let command = match command {
-        Commands::Read(args) => read_job(
-            *args,
-            recalled.as_ref(),
-            &environment,
-            verbose,
-            working_dir,
-            source,
-        )
-        .map(|job| EhCommand::Read(Box::new(job))),
         Commands::Export(args) => {
-            export_job(*args, recalled.as_ref(), source).map(|job| EhCommand::Export(Box::new(job)))
+            let loaded = home_for(&args.data, Saving::NotOffered, !args.data.no_config).await;
+            with_home(loaded, |home, recalled, source| {
+                export_job(*args, recalled, home, source)
+                    .map(|job| EhCommand::Export(Box::new(job)))
+            })
         }
         Commands::Send(args) => {
-            send_command(*args, recalled.as_ref(), &environment, working_dir, source)
+            // A dry run resolves no target, so it never reads config.json.
+            let read_config = !(args.data.no_config || args.dry_run);
+            let loaded = home_for(&args.data, saving(args.target.save_config), read_config).await;
+            with_home(loaded, |home, recalled, source| {
+                send_command(*args, recalled, &environment, home, source)
+            })
         }
-    };
-    (notice, command)
+        Commands::Profile(args) => match args.command {
+            ProfileCommand::List => (None, Workspace::locate().map(EhCommand::ProfileList)),
+        },
+    }
+}
+
+fn saving(save_config: bool) -> Saving {
+    if save_config { Saving::Yes } else { Saving::No }
+}
+
+/// The run's config home in the process's current folder or workspace.
+async fn home_for(data: &DataArgs, saving: Saving, read_config: bool) -> Result<LoadedHome> {
+    load_home(
+        data,
+        saving,
+        read_config,
+        get_current_dir(),
+        Workspace::locate,
+    )
+    .await
+}
+
+/// The config notice and the command `build` makes from a loaded home.
+fn with_home(
+    loaded: Result<LoadedHome>,
+    build: impl FnOnce(ConfigHome, Option<&ToolConfig>, ConfigSource) -> Result<EhCommand>,
+) -> (Option<String>, Result<EhCommand>) {
+    match loaded {
+        Ok((home, recalled, source)) => (
+            config_notice(source, recalled.as_ref(), &home),
+            build(home, recalled.as_ref(), source),
+        ),
+        Err(error) => (None, Err(error)),
+    }
 }
 
 /// Loads the body, compiles it under `--template`, and builds the send or
@@ -433,7 +487,7 @@ fn send_command(
     args: SendArgs,
     recalled: Option<&ToolConfig>,
     environment: &Environment,
-    working_dir: PathBuf,
+    home: ConfigHome,
     source: ConfigSource,
 ) -> Result<EhCommand> {
     let body = load_body(&args)?;
@@ -450,16 +504,8 @@ fn send_command(
             body_source: body.1,
         }))),
         (true, None) => anyhow::bail!("--dry-run needs --template"),
-        (false, template) => send_job(
-            args,
-            body,
-            template,
-            recalled,
-            environment,
-            working_dir,
-            source,
-        )
-        .map(|job| EhCommand::Send(Box::new(job))),
+        (false, template) => send_job(args, body, template, recalled, environment, home, source)
+            .map(|job| EhCommand::Send(Box::new(job))),
     }
 }
 
@@ -471,23 +517,52 @@ fn print_notice(notice: Option<&str>) {
 
 /// The stderr line saying what `config.json` contributed. A recalled config
 /// is shown in full (target and folders) because a cloned repository can
-/// ship one.
-pub(crate) fn config_notice(source: ConfigSource, recalled: Option<&ToolConfig>) -> Option<String> {
-    match (source, recalled) {
+/// ship one. A profile's line names the profile and its data folder as
+/// resolved inside the profile folder.
+pub(crate) fn config_notice(
+    source: ConfigSource,
+    recalled: Option<&ToolConfig>,
+    home: &ConfigHome,
+) -> Option<String> {
+    let config = match (source, recalled) {
         (ConfigSource::Foreign, _) => {
-            Some("config.json here is not an eh config; ignored".to_owned())
+            return Some("config.json here is not an eh config; ignored".to_owned());
         }
-        (ConfigSource::Loaded, Some(config)) => Some(format!(
-            "Using config.json: {}, auth {}, consumer group {}, data folder {}, dump folder {} \
-             (flags override these)",
-            target_label(&config.target),
-            describe_auth(&config.target.auth),
-            display(&config.target.consumer_group),
-            display(&config.storage.base_data_folder),
-            display(&config.storage.disk_write.received_msg_path),
-        )),
-        (ConfigSource::Loaded, None) | (ConfigSource::Disabled | ConfigSource::Missing, _) => None,
-    }
+        (ConfigSource::Loaded, Some(config)) => config,
+        (ConfigSource::Loaded, None) | (ConfigSource::Disabled | ConfigSource::Missing, _) => {
+            return None;
+        }
+    };
+    let storage = &config.storage;
+    let settings = format!(
+        "{}, auth {}, consumer group {}",
+        target_label(&config.target),
+        describe_auth(&config.target.auth),
+        display(&config.target.consumer_group),
+    );
+    Some(match home.profile_name() {
+        None => format!(
+            "Using config.json: {settings}, data folder {}, dump folder {} (flags override \
+             these)",
+            display(&storage.base_data_folder),
+            display(&storage.disk_write.received_msg_path),
+        ),
+        Some(name) => {
+            let paths = home.data_paths(&storage.base_data_folder);
+            format!(
+                "Using profile {}: {settings}, data folder '{}', dump folder '{}' (flags \
+                 override these)",
+                display(name),
+                display(paths.base().display().to_string()),
+                display(
+                    paths
+                        .inbound_dir(&storage.disk_write.received_msg_path)
+                        .display()
+                        .to_string()
+                ),
+            )
+        }
+    })
 }
 
 /// Prints the tool's runtime configuration under `--app-header`. Secrets
@@ -498,6 +573,7 @@ fn print_header(command: &EhCommand) {
         EhCommand::Export(job) => export_header(job),
         EhCommand::Send(job) => send_header(job),
         EhCommand::DryRun(job) => dry_run_header(job),
+        EhCommand::ProfileList(workspace) => profile_header(workspace),
     };
     for line in lines {
         println!("{line}");
@@ -508,6 +584,14 @@ pub(crate) fn item(label: &str, value: impl Display) -> String {
     format_config_item(label, escape_for_terminal_display(&value.to_string()))
 }
 
+/// The header's "Command" line, followed by a "Profile" line when the run
+/// uses one.
+pub(crate) fn command_lines(command: &str, home: &ConfigHome) -> Vec<String> {
+    let mut lines = vec![item("Command", command)];
+    lines.extend(home.profile_name().map(|name| item("Profile", name)));
+    lines
+}
+
 pub(crate) fn read_header(job: &ReadJob) -> Vec<String> {
     let config = &job.config;
     let capture = &config.capture;
@@ -516,8 +600,8 @@ pub(crate) fn read_header(job: &ReadJob) -> Vec<String> {
         Some(partitions) => partitions.join(", "),
         None => "all".to_owned(),
     };
-    vec![
-        item("Command", "read"),
+    let mut lines = command_lines("read", &job.home);
+    lines.extend([
         format_config_item("Target", target_label(&config.target)),
         format_config_item("Auth", describe_auth(&config.target.auth)),
         item("Consumer group", &config.target.consumer_group),
@@ -535,30 +619,29 @@ pub(crate) fn read_header(job: &ReadJob) -> Vec<String> {
             "Text filter",
             describe_text_filter(capture.filters.text.as_ref()),
         ),
-        item("Data folder", &config.storage.base_data_folder),
+        item("Data folder", job.paths.base().display()),
         item("Disk mode", disk_mode_name(disk_write.mode)),
         item(
             "Dump folder",
-            DataPaths::new(&config.storage.base_data_folder)
+            job.paths
                 .inbound_dir(&disk_write.received_msg_path)
                 .display(),
         ),
         item("Dump content only", disk_write.content_only),
         item("Save config", job.save_config),
         item("config.json", config_source_name(job.config_source)),
-    ]
+    ]);
+    lines
 }
 
 pub(crate) fn export_header(job: &ExportJob) -> Vec<String> {
     let export = &job.export;
-    vec![
-        item("Command", "export"),
-        item("Data folder", job.base_data_folder.display()),
+    let mut lines = command_lines("export", &job.home);
+    lines.extend([
+        item("Data folder", job.paths.base().display()),
         item(
             "Export folder",
-            DataPaths::new(&job.base_data_folder)
-                .export_dir(&export.export_folder)
-                .display(),
+            job.paths.export_dir(&export.export_folder).display(),
         ),
         item("Format", format_name(export.format)),
         item("Include metadata", export.include_metadata),
@@ -574,7 +657,8 @@ pub(crate) fn export_header(job: &ExportJob) -> Vec<String> {
             describe_text_filter(job.filters.text.as_ref()),
         ),
         item("config.json", config_source_name(job.config_source)),
-    ]
+    ]);
+    lines
 }
 
 fn disk_mode_name(mode: DiskWriteMode) -> &'static str {

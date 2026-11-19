@@ -2,7 +2,9 @@ mod cli_utils;
 mod dry_run;
 mod event_loop;
 mod export_app;
+mod home;
 mod models;
+mod profile_app;
 mod progress;
 mod read_app;
 mod send_app;
@@ -22,9 +24,9 @@ use tracing::error;
 /// Azure Event Hubs CLI.
 ///
 /// Parses the arguments and `config.json`, installs the Ctrl-C handler, and
-/// runs `read`, `export`, `send`, or a `send --dry-run`. Exit codes: 0 on success, 1 on any
-/// failure (including a partition that failed during a stopped run), 130
-/// when interrupted cleanly.
+/// runs `read`, `export`, `send`, a `send --dry-run`, or `profile list`.
+/// Exit codes: 0 on success, 1 on any failure (including a partition that
+/// failed during a stopped run), 130 when interrupted cleanly.
 #[tokio::main]
 async fn main() {
     // A build can enable more than one rustls provider, which leaves rustls no default for
@@ -41,6 +43,7 @@ async fn main() {
         EhCommand::Export(job) => export_app::run(*job, &shutdown).await,
         EhCommand::Send(job) => send_app::run(*job, &shutdown).await,
         EhCommand::DryRun(job) => dry_run::run(*job, &shutdown),
+        EhCommand::ProfileList(workspace) => profile_app::run(&workspace).await,
     };
 
     match outcome {
