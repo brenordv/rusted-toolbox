@@ -82,6 +82,9 @@ reqwest = { version = "0.13.5", features = ["json"] }
 rfd = { version = "0.18.0" }
 rsa = { version = "0.10.0", features = ["pkcs1v15"] }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
+# Only for setting the process crypto provider (shared-eventhub-core's `tls`); default
+# features, the same set the Azure crates enable.
+rustls = "0.23.46"
 # Rune is pre-release and not on crates.io (the crates.io `rune` is an unrelated scripting
 # language), so it is a git dependency pinned to one reviewed rev. The rev is on a fork
 # (brenordv/rune, branch `c4eda05-fixes`, tag `c4eda05-fixes-1`): anomalyco/rune's dev rev

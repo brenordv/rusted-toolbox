@@ -8353,6 +8353,7 @@ dependencies = [
  "mock-data-utils",
  "regex",
  "rstest",
+ "rustls",
  "serde",
  "serde_json",
  "shared-azure",

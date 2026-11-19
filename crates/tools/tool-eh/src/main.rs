@@ -16,6 +16,7 @@ use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_cli::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
 use common_utils::constants::EXIT_CODE_INTERRUPTED_BY_USER;
 use common_utils::string_utils::escape_for_terminal_display;
+use shared_eventhub_core::tls::install_crypto_provider;
 use tracing::error;
 
 /// Azure Event Hubs CLI.
@@ -26,6 +27,9 @@ use tracing::error;
 /// when interrupted cleanly.
 #[tokio::main]
 async fn main() {
+    // A build can enable more than one rustls provider, which leaves rustls no default for
+    // the Event Hubs connection to use; this sets one before anything connects.
+    install_crypto_provider();
     let command = match initialize().await {
         Ok(command) => command,
         Err(error) => fail(&error),

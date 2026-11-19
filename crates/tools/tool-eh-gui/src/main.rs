@@ -6,6 +6,7 @@ use common_cli::tool_exit_helpers::{exit_error, exit_success};
 use eh_gui::app::{build_app, preload_config};
 use eh_gui::services::{GPU_HINT, ProdServices};
 use eh_gui::tasks::StoreSlot;
+use shared_eventhub_core::tls::install_crypto_provider;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::error;
@@ -20,6 +21,9 @@ const RUNTIME_WORKERS: usize = 2;
 /// Rune's own flags (its headless dumps among them) are refused like any other unknown flag.
 /// Exits 0 on a clean quit and 1 when the window cannot start.
 fn main() {
+    // A build can enable more than one rustls provider, which leaves rustls no default for
+    // the Event Hubs connection to use; this sets one before anything connects.
+    install_crypto_provider();
     let file_logging = cli_utils::initialize();
     match run(file_logging) {
         Ok(()) => exit_success(),
