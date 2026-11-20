@@ -143,6 +143,44 @@ fn help_exits_zero_and_lists_the_subcommands_and_key_flags() {
     assert!(stdout_of(&export).contains("--ignore-export-log"));
 }
 
+/// A bare `eh` opens the menu only when stdin, stdout, and stderr are terminals. In a pipe it
+/// must print the help at once; `output()` has no timeout, so the child is polled and killed
+/// past a deadline, and a regression fails instead of hanging the run. The pipes are read only
+/// after the child exits, which holds because the help (about 1.3 KB) fits in a pipe's buffer.
+#[test]
+fn eh_with_no_arguments_in_a_pipe_prints_the_help_and_exits_2_without_waiting() {
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let root = tempfile::tempdir().unwrap();
+    let mut child = Command::new(EXE)
+        .current_dir(root.path())
+        .env("EH_WORKSPACE", root.path().join("profiles"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("a bare eh in a pipe was still running after 10 s");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let output = child.wait_with_output().unwrap();
+
+    assert_eq!(output.status.code(), Some(2), "{}", stderr_of(&output));
+    assert!(
+        stderr_of(&output).contains("Usage"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(stdout_of(&output).is_empty(), "{}", stdout_of(&output));
+}
+
 #[test]
 fn send_help_lists_the_body_count_routing_and_pacing_flags() {
     let root = tempfile::tempdir().unwrap();

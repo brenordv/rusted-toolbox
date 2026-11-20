@@ -44,6 +44,10 @@
   target and auth. `send` trusts a profile that names its namespace and event hub without
   `--namespace`/`-e`/`--yes`. `--profile` can't be combined with `-b`, `--no-config`, or
   `--dry-run`. Runs without `--profile` are unchanged.
+- `eh` with no arguments in a terminal opens a menu: a profile, then read, send, or export with
+  that action's main options. It prints the equivalent command and asks before running; Esc
+  cancels (exit 0) and Ctrl-C exits 130. In a pipe or a script, a bare `eh` prints the help and
+  exits 2.
 - Breaking, from 1.1.0 (the readme has the full table):
   - `eh-read` -> `eh read`, `eh-export` -> `eh export`; shared flags go before the
     subcommand.

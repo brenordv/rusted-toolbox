@@ -13,6 +13,7 @@ sends test events.
   go or one event every N milliseconds.
 - `eh profile list` shows the connections saved as profiles; `--profile NAME` runs any of the
   three against one of them (see "Profiles").
+- `eh` alone in a terminal opens a menu over those profiles (see "Interactive mode").
 
 `eh` replaces `eh-read` and `eh-export` 1.1.0 (see "Coming from eh-read and eh-export").
 
@@ -247,6 +248,52 @@ eh profile list
 - Secrets work as in any data folder: `secrets.redb` in the profile's data folder, not
   encrypted. Prefer Entra ID auth, which stores no secret.
 
+## Interactive mode
+
+Run `eh` with no arguments in a terminal and it asks what to run, one prompt at a time:
+
+```
+> Profile: orders-dev  namespace orders.servicebus.windows.net, event hub orders
+> Action: read
+> Consumer group: eh-local
+> Start from: Stored checkpoint
+Reads from: profile orders-dev, namespace orders.servicebus.windows.net, event hub orders
+Same as: eh read --profile orders-dev --consumer-group=eh-local
+? Start reading? (Y/n)
+```
+
+It opens only when stdin, stdout, and stderr are all terminals. In a script, a pipe, or CI, `eh`
+alone prints the help and exits 2.
+
+Pick a profile, then an action, then that action's options. An answer the profile's
+`config.json` holds is filled in already:
+
+- read: the consumer group, and where to start: the stored checkpoint, or the earliest event
+  (`-i`). A profile that sets `ignore_checkpoint` shows "Start from: Earliest event (set in the
+  profile)" instead of asking.
+- send: the namespace and event hub, asked only when the profile doesn't name both; the body,
+  typed on one line or from a file; the count (empty sends one); the milliseconds between
+  events (empty sends full batches); and whether the body is a template. The menu passes the
+  namespace and event hub as `--namespace` and `-e`, and the confirm names them and defaults to
+  No. The menu never adds `--yes`.
+- export: the format, and whether to include metadata.
+
+Every other setting is a flag. Before anything runs, the menu prints where the run points and
+the same command line (`Same as:`); run that command to repeat the run or to add a flag, such as
+`--log-level debug` before the subcommand for more logging. It is quoted for a POSIX shell
+(bash, zsh, Git Bash); PowerShell may need other quotes.
+
+- Esc at any prompt, or No at the confirm, prints "Cancelled; nothing ran." and exits 0. Ctrl-C
+  exits 130.
+- A profile whose `config.json` can't load is not offered; one line names it, and
+  `eh profile list` shows why. With no profiles to offer, `eh` says so, prints the help, and
+  exits 2.
+- The menu works in Windows Terminal and in Git Bash. Git Bash runs `eh` through the Windows
+  pseudo console, which MSYS2 has turned on by default since the end of 2022. In a Git Bash
+  with it off, a bare `eh` can wait for keys it never gets: close that window and start Git
+  Bash with `MSYS` set to `enable_pcon`, from PowerShell
+  `$env:MSYS = 'enable_pcon'; & 'C:\Program Files\Git\git-bash.exe'`.
+
 ## Exporting
 
 ```bash
@@ -438,10 +485,10 @@ The test suite never contacts Azure. Before relying on `send`:
 
 | Code | Meaning |
 |---|---|
-| 0 | completed (`export` wrote everything; `read` reached the end of a time window; `send` sent every event) |
+| 0 | completed (`export` wrote everything; `read` reached the end of a time window; `send` sent every event), or the menu was cancelled |
 | 1 | any failure: bad arguments or config, connection, a partition that failed (even in a run stopped with Ctrl-C), message files that could not be written, the archive in use or failing to close, a send that failed or a producer that failed to close |
-| 2 | a usage error caught while parsing the flags |
-| 130 | stopped with Ctrl-C, with nothing failed |
+| 2 | a usage error caught while parsing the flags, including a bare `eh` outside a terminal, or one whose menu has no profile to offer or can't read keys |
+| 130 | stopped with Ctrl-C, with nothing failed, or Ctrl-C in the menu |
 
 ## Troubleshooting
 
