@@ -1,0 +1,5 @@
+{"events": [
+  {"t": 0.3, "type": "tap", "key": "connect"},
+  {"t": 0.9, "type": "tap", "key": "profile-picker-trigger"},
+  {"t": 1.4, "type": "tap", "key": "option2"}
+]}

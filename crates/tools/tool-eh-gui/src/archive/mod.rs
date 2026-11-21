@@ -126,13 +126,12 @@ pub struct ArchiveState {
 }
 
 impl ArchiveState {
-    /// An Export section seeded from a recalled config's export settings.
-    pub fn with_settings(settings: &ExportSettings) -> Self {
-        Self {
-            inspector: InspectorState::with_export(settings.format, settings.include_metadata),
-            options: BulkOptions::from_settings(settings),
-            ..Self::default()
-        }
+    /// Takes a recalled config's export settings for the inspector's picks and the bulk
+    /// options; the search form, results, and a running export stay.
+    pub fn reseed(&mut self, settings: &ExportSettings) {
+        self.inspector.format = settings.format;
+        self.inspector.metadata = settings.include_metadata;
+        self.options = BulkOptions::from_settings(settings);
     }
 
     /// Whether a page is being read (a new search waits for it).

@@ -15,8 +15,17 @@ use crate::send::{SendEffect, SendInput};
 use crate::state::{AppState, Effect, Input, Section, SheetPurpose};
 use common_cli::app_logger::FileLogging;
 use shared_eventhub_core::engine::{EngineEvent, RunEnd, RunSummary};
+use shared_eventhub_core::filters::{CaptureFilters, TextFilter};
 use shared_eventhub_core::stats::StatsTracker;
+use shared_eventhub_persistence::config::{
+    AuthMethodConfig, CredentialKindConfig, StoredSecret, TargetConfig, ToolConfig,
+};
+use shared_eventhub_persistence::export::ExportFormat;
+use shared_eventhub_persistence::workspace::{
+    ConfigHome, Profile, ProfileEntry, ProfileName, ProfileState, Workspace,
+};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 /// A typed connection string for the `orders` hub; its key is not a secret.
 pub const SEND_CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;\
@@ -172,4 +181,105 @@ pub fn template_state(body: &str) -> (AppState, CallLog) {
     s.send.composer.body.replace_text(body);
     s.send.composer.set_template(true);
     (s, log)
+}
+
+/// A profile that loads, with a stored connection string, its own rules and export options.
+pub const ORDERS_DEV: &str = "orders-dev";
+/// A profile that loads, signing in with Entra ID.
+pub const BILLING: &str = "billing";
+/// A profile folder whose `config.json` can't load.
+pub const SCRATCH: &str = "scratch";
+/// The keyword `orders-dev`'s capture rules look for.
+pub const ORDERS_KEYWORD: &str = "refund";
+
+/// A launch folder under the temp folder that nothing creates or writes.
+pub fn launch_folder() -> PathBuf {
+    std::env::temp_dir().join("eh-gui-test-launch")
+}
+
+/// A workspace under the temp folder that nothing creates, so listing it finds no profiles.
+pub fn test_workspace() -> Workspace {
+    Workspace::at(std::env::temp_dir().join("eh-gui-test-workspace"))
+}
+
+/// `s` launched in [`launch_folder`] over [`test_workspace`].
+pub fn with_profiles(mut s: AppState) -> AppState {
+    s.set_launch(launch_folder(), Ok(test_workspace()));
+    s
+}
+
+/// The profile folder `name` of [`test_workspace`].
+///
+/// # Panics
+/// When `name` is not a valid profile name, or the lookup fails.
+pub fn profile(name: &str) -> Profile {
+    let name = ProfileName::parse(name).unwrap_or_else(|error| panic!("{error:#}"));
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap_or_else(|error| panic!("a test tokio runtime: {error}"))
+        .block_on(test_workspace().profile(&name))
+        .unwrap_or_else(|error| panic!("{error:#}"))
+}
+
+/// The home of profile `name`.
+pub fn profile_home(name: &str) -> ConfigHome {
+    ConfigHome::Profile(profile(name))
+}
+
+/// `orders-dev`'s config: a stored connection string, a keyword rule, JSON exports without
+/// metadata, and the default `.eh-data` data folder.
+pub fn orders_config() -> ToolConfig {
+    let mut config = ToolConfig::new(TargetConfig {
+        namespace: None,
+        event_hub: None,
+        consumer_group: "audit".to_owned(),
+        auth: AuthMethodConfig::ConnectionString {
+            stored: StoredSecret::LocalDb,
+        },
+    });
+    config.capture.filters = CaptureFilters {
+        time: None,
+        text: Some(TextFilter::Contains(vec![ORDERS_KEYWORD.to_owned()])),
+    };
+    config.storage.export.format = ExportFormat::Json;
+    config.storage.export.include_metadata = false;
+    config
+}
+
+/// `billing`'s config: Entra ID developer tools for the `invoices` hub.
+pub fn billing_config() -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        namespace: Some("billing.servicebus.windows.net".to_owned()),
+        event_hub: Some("invoices".to_owned()),
+        consumer_group: "$Default".to_owned(),
+        auth: AuthMethodConfig::Credential {
+            credential: CredentialKindConfig::DeveloperTools,
+        },
+    })
+}
+
+/// The entry of profile `name` that loads `config`.
+pub fn ready(name: &str, config: ToolConfig) -> ProfileEntry {
+    ProfileEntry {
+        profile: profile(name),
+        state: ProfileState::Ready(Box::new(config)),
+    }
+}
+
+/// The entry of profile `name` that can't load.
+pub fn cannot_load(name: &str) -> ProfileEntry {
+    ProfileEntry {
+        profile: profile(name),
+        state: ProfileState::CannotLoad("missing field `target`".to_owned()),
+    }
+}
+
+/// The test workspace's listing: `billing` and `orders-dev` load, `scratch` can't.
+pub fn listing() -> Vec<ProfileEntry> {
+    vec![
+        ready(BILLING, billing_config()),
+        ready(ORDERS_DEV, orders_config()),
+        cannot_load(SCRATCH),
+    ]
 }

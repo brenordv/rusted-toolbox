@@ -142,6 +142,45 @@ fn the_same_text_as_info_and_danger_stays_two_cards() {
 }
 
 #[test]
+fn a_titled_toast_keeps_its_title_and_stays_apart_from_an_untitled_copy() {
+    let mut s = state();
+
+    s.toast_titled(ToastKind::Info, Some("Profile switched"), "same".to_owned());
+    s.toast(ToastKind::Info, "same".to_owned());
+
+    let titles: Vec<Option<&str>> = s
+        .toasts()
+        .entries()
+        .iter()
+        .map(|entry| entry.options.title)
+        .collect();
+    assert_eq!(titles, [Some("Profile switched"), None]);
+}
+
+#[test]
+fn a_titled_toast_held_by_the_details_keeps_its_title() {
+    let mut s = state();
+    s.toast(ToastKind::Danger, "broken".to_owned());
+    let held = id_of(&s, "broken");
+    open_details(&mut s, Some(held));
+    s.toast_titled(
+        ToastKind::Info,
+        Some("Profile not switched"),
+        "later".to_owned(),
+    );
+
+    s.apply(Input::CloseDetails);
+
+    let later = s
+        .toasts()
+        .entries()
+        .iter()
+        .find(|entry| entry.options.text == "later")
+        .map(|entry| entry.options.title);
+    assert_eq!(later, Some(Some("Profile not switched")));
+}
+
+#[test]
 fn an_info_toast_closes_on_its_sixth_tick() {
     let mut s = state();
     s.toast(ToastKind::Info, "done".to_owned());

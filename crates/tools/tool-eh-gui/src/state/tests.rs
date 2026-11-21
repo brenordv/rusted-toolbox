@@ -170,7 +170,7 @@ fn connect_from_disconnected_prepares_a_session_for_the_form() {
         request.given.connection_string.as_ref().unwrap().expose(),
         SECRET
     );
-    assert_eq!(request.paths, f.state.form.data_paths());
+    assert_eq!(request.paths, f.state.data_paths());
     assert!(matches!(
         f.state.connection,
         ConnectionState::Connecting {

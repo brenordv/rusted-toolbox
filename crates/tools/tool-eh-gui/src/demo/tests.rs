@@ -51,6 +51,8 @@ impl Services for NoServices {
     fn prepare_session(&self, _attempt: u64, _request: ConnectRequest) {}
     fn save_config(&self, _request: SaveRequest) {}
     fn switch_data_folder(&self, _paths: DataPaths) {}
+    fn list_profiles(&self, _request: u64, _workspace: Workspace) {}
+    fn load_profile(&self, _request: u64, _dir: PathBuf) {}
     fn reopen_window(&self) {}
     fn quit(&self) {}
     fn rebuild_search(&self, _request: RebuildRequest) {}
@@ -90,6 +92,38 @@ fn a_demo_bulk_export_reads_and_writes_only_under_its_root() {
 
     assert_eq!(rooted.paths, data_paths(root.path()));
     assert!(rooted.options.export_folder.starts_with(root.path()));
+}
+
+#[test]
+fn a_demo_save_into_a_demo_profile_keeps_its_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = profiles::workspace(root.path())
+        .root()
+        .join(profiles::ORDERS_DEV);
+
+    let dir = save_dir(root.path(), &profile);
+
+    assert_eq!(dir, profile);
+}
+
+#[test]
+fn a_demo_save_for_a_folder_outside_the_root_goes_to_the_root() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+
+    let dir = save_dir(root.path(), outside.path());
+
+    assert_eq!(dir, root.path());
+}
+
+#[test]
+fn a_demo_save_for_a_folder_that_climbs_out_of_the_root_goes_to_the_root() {
+    let root = tempfile::tempdir().unwrap();
+    let climbing = root.path().join("..").join("elsewhere");
+
+    let dir = save_dir(root.path(), &climbing);
+
+    assert_eq!(dir, root.path());
 }
 
 #[test]
@@ -355,7 +389,8 @@ fn the_demo_data_folder_lies_under_its_root() {
 
     assert!(paths.base().starts_with(root.path()));
     assert!(paths.inbound_dir(DEMO_INBOUND).starts_with(root.path()));
-    assert!(state.form.data_paths().base().starts_with(root.path()));
+    assert!(state.data_paths().base().starts_with(root.path()));
+    assert!(state.workspace().unwrap().root().starts_with(root.path()));
 }
 
 fn send_request(count: u64, pacing: shared_eventhub_core::producer::Pacing) -> SendRequest {
@@ -366,7 +401,7 @@ fn send_request(count: u64, pacing: shared_eventhub_core::producer::Pacing) -> S
         target: ConnectRequest {
             config,
             given,
-            paths: form.data_paths(),
+            paths: DataPaths::new(form.data_folder.trim()),
         },
         event: shared_eventhub_core::producer::OutgoingEvent {
             body: b"ping".to_vec(),
@@ -478,6 +513,81 @@ async fn a_batched_demo_send_of_one_event_ends_after_one_step() {
         posts.finished(),
         Some((shared_eventhub_core::producer::SendEnd::Completed, 1, _))
     ));
+}
+
+#[test]
+fn the_seeded_workspace_lists_two_profiles_that_load_and_one_that_cannot() {
+    let root = tempfile::tempdir().unwrap();
+    seed_profiles(root.path()).unwrap();
+    let rt = runtime();
+
+    let answer = rt.block_on(listed_profiles(1, profiles::workspace(root.path())));
+
+    let Input::ProfilesListed {
+        result: Ok(entries),
+        ..
+    } = answer
+    else {
+        panic!("the demo workspace did not list: {answer:?}");
+    };
+    let ready: Vec<&str> = entries
+        .iter()
+        .filter(|entry| entry.state.is_ready())
+        .map(|entry| entry.profile.name())
+        .collect();
+    assert_eq!(ready, [profiles::BILLING, profiles::ORDERS_DEV]);
+    assert_eq!(entries.len(), 3);
+}
+
+#[test]
+fn the_profile_scenarios_reach_their_states_through_apply_and_render() {
+    let root = tempfile::tempdir().unwrap();
+    seed_profiles(root.path()).unwrap();
+    let rt = runtime();
+
+    let plain = seeded(Scenario::Profiles, root.path(), &rt);
+    let locked = seeded(Scenario::ProfilesLocked, root.path(), &rt);
+    let failed = seeded(Scenario::ProfilesFailed, root.path(), &rt);
+    let unavailable = seeded(Scenario::ProfilesUnavailable, root.path(), &rt);
+
+    assert!(plain.sheet.is_none());
+    assert_eq!(plain.launch_folder(), root.path());
+    assert!(locked.sheet.is_some() && locked.data_folder_lock().is_some());
+    assert!(locked.home_for_label(profiles::ORDERS_DEV).is_some());
+    assert!(
+        failed
+            .profile_note()
+            .is_some_and(crate::state::ProfileNote::is_failure)
+    );
+    assert!(unavailable.sheet.is_some() && unavailable.workspace().is_err());
+    for state in [plain, locked, failed, unavailable] {
+        let mut rt = rune::Runtime::new(
+            state,
+            crate::views::view,
+            (1280.0, 800.0),
+            rune::Env::new(true, 1.0),
+        );
+        rt.frame(0.0);
+        assert!(!rt.elements().is_empty());
+    }
+}
+
+#[test]
+fn only_the_profile_scenarios_with_a_workspace_seed_it() {
+    let seeding: Vec<Scenario> = Scenario::NAMES
+        .iter()
+        .map(|(_, scenario)| *scenario)
+        .filter(|scenario| scenario.seeds_profiles())
+        .collect();
+
+    assert_eq!(
+        seeding,
+        [
+            Scenario::Profiles,
+            Scenario::ProfilesLocked,
+            Scenario::ProfilesFailed
+        ]
+    );
 }
 
 #[test]

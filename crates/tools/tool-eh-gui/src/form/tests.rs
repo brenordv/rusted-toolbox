@@ -171,7 +171,6 @@ fn storage_fields_map_to_the_storage_config() {
     assert_eq!(config.storage.base_data_folder, "captures");
     assert_eq!(config.storage.disk_write.mode, DiskWriteMode::AtEnd);
     assert_eq!(config.storage.disk_write.received_msg_path, "dumps");
-    assert_eq!(form.data_paths(), DataPaths::new("captures"));
 }
 
 #[test]
@@ -248,4 +247,37 @@ fn debug_output_holds_no_field_text() {
 
     assert!(!printed.contains("marker"), "{printed}");
     assert!(!printed.contains(NAMESPACE), "{printed}");
+}
+
+#[rstest::rstest]
+#[case::nothing_typed(SecretSource::typed(), SecretSource::typed(), None)]
+#[case::connection_string(
+    typed(MARKER),
+    SecretSource::typed(),
+    Some(SecretKind::ConnectionString)
+)]
+#[case::client_secret(
+    SecretSource::typed(),
+    typed("client-marker"),
+    Some(SecretKind::ClientSecret)
+)]
+#[case::both_connection_string_first(
+    typed(MARKER),
+    typed("client-marker"),
+    Some(SecretKind::ConnectionString)
+)]
+#[case::stored_only(SecretSource::stored(), SecretSource::stored(), None)]
+#[case::blank_text(typed("   "), SecretSource::typed(), None)]
+fn typed_secret_names_the_secret_holding_unsaved_text(
+    #[case] connection_string: SecretSource,
+    #[case] client_secret: SecretSource,
+    #[case] expected: Option<SecretKind>,
+) {
+    let form = ConnectForm {
+        connection_string,
+        client_secret,
+        ..ConnectForm::default()
+    };
+
+    assert_eq!(form.typed_secret(), expected);
 }

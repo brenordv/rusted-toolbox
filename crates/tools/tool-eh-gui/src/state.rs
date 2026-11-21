@@ -7,12 +7,17 @@
 mod details;
 mod ending;
 mod panes;
+mod profiles;
 mod send;
 mod toasts;
 
 pub use details::{ERROR_PREVIEW_CHARS, ErrorDetails, ErrorPreview, error_preview};
 pub use ending::{Failure, FailureStage};
 pub use panes::{Pane, PaneFit};
+pub use profiles::{
+    LAUNCH_FOLDER, NO_PROFILES, NO_WORKSPACE, ProfileList, ProfileNote, ProfileSwitch, Recalled,
+    home_label, recalled,
+};
 pub use toasts::{INFO_TOAST_SECS, MAX_TOASTS, ToastBody, ToastInput};
 
 use crate::archive::bulk::CancelReason;
@@ -27,11 +32,13 @@ use crate::send::{SendEffect, SendInput, SendState};
 use crate::services::{ConnectRequest, SaveRequest, Services};
 use chrono::{DateTime, TimeDelta, Utc};
 use common_cli::app_logger::FileLogging;
+use common_utils::file_system::get_current_dir;
 use ending::{log_summary, session_failures};
 use rune_kit::PaneState;
 use shared_eventhub_core::engine::{EngineEvent, RunEnd, RunSummary};
-use shared_eventhub_persistence::config::{SensitiveValues, ToolConfig};
+use shared_eventhub_persistence::config::{ConfigLoad, SensitiveValues, ToolConfig};
 use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry, Workspace};
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{debug, info, warn};
@@ -190,6 +197,18 @@ pub enum Input {
     EngineDone(EngineDone),
     /// The system's appearance, read by the app itself (true: dark).
     AppearanceChanged(bool),
+    /// A pick of where `config.json` comes from.
+    ProfilePicked(ConfigHome),
+    /// The answer to [`Effect::LoadProfile`] `request`.
+    ProfileLoaded {
+        request: u64,
+        result: Result<ConfigLoad, String>,
+    },
+    /// The answer to [`Effect::ListProfiles`] `request`.
+    ProfilesListed {
+        request: u64,
+        result: Result<Vec<ProfileEntry>, String>,
+    },
     Read(ReadInput),
     Archive(ArchiveInput),
     Send(SendInput),
@@ -221,6 +240,16 @@ pub enum Effect {
     SaveConfig(SaveRequest),
     /// Point the store at another data folder and release the old one's lock.
     SwitchDataFolder(DataPaths),
+    /// List `workspace`'s profiles; the result comes back as [`Input::ProfilesListed`].
+    ListProfiles {
+        request: u64,
+        workspace: Workspace,
+    },
+    /// Read `dir`'s `config.json`; the result comes back as [`Input::ProfileLoaded`].
+    LoadProfile {
+        request: u64,
+        dir: PathBuf,
+    },
     ReopenWindow,
     /// Close the store and end the process.
     Quit,
@@ -266,10 +295,17 @@ pub struct AppState {
     pub form: ConnectForm,
     /// The open connection sheet's purpose; `None` while it is closed.
     pub sheet: Option<SheetPurpose>,
+    /// Whether the sheet's profile picker lists its options.
+    pub profile_picker_open: bool,
+    /// Where `config.json` lives, the picker's list, and the pending load.
+    profiles: profiles::Profiles,
+    /// Connect attempts abandoned while preparing, until each answers; they hold the data
+    /// folder meanwhile.
+    abandoned_attempts: Vec<u64>,
     /// Set by the first Connect or Save with form issues, so an untouched form shows none.
     pub show_issues: bool,
     pub save_status: SaveStatus,
-    /// What happened to `config.json` at launch, for the sheet's caption.
+    /// What happened to the home's `config.json` when it was last read, as caption text.
     pub config_caption: Option<String>,
     pub file_logging: FileLogging,
     toasts: toasts::Toasts,
@@ -308,6 +344,8 @@ impl AppState {
         Self::new(None, ConnectForm::default(), None, FileLogging::Off)
     }
 
+    /// A state on the process's current folder with no workspace;
+    /// `set_launch` names the launch folder and the workspace.
     pub fn new(
         services: Option<Box<dyn Services>>,
         form: ConnectForm,
@@ -326,6 +364,9 @@ impl AppState {
             connection: ConnectionState::Disconnected,
             form,
             sheet: None,
+            profile_picker_open: false,
+            profiles: profiles::Profiles::new(get_current_dir()),
+            abandoned_attempts: Vec::new(),
             show_issues: false,
             save_status: SaveStatus::Idle,
             config_caption,
@@ -373,6 +414,13 @@ impl AppState {
             Input::Delivery(delivery) => self.delivery(delivery, &mut out),
             Input::EngineDone(done) => self.engine_done(done, &mut out),
             Input::AppearanceChanged(dark) => self.appearance_changed(dark, &mut out),
+            Input::ProfilePicked(home) => self.profile_picked(home, &mut out),
+            Input::ProfileLoaded { request, result } => {
+                self.profile_loaded(request, result, &mut out);
+            }
+            Input::ProfilesListed { request, result } => {
+                self.profiles_listed(request, result, &mut out);
+            }
             Input::Read(input) => self.read_input(input, &mut out),
             Input::Archive(input) => self.archive_input(input, &mut out),
             Input::Send(input) => self.send_input(input, &mut out),
@@ -401,6 +449,11 @@ impl AppState {
                 return;
             }
         }
+        if self.profile_loading() {
+            debug!("Connect ignored: a profile is loading");
+            out.changed = false;
+            return;
+        }
         if !self.form.issues().is_empty() {
             debug!("Connect ignored: the form has issues");
             self.show_issues = true;
@@ -410,7 +463,7 @@ impl AppState {
         let attempt = self.next_attempt;
         self.next_attempt += 1;
         let (config, given) = self.config_with_rules();
-        let paths = self.form.data_paths();
+        let paths = self.data_paths();
         info!(attempt, "connecting");
         self.read.start_session(
             attempt,
@@ -441,9 +494,8 @@ impl AppState {
     }
 
     fn read_input(&mut self, input: ReadInput, out: &mut Outcome) {
-        let read = self
-            .read
-            .apply(input, &self.connection, self.form.data_paths());
+        let paths = self.data_paths();
+        let read = self.read.apply(input, &self.connection, paths);
         for (kind, text) in read.toasts {
             self.toast(kind, text);
         }
@@ -456,7 +508,8 @@ impl AppState {
     }
 
     fn archive_input(&mut self, input: ArchiveInput, out: &mut Outcome) {
-        let archive = self.archive.apply(input, &self.form.data_paths());
+        let paths = self.data_paths();
+        let archive = self.archive.apply(input, &paths);
         for (kind, text) in archive.toasts {
             self.toast(kind, text);
         }
@@ -474,8 +527,13 @@ impl AppState {
 
     fn disconnect_pressed(&mut self, out: &mut Outcome) {
         match std::mem::take(&mut self.connection) {
-            ConnectionState::Connecting { session: None, .. } => {
-                info!("connect cancelled while preparing");
+            ConnectionState::Connecting {
+                attempt,
+                session: None,
+                ..
+            } => {
+                info!(attempt, "connect cancelled while preparing");
+                self.abandon(attempt);
             }
             ConnectionState::Connecting {
                 session: Some(session),
@@ -500,6 +558,11 @@ impl AppState {
             out.changed = false;
             return;
         }
+        if self.profile_loading() {
+            debug!("Save config ignored: a profile is loading");
+            out.changed = false;
+            return;
+        }
         if !self.form.issues().is_empty() {
             self.show_issues = true;
             return;
@@ -509,7 +572,8 @@ impl AppState {
         out.effects.push(Effect::SaveConfig(SaveRequest {
             config,
             given,
-            paths: self.form.data_paths(),
+            dir: self.home().dir().to_path_buf(),
+            paths: self.data_paths(),
         }));
     }
 
@@ -539,9 +603,10 @@ impl AppState {
     }
 
     /// Why the data folder cannot change now, or `None` when it can: nothing may be using the
-    /// current folder. Two holders are left out: a search page in flight is discarded instead,
-    /// and a connect attempt abandoned while preparing lets go of its archive handle when it
-    /// ends.
+    /// current folder. A connect attempt abandoned while preparing holds it until its prepare
+    /// answers. Two holders are left out: a search page in flight is discarded instead, and a
+    /// session that started after its attempt was abandoned lets go of its archive handle when
+    /// its stop ends, after the prepare answered.
     pub fn data_folder_lock(&self) -> Option<&'static str> {
         match &self.connection {
             ConnectionState::Disconnected | ConnectionState::Failed(_) => {}
@@ -550,6 +615,9 @@ impl AppState {
             | ConnectionState::Stopping { .. } => {
                 return Some("The data folder can change once the session ends.");
             }
+        }
+        if !self.abandoned_attempts.is_empty() {
+            return Some("The data folder can change once the cancelled connection stops.");
         }
         if self.save_status.is_saving() {
             return Some("The data folder can change once the save finishes.");
@@ -572,13 +640,54 @@ impl AppState {
             out.changed = false;
             return;
         }
+        if self.profile_loading() {
+            debug!("data folder change ignored: a profile is loading");
+            out.changed = false;
+            return;
+        }
         self.form.data_folder = folder.display().to_string();
         self.form.forget_stored_secrets();
+        let paths = self.data_paths();
+        self.change_data_folder(paths, out);
+    }
+
+    /// Moves everything that follows the data folder to `paths`: the send destination, the
+    /// archive results, and the store.
+    fn change_data_folder(&mut self, paths: DataPaths, out: &mut Outcome) {
         self.send.refresh_destination(&self.form);
         self.archive.folder_changed();
-        let paths = self.form.data_paths();
         info!(folder = %paths.base().display(), "data folder changed");
         out.effects.push(Effect::SwitchDataFolder(paths));
+    }
+
+    /// Records `attempt`, abandoned while preparing: its prepare may still open the archive.
+    fn abandon(&mut self, attempt: u64) {
+        self.abandoned_attempts.push(attempt);
+        debug!(
+            attempt,
+            abandoned = self.abandoned_attempts.len(),
+            "an abandoned attempt holds the data folder until it answers"
+        );
+    }
+
+    /// Forgets abandoned `attempt` once its prepare answered; true when it was recorded.
+    fn abandoned_answered(&mut self, attempt: u64) -> bool {
+        let Some(index) = self.abandoned_attempts.iter().position(|a| *a == attempt) else {
+            debug!(attempt, "an answer for an attempt no one waits on");
+            return false;
+        };
+        self.abandoned_attempts.remove(index);
+        debug!(
+            attempt,
+            abandoned = self.abandoned_attempts.len(),
+            "an abandoned attempt answered"
+        );
+        true
+    }
+
+    /// The connect attempts abandoned while preparing that have not answered yet.
+    pub fn abandoned_attempts(&self) -> &[u64] {
+        &self.abandoned_attempts
     }
 
     fn window_closed(&mut self, at: DateTime<Utc>, out: &mut Outcome) {
@@ -590,8 +699,16 @@ impl AppState {
         self.archive.window_closed();
         self.send.request_cancel(CancelReason::WindowClosed);
         match std::mem::take(&mut self.connection) {
-            ConnectionState::Connecting { session: None, .. } => {
-                info!("window closed while preparing; the attempt is abandoned");
+            ConnectionState::Connecting {
+                attempt,
+                session: None,
+                ..
+            } => {
+                info!(
+                    attempt,
+                    "window closed while preparing; the attempt is abandoned"
+                );
+                self.abandon(attempt);
             }
             ConnectionState::Connecting {
                 session: Some(session),
@@ -701,11 +818,11 @@ impl AppState {
                     "a session started after its attempt was abandoned; stopping it"
                 );
                 out.effects.push(Effect::StopOrphan(session));
-                out.changed = false;
+                out.changed = self.abandoned_answered(attempt);
             }
             (false, Err(text)) => {
                 debug!(attempt, error = %text, "an abandoned attempt failed");
-                out.changed = false;
+                out.changed = self.abandoned_answered(attempt);
             }
         }
     }

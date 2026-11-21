@@ -2,7 +2,7 @@
 //! it goes and hands back what a caller checks next.
 
 use super::Harness;
-use super::builders::state;
+use super::builders::{BILLING, billing_config, listing, state, with_profiles};
 use super::services::ServiceCall;
 use crate::bridge::UiDelivery;
 use crate::bridge::test_support::detached_session;
@@ -12,16 +12,16 @@ use crate::read::ReadInput;
 use crate::read::test_support::captured;
 use crate::send::run::Names;
 use crate::send::{SendInput, SendRequest};
-use crate::services::ConnectRequest;
+use crate::services::{ConnectRequest, SaveRequest};
 use crate::state::{AppState, Input, Section};
-use crate::views::{BODY_KEY, COUNT_KEY};
+use crate::views::{BODY_KEY, COUNT_KEY, PICKER_KEY, PROFILE_GROUP_KEY};
 use common_cli::app_logger::FileLogging;
 use rune::Key;
 use shared_eventhub_core::connection::target_names;
 use shared_eventhub_core::engine::{EngineCommand, EngineEvent};
 use shared_eventhub_core::producer::{Pacing, SendEnd, SendSummary};
 use shared_eventhub_core::stats::StatsSnapshot;
-use shared_eventhub_persistence::config::resolve_target_with;
+use shared_eventhub_persistence::config::{ConfigLoad, resolve_target_with};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -121,6 +121,57 @@ pub fn connect_and_capture(connection_string: &str) -> Capturing {
         request,
         commands,
     }
+}
+
+/// Opens the sheet from the toolbar and answers its listing with the test workspace's.
+pub fn open_listed_sheet(h: &mut Harness) {
+    h.press("connect");
+    let request = only_call(h, |call| match call {
+        ServiceCall::ListProfiles { request, .. } => Some(request),
+        _ => None,
+    });
+    h.deliver(Input::ProfilesListed {
+        request,
+        result: Ok(listing()),
+    });
+    assert!(h.has_key(PROFILE_GROUP_KEY), "the profile group mounted");
+}
+
+/// Picks `label` from the open sheet's picker with the pointer; returns the load request.
+pub fn pick_with_pointer(h: &mut Harness, label: &str) -> u64 {
+    h.press(&format!("{PICKER_KEY}-trigger"));
+    h.press_named(&format!("{PICKER_KEY}-content"), label);
+    only_call(h, |call| match call {
+        ServiceCall::LoadProfile { request, .. } => Some(request),
+        _ => None,
+    })
+}
+
+/// Journey 5: types `connection_string` into the sheet over the test workspace, switches to
+/// `billing` (which drops it), and saves there. Returns the harness and the save's request.
+pub fn switch_dropping_a_typed_secret(connection_string: &str) -> (Harness, SaveRequest) {
+    let mut h = Harness::new(with_profiles(state()), WINDOW_SIZE);
+    open_listed_sheet(&mut h);
+    h.type_into("connection-string", connection_string);
+    let request = pick_with_pointer(&mut h, BILLING);
+    h.deliver(Input::ProfileLoaded {
+        request,
+        result: Ok(ConfigLoad::Loaded(Box::new(billing_config()))),
+    });
+    assert!(
+        h.has_text("The connection string you typed was cleared"),
+        "the note says the typed string went"
+    );
+    let switched = h
+        .calls
+        .take_where(|call| matches!(call, ServiceCall::SwitchDataFolder(_)));
+    assert_eq!(switched.len(), 1, "the switch moved the data folder once");
+    h.press("save-config");
+    let save = only_call(&mut h, |call| match call {
+        ServiceCall::SaveConfig(request) => Some(request),
+        _ => None,
+    });
+    (h, save)
 }
 
 /// The names a producer for the `orders` hub reports.

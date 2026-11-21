@@ -1,5 +1,6 @@
 use super::builders::{ORDERS, export_state, send_state, state};
 use super::journeys::orders;
+use super::profile_tests::{load_failed_note, picker_locked, picker_open, profiles_sheet};
 use super::services::ServiceCall;
 use super::toast_tests::toasted;
 use super::worst_cases::{WORST, long_connect_failure, long_text};
@@ -454,6 +455,43 @@ const ROWS: &[Row] = &[
         reachable: &["sheet-done", "cancel"],
         disabled: &[],
         covered: &[SEND_BUTTON_KEY],
+    },
+    Row {
+        name: "sheet with profiles",
+        build: profiles_sheet,
+        reachable: &[
+            "profile-picker-trigger",
+            "sheet-connect",
+            "save-config",
+            "cancel",
+        ],
+        disabled: &[],
+        covered: &["empty-connect", "connect"],
+    },
+    Row {
+        name: "profile picker open",
+        build: picker_open,
+        reachable: &[
+            "profile-picker-content/option0",
+            "profile-picker-content/option1",
+            "profile-picker-content/option2",
+        ],
+        disabled: &[],
+        covered: &["sheet-connect", "save-config"],
+    },
+    Row {
+        name: "profile picker under the lock",
+        build: picker_locked,
+        reachable: &["sheet-connect", "save-config", "cancel"],
+        disabled: &["profile-picker-trigger", "change-folder"],
+        covered: &["empty-connect", "connect"],
+    },
+    Row {
+        name: "a profile that could not load",
+        build: load_failed_note,
+        reachable: &["profile-note-details", "sheet-connect", "cancel"],
+        disabled: &[],
+        covered: &["empty-connect", "connect"],
     },
     Row {
         name: "pill popover",

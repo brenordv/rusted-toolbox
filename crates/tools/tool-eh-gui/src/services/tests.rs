@@ -1,4 +1,7 @@
 use super::*;
+use crate::form::ConnectForm;
+use crate::state::{Effect, Outcome, SheetPurpose};
+use common_cli::app_logger::FileLogging;
 use common_utils::string_utils::SecretString;
 use shared_azure::auth::AuthMethod;
 use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
@@ -479,4 +482,161 @@ fn a_panic_inside_a_gated_open_does_not_lock_the_next_one_out() {
 
     assert!(panicked);
     assert!(next.is_ok(), "{next:?}");
+}
+
+/// Writes `text` as `config.json` in `dir`, creating `dir`.
+fn write_config(dir: &Path, text: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(
+        dir.join(shared_eventhub_persistence::config::CONFIG_FILE_NAME),
+        text,
+    )
+    .unwrap();
+}
+
+const CREDENTIAL_CONFIG: &str = r#"{"tool":"eh","schema_version":1,"target":{"auth":{"method":"credential","credential":{"kind":"developer-tools"}}}}"#;
+
+#[tokio::test]
+async fn listing_a_workspace_answers_its_profiles_for_the_request() {
+    let root = tempfile::tempdir().unwrap();
+    write_config(&root.path().join("orders"), CREDENTIAL_CONFIG);
+
+    let answer = listed_profiles(4, Workspace::at(root.path().to_owned())).await;
+
+    let Input::ProfilesListed {
+        request: 4,
+        result: Ok(entries),
+    } = answer
+    else {
+        panic!("expected the listing for request 4, got {answer:?}");
+    };
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].profile.name(), "orders");
+}
+
+#[tokio::test]
+async fn a_workspace_that_cannot_be_listed_answers_why() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("not-a-folder");
+    std::fs::write(&file, "x").unwrap();
+
+    let answer = listed_profiles(2, Workspace::at(file)).await;
+
+    let Input::ProfilesListed {
+        request: 2,
+        result: Err(text),
+    } = answer
+    else {
+        panic!("expected a failed listing, got {answer:?}");
+    };
+    assert!(text.starts_with("Failed to list the workspace"), "{text}");
+}
+
+#[tokio::test]
+async fn loading_a_profile_answers_its_config_for_the_request() {
+    let root = tempfile::tempdir().unwrap();
+    write_config(root.path(), CREDENTIAL_CONFIG);
+
+    let answer = loaded_profile(3, root.path()).await;
+
+    assert!(
+        matches!(
+            &answer,
+            Input::ProfileLoaded {
+                request: 3,
+                result: Ok(shared_eventhub_persistence::config::ConfigLoad::Loaded(_)),
+            }
+        ),
+        "{answer:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_profile_whose_config_is_broken_answers_why_without_its_values() {
+    let root = tempfile::tempdir().unwrap();
+    write_config(
+        root.path(),
+        r#"{"tool":"eh","schema_version":1,"target":{"auth":{"method":"connection-string","stored":"SharedAccessKey=marker-4410"}}}"#,
+    );
+
+    let answer = loaded_profile(5, root.path()).await;
+
+    let Input::ProfileLoaded {
+        request: 5,
+        result: Err(text),
+    } = answer
+    else {
+        panic!("expected a failed load, got {answer:?}");
+    };
+    assert!(
+        text.contains("is an eh config, but it is not valid"),
+        "{text}"
+    );
+    assert!(!text.contains("marker-4410"), "{text}");
+}
+
+/// `paths` as the window resolves it: eh-gui's working folder is its launch folder.
+fn resolved_in(launch: &Path, paths: &DataPaths) -> DataPaths {
+    DataPaths::new(launch.join(paths.base()))
+}
+
+/// The one effect of `out` that `pick` takes.
+fn only<T>(out: Outcome, pick: impl FnMut(Effect) -> Option<T>) -> T {
+    let found: Vec<T> = out.effects.into_iter().filter_map(pick).collect();
+    let Ok([one]) = <[T; 1]>::try_from(found) else {
+        panic!("expected exactly one such effect");
+    };
+    one
+}
+
+#[tokio::test]
+async fn a_launch_folder_in_the_workspace_saved_once_opens_as_a_profile_that_connects() {
+    let root = tempfile::tempdir().unwrap();
+    let launch = root.path().join("orders-new");
+    std::fs::create_dir(&launch).unwrap();
+    let mut state = AppState::new(None, ConnectForm::default(), None, FileLogging::Off);
+    state.set_launch(launch.clone(), Ok(Workspace::at(root.path().to_owned())));
+    state
+        .form
+        .connection_string
+        .edit_mut()
+        .replace_text(CONNECTION_STRING);
+    let save = only(state.apply(Input::SavePressed), |effect| match effect {
+        Effect::SaveConfig(save) => Some(save),
+        _ => None,
+    });
+    open_secrets(&resolved_in(&launch, &save.paths), |secrets| {
+        save_config(&save.dir, &save.config, secrets, &save.given)
+    })
+    .unwrap();
+    state.apply(Input::ConfigSaved(Ok(())));
+    let (request, workspace) = only(
+        state.apply(Input::OpenSheet(SheetPurpose::Connect)),
+        |effect| match effect {
+            Effect::ListProfiles { request, workspace } => Some((request, workspace)),
+            _ => None,
+        },
+    );
+    state.apply(listed_profiles(request, workspace).await);
+    let home = state.home_for_label("orders-new").unwrap();
+    let (request, dir) = only(
+        state.apply(Input::ProfilePicked(home)),
+        |effect| match effect {
+            Effect::LoadProfile { request, dir } => Some((request, dir)),
+            _ => None,
+        },
+    );
+    state.apply(loaded_profile(request, &dir).await);
+    let connect = only(state.apply(Input::ConnectPressed), |effect| match effect {
+        Effect::PrepareSession { request, .. } => Some(request),
+        _ => None,
+    });
+
+    let target = resolve_target(&connect).await.unwrap();
+
+    assert_eq!(state.home().profile_name(), Some("orders-new"));
+    assert!(matches!(
+        target.auth,
+        AuthMethod::ConnectionString { connection_string } if connection_string.expose() == CONNECTION_STRING
+    ));
 }

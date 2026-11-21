@@ -6,9 +6,9 @@ use crate::send::{PressContext, SendInput, ended_toast};
 use tracing::{debug, info};
 
 impl AppState {
-    /// Opens the connection sheet for `purpose`, unless what runs now must keep its target:
-    /// a running send keeps every sheet closed, and a capture session keeps the target-only
-    /// sheet closed (Send then goes to the hub being read).
+    /// Opens the connection sheet for `purpose` and lists the profiles again, unless what runs
+    /// now must keep its target: a running send keeps every sheet closed, and a capture session
+    /// keeps the target-only sheet closed (Send then goes to the hub being read).
     pub(super) fn open_sheet(&mut self, purpose: SheetPurpose, out: &mut Outcome) {
         if self.send.is_running() {
             debug!(?purpose, "sheet refused: a send is running");
@@ -21,14 +21,19 @@ impl AppState {
                 debug!("sheet refused: a capture session holds the target");
                 out.changed = false;
             }
-            SheetPurpose::SendTarget | SheetPurpose::Connect => self.sheet = Some(purpose),
+            SheetPurpose::SendTarget | SheetPurpose::Connect => {
+                self.sheet = Some(purpose);
+                self.refresh_profiles(out);
+            }
         }
     }
 
-    /// Closes the sheet (on any path), hides typed secrets, and recomputes the destination the
-    /// form resolves to.
+    /// Closes the sheet (on any path) with its picker and note, hides typed secrets, and
+    /// recomputes the destination the form resolves to.
     pub(super) fn close_sheet(&mut self) {
         self.sheet = None;
+        self.profile_picker_open = false;
+        self.clear_profile_note();
         self.form.hide_secrets();
         self.send.refresh_destination(&self.form);
     }
@@ -38,6 +43,7 @@ impl AppState {
             sheet_open: self.sheet.is_some(),
             window_closed: self.window_closed,
             form: &self.form,
+            paths: self.data_paths(),
         };
         let send = self.send.apply(input, cx);
         out.effects

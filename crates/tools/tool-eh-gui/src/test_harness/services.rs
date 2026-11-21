@@ -8,6 +8,8 @@ use crate::read::search::RebuildRequest;
 use crate::send::SendRequest;
 use crate::services::{ConnectRequest, SaveRequest, Services};
 use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::workspace::Workspace;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// One call the app made, with its whole request. Every secret a request carries is a
@@ -20,6 +22,14 @@ pub enum ServiceCall {
     },
     SaveConfig(SaveRequest),
     SwitchDataFolder(DataPaths),
+    ListProfiles {
+        request: u64,
+        workspace: Workspace,
+    },
+    LoadProfile {
+        request: u64,
+        dir: PathBuf,
+    },
     ReopenWindow,
     Quit,
     RebuildSearch(RebuildRequest),
@@ -93,6 +103,15 @@ impl Services for RecordingServices {
 
     fn switch_data_folder(&self, paths: DataPaths) {
         self.0.push(ServiceCall::SwitchDataFolder(paths));
+    }
+
+    fn list_profiles(&self, request: u64, workspace: Workspace) {
+        self.0
+            .push(ServiceCall::ListProfiles { request, workspace });
+    }
+
+    fn load_profile(&self, request: u64, dir: PathBuf) {
+        self.0.push(ServiceCall::LoadProfile { request, dir });
     }
 
     fn reopen_window(&self) {

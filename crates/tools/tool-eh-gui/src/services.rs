@@ -23,13 +23,14 @@ use shared_eventhub_core::connection::EventHubTarget;
 use shared_eventhub_core::engine::CaptureEngine;
 use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_persistence::config::{
-    SensitiveValues, ToolConfig, needs_stored_secret, resolve_target_with, save_config,
+    SensitiveValues, ToolConfig, load_config, needs_stored_secret, resolve_target_with, save_config,
 };
 use shared_eventhub_persistence::export::{ExportOptions, ExportOutcome, WritingSink};
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::search::{SearchPage, SearchQuery};
 use shared_eventhub_persistence::secrets::SecretsStore;
-use std::path::PathBuf;
+use shared_eventhub_persistence::workspace::Workspace;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -46,12 +47,13 @@ pub struct ConnectRequest {
     pub paths: DataPaths,
 }
 
-/// A request to save `config.json`: the config, the typed secrets, and the data folder whose
-/// secrets file receives them.
+/// A request to save `config.json`: the config, the typed secrets, the folder `config.json`
+/// goes to, and the data folder whose secrets file receives the secrets.
 #[derive(Debug)]
 pub struct SaveRequest {
     pub config: ToolConfig,
     pub given: SensitiveValues,
+    pub dir: PathBuf,
     pub paths: DataPaths,
 }
 
@@ -65,6 +67,10 @@ pub trait Services {
     fn save_config(&self, request: SaveRequest);
     /// Points the store at `paths` and releases the previous folder's archive.
     fn switch_data_folder(&self, paths: DataPaths);
+    /// Lists `workspace`'s profiles; reports [`Input::ProfilesListed`] for `request`.
+    fn list_profiles(&self, request: u64, workspace: Workspace);
+    /// Reads `dir`'s `config.json`; reports [`Input::ProfileLoaded`] for `request`.
+    fn load_profile(&self, request: u64, dir: PathBuf);
     fn reopen_window(&self);
     /// Closes the store, then ends the app.
     fn quit(&self);
@@ -111,7 +117,6 @@ pub struct ProdServices {
     handle: AppHandle<AppState>,
     rt: Handle,
     slot: Arc<StoreSlot>,
-    working_dir: PathBuf,
 }
 
 impl ProdServices {
@@ -121,18 +126,25 @@ impl ProdServices {
         handle: AppHandle<AppState>,
         rt: Handle,
         slot: Arc<StoreSlot>,
-        working_dir: PathBuf,
         window_failed: Arc<AtomicBool>,
     ) -> Self {
         spawn_tick(&rt, handle.clone(), window_failed);
         spawn_list_flush(&rt, handle.clone());
-        Self {
-            handle,
-            rt,
-            slot,
-            working_dir,
-        }
+        Self { handle, rt, slot }
     }
+}
+
+/// The answer to listing `workspace` for `request`: its profiles, or why it can't be listed.
+pub(crate) async fn listed_profiles(request: u64, workspace: Workspace) -> Input {
+    let result = workspace.list().await.map_err(|error| format!("{error:#}"));
+    Input::ProfilesListed { request, result }
+}
+
+/// The answer to loading `dir`'s `config.json` for `request`: what it holds, or why it can't
+/// be read (the loader's text never quotes a value from the file).
+pub(crate) async fn loaded_profile(request: u64, dir: &Path) -> Input {
+    let result = load_config(dir).await.map_err(|error| format!("{error:#}"));
+    Input::ProfileLoaded { request, result }
 }
 
 impl Services for ProdServices {
@@ -150,11 +162,10 @@ impl Services for ProdServices {
 
     fn save_config(&self, request: SaveRequest) {
         let handle = self.handle.clone();
-        let dir = self.working_dir.clone();
         self.rt.spawn(async move {
             let saved = tokio::task::spawn_blocking(move || {
                 open_secrets(&request.paths, |secrets| {
-                    save_config(&dir, &request.config, secrets, &request.given)
+                    save_config(&request.dir, &request.config, secrets, &request.given)
                 })
             })
             .await
@@ -169,6 +180,22 @@ impl Services for ProdServices {
         self.slot.set_folder(paths);
         let slot = Arc::clone(&self.slot);
         self.rt.spawn(async move { slot.release_stale().await });
+    }
+
+    fn list_profiles(&self, request: u64, workspace: Workspace) {
+        let handle = self.handle.clone();
+        self.rt.spawn(async move {
+            let listed = listed_profiles(request, workspace).await;
+            apply_from_runtime(&handle, listed);
+        });
+    }
+
+    fn load_profile(&self, request: u64, dir: PathBuf) {
+        let handle = self.handle.clone();
+        self.rt.spawn(async move {
+            let loaded = loaded_profile(request, &dir).await;
+            apply_from_runtime(&handle, loaded);
+        });
     }
 
     fn reopen_window(&self) {

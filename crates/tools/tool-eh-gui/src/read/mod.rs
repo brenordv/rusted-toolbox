@@ -220,14 +220,13 @@ impl Default for ReadState {
 }
 
 impl ReadState {
-    /// A Read section seeded from a recalled config's rules and export settings.
-    pub fn with_rules(filters: &CaptureFilters, format: ExportFormat, metadata: bool) -> Self {
-        Self {
-            rules: RulesForm::from_filters(filters),
-            rules_applied: filters.clone(),
-            inspector: InspectorState::with_export(format, metadata),
-            ..Self::default()
-        }
+    /// Takes a recalled config's capture rules and the inspector's export picks (`format`, with
+    /// or without metadata); the session log, its ids, and everything else stay.
+    pub fn reseed(&mut self, filters: &CaptureFilters, format: ExportFormat, metadata: bool) {
+        self.rules = RulesForm::from_filters(filters);
+        self.rules_applied = filters.clone();
+        self.inspector.format = format;
+        self.inspector.metadata = metadata;
     }
 
     /// Starts over for `session`, keeping the rules, the inspector's picks, width, and an

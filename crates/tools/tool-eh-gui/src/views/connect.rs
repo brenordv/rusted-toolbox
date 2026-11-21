@@ -1,4 +1,9 @@
-//! The connection sheet: auth method, the fields it needs, storage, and Save / Connect.
+//! The connection sheet: the profile, auth method, the fields it needs, storage, and Save /
+//! Connect.
+
+mod profile;
+
+pub use profile::{GROUP_KEY as PROFILE_GROUP_KEY, NOTE_KEY as PROFILE_NOTE_KEY, PICKER_KEY};
 
 use super::details;
 use crate::app::dispatch;
@@ -8,6 +13,7 @@ use crate::form::{
     AuthChoice, CredentialChoice, DISK_WRITE_LABELS, DISK_WRITE_MODES, FieldIssues, SecretSource,
     disk_write_index,
 };
+use crate::read::rows::display_path;
 use crate::state::{AppState, Input, SaveStatus, SheetPurpose, ToastKind, error_preview};
 use rune::{El, FileDialogOptions, ScrollSpec, TextEdit, Tx, col, row, spacer};
 use rune_kit::{
@@ -30,6 +36,9 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
     } else {
         FieldIssues::default()
     };
+    // The kit paints overlays in the order they are pushed, and the sheet pushes its scrim
+    // after the body is built, so the picker's list goes on after the sheet.
+    let mut overlays = Vec::new();
     let mut body = col()
         .key("connect-form")
         .w_full()
@@ -37,6 +46,7 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
         .px(SPACE_XL)
         .pt(SPACE_SM)
         .pb(SPACE_XL)
+        .child(profile::group(s, k, &mut overlays))
         .child(
             SegmentedControl::new(&AuthChoice::LABELS, Some(s.form.auth.index()))
                 .label("Sign-in method")
@@ -91,6 +101,7 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
         footer(s, k, purpose),
         layer,
     );
+    layer.extend(overlays);
 }
 
 /// Opens the whole config.json caption; nothing once the caption is gone.
@@ -202,6 +213,7 @@ fn credential(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {
 fn storage(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {
     let form = &s.form;
     let lock = s.data_folder_lock();
+    let folder = display_path(s.data_paths().base());
     let mut group = col()
         .gap(SPACE_MD)
         .w_full()
@@ -211,7 +223,7 @@ fn storage(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {
                 .gap(SPACE_SM)
                 .w_full()
                 .items_end()
-                .child(parts::detail_row(k, "Data folder", &form.data_folder).grow(1.0))
+                .child(parts::detail_row(k, "Data folder", &folder).grow(1.0))
                 .child(
                     Button::new("Change")
                         .variant(ButtonVariant::Outline)

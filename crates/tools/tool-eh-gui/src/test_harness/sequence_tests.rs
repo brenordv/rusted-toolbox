@@ -1,5 +1,8 @@
 use super::Harness;
-use super::builders::{ORDERS, state, stopped};
+use super::builders::{
+    BILLING, ORDERS, ORDERS_DEV, billing_config, launch_folder, listing, orders_config,
+    profile_home, state, stopped, with_profiles,
+};
 use super::journeys::orders;
 use super::services::ServiceCall;
 use super::toast_tests::focus_on_a_shown_card;
@@ -23,8 +26,11 @@ use rune::{Key, KeyEvent, Mods};
 use shared_eventhub_core::engine::EngineEvent;
 use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_core::producer::{SendEnd, SendSummary};
+use shared_eventhub_persistence::config::ConfigLoad;
 use shared_eventhub_persistence::export::ExportOutcome;
 use shared_eventhub_persistence::search::SearchCursor;
+use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry};
+use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -55,6 +61,11 @@ enum Open {
         run: u64,
         stage: u8,
     },
+    List(u64),
+    Load {
+        request: u64,
+        dir: PathBuf,
+    },
 }
 
 /// How an open call is answered.
@@ -65,8 +76,19 @@ enum Answer {
     Stale,
 }
 
+/// What a sequence's windows and generator hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mix {
+    /// No workspace, and the base actions only.
+    Base,
+    /// The test workspace, and the base actions plus profile picks and connects cancelled
+    /// while preparing.
+    Profiles,
+}
+
 struct Sequence {
     seed: u64,
+    mix: Mix,
     rng: Xoshiro256PlusPlus,
     h: Harness,
     step: usize,
@@ -80,6 +102,17 @@ struct Sequence {
     held_steps: usize,
     /// Steps that ended with a message export as the only job running.
     lone_export_steps: usize,
+    /// The workspace's listing and the homes a pick chooses from.
+    entries: Vec<ProfileEntry>,
+    homes: Vec<ConfigHome>,
+    /// Steps that moved the home.
+    switched_steps: usize,
+    /// Picks made while the data folder was held.
+    refused_picks: usize,
+    /// Steps that ended with an abandoned connect attempt holding the data folder.
+    abandoned_steps: usize,
+    /// Set when the step's quit opened a fresh window, whose home is the launch folder again.
+    fresh_window: bool,
 }
 
 impl Drop for Sequence {
@@ -96,8 +129,11 @@ impl Drop for Sequence {
     }
 }
 
-fn window() -> Harness {
-    let mut s = state();
+fn window(mix: Mix) -> Harness {
+    let mut s = match mix {
+        Mix::Base => state(),
+        Mix::Profiles => with_profiles(state()),
+    };
     s.form.connection_string.edit_mut().replace_text(ORDERS);
     s.send.refresh_destination(&s.form);
     let mut h = Harness::new(s, WINDOW_SIZE);
@@ -144,11 +180,12 @@ fn running_send(run: &SendRun) -> Option<u64> {
 }
 
 impl Sequence {
-    fn new(seed: u64) -> Self {
+    fn new(seed: u64, mix: Mix) -> Self {
         let mut sequence = Self {
             seed,
+            mix,
             rng: Xoshiro256PlusPlus::seed_from_u64(seed),
-            h: window(),
+            h: window(mix),
             step: 0,
             trace: Vec::new(),
             open: Vec::new(),
@@ -158,6 +195,16 @@ impl Sequence {
             dialogs: tempfile::tempdir().unwrap(),
             held_steps: 0,
             lone_export_steps: 0,
+            entries: listing(),
+            homes: vec![
+                ConfigHome::CurrentFolder(launch_folder()),
+                profile_home(BILLING),
+                profile_home(ORDERS_DEV),
+            ],
+            switched_steps: 0,
+            refused_picks: 0,
+            abandoned_steps: 0,
+            fresh_window: false,
         };
         sequence.open_window();
         sequence
@@ -165,7 +212,8 @@ impl Sequence {
 
     /// A fresh window; about half of them (by the seed) start capturing with some rows.
     fn open_window(&mut self) {
-        self.h = window();
+        self.h = window(self.mix);
+        self.fresh_window = true;
         self.open.clear();
         self.unfinished_sends.clear();
         if self.below(2) == 0 {
@@ -187,6 +235,8 @@ impl Sequence {
             self.step = step;
             let locked = self.h.state().data_folder_lock().is_some();
             let finishing = self.h.state().still_finishing;
+            let home = self.h.state().home().clone();
+            self.fresh_window = false;
             let action = self.act();
             self.trace.push(action);
             self.collect(finishing, locked);
@@ -197,12 +247,20 @@ impl Sequence {
             if lone_message_export(self.h.state()) {
                 self.lone_export_steps += 1;
             }
+            if *self.h.state().home() != home && !self.fresh_window {
+                self.switched_steps += 1;
+            }
+            if !self.h.state().abandoned_attempts().is_empty() {
+                self.abandoned_steps += 1;
+            }
         }
     }
 
-    /// One step, by weight; user input only while the window is open.
+    /// One step, by weight; user input only while the window is open, and the profile actions
+    /// only in [`Mix::Profiles`] (in [`Mix::Base`] their rolls answer an open call).
     fn act(&mut self) -> String {
         let closed = self.h.state().window_is_closed();
+        let profiles = !closed && self.mix == Mix::Profiles;
         let roll = self.below(100);
         match roll {
             0..27 if !closed => self.press(),
@@ -230,7 +288,45 @@ impl Sequence {
                     .deliver(Input::ConfigSaved(Err(LONG_FAILURE.to_owned())));
                 "a long failure toasts".to_owned()
             }
+            83..87 if profiles => self.pick_profile(),
+            87..89 if profiles => {
+                self.h.deliver(Input::ConnectPressed);
+                self.h.deliver(Input::DisconnectPressed);
+                "connect, then disconnect while preparing".to_owned()
+            }
             _ => self.answer(),
+        }
+    }
+
+    /// A pick through the keyboard and accessibility path: the launch folder or a profile.
+    fn pick_profile(&mut self) -> String {
+        let index = self.below(self.homes.len());
+        let home = self.homes[index].clone();
+        if self.h.state().data_folder_lock().is_some() {
+            self.refused_picks += 1;
+        }
+        let label = crate::state::home_label(&home);
+        self.h.deliver(Input::ProfilePicked(home));
+        format!("pick {label}")
+    }
+
+    /// What the real load of `dir` would read: nothing in the launch folder, each profile's
+    /// config, and now and then a failure.
+    fn load_result(&mut self, dir: &std::path::Path) -> Result<ConfigLoad, String> {
+        if self.below(6) == 0 {
+            return Err(LONG_FAILURE.to_owned());
+        }
+        let named = |name: &str| {
+            self.homes
+                .iter()
+                .any(|home| home.profile_name() == Some(name) && home.dir() == dir)
+        };
+        if named(BILLING) {
+            Ok(ConfigLoad::Loaded(Box::new(billing_config())))
+        } else if named(ORDERS_DEV) {
+            Ok(ConfigLoad::Loaded(Box::new(orders_config())))
+        } else {
+            Ok(ConfigLoad::Missing)
         }
     }
 
@@ -441,6 +537,22 @@ impl Sequence {
                 });
                 (input, format!("send {run} finished"))
             }
+            Open::List(request) => {
+                let request = request.wrapping_sub(1);
+                let input = Input::ProfilesListed {
+                    request,
+                    result: Ok(self.entries.clone()),
+                };
+                (input, format!("list {request}"))
+            }
+            Open::Load { request, .. } => {
+                let request = request.wrapping_sub(1);
+                let input = Input::ProfileLoaded {
+                    request,
+                    result: Ok(ConfigLoad::Loaded(Box::new(orders_config()))),
+                };
+                (input, format!("load {request}"))
+            }
             Open::Save | Open::Rebuild(_) => return "no stale form of this call".to_owned(),
         };
         self.h.deliver(input);
@@ -554,6 +666,21 @@ impl Sequence {
                 format!("bulk {export} done")
             }
             Open::Send { run, stage } => self.send_answer(run, stage, how),
+            Open::List(request) => {
+                self.h.deliver(Input::ProfilesListed {
+                    request,
+                    result: Ok(self.entries.clone()),
+                });
+                self.reopen_if_twice(how, Open::List(request));
+                format!("list {request}")
+            }
+            Open::Load { request, dir } => {
+                let result = self.load_result(&dir);
+                let ok = result.is_ok();
+                self.h.deliver(Input::ProfileLoaded { request, result });
+                self.reopen_if_twice(how, Open::Load { request, dir });
+                format!("load {request} ok={ok}")
+            }
         }
     }
 
@@ -603,16 +730,36 @@ impl Sequence {
         let mut quits = 0;
         for call in self.h.take_calls() {
             match call {
-                ServiceCall::PrepareSession { attempt, .. } => {
-                    self.open.push(Open::Prepare(attempt))
+                ServiceCall::PrepareSession { attempt, request } => {
+                    assert_eq!(
+                        request.paths,
+                        self.h.state().data_paths(),
+                        "seed={} step={}: a connect for another data folder",
+                        self.seed,
+                        self.step
+                    );
+                    self.open.push(Open::Prepare(attempt));
                 }
-                ServiceCall::SaveConfig(_) => self.open.push(Open::Save),
+                ServiceCall::SaveConfig(request) => {
+                    assert_eq!(
+                        request.dir,
+                        self.h.state().home().dir(),
+                        "seed={} step={}: a save to a folder that is not the home",
+                        self.seed,
+                        self.step
+                    );
+                    self.open.push(Open::Save);
+                }
                 ServiceCall::SwitchDataFolder(_) => {
                     assert!(
                         !locked,
                         "seed={} step={}: a folder switch while locked",
                         self.seed, self.step
                     );
+                }
+                ServiceCall::ListProfiles { request, .. } => self.open.push(Open::List(request)),
+                ServiceCall::LoadProfile { request, dir } => {
+                    self.open.push(Open::Load { request, dir });
                 }
                 ServiceCall::ReopenWindow => {}
                 ServiceCall::Quit => quits += 1,
@@ -777,7 +924,7 @@ fn rows_to_events(rows: Vec<shared_eventhub_core::models::CapturedMessage>) -> V
 #[case::seed_64(64)]
 #[case::seed_72(72)]
 fn a_seeded_sequence_keeps_every_invariant(#[case] seed: u64) {
-    let mut sequence = Sequence::new(seed);
+    let mut sequence = Sequence::new(seed, Mix::Base);
 
     sequence.run(STEPS);
 
@@ -792,10 +939,37 @@ fn a_seeded_sequence_keeps_every_invariant(#[case] seed: u64) {
     );
 }
 
+#[rstest::rstest]
+#[case::seed_1(1)]
+#[case::seed_3(3)]
+fn a_seeded_sequence_with_profiles_keeps_every_invariant(#[case] seed: u64) {
+    let mut sequence = Sequence::new(seed, Mix::Profiles);
+
+    sequence.run(STEPS);
+
+    assert_eq!(sequence.step + 1, STEPS);
+    assert!(
+        sequence.held_steps > 0,
+        "seed={seed}: no step held toasts under a card's details"
+    );
+    assert!(
+        sequence.switched_steps > 0,
+        "seed={seed}: no step switched the profile"
+    );
+    assert!(
+        sequence.refused_picks > 0,
+        "seed={seed}: no pick was made while the data folder was held"
+    );
+    assert!(
+        sequence.abandoned_steps > 0,
+        "seed={seed}: no step ended with a cancelled connect holding the data folder"
+    );
+}
+
 #[test]
 fn a_seed_replays_the_same_actions() {
-    let mut first = Sequence::new(1);
-    let mut second = Sequence::new(1);
+    let mut first = Sequence::new(1, Mix::Profiles);
+    let mut second = Sequence::new(1, Mix::Profiles);
 
     first.run(REPLAY_STEPS);
     second.run(REPLAY_STEPS);

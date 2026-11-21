@@ -3,9 +3,11 @@
 //! feature; the shipped `eh-gui` never contains it.
 
 pub mod hub;
+pub mod profiles;
 mod seed;
 pub mod send;
 
+pub use profiles::seed_profiles;
 pub use seed::seed_archive;
 
 use crate::app::dispatch;
@@ -19,8 +21,8 @@ use crate::send::compose::PacingChoice;
 use crate::send::{SendInput, SendRequest};
 use crate::services::{
     AppPort, ConnectRequest, SaveRequest, Services, apply_from_runtime, filter_hook, gate,
-    open_secrets, report_ready, spawn_bulk_export, spawn_export_one, spawn_list_flush,
-    spawn_rebuild, spawn_search_archive, spawn_tick,
+    listed_profiles, loaded_profile, open_secrets, report_ready, spawn_bulk_export,
+    spawn_export_one, spawn_list_flush, spawn_rebuild, spawn_search_archive, spawn_tick,
 };
 use crate::state::{AppState, Input, Section, SheetPurpose, ToastInput, ToastKind};
 use crate::tasks::StoreSlot;
@@ -30,7 +32,8 @@ use rune::AppHandle;
 use shared_eventhub_persistence::config::save_config;
 use shared_eventhub_persistence::export::{DiskWriteConfig, ExportOptions, WritingSink};
 use shared_eventhub_persistence::paths::DataPaths;
-use std::path::{Path, PathBuf};
+use shared_eventhub_persistence::workspace::Workspace;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -44,6 +47,8 @@ pub const SCENARIO_VARIABLE: &str = "EH_GUI_DEMO";
 pub const DEMO_CONNECTION_STRING: &str = "Endpoint=sb://demo.servicebus.windows.net/;\
     SharedAccessKeyName=demo;SharedAccessKey=ZGVtbw==;EntityPath=demo";
 const SLOW_FINISH: Duration = Duration::from_secs(45);
+/// Why `profiles-unavailable` has no workspace, worded as eh words a bad `EH_WORKSPACE`.
+const NO_DEMO_WORKSPACE: &str = "EH_WORKSPACE must be an absolute folder path; it is 'profiles'";
 
 /// What the demo shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +92,15 @@ pub enum Scenario {
     ToastStack,
     /// [`Scenario::ToastStack`] fanned out, as after Alt+T.
     ToastStackOpen,
+    /// The launch folder with a typed connection string, over a workspace of two profiles
+    /// that load and one that can't.
+    Profiles,
+    /// [`Scenario::Profiles`] with the sheet open and the picker locked by a cancelled connect.
+    ProfilesLocked,
+    /// [`Scenario::Profiles`] with the sheet open after a pick of `billing` failed to load.
+    ProfilesFailed,
+    /// The sheet open with no workspace (a bad `EH_WORKSPACE`).
+    ProfilesUnavailable,
 }
 
 /// How fast a scenario's hub produces messages.
@@ -109,7 +123,7 @@ impl Pace {
 }
 
 impl Scenario {
-    const NAMES: [(&'static str, Scenario); 19] = [
+    const NAMES: [(&'static str, Scenario); 23] = [
         ("live", Self::Live),
         ("burst", Self::Burst),
         ("quiet", Self::Quiet),
@@ -129,6 +143,10 @@ impl Scenario {
         ("toast-stack", Self::ToastStack),
         ("toast-stack-open", Self::ToastStackOpen),
         ("seeded-partitions", Self::SeededPartitions),
+        ("profiles", Self::Profiles),
+        ("profiles-locked", Self::ProfilesLocked),
+        ("profiles-failed", Self::ProfilesFailed),
+        ("profiles-unavailable", Self::ProfilesUnavailable),
     ];
 
     /// The scenario named `name`.
@@ -182,7 +200,11 @@ impl Scenario {
             | Self::SendPaced
             | Self::SendTemplate
             | Self::ToastStack
-            | Self::ToastStackOpen => false,
+            | Self::ToastStackOpen
+            | Self::Profiles
+            | Self::ProfilesLocked
+            | Self::ProfilesFailed
+            | Self::ProfilesUnavailable => false,
         }
     }
 
@@ -206,13 +228,44 @@ impl Scenario {
             | Self::SeededSearch
             | Self::SeededPartitions
             | Self::ToastStack
-            | Self::ToastStackOpen => self.is_live(),
+            | Self::ToastStackOpen
+            | Self::Profiles
+            | Self::ProfilesLocked
+            | Self::ProfilesFailed
+            | Self::ProfilesUnavailable => self.is_live(),
         }
     }
 
     /// Whether the archive is seeded before the window opens.
     pub fn seeds_archive(self) -> bool {
         self == Self::SeededExport
+    }
+
+    /// Whether the demo's profile workspace is written before the window opens.
+    pub fn seeds_profiles(self) -> bool {
+        match self {
+            Self::Profiles | Self::ProfilesLocked | Self::ProfilesFailed => true,
+            Self::Live
+            | Self::Burst
+            | Self::Quiet
+            | Self::PartitionFail
+            | Self::StartFail
+            | Self::SlowFinish
+            | Self::SeededEmpty
+            | Self::SeededFailed
+            | Self::ErrorDetails
+            | Self::SeededConnect
+            | Self::SeededRead
+            | Self::SeededSearch
+            | Self::SeededPartitions
+            | Self::SeededExport
+            | Self::Send
+            | Self::SendPaced
+            | Self::SendTemplate
+            | Self::ToastStack
+            | Self::ToastStackOpen
+            | Self::ProfilesUnavailable => false,
+        }
     }
 
     pub fn pace(self) -> Pace {
@@ -248,7 +301,11 @@ impl Scenario {
             | Self::SendPaced
             | Self::SendTemplate
             | Self::ToastStack
-            | Self::ToastStackOpen => steady,
+            | Self::ToastStackOpen
+            | Self::Profiles
+            | Self::ProfilesLocked
+            | Self::ProfilesFailed
+            | Self::ProfilesUnavailable => steady,
         }
     }
 
@@ -284,6 +341,12 @@ pub fn initial_state(
         Some("Demo mode: a generated event hub and a temporary data folder".to_owned()),
         FileLogging::Off,
     );
+    let workspace = if scenario == Scenario::ProfilesUnavailable {
+        Err(NO_DEMO_WORKSPACE.to_owned())
+    } else {
+        Ok(profiles::workspace(root))
+    };
+    state.set_launch(root.to_path_buf(), workspace);
     match scenario {
         Scenario::SeededFailed => seed_failure(&mut state, demo_failure()),
         Scenario::ErrorDetails => {
@@ -330,13 +393,17 @@ pub fn initial_state(
             seed_toasts(&mut state);
             drop(state.apply(Input::Toast(ToastInput::Hotkey)));
         }
+        Scenario::ProfilesLocked => profiles::locked(&mut state, rt),
+        Scenario::ProfilesFailed => profiles::failed(&mut state, rt),
+        Scenario::ProfilesUnavailable => profiles::open_listed(&mut state, rt),
         Scenario::Live
         | Scenario::Burst
         | Scenario::Quiet
         | Scenario::PartitionFail
         | Scenario::StartFail
         | Scenario::SlowFinish
-        | Scenario::SeededEmpty => {}
+        | Scenario::SeededEmpty
+        | Scenario::Profiles => {}
     }
     state
 }
@@ -448,13 +515,15 @@ impl Services for DemoServices {
         });
     }
 
+    /// Saves into [`save_dir`]; the secrets go to the demo's data folder.
     fn save_config(&self, request: SaveRequest) {
         let handle = self.handle.clone();
         let root = self.root.clone();
+        let dir = save_dir(&root, &request.dir);
         self.rt.spawn(async move {
             let saved = tokio::task::spawn_blocking(move || {
                 open_secrets(&data_paths(&root), |secrets| {
-                    save_config(&root, &request.config, secrets, &request.given)
+                    save_config(&dir, &request.config, secrets, &request.given)
                 })
             })
             .await
@@ -470,6 +539,23 @@ impl Services for DemoServices {
             folder = %paths.base().display(),
             "demo mode keeps its temporary data folder"
         );
+    }
+
+    /// Lists `workspace` on the runtime.
+    fn list_profiles(&self, request: u64, workspace: Workspace) {
+        let handle = self.handle.clone();
+        self.rt.spawn(async move {
+            let listed = listed_profiles(request, workspace).await;
+            apply_from_runtime(&handle, listed);
+        });
+    }
+
+    fn load_profile(&self, request: u64, dir: PathBuf) {
+        let handle = self.handle.clone();
+        self.rt.spawn(async move {
+            let loaded = loaded_profile(request, &dir).await;
+            apply_from_runtime(&handle, loaded);
+        });
     }
 
     fn reopen_window(&self) {
@@ -532,6 +618,20 @@ impl Services for DemoServices {
         self.rt.spawn(send::demo_send(request, move |input| {
             apply_from_runtime(&handle, Input::Send(input));
         }));
+    }
+}
+
+/// Where a demo Save config writes: `requested` when it lies under `root` and holds no `..`,
+/// else `root`.
+pub fn save_dir(root: &Path, requested: &Path) -> PathBuf {
+    let climbs = requested
+        .components()
+        .any(|part| part == Component::ParentDir);
+    if requested.starts_with(root) && !climbs {
+        requested.to_path_buf()
+    } else {
+        debug!("demo mode saves config.json under its own root");
+        root.to_path_buf()
     }
 }
 

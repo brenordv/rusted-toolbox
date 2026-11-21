@@ -28,6 +28,7 @@ fn cx(form: &ConnectForm) -> PressContext<'_> {
         sheet_open: false,
         window_closed: false,
         form,
+        paths: DataPaths::new(form.data_folder.trim()),
     }
 }
 
@@ -147,7 +148,7 @@ fn a_press_is_ignored_with_a_sheet_open_or_the_window_closed(
         PressContext {
             sheet_open,
             window_closed,
-            form: &form,
+            ..cx(&form)
         },
     );
 

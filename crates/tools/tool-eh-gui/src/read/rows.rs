@@ -3,6 +3,7 @@
 
 use shared_eventhub_core::models::{CapturedMessage, MessageKey};
 use std::collections::VecDeque;
+use std::path::Path;
 use std::sync::Arc;
 
 /// The most rows held, arrived and displayed together.
@@ -72,6 +73,11 @@ pub fn display_line(chars: impl Iterator<Item = char>) -> String {
     chars
         .map(|c| if is_unsafe_in_a_line(c) { ' ' } else { c })
         .collect()
+}
+
+/// `path` as [`display_line`] shows it.
+pub fn display_path(path: &Path) -> String {
+    display_line(path.display().to_string().chars())
 }
 
 /// `text` with its first letter capitalized, for a parser message shown on its own.
