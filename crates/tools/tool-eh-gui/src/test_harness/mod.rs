@@ -20,6 +20,8 @@ mod metadata_tests;
 #[cfg(test)]
 mod pane_tests;
 #[cfg(test)]
+mod profile_tests;
+#[cfg(test)]
 mod sequence_tests;
 #[cfg(test)]
 mod sweep_tests;

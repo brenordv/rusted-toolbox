@@ -47,6 +47,9 @@ fn run(scenario: Scenario) -> anyhow::Result<()> {
             .block_on(demo::seed_archive(&slot, root.path()))
             .context("Failed to seed the demo archive")?;
     }
+    if scenario.seeds_profiles() {
+        demo::seed_profiles(root.path()).context("Failed to seed the demo profiles")?;
+    }
     let rt = runtime.handle().clone();
     let path = root.path().to_path_buf();
 

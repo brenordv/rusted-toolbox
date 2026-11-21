@@ -480,3 +480,94 @@ fn a_panic_inside_a_gated_open_does_not_lock_the_next_one_out() {
     assert!(panicked);
     assert!(next.is_ok(), "{next:?}");
 }
+
+/// Writes `text` as `config.json` in `dir`, creating `dir`.
+fn write_config(dir: &Path, text: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(
+        dir.join(shared_eventhub_persistence::config::CONFIG_FILE_NAME),
+        text,
+    )
+    .unwrap();
+}
+
+const CREDENTIAL_CONFIG: &str = r#"{"tool":"eh","schema_version":1,"target":{"auth":{"method":"credential","credential":{"kind":"developer-tools"}}}}"#;
+
+#[tokio::test]
+async fn listing_a_workspace_answers_its_profiles_for_the_request() {
+    let root = tempfile::tempdir().unwrap();
+    write_config(&root.path().join("orders"), CREDENTIAL_CONFIG);
+
+    let answer = listed_profiles(4, Workspace::at(root.path().to_owned())).await;
+
+    let Input::ProfilesListed {
+        request: 4,
+        result: Ok(entries),
+    } = answer
+    else {
+        panic!("expected the listing for request 4, got {answer:?}");
+    };
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].profile.name(), "orders");
+}
+
+#[tokio::test]
+async fn a_workspace_that_cannot_be_listed_answers_why() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("not-a-folder");
+    std::fs::write(&file, "x").unwrap();
+
+    let answer = listed_profiles(2, Workspace::at(file)).await;
+
+    let Input::ProfilesListed {
+        request: 2,
+        result: Err(text),
+    } = answer
+    else {
+        panic!("expected a failed listing, got {answer:?}");
+    };
+    assert!(text.starts_with("Failed to list the workspace"), "{text}");
+}
+
+#[tokio::test]
+async fn loading_a_profile_answers_its_config_for_the_request() {
+    let root = tempfile::tempdir().unwrap();
+    write_config(root.path(), CREDENTIAL_CONFIG);
+
+    let answer = loaded_profile(3, root.path()).await;
+
+    assert!(
+        matches!(
+            &answer,
+            Input::ProfileLoaded {
+                request: 3,
+                result: Ok(shared_eventhub_persistence::config::ConfigLoad::Loaded(_)),
+            }
+        ),
+        "{answer:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_profile_whose_config_is_broken_answers_why_without_its_values() {
+    let root = tempfile::tempdir().unwrap();
+    write_config(
+        root.path(),
+        r#"{"tool":"eh","schema_version":1,"target":{"auth":{"method":"connection-string","stored":"SharedAccessKey=marker-4410"}}}"#,
+    );
+
+    let answer = loaded_profile(5, root.path()).await;
+
+    let Input::ProfileLoaded {
+        request: 5,
+        result: Err(text),
+    } = answer
+    else {
+        panic!("expected a failed load, got {answer:?}");
+    };
+    assert!(
+        text.contains("is an eh config, but it is not valid"),
+        "{text}"
+    );
+    assert!(!text.contains("marker-4410"), "{text}");
+}

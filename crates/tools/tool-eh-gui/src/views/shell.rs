@@ -9,10 +9,11 @@ use crate::design::toast::{
 };
 use crate::design::tokens::{FRAME_INSET, SPACE_LG, SPACE_SM, TYPE_CAPTION, TYPE_HEADLINE};
 use crate::design::{Surface, icons, motion, parts, surface};
+use crate::read::rows::{display_line, display_path};
 use crate::read::{LogKind, LogLine};
 use crate::state::{
     AppState, ConnectionState, Input, ListSection, Pane, Section, SheetPurpose, ToastBody,
-    ToastInput, ToastKind, error_preview,
+    ToastInput, ToastKind, error_preview, home_label,
 };
 use common_cli::app_logger::FileLogging;
 use rune::{Color, Cx, El, Key, KeyEvent, Tx, col, el, row, text};
@@ -141,10 +142,17 @@ fn pill(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
     if s.read.session_log_unseen > 0 {
         face = face.child(parts::warning_count(k, s.read.session_log_unseen));
     }
+    let name = match s.home().profile_name() {
+        Some(profile) => format!(
+            "Connection: {label}, profile {}",
+            display_line(profile.chars())
+        ),
+        None => format!("Connection: {label}"),
+    };
     let face = face
         .key("pill")
         .role("button")
-        .label(format!("Connection: {label}"))
+        .label(name)
         .on_press(|s: &mut AppState| {
             s.pill_open = !s.pill_open;
             if s.pill_open {
@@ -152,8 +160,10 @@ fn pill(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
             }
         });
 
+    let folder = display_path(s.data_paths().base());
     let mut rows = vec![
-        parts::detail_row(k, "Data folder", &s.form.data_folder),
+        parts::detail_row(k, "Profile", &home_label(s.home())),
+        parts::detail_row(k, "Data folder", &folder),
         log_detail(k, &s.file_logging),
         parts::detail_row(k, "Version", env!("CARGO_PKG_VERSION")),
     ];
@@ -288,7 +298,7 @@ fn connection_button(s: &AppState, k: &Kit) -> El {
     }
 }
 
-/// How a toast card names itself.
+/// How a toast card names itself when it has no title of its own.
 fn toast_title(kind: ToastKind) -> &'static str {
     match kind {
         ToastKind::Info => "Done",
@@ -312,7 +322,7 @@ fn card_face(k: &Kit, id: u64, body: &ToastBody) -> CardFace {
     let (height, overflow) = toast_size(k, &preview.shown);
     CardFace {
         id,
-        title: toast_title(body.kind),
+        title: body.title.unwrap_or(toast_title(body.kind)),
         details: preview.cut || overflow,
         shown: preview.shown,
         height,

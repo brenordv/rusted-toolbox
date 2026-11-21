@@ -23,6 +23,8 @@ Press Connect to open the connection sheet. Its fields scroll between the title 
 buttons, so Connect stays on screen in a small window. Escape, the close button, or a click
 outside it closes the sheet. It holds:
 
+- **Profile**: which `config.json` the sheet edits, and "Saves to", the file Save config
+  writes (see Profiles below).
 - **Sign-in method**: a connection string, an Azure credential (developer tools, managed
   identity, or a client secret) with the namespace and event hub, or a connection string kept in
   Key Vault (the vault URL and secret name, plus the credential that reads it).
@@ -32,6 +34,34 @@ outside it closes the sheet. It holds:
 Connect checks the fields first (namespace and event hub names use the same rules as `eh`).
 Secrets are typed into hidden fields with a show toggle; they are wiped after Connect and Save
 config, and never shown to screen readers.
+
+### Profiles
+
+A profile is a saved connection: a folder in the workspace holding a `config.json` and, beside
+it, the data folder that config names. eh-gui and `eh` share the workspace: `EH_WORKSPACE` when
+it is set (an absolute folder), else `~/.eh/profiles`. eh-gui doesn't create profiles; make one
+with `eh read ... --profile NAME --save-config`, or move a folder holding an eh `config.json`
+into the workspace.
+
+- The Profile picker at the top of the connection sheet lists **Launch folder** (the folder
+  eh-gui started in, where it read `config.json` at launch) and every profile whose `config.json`
+  loads. A caption under it counts the ones that can't ("2 profiles can't load; eh profile list
+  shows why."). With no profiles it reads "No saved profiles yet.", and without a workspace (no
+  home folder, or an `EH_WORKSPACE` that isn't absolute) it says why. The list is read again
+  each time the sheet opens.
+- Picking one reads its `config.json`, then replaces the sheet's fields, the capture rules, and
+  the export options with the profile's, and switches the data folder (a relative data folder
+  sits inside the profile folder). Save config then writes to the profile, and the connection
+  pill's popover names it. Picking Launch folder comes back the same way.
+- A switch clears the save caption, a failed connection's error, and the field issues. A secret
+  you typed and never saved is dropped, and the sheet says so; a saved one belongs to the
+  profile's data folder and stays there.
+- The picker is disabled while something uses the data folder, with the reason under it: a
+  session, a save, a bulk or message export, a send, or a connect you cancelled while it was
+  still preparing (until that attempt stops). While a profile loads, Connect, Save config, and
+  Change do nothing.
+- A profile that can't be opened leaves everything as it was and says why under the picker. An
+  outcome that lands after the sheet closed shows as a toast.
 
 ### Failures
 
@@ -207,7 +237,8 @@ At launch eh-gui reads `config.json` from the working directory, exactly as `eh`
 the sheet from it. A secret the config keeps in the data folder's secrets file shows as "Saved
 in local store" and is read only when you connect. A `config.json` that belongs to another tool
 is left alone, and the sheet says so. Save config writes `config.json` with the CLI's rules; keep
-one `config.json` per data folder.
+one `config.json` per data folder. Saves go to the active profile, or to the launch folder when
+no profile is picked.
 
 ## Data folder and the archive
 
@@ -216,8 +247,9 @@ one `config.json` per data folder.
 - The archive is locked while eh-gui uses it: from the first Connect until the app quits (or the
   data folder changes), `eh read` and `eh export` on the same folder report it as in use. One
   process at a time per data folder.
-- The data folder can change only while no session, bulk export, or send runs. A new data folder
-  clears the Export section's results.
+- The data folder can change only while no session, bulk export, or send runs, and not until a
+  connect cancelled while preparing has stopped. A new data folder (a Change pick or a profile
+  switch) clears the Export section's results.
 - Secrets saved with Save config go to the data folder's secrets file, which is obfuscated, not
   encrypted; protect the folder like the secrets themselves.
 - Data captured by `eh-read` 1.1.0 (sled) is not migrated; the last released 1.1.0 binaries
@@ -281,8 +313,12 @@ selected), `seeded-search` (the same with a regex filter), `seeded-partitions` (
 over an archive of 6,000 generated messages, searched for everything; paging and bulk exports
 are real), `send` (the Send section with a JSON body, idle), `send-paced` (10 events one a
 second, already sending), `send-template` (Template on with an order template and its sample,
-idle). Demo sends reach no event hub: they count up following the pacing and
-Cancel. The seeded Read states run no engine, so Disconnect there never finishes. Demo mode
+idle), `profiles` (a typed connection string over a workspace of `orders-dev`, `billing`, and
+one profile that can't load), `profiles-locked` (the sheet open with the picker held by a
+cancelled connect), `profiles-failed` (the sheet open after `billing` failed to load), and
+`profiles-unavailable` (the sheet open with no workspace). Demo profiles live in the temporary
+folder, and a switch keeps the demo's own data folder. Demo sends reach no event hub: they
+count up following the pacing and Cancel. The seeded Read states run no engine, so Disconnect there never finishes. Demo mode
 reads and writes only under its temporary folder: bulk exports go to its `data/exports`,
 whatever folder is picked. Debug builds accept Rune's agent flags
 (`--snap`, `--script`, `--tree`, `--trace`, `--scene`); write their output under
@@ -377,6 +413,20 @@ EH_GUI_DEMO=seeded-partitions cargo run -p eh-gui --features demo --bin eh-gui-d
 EH_GUI_DEMO=seeded-partitions cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/phase21-partitions-scrolled.json --at 1.6 --snap target/eh-gui-demo/phase21/after-partitions-scrolled.png
 ```
 
+Profiles: the picker sits at the top of the sheet above a hairline, its list draws over the
+sheet, the held picker is dimmed with the reason under it, and the note under the picker wraps
+inside the sheet (a cut failure offers View details).
+
+```
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-sheet.json --at 1.2 --snap target/eh-gui-demo/phase27/sheet-960.png
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-picker.json --at 1.5 --snap target/eh-gui-demo/phase27/picker-open-960.png
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-switched.json --at 2.0 --snap target/eh-gui-demo/phase27/switched-note-960.png
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-pill.json --at 3.2 --snap target/eh-gui-demo/phase27/pill-profile-960.png
+EH_GUI_DEMO=profiles-locked cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase27/locked-960.png
+EH_GUI_DEMO=profiles-failed cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase27/load-failed-960.png
+EH_GUI_DEMO=profiles-unavailable cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase27/no-workspace-960.png
+```
+
 Snapshots are dark: the app reads the system appearance itself, so `--theme light` changes
 nothing. With the system set to light, check in the real window: the sheet and popover scrims,
 the pane fills, the shadow and rim on the sheet, popovers, new-messages pill, and bulk bar, the
@@ -425,6 +475,13 @@ hub.
   Read's partition column; send 10 Paced at 1,000 ms (about one a second in Read) and Cancel
   during a wait (stops within a second); close the window during a long send (the app quits
   after the batch in flight).
+- Profiles, with two saved with `eh ... --profile NAME --save-config`: open the sheet, pick one
+  with the pointer and another with the keyboard (Tab to the picker, Space, arrows, Space);
+  check Saves to, the pill's Profile row, and that Connect captures into the profile's data
+  folder; type a connection string and switch (the note says it was cleared); press Connect and
+  Disconnect at once, then open the sheet (the picker is disabled until the cancelled connect
+  stops); break a profile's `config.json` while the sheet is open and pick it (the note says
+  why, nothing changes).
 - Template: turn it on with an order template, Regenerate a few samples, send 5 and see five
   different values in Read; type a broken placeholder and press Send (the editor and caption
   mark it); type into a large template with `RUNE_COMMIT_BUDGET_MS=8` (no commit over budget).

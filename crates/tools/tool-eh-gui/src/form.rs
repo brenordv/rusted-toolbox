@@ -12,7 +12,6 @@ use shared_eventhub_persistence::config::{
     AuthMethodConfig, CredentialKindConfig, SensitiveValues, StoredSecret, TargetConfig, ToolConfig,
 };
 use shared_eventhub_persistence::export::DiskWriteMode;
-use shared_eventhub_persistence::paths::DataPaths;
 
 /// How the app authenticates to the event hub.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,6 +153,13 @@ impl SecretSource {
             SavedSecret::Unused | SavedSecret::Stored | SavedSecret::Typed(_) => {}
         }
     }
+}
+
+/// One of the two secrets the form can hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SecretKind {
+    ConnectionString,
+    ClientSecret,
 }
 
 /// What a save wrote for one secret.
@@ -340,9 +346,16 @@ impl ConnectForm {
         (form, loaded)
     }
 
-    /// The data folder the form names.
-    pub fn data_paths(&self) -> DataPaths {
-        DataPaths::new(self.data_folder.trim())
+    /// Which secret holds typed text no save has stored yet, the connection string first;
+    /// `None` when neither does.
+    pub(crate) fn typed_secret(&self) -> Option<SecretKind> {
+        if self.connection_string.given().is_some() {
+            Some(SecretKind::ConnectionString)
+        } else if self.client_secret.given().is_some() {
+            Some(SecretKind::ClientSecret)
+        } else {
+            None
+        }
     }
 
     /// Switches the auth method; typed secrets are hidden again.

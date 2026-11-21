@@ -16,6 +16,7 @@ use run::{Names, SendRun, ended_failed};
 use shared_eventhub_core::connection::target_names;
 use shared_eventhub_core::producer::{OutgoingEvent, SendEnd, SendPlan, SendSummary};
 use shared_eventhub_persistence::config::{AuthMethodConfig, resolve_target_with};
+use shared_eventhub_persistence::paths::DataPaths;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tracing::{debug, info, warn};
@@ -138,11 +139,13 @@ impl SendOutcome {
     }
 }
 
-/// What a Send press may depend on outside the section.
+/// What a Send press may depend on outside the section: the form and the data folder it
+/// resolves to.
 pub struct PressContext<'a> {
     pub sheet_open: bool,
     pub window_closed: bool,
     pub form: &'a ConnectForm,
+    pub paths: DataPaths,
 }
 
 /// The Send section's state.
@@ -250,7 +253,7 @@ impl SendState {
                 target: ConnectRequest {
                     config,
                     given,
-                    paths: cx.form.data_paths(),
+                    paths: cx.paths,
                 },
                 event,
                 template,

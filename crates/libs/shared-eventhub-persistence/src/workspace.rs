@@ -102,7 +102,8 @@ pub enum ProfileState {
 }
 
 impl ProfileState {
-    fn is_ready(&self) -> bool {
+    /// Whether the folder's `config.json` can be used.
+    pub fn is_ready(&self) -> bool {
         match self {
             Self::Ready(_) => true,
             Self::CannotLoad(_) => false,

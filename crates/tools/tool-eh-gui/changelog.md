@@ -1,6 +1,14 @@
 # Changelog
 
 ## 1.0.0
+- Profiles: a Profile picker at the top of the connect sheet lists Launch folder and every
+  profile in the workspace `eh` uses (`EH_WORKSPACE`, else `~/.eh/profiles`) whose `config.json`
+  loads, with a caption counting the ones that can't. A pick reads the profile off the UI thread
+  and swaps the form, capture rules, export options, and data folder; Save config writes to the
+  picked profile. The picker is disabled while anything uses the data folder, a connect cancelled
+  while preparing included, which now holds the folder until it stops. The pill's popover names
+  the profile. Demo scenarios `profiles`, `profiles-locked`, `profiles-failed`, and
+  `profiles-unavailable`.
 - Every switch label (Metadata in both inspectors, the four Export options, Template) is drawn in
   the readable form-label style, and a press on the label or beside the switch toggles it. The
   connection and Received-per-partition popovers fit the kit's 320 pt surface: their paths and

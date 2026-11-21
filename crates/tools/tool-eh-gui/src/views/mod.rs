@@ -11,6 +11,7 @@ mod sections;
 mod send;
 pub(crate) mod shell;
 
+pub use connect::{PICKER_KEY, PROFILE_GROUP_KEY, PROFILE_NOTE_KEY};
 pub use export::{BULK_METADATA_KEY, CONDENSE_KEY, LOCAL_TIME_KEY, SKIP_EXPORTED_KEY};
 pub use inspector::{EXPORT_METADATA_KEY, READ_METADATA_KEY};
 pub use read::{PARTITIONS_SCROLL_KEY, SEARCH_KEY};

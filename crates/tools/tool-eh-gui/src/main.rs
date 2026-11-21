@@ -7,9 +7,10 @@ use eh_gui::app::{build_app, preload_config};
 use eh_gui::services::{GPU_HINT, ProdServices};
 use eh_gui::tasks::StoreSlot;
 use shared_eventhub_core::tls::install_crypto_provider;
+use shared_eventhub_persistence::workspace::Workspace;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::error;
+use tracing::{error, warn};
 
 /// Worker threads for the app's runtime: the engine, store work, and the UI tick are light.
 const RUNTIME_WORKERS: usize = 2;
@@ -17,9 +18,10 @@ const RUNTIME_WORKERS: usize = 2;
 /// Desktop GUI for Azure Event Hubs.
 ///
 /// Boots logging (file sink on by default), reads `config.json` from the working directory,
-/// then opens the window. Rune reads no process arguments: clap owns the command line, so
-/// Rune's own flags (its headless dumps among them) are refused like any other unknown flag.
-/// Exits 0 on a clean quit and 1 when the window cannot start.
+/// finds the profile workspace (eh-gui starts without profiles when there is none), then opens
+/// the window. Rune reads no process arguments: clap owns the command line, so Rune's own flags
+/// (its headless dumps among them) are refused like any other unknown flag. Exits 0 on a clean
+/// quit and 1 when the window cannot start.
 fn main() {
     // A build can enable more than one rustls provider, which leaves rustls no default for
     // the Event Hubs connection to use; this sets one before anything connects.
@@ -41,22 +43,19 @@ fn run(file_logging: FileLogging) -> anyhow::Result<()> {
         .enable_all()
         .build()
         .context("Failed to start the async runtime")?;
-    let preload = runtime.block_on(preload_config(&working_dir, file_logging));
-    let slot = Arc::new(StoreSlot::new(preload.form.data_paths()));
+    let workspace = Workspace::locate().map_err(|error| {
+        let reason = format!("{error:#}");
+        warn!(reason = %reason, "profiles are unavailable");
+        reason
+    });
+    let preload = runtime.block_on(preload_config(&working_dir, workspace, file_logging));
+    let slot = Arc::new(StoreSlot::new(preload.data_paths()));
     let window_failed = Arc::new(AtomicBool::new(false));
 
     let rt = runtime.handle().clone();
     let failed = Arc::clone(&window_failed);
     let app = build_app(
-        move |handle| {
-            preload.into_state(Box::new(ProdServices::new(
-                handle,
-                rt,
-                slot,
-                working_dir,
-                failed,
-            )))
-        },
+        move |handle| preload.into_state(Box::new(ProdServices::new(handle, rt, slot, failed))),
         Some(Vec::new()),
     );
     app.try_run()

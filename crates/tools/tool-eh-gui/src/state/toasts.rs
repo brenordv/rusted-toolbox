@@ -15,11 +15,12 @@ pub const MAX_TOASTS: usize = VISIBLE;
 /// Clock seconds (ticks) an info toast stays; danger toasts stay until closed.
 pub const INFO_TOAST_SECS: f64 = 6.0;
 
-/// What a toast shows: its kind, its whole text, and the key of the ring its latest repeat
-/// mounts.
+/// What a toast shows: its kind, its title when it has its own (else its kind's), its whole
+/// text, and the key of the ring its latest repeat mounts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToastBody {
     pub kind: ToastKind,
+    pub title: Option<&'static str>,
     pub text: String,
     pub pulse: Option<u64>,
 }
@@ -41,6 +42,7 @@ pub enum ToastInput {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct HeldToast {
     kind: ToastKind,
+    title: Option<&'static str>,
     text: String,
 }
 
@@ -70,14 +72,15 @@ struct Stepped {
     pulsed: Option<u64>,
 }
 
-/// The stack key that coalesces copies: the kind and the text, so an info and a danger toast
-/// with the same text stay apart.
-fn coalesce_key(kind: ToastKind, text: &str) -> String {
+/// The stack key that coalesces copies: the kind, the title, and the text, so an info and a
+/// danger toast with the same text, or two titles over one text, stay apart.
+fn coalesce_key(kind: ToastKind, title: Option<&str>, text: &str) -> String {
     let kind = match kind {
         ToastKind::Info => "Info",
         ToastKind::Danger => "Danger",
     };
-    format!("{kind}\u{1f}{text}")
+    let title = title.unwrap_or_default();
+    format!("{kind}\u{1f}{title}\u{1f}{text}")
 }
 
 /// A commit that shows a toast moves, though no input may have caused it; one that asked to
@@ -114,24 +117,30 @@ impl AppState {
     /// Shows a toast: a repeat of the front card's rings it, a copy further back moves to the
     /// front, and past [`MAX_TOASTS`] the oldest leave. While the hold is on it waits instead.
     pub fn toast(&mut self, kind: ToastKind, text: String) {
-        if self.toast_hold().is_some() {
-            debug!("a toast waits for the details to close");
-            self.toasts.held.push(HeldToast { kind, text });
-            return;
-        }
-        self.show_toast(kind, text);
+        self.toast_titled(kind, None, text);
     }
 
-    fn show_toast(&mut self, kind: ToastKind, text: String) {
+    /// [`AppState::toast`] with its own `title` in place of its kind's, when given.
+    pub fn toast_titled(&mut self, kind: ToastKind, title: Option<&'static str>, text: String) {
+        if self.toast_hold().is_some() {
+            debug!("a toast waits for the details to close");
+            self.toasts.held.push(HeldToast { kind, title, text });
+            return;
+        }
+        self.show_toast(kind, title, text);
+    }
+
+    fn show_toast(&mut self, kind: ToastKind, title: Option<&'static str>, text: String) {
         let secs = match kind {
             ToastKind::Info => Some(INFO_TOAST_SECS),
             ToastKind::Danger => None,
         };
         let now = self.toasts.clock;
         let shown = self.step_toasts(ToastEvent::Shown {
-            key: coalesce_key(kind, &text),
+            key: coalesce_key(kind, title, &text),
             options: ToastBody {
                 kind,
+                title,
                 text,
                 pulse: None,
             },
@@ -253,7 +262,7 @@ impl AppState {
             let held = std::mem::take(&mut self.toasts.held);
             debug!(count = held.len(), "showing the toasts the details held");
             for toast in held {
-                self.show_toast(toast.kind, toast.text);
+                self.show_toast(toast.kind, toast.title, toast.text);
             }
         }
         if self.toast_mark() != before {

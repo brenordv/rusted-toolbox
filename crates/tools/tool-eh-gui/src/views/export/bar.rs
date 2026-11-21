@@ -175,7 +175,7 @@ fn options(s: &AppState, k: &Kit) -> El {
     let switch = |key: &str, label: &str, on: bool, toggle: fn(&mut AppState)| {
         parts::labeled_switch(k, key, label, LabelSide::Leading, on, toggle)
     };
-    let destination = options.destination(&s.form.data_paths());
+    let destination = options.destination(&s.data_paths());
     let mut panel = col()
         .key("bulk-options-panel")
         .gap(SPACE_MD)

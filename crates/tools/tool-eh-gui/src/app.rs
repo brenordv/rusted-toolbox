@@ -1,42 +1,52 @@
 //! Glue between the pure state machine and the running app: the `App` builder both binaries
 //! use, the config preload, and the effect runner.
 
-use crate::archive::{ArchiveEffect, ArchiveState};
+use crate::archive::ArchiveEffect;
 use crate::design::tokens::{WINDOW_MIN, WINDOW_SIZE};
-use crate::form::ConnectForm;
-use crate::read::{ReadEffect, ReadState};
+use crate::read::ReadEffect;
 use crate::send::SendEffect;
 use crate::services::Services;
-use crate::state::{AppState, Effect, Input, Motion, Outcome, ToastKind};
+use crate::state::{AppState, Effect, Input, Motion, Outcome, Recalled, ToastKind, recalled};
 use crate::views;
 use common_cli::app_logger::FileLogging;
 use rune::{App, AppHandle, AppSpec, Tx};
-use shared_eventhub_persistence::config::{ConfigLoad, load_config};
-use std::path::Path;
-use tracing::{debug, error, warn};
+use shared_eventhub_persistence::config::load_config;
+use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::workspace::{ConfigHome, Workspace};
+use std::path::{Path, PathBuf};
+use tracing::{debug, error};
 
-/// What the window starts with: the connect form and capture rules (recalled from
-/// `config.json` when there is one), the caption saying what happened to that file, and the log
-/// file's state.
+/// What the window starts with: what the launch folder's `config.json` gave (the form, the
+/// capture rules, the export settings, and the caption saying what happened to the file), the
+/// launch folder, the workspace or why there is none, and the log file's state.
 pub struct Preload {
-    pub form: ConnectForm,
-    pub read: ReadState,
-    pub archive: ArchiveState,
-    pub config_caption: Option<String>,
+    pub recalled: Recalled,
+    pub launch_folder: PathBuf,
+    pub workspace: Result<Workspace, String>,
     pub file_logging: FileLogging,
 }
 
 impl Preload {
+    /// The data folder the recalled form names from the launch folder.
+    pub fn data_paths(&self) -> DataPaths {
+        ConfigHome::CurrentFolder(self.launch_folder.clone())
+            .data_paths(self.recalled.form.data_folder.trim())
+    }
+
     /// The first state: these values plus `services`.
     pub fn into_state(self, services: Box<dyn Services>) -> AppState {
-        let mut state = AppState::new(
-            Some(services),
-            self.form,
-            self.config_caption,
-            self.file_logging,
-        );
-        state.read = self.read;
-        state.archive = self.archive;
+        let Recalled {
+            form,
+            rules,
+            export,
+            caption,
+        } = self.recalled;
+        let mut state = AppState::new(Some(services), form, caption, self.file_logging);
+        state
+            .read
+            .reseed(&rules, export.format, export.include_metadata);
+        state.archive.reseed(&export);
+        state.set_launch(self.launch_folder, self.workspace);
         state
     }
 }
@@ -87,51 +97,21 @@ pub(crate) fn on_close(state: &mut AppState, tx: &mut Tx) {
     views::shell::return_toast_focus(state, tx, opener);
 }
 
-/// Reads `config.json` from `dir` into the form, with a caption that never quotes a value.
-pub async fn preload_config(dir: &Path, file_logging: FileLogging) -> Preload {
-    let (form, read, archive, config_caption) = match load_config(dir).await {
-        Ok(ConfigLoad::Missing) => (
-            ConnectForm::default(),
-            ReadState::default(),
-            ArchiveState::default(),
-            None,
-        ),
-        Ok(ConfigLoad::Foreign) => (
-            ConnectForm::default(),
-            ReadState::default(),
-            ArchiveState::default(),
-            Some("A config.json here belongs to another tool; it was not loaded".to_owned()),
-        ),
-        Ok(ConfigLoad::Loaded(config)) => {
-            let (form, loaded) = ConnectForm::from_config(&config);
-            let export = &config.storage.export;
-            let read = ReadState::with_rules(
-                &config.capture.filters,
-                export.format,
-                export.include_metadata,
-            );
-            (
-                form,
-                read,
-                ArchiveState::with_settings(export),
-                Some(format!("Loaded from config.json: {}", loaded.join(", "))),
-            )
-        }
-        Err(error) => {
-            warn!(error = %format!("{error:#}"), "config.json was not loaded");
-            (
-                ConnectForm::default(),
-                ReadState::default(),
-                ArchiveState::default(),
-                Some(format!("config.json was not loaded: {error:#}")),
-            )
-        }
-    };
+/// Reads `config.json` from `launch_folder` into the form, with a caption that never quotes a
+/// value; `workspace` is where the profiles are, or why there are none.
+pub async fn preload_config(
+    launch_folder: &Path,
+    workspace: Result<Workspace, String>,
+    file_logging: FileLogging,
+) -> Preload {
+    let home = ConfigHome::CurrentFolder(launch_folder.to_path_buf());
+    let load = load_config(launch_folder)
+        .await
+        .map_err(|error| format!("{error:#}"));
     Preload {
-        form,
-        read,
-        archive,
-        config_caption,
+        recalled: recalled(&home, load),
+        launch_folder: launch_folder.to_path_buf(),
+        workspace,
         file_logging,
     }
 }
@@ -164,6 +144,14 @@ pub fn run_effects(state: &mut AppState, effects: Vec<Effect>) {
             Effect::SwitchDataFolder(paths) => match &state.services {
                 Some(services) => services.switch_data_folder(paths),
                 None => services_missing(state, "switch the data folder"),
+            },
+            Effect::ListProfiles { request, workspace } => match &state.services {
+                Some(services) => services.list_profiles(request, workspace),
+                None => services_missing(state, "list the profiles"),
+            },
+            Effect::LoadProfile { request, dir } => match &state.services {
+                Some(services) => services.load_profile(request, dir),
+                None => services_missing(state, "open the profile"),
             },
             Effect::ReopenWindow => match &state.services {
                 Some(services) => services.reopen_window(),

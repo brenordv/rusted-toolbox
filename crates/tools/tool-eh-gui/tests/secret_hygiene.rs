@@ -13,7 +13,9 @@ use eh_gui::state::{
 use eh_gui::tasks::StoreSlot;
 use eh_gui::test_harness::Harness;
 use eh_gui::test_harness::builders::state;
-use eh_gui::test_harness::journeys::{Capturing, connect_and_capture, send_batched};
+use eh_gui::test_harness::journeys::{
+    Capturing, connect_and_capture, send_batched, switch_dropping_a_typed_secret,
+};
 use eh_gui::test_harness::services::ServiceCall;
 use eh_gui::views::details::{COPY_KEY, FAILURE_KEY};
 use std::io::Write;
@@ -231,6 +233,7 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
         ..
     } = connect_and_capture(&typed);
     let (sent, send_request) = send_batched(&typed);
+    let (switched, switched_save) = switch_dropping_a_typed_secret(&typed);
     let data = tempfile::tempdir().unwrap();
     let (mut refused, attempt, request) = off_allowlist_with_a_typed_key(&data.path().join("a"));
     let key_reached = request
@@ -268,6 +271,16 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
     );
     assert!(exposes(&connected) && exposes(&send_request.target));
     assert!(key_reached && secret_reached);
+    assert!(switched_save.given.connection_string.is_none());
+    assert!(
+        switched
+            .state()
+            .form
+            .connection_string
+            .edit()
+            .text
+            .is_empty()
+    );
     assert!(
         failure.contains("does not have one of the required suffixes"),
         "{failure}"
@@ -291,9 +304,11 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
         client_details,
         refused_copied.unwrap_or_default(),
         client_copied.unwrap_or_default(),
-        format!("{connected:?}\n{send_request:?}"),
+        format!("{connected:?}\n{send_request:?}\n{switched_save:?}"),
         surfaces(&captured),
         surfaces(&sent),
+        surfaces(&switched),
+        switched.state().config_caption.clone().unwrap_or_default(),
         surfaces(&refused),
         surfaces(&client),
     ]

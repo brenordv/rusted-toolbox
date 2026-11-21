@@ -110,6 +110,12 @@ fn every_contract_pair_meets_its_minimum_in_both_appearances() {
             );
         }
         contract.check(
+            &format!("{mode} danger caption on the sheet"),
+            k.c.danger.fg,
+            k.c.layer_01,
+            TEXT,
+        );
+        contract.check(
             &format!("{mode} warning caption on Content"),
             k.c.warning.fg,
             content,
