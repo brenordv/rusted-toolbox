@@ -3,6 +3,7 @@ mod dry_run;
 mod event_loop;
 mod export_app;
 mod home;
+mod interactive;
 mod models;
 mod profile_app;
 mod progress;
@@ -13,6 +14,7 @@ mod settings;
 mod target_setup;
 
 use crate::cli_utils::initialize;
+use crate::interactive::Start;
 use crate::models::{EhCommand, RunOutcome};
 use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_cli::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
@@ -23,17 +25,24 @@ use tracing::error;
 
 /// Azure Event Hubs CLI.
 ///
-/// Parses the arguments and `config.json`, installs the Ctrl-C handler, and
-/// runs `read`, `export`, `send`, a `send --dry-run`, or `profile list`.
-/// Exit codes: 0 on success, 1 on any failure (including a partition that
-/// failed during a stopped run), 130 when interrupted cleanly.
+/// Parses the arguments (or, with none in a terminal, asks for them in a
+/// menu) and `config.json`, installs the Ctrl-C handler, and runs `read`,
+/// `export`, `send`, a `send --dry-run`, or `profile list`. Exit codes: 0 on
+/// success or a cancelled menu, 1 on any failure (including a partition that
+/// failed during a stopped run), 130 when interrupted cleanly or by Ctrl-C in
+/// the menu.
 #[tokio::main]
 async fn main() {
     // A build can enable more than one rustls provider, which leaves rustls no default for
     // the Event Hubs connection to use; this sets one before anything connects.
     install_crypto_provider();
     let command = match initialize().await {
-        Ok(command) => command,
+        Ok(Start::Run(command)) => command,
+        Ok(Start::Cancelled) => {
+            eprintln!("Cancelled; nothing ran.");
+            exit_success()
+        }
+        Ok(Start::Interrupted) => exit_with_code(EXIT_CODE_INTERRUPTED_BY_USER),
         Err(error) => fail(&error),
     };
 

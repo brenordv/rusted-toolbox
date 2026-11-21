@@ -1,4 +1,5 @@
 use crate::home::{LoadedHome, Saving, load_home};
+use crate::interactive::{self, Start};
 use crate::models::{ConfigSource, DryRunJob, EhCommand, Environment, ExportJob, ReadJob};
 use crate::profile_app::{ProfileArgs, ProfileCommand, profile_header};
 use crate::progress::{
@@ -36,16 +37,16 @@ use tracing::info;
 /// subcommand: `eh --verbose read ...`.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about, arg_required_else_help = true)]
-struct CliArgs {
+pub(crate) struct CliArgs {
     #[command(subcommand)]
-    command: Commands,
+    pub(crate) command: Commands,
 
     #[command(flatten)]
-    common: CommonToolArgs,
+    pub(crate) common: CommonToolArgs,
 }
 
 #[derive(Subcommand, Debug)]
-enum Commands {
+pub(crate) enum Commands {
     /// Capture events from an event hub into the local archive
     #[command(after_help = "Examples:\n  \
         eh read -e orders                (connection string in EH_CONNECTION_STRING)\n  \
@@ -364,18 +365,23 @@ impl From<FormatArg> for ExportFormat {
     }
 }
 
-/// Parses the command line, loads `config.json` (from the current folder or
-/// a profile), merges and validates the settings, and boots logging
-/// (printing the header from the merged settings when `--app-header` is
-/// set). The config notice prints to stderr whether or not the merge
-/// succeeds.
+/// Parses the command line (for a bare `eh` in a terminal, the one the menu
+/// builds), loads `config.json` (from the current folder or a profile),
+/// merges and validates the settings, and boots logging (printing the header
+/// from the merged settings when `--app-header` is set). The config notice
+/// prints to stderr whether or not the merge succeeds. A menu that ends
+/// without a run returns that ending.
 ///
 /// # Errors
-/// Fails when an environment variable is not Unicode, when the profile
-/// cannot be found, when `config.json` cannot be read or is an invalid eh
-/// config, or when the merged settings are invalid.
-pub async fn initialize() -> Result<EhCommand> {
-    let args = CliArgs::parse();
+/// Fails when the menu fails, when an environment variable is not Unicode,
+/// when the profile cannot be found, when `config.json` cannot be read or is
+/// an invalid eh config, or when the merged settings are invalid.
+pub async fn initialize() -> Result<Start<EhCommand>> {
+    let args = match interactive::command_line().await? {
+        Start::Run(args) => args,
+        Start::Cancelled => return Ok(Start::Cancelled),
+        Start::Interrupted => return Ok(Start::Interrupted),
+    };
     let (notice, resolved) = resolve(args.command, args.common.verbose).await;
 
     match resolved {
@@ -393,7 +399,7 @@ pub async fn initialize() -> Result<EhCommand> {
                 info!(profile = %name, dir = %home.dir().display(), "Using profile");
             }
             print_notice(notice.as_deref());
-            Ok(command)
+            Ok(Start::Run(command))
         }
         Err(error) => {
             args.common.app_boot_up(
@@ -669,7 +675,7 @@ fn disk_mode_name(mode: DiskWriteMode) -> &'static str {
     }
 }
 
-fn format_name(format: ExportFormat) -> &'static str {
+pub(crate) fn format_name(format: ExportFormat) -> &'static str {
     match format {
         ExportFormat::Txt => "txt",
         ExportFormat::Csv => "csv",

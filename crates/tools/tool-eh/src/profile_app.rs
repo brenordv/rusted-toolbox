@@ -50,31 +50,44 @@ pub(crate) fn profile_header(workspace: &Workspace) -> Vec<String> {
 
 /// The listing: one line per profile, names aligned, every value escaped.
 pub(crate) fn list_text(root: &Path, entries: &[ProfileEntry]) -> String {
-    let root = display(root.display().to_string());
     if entries.is_empty() {
-        return format!(
-            "No profiles in '{root}' yet. Save one with: eh read --profile NAME --save-config \
-             <target flags>\n"
-        );
+        return format!("{}\n", no_profiles(root));
     }
-    let names: Vec<String> = entries
-        .iter()
-        .map(|entry| display(entry.profile.name()))
-        .collect();
-    let width = names
-        .iter()
-        .map(|name| name.chars().count())
-        .max()
-        .unwrap_or(0);
+    let root = display(root.display().to_string());
+    let names = aligned_names(entries.iter().map(|entry| entry.profile.name()));
     let mut text = format!("Profiles in '{root}':\n");
     for (name, entry) in names.iter().zip(entries) {
         let details = match &entry.state {
             ProfileState::Ready(config) => describe(config),
             ProfileState::CannotLoad(reason) => format!("can't load: {}", display(reason)),
         };
-        text.push_str(&format!("  {name:<width$}  {details}\n"));
+        text.push_str(&format!("  {name}  {details}\n"));
     }
     text
+}
+
+/// Each name escaped for the terminal and padded to the longest, so text
+/// after the names lines up.
+pub(crate) fn aligned_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let names: Vec<String> = names.into_iter().map(display).collect();
+    let width = names
+        .iter()
+        .map(|name| name.chars().count())
+        .max()
+        .unwrap_or(0);
+    names
+        .into_iter()
+        .map(|name| format!("{name:<width$}"))
+        .collect()
+}
+
+/// The line for a workspace with no profiles, saying how to save one.
+pub(crate) fn no_profiles(root: &Path) -> String {
+    format!(
+        "No profiles in '{}' yet. Save one with: eh read --profile NAME --save-config <target \
+         flags>",
+        display(root.display().to_string())
+    )
 }
 
 /// A ready profile's target and auth method, in the config notice's words.

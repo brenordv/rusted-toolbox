@@ -24,6 +24,9 @@ pub(crate) const MAX_BODY_BYTES: u64 = 20 * 1024 * 1024;
 /// body read from a file.
 pub(crate) const RENDER_CAP: usize = MAX_BODY_BYTES as usize;
 
+/// How many times `eh send` sends the body without `-n`.
+pub(crate) const DEFAULT_SEND_COUNT: u64 = 1;
+
 /// `eh send` arguments.
 #[derive(Args, Debug)]
 #[command(group = ArgGroup::new("body_source").required(true).multiple(false))]
@@ -52,7 +55,7 @@ pub(crate) struct SendArgs {
         short = 'n',
         long = "count",
         value_name = "N",
-        default_value_t = 1,
+        default_value_t = DEFAULT_SEND_COUNT,
         value_parser = clap::value_parser!(u64).range(1..=MAX_SEND_COUNT)
     )]
     pub count: u64,

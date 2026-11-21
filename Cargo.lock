@@ -2489,6 +2489,7 @@ dependencies = [
  "common-cli",
  "common-utils",
  "crossterm",
+ "inquire",
  "mock-data-utils",
  "rstest",
  "shared-azure",
@@ -4330,6 +4331,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "inquire"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8740906750ed5eebb24721bc5261928ed39ac9fb3b7ac78d2d2486f8037c8ab"
+dependencies = [
+ "bitflags 2.13.2",
+ "crossterm",
+ "dyn-clone",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
