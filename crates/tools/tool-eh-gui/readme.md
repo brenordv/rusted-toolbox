@@ -67,14 +67,25 @@ Launch folder and by its name.
 - A profile that can't be opened leaves everything as it was and says why under the picker. An
   outcome that lands after the sheet closed shows as a toast.
 - **Save as profile…** sits at the end of the Saves to row. It opens a row with a Profile name
-  field, the event hub the profile will name, and the data folder it keeps. Save profile (or
-  Return in the field) checks the name first: `eh`'s profile name rules, and not the name of a
-  listed profile, ignoring case. Then the form's own fields. A secret stored in the current data
-  folder isn't copied, because a new profile keeps its own secrets: the row asks you to press
-  Replace and type it again. A namespace or event hub that came from the launch folder's
-  `config.json` has to be typed again (any edit of the field counts). `eh send` trusts the event
-  hub a profile names, and a `config.json` can come with a cloned folder, so its names never
-  reach a profile unseen.
+  field, the event hub the profile will name, the stored secret it copies (if any), and the data
+  folder it keeps. Save profile (or Return in the field) checks the name first: `eh`'s profile
+  name rules, and not the name of a listed profile, ignoring case. Then the form's own fields.
+- A connection string or client secret stored in the form's data folder is copied into the new
+  profile's secrets file, which, like every secrets file, is not encrypted. The row says so:
+  "Copied from local store".
+- A namespace or event hub that came from the launch folder's `config.json` carries the caption
+  "Came from the launch folder's config.json." from the moment the row opens. `eh send` trusts
+  the event hub a profile names, and a `config.json` can come with a cloned folder, so the first
+  Save profile press with such a name saves nothing: the row says the names came from there and
+  that a profile is trusted by `eh send` without asking, and the button reads **Save anyway**. A
+  press on Save anyway saves them as shown. Return in the name field never confirms; it moves
+  focus to Save anyway. Any edit of a name field (an undo included) makes it typed.
+- When a name is blank and the form holds a connection string typed in this window, the names
+  it gives fill the gap, as `eh read ... --profile NAME --save-config` does: the row shows them
+  under "Event hub (from the connection string)", and a string that names another namespace, or
+  no event hub with none typed, shows "Not a valid connection string" and fails the save. Save
+  config into a profile does the same and writes the names into the fields. A stored or copied
+  string fills nothing.
 - The profile gets what Save config would write, its data folder inside the profile folder: the
   form's when it is a plain relative folder, `.eh-data` otherwise (after Change it is always
   `.eh-data`). Once it is saved the typed secrets leave the form, and the sheet opens the new
@@ -449,15 +460,18 @@ EH_GUI_DEMO=profiles-unavailable cargo run -p eh-gui --features demo --bin eh-gu
 
 Save as profile: Save as profile… sits at the end of the Saves to row; the open row shows the
 focused name field, the event hub, the data folder, and Cancel / Save profile at its end; a name
-issue marks the field; the row issue (a stored string, after a pick of `orders-dev`) wraps
-inside the sheet; after a save the picker reads `orders-new` with the note under it. Repeat each
-without `--size` for 1280x800.
+issue marks the field; after a pick of `orders-dev` the row says the stored string is copied
+from local store; the confirm (a Save config that writes the launch folder's `config.json` with
+both names, a pick of `billing`, then Launch folder) marks both names, shows the confirm line,
+and reads Save anyway; after a save the picker reads `orders-new` with the note under it. Repeat
+each without `--size` for 1280x800.
 
 ```
 EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-sheet.json --at 1.2 --snap target/eh-gui-demo/phase29/button-960.png
 EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-row.json --at 1.6 --snap target/eh-gui-demo/phase29/row-open-960.png
 EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-name-issue.json --at 2.2 --snap target/eh-gui-demo/phase29/name-issue-960.png
-EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-row-issue.json --at 3.8 --snap target/eh-gui-demo/phase29/row-issue-960.png
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-copied.json --at 3.2 --snap target/eh-gui-demo/phase29/copied-960.png
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-confirm.json --at 7.2 --snap target/eh-gui-demo/phase29/confirm-960.png
 EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-saved.json --at 3.2 --snap target/eh-gui-demo/phase29/saved-960.png
 ```
 
@@ -516,12 +530,17 @@ hub.
   Disconnect at once, then open the sheet (the picker is disabled until the cancelled connect
   stops); break a profile's `config.json` while the sheet is open and pick it (the note says
   why, nothing changes).
-- Save as profile: from a launch folder with no `config.json`, type a connection string and save
-  it under a new name (the sheet opens it; `eh profile list` lists it); from a launch folder
-  whose `config.json` names a hub, press Save profile (the namespace and event hub are asked for
-  again until edited); with a stored connection string (asked for again); with a taken name;
+- Save as profile: from a launch folder with no `config.json`, type a connection string with an
+  `EntityPath` and save it under a new name (the row shows the names "from the connection
+  string"; the sheet opens it; `eh profile list` lists it, naming the hub); from a launch folder
+  whose `config.json` names a hub, open the row (both names carry the caption), press Save
+  profile (the confirm line and Save anyway), press Return in the name field (nothing saves,
+  focus goes to Save anyway), then press Save anyway (it saves); with a stored connection string
+  (the row says it is copied, and `eh send --profile NAME` signs in with it); with a taken name;
   Escape in the name field (the row closes, the sheet stays); after Change picked a data folder
   (the row shows `.eh-data`).
+- Save config into a profile with a typed connection string and blank names: the names fill in
+  and `config.json` holds them.
 - Template: turn it on with an order template, Regenerate a few samples, send 5 and see five
   different values in Read; type a broken placeholder and press Send (the editor and caption
   mark it); type into a large template with `RUNE_COMMIT_BUDGET_MS=8` (no commit over budget).

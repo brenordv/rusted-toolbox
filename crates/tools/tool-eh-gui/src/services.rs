@@ -24,7 +24,8 @@ use shared_eventhub_core::connection::EventHubTarget;
 use shared_eventhub_core::engine::CaptureEngine;
 use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_persistence::config::{
-    SensitiveValues, ToolConfig, load_config, needs_stored_secret, resolve_target_with, save_config,
+    AuthMethodConfig, SensitiveValues, ToolConfig, load_config, needs_stored_secret,
+    resolve_target_with, save_config, with_stored_secrets,
 };
 use shared_eventhub_persistence::export::{ExportOptions, ExportOutcome, WritingSink};
 use shared_eventhub_persistence::paths::{DataPaths, plain_relative};
@@ -38,7 +39,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::task::JoinError;
-use tracing::{debug, error, info_span, trace};
+use tracing::{debug, error, info, info_span, trace};
 
 /// A request to start a session: the config, the typed secrets, and the data folder it is for.
 #[derive(Debug)]
@@ -67,6 +68,10 @@ pub struct CreateRequest {
     pub name: ProfileName,
     pub config: ToolConfig,
     pub given: SensitiveValues,
+    /// The data folder whose secrets file holds the stored secret the config uses and `given`
+    /// lacks; the new profile gets a copy of it. `None` when every secret the config uses is
+    /// in `given`.
+    pub stored_from: Option<DataPaths>,
 }
 
 /// The side effects the state machine asks for. Each runs in the background and reports back
@@ -164,7 +169,7 @@ pub(crate) async fn loaded_profile(request: u64, dir: &Path) -> Input {
 
 /// The answer to `request`: the new profile, its `config.json` and secrets written, or why it
 /// was not saved.
-pub(crate) async fn created_profile(request: CreateRequest) -> Input {
+pub async fn created_profile(request: CreateRequest) -> Input {
     let id = request.request;
     let result = create_profile(request)
         .await
@@ -175,26 +180,36 @@ pub(crate) async fn created_profile(request: CreateRequest) -> Input {
     }
 }
 
-/// Makes the profile folder, then saves the config into it with its secrets in the data folder
-/// it names. A data folder that is not plain relative would sit outside the profile folder, so
-/// it is refused before anything is written.
+/// Reads the stored secret from `stored_from` when one is named, makes the profile folder, then
+/// saves the config into it with its secrets in the data folder it names. A data folder that is
+/// not plain relative would sit outside the profile folder, so it is refused before anything is
+/// written.
 async fn create_profile(request: CreateRequest) -> anyhow::Result<Profile> {
     let CreateRequest {
+        request,
         workspace,
         name,
         config,
         given,
-        ..
+        stored_from,
     } = request;
-    let folder = config.storage.base_data_folder.trim();
-    if !plain_relative(folder) {
+    let folder = config.storage.base_data_folder.trim().to_owned();
+    if !plain_relative(&folder) {
         anyhow::bail!(
             "A new profile keeps its data folder inside the profile folder, and '{folder}' is not \
              a plain relative folder"
         );
     }
+    let (config, given, copied) = match &stored_from {
+        Some(source) => {
+            let copied = copied_kind(&config, &given);
+            let (config, merged) = with_copied_secret(source.clone(), config, given).await?;
+            (config, merged, copied)
+        }
+        None => (config, given, None),
+    };
     let profile = workspace.new_profile(&name).await?;
-    let paths = ConfigHome::Profile(profile.clone()).data_paths(folder);
+    let paths = ConfigHome::Profile(profile.clone()).data_paths(&folder);
     let dir = profile.dir().to_path_buf();
     let joined = tokio::task::spawn_blocking(move || {
         open_secrets(&paths, |secrets| {
@@ -203,7 +218,61 @@ async fn create_profile(request: CreateRequest) -> anyhow::Result<Profile> {
     })
     .await;
     blocking_result(joined, "Saving the profile stopped unexpectedly")?;
+    if let (Some(kind), Some(source)) = (copied, &stored_from) {
+        info!(
+            kind,
+            from = %source.base().display(),
+            profile = profile.name(),
+            request,
+            "copied a stored secret into the new profile"
+        );
+    }
     Ok(profile)
+}
+
+/// `config` and `given` with the stored secret the config uses read from `source`'s secrets
+/// file, on a blocking task. A missing secrets file is refused rather than opened, since opening
+/// it would create one there.
+async fn with_copied_secret(
+    source: DataPaths,
+    config: ToolConfig,
+    given: SensitiveValues,
+) -> anyhow::Result<(ToolConfig, SensitiveValues)> {
+    let joined = tokio::task::spawn_blocking(move || {
+        let file = source.secrets_db();
+        if !file.exists() {
+            anyhow::bail!(
+                "There is no secrets file at '{}' to copy from",
+                file.display()
+            );
+        }
+        let merged = open_secrets(&source, |secrets| {
+            with_stored_secrets(&config, given, secrets)
+        })
+        .with_context(|| format!("Failed to copy the stored secret from '{}'", file.display()))?;
+        Ok((config, merged))
+    })
+    .await;
+    blocking_result(joined, "Copying the stored secret stopped unexpectedly")
+}
+
+/// The secret `config` uses that `given` lacks, so a copy from the secrets file supplies it, as
+/// a log label: the connection string under connection-string auth, else the client secret of a
+/// client-secret credential.
+fn copied_kind(config: &ToolConfig, given: &SensitiveValues) -> Option<&'static str> {
+    let string_missing = match config.target.auth {
+        AuthMethodConfig::ConnectionString { .. } => given.connection_string.is_none(),
+        AuthMethodConfig::Credential { .. } | AuthMethodConfig::KeyVaultConnectionString { .. } => {
+            false
+        }
+    };
+    if string_missing {
+        Some("connection string")
+    } else if config.client_secret_id().is_some() && given.client_secret.is_none() {
+        Some("client secret")
+    } else {
+        None
+    }
 }
 
 impl Services for ProdServices {

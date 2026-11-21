@@ -3,8 +3,11 @@
 ## 1.0.0
 - Save as profile… at the end of the connect sheet's Saves to row saves the form as a new
   profile in the workspace and opens it: a name field with `eh`'s name rules, a stored secret
-  and names recalled from the launch folder asked for again, the data folder kept inside the
-  profile folder.
+  copied into the new profile's secrets file (the row says from which local store), names
+  recalled from the launch folder marked and confirmed with Save anyway (Return never confirms),
+  the data folder kept inside the profile folder. Both saves into a profile (Save as profile, and
+  Save config while a profile is open) fill a blank namespace or event hub from a connection
+  string typed in this window, as `eh --save-config --profile` does.
 - Profiles: a Profile picker at the top of the connect sheet lists Launch folder and every
   profile in the workspace `eh` uses (`EH_WORKSPACE`, else `~/.eh/profiles`) whose `config.json`
   loads, with a caption counting the ones that can't. A pick reads the profile off the UI thread

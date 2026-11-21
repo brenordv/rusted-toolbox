@@ -8,6 +8,7 @@ use crate::send::Destination;
 use crate::send::compose::{PacingChoice, RoutingChoice};
 use crate::send::run::SendRun;
 use crate::state::{AppState, Input, SheetPurpose, error_preview};
+use crate::views::INVALID_CONNECTION_STRING;
 use rune::{El, KeyEvent, ScrollSpec, TextEdit, Tx, col, row};
 use rune_kit::{Button, ButtonVariant, Kit, ScrollBar, Select, SelectAppearance, TextInput};
 
@@ -131,7 +132,7 @@ fn destination(s: &AppState, k: &Kit) -> El {
         match &s.send.destination {
             Destination::Named(names) => names.display(),
             Destination::Stored => STORED_WORDS.to_owned(),
-            Destination::Invalid => "Not a valid connection string".to_owned(),
+            Destination::Invalid => INVALID_CONNECTION_STRING.to_owned(),
             Destination::Missing => "No event hub yet".to_owned(),
         }
     };

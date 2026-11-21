@@ -3,10 +3,10 @@
 
 use crate::models::CLIENT_SECRET_ENV;
 use crate::progress::{Renderer, display};
-use shared_eventhub_core::connection::{EventHubTarget, target_names};
+use shared_eventhub_core::connection::EventHubTarget;
 use shared_eventhub_persistence::config::{
-    AuthMethodConfig, SensitiveValues, ToolConfig, needs_stored_secret, resolve_target_with,
-    save_config,
+    SensitiveValues, ToolConfig, needs_stored_secret, resolve_target_with, save_config,
+    with_typed_names,
 };
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::secrets::SecretsStore;
@@ -75,27 +75,10 @@ pub(crate) fn prepare_target<O: Write, E: Write>(
 /// Fails when that string names no event hub and none was given, or names
 /// another namespace than the one given.
 fn config_to_save<'a>(setup: &TargetSetup<'a>) -> anyhow::Result<Cow<'a, ToolConfig>> {
-    let config = setup.config;
-    let string_given = match config.target.auth {
-        AuthMethodConfig::ConnectionString { .. } => setup.given.connection_string.is_some(),
-        AuthMethodConfig::Credential { .. } | AuthMethodConfig::KeyVaultConnectionString { .. } => {
-            false
-        }
-    };
-    let names_missing = config.target.namespace.is_none() || config.target.event_hub.is_none();
-    if setup.home.profile_name().is_none() || !string_given || !names_missing {
-        return Ok(Cow::Borrowed(config));
+    if setup.home.profile_name().is_none() {
+        return Ok(Cow::Borrowed(setup.config));
     }
-
-    let target = resolve_target_with(config, setup.given.clone(), None)?;
-    let Some(names) = target_names(&target) else {
-        return Ok(Cow::Borrowed(config));
-    };
-    let (namespace, event_hub) = names?;
-    let mut named = config.clone();
-    named.target.namespace.get_or_insert(namespace);
-    named.target.event_hub.get_or_insert(event_hub);
-    Ok(Cow::Owned(named))
+    with_typed_names(setup.config, setup.given)
 }
 
 pub(crate) fn saved_notice(

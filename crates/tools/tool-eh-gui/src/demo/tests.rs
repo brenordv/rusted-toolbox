@@ -128,6 +128,46 @@ fn a_demo_save_for_a_folder_that_climbs_out_of_the_root_goes_to_the_root() {
 }
 
 #[test]
+fn a_demo_copy_from_a_data_folder_under_the_root_keeps_its_source() {
+    let root = tempfile::tempdir().unwrap();
+    let inside = data_paths(root.path());
+
+    let source = copy_source(root.path(), Some(inside.clone()));
+
+    assert_eq!(source, Some(inside));
+}
+
+#[test]
+fn a_demo_copy_from_a_data_folder_outside_the_root_copies_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+
+    let source = copy_source(
+        root.path(),
+        Some(DataPaths::new(outside.path().join("data"))),
+    );
+
+    assert_eq!(source, None);
+}
+
+#[test]
+fn a_demo_copy_from_a_data_folder_that_climbs_out_of_the_root_copies_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let climbing = root.path().join("..").join("elsewhere");
+
+    let source = copy_source(root.path(), Some(DataPaths::new(climbing)));
+
+    assert_eq!(source, None);
+}
+
+#[test]
+fn a_demo_create_with_nothing_stored_copies_nothing() {
+    let root = tempfile::tempdir().unwrap();
+
+    assert_eq!(copy_source(root.path(), None), None);
+}
+
+#[test]
 fn the_seeded_export_scenario_starts_searching_the_archive() {
     let root = tempfile::tempdir().unwrap();
     let rt = tokio::runtime::Builder::new_current_thread()

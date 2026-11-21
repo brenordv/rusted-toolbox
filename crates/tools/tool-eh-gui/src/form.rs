@@ -247,8 +247,10 @@ pub struct ConnectForm {
     pub disk_write: DiskWriteMode,
     pub received_msg_path: TextEdit,
     /// Whether the namespace and event hub were filled from the launch folder's `config.json`.
-    /// App code sets those two fields only with `TextEdit::new` or `replace_text`, so only the
-    /// user's own edits make them count as typed (see [`Self::recalled_fields`]).
+    /// App code sets those two fields with `TextEdit::new` or `replace_text`, which leave them
+    /// unedited, or through [`Self::fill_names`], which marks what it writes edited; so only
+    /// the user's edits and names from the user's own connection string count as typed (see
+    /// [`Self::recalled_fields`]).
     pub(crate) names_from_launch_folder: bool,
     /// Settings the sheet does not show (capture and export settings, `content_only`), kept from
     /// a recalled config so saving does not drop them.
@@ -392,12 +394,28 @@ impl ConnectForm {
     }
 
     /// The names that still hold what the launch folder's `config.json` gave: each counts while
-    /// [`Self::names_from_launch_folder`] is set and the field is untouched (not empty, and no
-    /// user edit since the app set it). Nothing compares or clears the text.
+    /// [`Self::names_from_launch_folder`] is set and the field is pristine (not empty, and not
+    /// edited since the app set it). Nothing compares or clears the text.
     pub(crate) fn recalled_fields(&self) -> RecalledFields {
         RecalledFields {
-            namespace: self.names_from_launch_folder && untouched(&self.namespace),
-            event_hub: self.names_from_launch_folder && untouched(&self.event_hub),
+            namespace: self.names_from_launch_folder && self.namespace.is_pristine(),
+            event_hub: self.names_from_launch_folder && self.event_hub.is_pristine(),
+        }
+    }
+
+    /// Writes `namespace` and `event_hub`, where given, into their fields when those are blank
+    /// (empty after trimming), marked edited so they count as typed; a field with text keeps it.
+    pub(crate) fn fill_names(&mut self, namespace: Option<&str>, event_hub: Option<&str>) {
+        for (field, name) in [
+            (&mut self.namespace, namespace),
+            (&mut self.event_hub, event_hub),
+        ] {
+            if let Some(name) = name
+                && field.text.trim().is_empty()
+            {
+                field.replace_text(name);
+                field.mark_edited();
+            }
         }
     }
 
@@ -543,14 +561,6 @@ impl ConnectForm {
             },
         }
     }
-}
-
-/// Whether `edit` holds what the app last set with `TextEdit::new` or `replace_text`, with no
-/// user edit since: Rune's pristine flag, and no undo or redo step. Rune records every edit of a
-/// plain field as a history step, but its plain-text edits leave the pristine flag set, so the
-/// flag alone misses typing, deleting, and pasting there.
-fn untouched(edit: &TextEdit) -> bool {
-    edit.is_pristine() && edit.history_len() == (0, 0)
 }
 
 fn required(edit: &TextEdit, message: &str) -> Option<String> {

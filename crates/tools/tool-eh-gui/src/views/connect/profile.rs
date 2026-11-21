@@ -4,13 +4,14 @@
 
 use crate::app::dispatch;
 use crate::design::parts;
-use crate::design::tokens::{SHEET_FIELD_WIDTH, SPACE_SM};
+use crate::design::tokens::{SHEET_FIELD_WIDTH, SPACE_SM, SPACE_XS};
+use crate::form::SecretKind;
 use crate::read::rows::{display_line, display_path};
 use crate::state::{
-    AppState, Input, LAUNCH_FOLDER, NO_PROFILES, NewProfileRow, ProfileFocus, ProfileList,
-    ProfileNote, ProfileSwitch, error_preview, home_label,
+    AppState, Input, LAUNCH_FOLDER, NO_PROFILES, NewProfileRow, ProfileDestination, ProfileFocus,
+    ProfileList, ProfileNote, ProfileSwitch, RowLine, error_preview, home_label,
 };
-use crate::views::details;
+use crate::views::{INVALID_CONNECTION_STRING, details};
 use rune::{El, Key, KeyEvent, LiveRegion, TextEdit, Tx, col, row, spacer};
 use rune_kit::{Button, ButtonVariant, Kit, Select, SelectAppearance, TextInput};
 use shared_eventhub_persistence::config::CONFIG_FILE_NAME;
@@ -30,7 +31,7 @@ pub const NEW_PROFILE_ROW_KEY: &str = "new-profile-row";
 pub const NEW_PROFILE_NAME_KEY: &str = "new-profile-name";
 /// The name's issue line: a polite live region.
 pub const NAME_ISSUE_KEY: &str = "new-profile-name-issue";
-/// The row's issue line: a polite live region.
+/// The row's issue or confirm line: a polite live region.
 pub const ROW_ISSUE_KEY: &str = "new-profile-issue";
 /// The row's Cancel.
 pub const NEW_PROFILE_CANCEL_KEY: &str = "new-profile-cancel";
@@ -39,6 +40,7 @@ pub const NEW_PROFILE_SAVE_KEY: &str = "new-profile-save";
 const NOTE_DETAILS_KEY: &str = "profile-note-details";
 const PROFILE: &str = "Profile";
 const PROFILE_NAME: &str = "Profile name";
+const EVENT_HUB: &str = "Event hub";
 const NO_DESTINATION: &str = "None yet; eh asks for one when sending";
 
 /// The group: its label, the picker (when there is more than the launch folder to pick) with
@@ -114,9 +116,10 @@ fn saves_to(s: &AppState, k: &Kit, lock: Option<&'static str>) -> El {
     line
 }
 
-/// The Save as profile row: the profile name with its issue, where the profile will send and
-/// keep its data, the row's issue, and Cancel / Save profile. Both buttons are disabled while
-/// the profile saves; Save profile is also disabled while the data folder is held.
+/// The Save as profile row: the profile name with its issue, where the profile will send, the
+/// stored secret it gets a copy of, where it keeps its data, the row's issue or confirm line,
+/// and Cancel / Save profile (Save anyway while the confirm shows). Both buttons are disabled
+/// while the profile saves; Save profile is also disabled while the data folder is held.
 fn new_profile_row(
     s: &AppState,
     k: &Kit,
@@ -140,7 +143,7 @@ fn new_profile_row(
                 .on_change(|s: &mut AppState, _: &mut Tx| {
                     dispatch(s, Input::NewProfileNameEdited);
                 })
-                .on_submit(press_create)
+                .on_submit(submit_name)
                 .on_key(name_key)
                 .build(k)
                 .key(NEW_PROFILE_NAME_KEY),
@@ -148,12 +151,36 @@ fn new_profile_row(
     if let Some(issue) = name_issue {
         block = block.child(issue_line(k, NAME_ISSUE_KEY, issue));
     }
+    block = block.child(destination_line(s, k));
+    if let Some(copied) = s.new_profile_secret() {
+        block = block.child(copied_line(k, copied));
+    }
     let folder = display_line(s.new_profile_data_folder().chars());
-    block = block
-        .child(parts::detail_row(k, "Event hub", &destination(s)))
-        .child(parts::detail_row(k, "Data folder in the profile", &folder));
-    if let Some(issue) = s.new_profile_issue() {
-        block = block.child(issue_line(k, ROW_ISSUE_KEY, &issue));
+    block = block.child(parts::detail_row(k, "Data folder in the profile", &folder));
+    let line = s.new_profile_line();
+    let confirm = match &line {
+        Some(RowLine::Confirm(text)) => {
+            block = block.child(status_line(ROW_ISSUE_KEY, text, parts::warning(k, text)));
+            Some(text.as_str())
+        }
+        Some(RowLine::Issue(text)) => {
+            block = block.child(issue_line(k, ROW_ISSUE_KEY, text));
+            None
+        }
+        None => None,
+    };
+    let mut save = Button::new(if confirm.is_some() {
+        "Save anyway"
+    } else {
+        "Save profile"
+    })
+    .variant(ButtonVariant::Outline)
+    .disabled(creating || lock.is_some())
+    .on_press_tx(press_create)
+    .build(k)
+    .key(NEW_PROFILE_SAVE_KEY);
+    if let Some(text) = confirm {
+        save = save.description(text);
     }
     let actions = row()
         .gap(SPACE_SM)
@@ -170,14 +197,7 @@ fn new_profile_row(
                 .build(k)
                 .key(NEW_PROFILE_CANCEL_KEY),
         )
-        .child(
-            Button::new("Save profile")
-                .variant(ButtonVariant::Outline)
-                .disabled(creating || lock.is_some())
-                .on_press_tx(press_create)
-                .build(k)
-                .key(NEW_PROFILE_SAVE_KEY),
-        );
+        .child(save);
     parts::reveal(block.child(actions))
 }
 
@@ -189,6 +209,13 @@ fn name_edit(s: &mut AppState) -> &mut TextEdit {
 /// issue).
 fn press_create(s: &mut AppState, tx: &mut Tx) {
     dispatch(s, Input::CreateProfilePressed);
+    move_profile_focus(s, tx);
+}
+
+/// Return in the name field, then focus where it asked for it (Save anyway, while the confirm
+/// shows).
+fn submit_name(s: &mut AppState, tx: &mut Tx) {
+    dispatch(s, Input::NewProfileNameSubmitted);
     move_profile_focus(s, tx);
 }
 
@@ -211,31 +238,55 @@ pub(crate) fn move_profile_focus(s: &mut AppState, tx: &mut Tx) {
     let key = match focus {
         ProfileFocus::NameField => NEW_PROFILE_NAME_KEY,
         ProfileFocus::SaveAsButton => NEW_PROFILE_KEY,
+        ProfileFocus::SaveProfileButton => NEW_PROFILE_SAVE_KEY,
     };
     let ring = tx.focus_visible();
     tx.focus(key, ring);
 }
 
-/// The namespace and event hub the new profile will name, as `namespace/hub`; while either is
-/// empty, that `eh send` asks for them.
-fn destination(s: &AppState) -> String {
-    let namespace = s.form.namespace.text.trim();
-    let event_hub = s.form.event_hub.text.trim();
-    if namespace.is_empty() || event_hub.is_empty() {
-        return NO_DESTINATION.to_owned();
+/// Where the new profile will send, as `namespace/hub`: the form's names, or those the typed
+/// connection string gives, said in the label; a string that gives none in the issue color;
+/// else that `eh send` asks. Not a live region: it changes as the fields are typed.
+fn destination_line(s: &AppState, k: &Kit) -> El {
+    match s.new_profile_destination() {
+        ProfileDestination::Typed(names) => parts::detail_row(k, EVENT_HUB, &names.display()),
+        ProfileDestination::FromString(names) => parts::detail_row(
+            k,
+            "Event hub (from the connection string)",
+            &names.display(),
+        ),
+        ProfileDestination::Invalid => col()
+            .gap(SPACE_XS)
+            .w_full()
+            .child(parts::caption(k, EVENT_HUB))
+            .child(parts::issue(k, INVALID_CONNECTION_STRING)),
+        ProfileDestination::None => parts::detail_row(k, EVENT_HUB, NO_DESTINATION),
     }
-    display_line(format!("{namespace}/{event_hub}").chars())
+}
+
+/// The stored secret the new profile gets a copy of from the local store.
+fn copied_line(k: &Kit, kind: SecretKind) -> El {
+    let label = match kind {
+        SecretKind::ConnectionString => "Connection string",
+        SecretKind::ClientSecret => "Client secret",
+    };
+    parts::detail_row(k, label, "Copied from local store")
 }
 
 /// An issue in the danger caption, as a polite live region named by the whole line.
 fn issue_line(k: &Kit, key: &str, text: &str) -> El {
+    status_line(key, text, parts::issue(k, text))
+}
+
+/// `visible` showing `text`, as a polite live region keyed `key` and named by the whole line.
+fn status_line(key: &str, text: &str, visible: El) -> El {
     col()
         .key(key)
         .role("status")
         .label(text)
         .live_region(LiveRegion::Polite)
         .w_full()
-        .child(parts::issue(k, text).a11y_hidden())
+        .child(visible.a11y_hidden())
 }
 
 /// "Launch folder", the listed profiles that load, and the current home when it is a profile

@@ -3,22 +3,30 @@
 //! preparation against an endpoint the engine refuses before opening any connection. This is
 //! the only test in its binary, so a global subscriber sees every event of the run.
 
+use common_utils::string_utils::SecretString;
 use eh_gui::bridge::{EngineDone, UiDelivery, UiPort};
 use eh_gui::design::tokens::WINDOW_SIZE;
 use eh_gui::form::{AuthChoice, CredentialChoice};
-use eh_gui::services::{ConnectRequest, prepare_session};
+use eh_gui::services::{ConnectRequest, created_profile, open_secrets, prepare_session};
 use eh_gui::state::{
     AppState, ConnectionState, ERROR_PREVIEW_CHARS, Input, Section, ToastKind, error_preview,
 };
 use eh_gui::tasks::StoreSlot;
 use eh_gui::test_harness::Harness;
-use eh_gui::test_harness::builders::state;
+use eh_gui::test_harness::builders::{state, with_profiles};
 use eh_gui::test_harness::journeys::{
-    Capturing, connect_and_capture, save_as_profile, send_batched, switch_dropping_a_typed_secret,
+    Capturing, NEW_PROFILE, connect_and_capture, open_listed_sheet, save_as_profile, send_batched,
+    switch_dropping_a_typed_secret,
 };
 use eh_gui::test_harness::services::ServiceCall;
 use eh_gui::views::details::{COPY_KEY, FAILURE_KEY};
+use eh_gui::views::{NEW_PROFILE_KEY, NEW_PROFILE_NAME_KEY, NEW_PROFILE_SAVE_KEY};
+use shared_eventhub_persistence::config::SensitiveValues;
+use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::secrets::CONNECTION_STRING_SECRET;
+use shared_eventhub_persistence::workspace::Workspace;
 use std::io::Write;
+use std::path::Path;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -213,6 +221,70 @@ fn off_allowlist_with_a_typed_client_secret(
     (h, attempt, request)
 }
 
+/// What [`create_from_stored`] leaves: the harness the answer landed on, the answer's error
+/// text, and what the new profile's secrets file holds as its connection string.
+struct StoredCreate {
+    harness: Harness,
+    error: Option<String>,
+    copied: Option<String>,
+}
+
+/// Saves [`NEW_PROFILE`] through the production `created_profile`, with the connection string
+/// copied from a source data folder under `root` whose secrets file holds `stored`. With
+/// `fail`, the new profile's data folder is a file beforehand, so the save after the copy
+/// fails; `new_profile` reuses the folder, which has no `config.json`.
+fn create_from_stored(root: &Path, stored: &str, fail: bool) -> StoredCreate {
+    let source = DataPaths::new(root.join("source"));
+    open_secrets(&source, |secrets| {
+        secrets.put(
+            CONNECTION_STRING_SECRET,
+            &SecretString::from(stored.to_owned()),
+        )
+    })
+    .unwrap();
+    let workspace = Workspace::at(root.join("workspace"));
+    let folder = workspace.root().join(NEW_PROFILE);
+    if fail {
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(".eh-data"), "").unwrap();
+    }
+    let mut h = Harness::new(with_profiles(state()), WINDOW_SIZE);
+    open_listed_sheet(&mut h);
+    h.type_into("connection-string", stored);
+    h.press(NEW_PROFILE_KEY);
+    h.type_into(NEW_PROFILE_NAME_KEY, NEW_PROFILE);
+    h.press(NEW_PROFILE_SAVE_KEY);
+    let mut request = match h.take_calls().pop() {
+        Some(ServiceCall::CreateProfile(request)) => request,
+        other => panic!("Save profile did not create: {other:?}"),
+    };
+    request.workspace = workspace;
+    request.given = SensitiveValues::default();
+    request.stored_from = Some(source);
+    let answer = h.tokio().block_on(created_profile(request));
+    let error = match &answer {
+        Input::ProfileCreated {
+            result: Err(text), ..
+        } => Some(text.clone()),
+        _ => None,
+    };
+    h.deliver(answer);
+    h.take_calls();
+    let copied = if fail {
+        None
+    } else {
+        let paths = DataPaths::new(folder.join(".eh-data"));
+        open_secrets(&paths, |secrets| secrets.get(CONNECTION_STRING_SECRET))
+            .unwrap()
+            .map(|value| value.expose().to_owned())
+    };
+    StoredCreate {
+        harness: h,
+        error,
+        copied,
+    }
+}
+
 #[test]
 fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
     let logs = SharedBuffer::default();
@@ -235,6 +307,9 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
     let (sent, send_request) = send_batched(&typed);
     let (switched, switched_save) = switch_dropping_a_typed_secret(&typed);
     let (profiled, profile_save) = save_as_profile(&typed);
+    let stores = tempfile::tempdir().unwrap();
+    let copied = create_from_stored(&stores.path().join("ok"), &typed, false);
+    let copy_failed = create_from_stored(&stores.path().join("failed"), &typed, true);
     let data = tempfile::tempdir().unwrap();
     let (mut refused, attempt, request) = off_allowlist_with_a_typed_key(&data.path().join("a"));
     let key_reached = request
@@ -298,6 +373,24 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
             .text
             .is_empty()
     );
+    assert_eq!(copied.error, None);
+    assert_eq!(copied.copied.as_deref(), Some(typed.as_str()));
+    let copy_error = copy_failed.error.clone().unwrap_or_default();
+    assert!(copy_error.contains(".eh-data"), "{copy_error}");
+    assert!(
+        copy_failed
+            .harness
+            .state()
+            .toasts()
+            .entries()
+            .iter()
+            .any(|toast| toast
+                .options
+                .text
+                .starts_with("Could not save profile orders-new")),
+        "the failure toasts"
+    );
+    assert!(text.contains("copied a stored secret into the new profile"));
     assert!(
         failure.contains("does not have one of the required suffixes"),
         "{failure}"
@@ -326,6 +419,9 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
         surfaces(&sent),
         surfaces(&switched),
         surfaces(&profiled),
+        surfaces(&copied.harness),
+        surfaces(&copy_failed.harness),
+        copy_error,
         switched.state().config_caption.clone().unwrap_or_default(),
         profiled.state().config_caption.clone().unwrap_or_default(),
         surfaces(&refused),

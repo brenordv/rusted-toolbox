@@ -674,6 +674,11 @@ pub fn issue(k: &Kit, line: &str) -> El {
     text(line).font(TYPE_CAPTION).color(k.c.danger.fg).wrap()
 }
 
+/// A caption asking the user to look before going on, in the warning color.
+pub fn warning(k: &Kit, line: &str) -> El {
+    text(line).font(TYPE_CAPTION).color(k.c.warning.fg).wrap()
+}
+
 /// `content` entering and leaving with the field-reveal treatment: a fade and a 6 pt rise on
 /// the control spring.
 pub fn reveal(content: El) -> El {

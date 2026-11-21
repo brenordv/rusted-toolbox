@@ -6,9 +6,8 @@ use super::journeys::{open_listed_sheet, pick_with_pointer};
 use super::services::ServiceCall;
 use super::{Harness, a11y_node, a11y_nodes, focused_key, lists};
 use crate::design::tokens::{WINDOW_MIN, WINDOW_SIZE};
-use crate::form::SecretSource;
 use crate::services::CreateRequest;
-use crate::state::{AppState, Input, NO_PROFILES, NewProfileRow, recalled};
+use crate::state::{AppState, Input, NO_PROFILES, NewProfileRow, RECALLED_FIELD, recalled};
 use crate::views::{
     NAME_ISSUE_KEY, NEW_PROFILE_CANCEL_KEY, NEW_PROFILE_KEY, NEW_PROFILE_NAME_KEY,
     NEW_PROFILE_ROW_KEY, NEW_PROFILE_SAVE_KEY, PICKER_KEY, PROFILE_GROUP_KEY, PROFILE_NOTE_KEY,
@@ -17,7 +16,8 @@ use crate::views::{
 use rune::accesskit::Action;
 use rune::{Key, KeyEvent, Mods};
 use shared_eventhub_persistence::config::{
-    AuthMethodConfig, CONFIG_FILE_NAME, ConfigLoad, CredentialKindConfig, TargetConfig, ToolConfig,
+    AuthMethodConfig, CONFIG_FILE_NAME, ConfigLoad, CredentialKindConfig, StoredSecret,
+    TargetConfig, ToolConfig,
 };
 use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry};
 
@@ -493,18 +493,38 @@ fn named_config() -> ToolConfig {
     })
 }
 
-/// The sheet over the listed workspace, launched in a folder whose `config.json` names a hub.
-fn recalled_sheet() -> Harness {
+/// The sheet over the listed workspace at `size`, launched in a folder whose `config.json` is
+/// `config`.
+fn recalled_from(config: ToolConfig, size: (f32, f32)) -> Harness {
     let mut s = with_profiles(state());
     s.form = recalled(
         &ConfigHome::CurrentFolder(launch_folder()),
-        Ok(ConfigLoad::Loaded(Box::new(named_config()))),
+        Ok(ConfigLoad::Loaded(Box::new(config))),
     )
     .form;
-    let mut h = Harness::new(s, WINDOW_SIZE);
+    let mut h = Harness::new(s, size);
     open_listed_sheet(&mut h);
     h
 }
+
+/// The sheet launched in a folder whose `config.json` names a hub.
+fn recalled_sheet() -> Harness {
+    recalled_from(named_config(), WINDOW_SIZE)
+}
+
+/// What the launch folder's `config.json` holds: a stored connection string for the `orders`
+/// hub, named in full.
+fn named_string_config() -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        auth: AuthMethodConfig::ConnectionString {
+            stored: StoredSecret::LocalDb,
+        },
+        ..named_config().target
+    })
+}
+
+const CONFIRM: &str = "The namespace and event hub came from the launch folder's config.json. A \
+                       profile is trusted by eh send without asking.";
 
 fn shift(h: &mut Harness, key: Key) {
     h.rt.key(KeyEvent {
@@ -546,12 +566,14 @@ enum Edit {
     Typed,
     Deleted,
     Pasted,
+    Undone,
 }
 
 #[rstest::rstest]
 #[case::typed(Edit::Typed)]
 #[case::deleted(Edit::Deleted)]
 #[case::pasted(Edit::Pasted)]
+#[case::undone(Edit::Undone)]
 fn an_edit_of_a_recalled_name_makes_it_typed(#[case] edit: Edit) {
     let mut h = recalled_sheet();
     h.press_named("connect-form", "Namespace");
@@ -562,6 +584,10 @@ fn an_edit_of_a_recalled_name_makes_it_typed(#[case] edit: Edit) {
         Edit::Pasted => {
             h.rt.paste("x");
             h.settle();
+        }
+        Edit::Undone => {
+            h.key(Key::Text("x".into()));
+            h.command(Key::Command('z'));
         }
     }
 
@@ -582,13 +608,11 @@ fn under_the_lock_save_as_profile_reads_as_disabled_with_the_reason() {
     assert_eq!(button["description"], LOCKED);
 }
 
-/// The sheet with the Save as profile row open and both issue lines showing: a stored
-/// connection string refused one press, then a name against the rules another.
+/// The sheet with the Save as profile row open and both lines showing: a press with names
+/// recalled from the launch folder asked to confirm them, then a name against the rules was
+/// refused.
 pub(super) fn new_profile_issues(size: (f32, f32)) -> Harness {
-    let mut s = orders_form();
-    s.form.connection_string = SecretSource::stored();
-    let mut h = Harness::new(s, size);
-    open_listed_sheet(&mut h);
+    let mut h = recalled_from(named_string_config(), size);
     h.press(NEW_PROFILE_KEY);
     h.type_into(NEW_PROFILE_NAME_KEY, NEW);
     h.press(NEW_PROFILE_SAVE_KEY);
@@ -598,7 +622,7 @@ pub(super) fn new_profile_issues(size: (f32, f32)) -> Harness {
 }
 
 #[test]
-fn the_row_is_a_named_group_and_its_issues_are_polite_live_regions() {
+fn the_row_is_a_named_group_and_its_lines_are_polite_live_regions() {
     let h = new_profile_issues(WINDOW_SIZE);
 
     let tree = h.a11y();
@@ -619,9 +643,96 @@ fn the_row_is_a_named_group_and_its_issues_are_polite_live_regions() {
     }
     let name = name_issue["name"].as_str().unwrap_or_default();
     assert!(name.starts_with("A profile name uses letters"), "{name}");
+    assert_eq!(row_issue["name"], CONFIRM);
+}
+
+/// The calls recorded so far that are creates.
+fn creates(h: &mut Harness) -> Vec<ServiceCall> {
+    h.calls
+        .take_where(|call| matches!(call, ServiceCall::CreateProfile(_)))
+}
+
+#[test]
+fn recalled_names_are_marked_when_the_row_opens_and_save_anyway_saves_them() {
+    let mut h = recalled_from(named_string_config(), WINDOW_SIZE);
+
+    h.press(NEW_PROFILE_KEY);
+    let marks = texts_within(&h, "connect-form")
+        .iter()
+        .filter(|text| text.as_str() == RECALLED_FIELD)
+        .count();
+    let copied = h.has_text("Copied from local store");
+    h.type_into(NEW_PROFILE_NAME_KEY, NEW);
+    h.press(NEW_PROFILE_SAVE_KEY);
+    let asked = creates(&mut h);
+    let tree = h.a11y();
+    let save = a11y_node(&tree, NEW_PROFILE_SAVE_KEY).unwrap().clone();
+    let confirm = a11y_node(&tree, ROW_ISSUE_KEY).unwrap().clone();
+    h.press(NEW_PROFILE_SAVE_KEY);
+
+    assert_eq!(marks, 2, "both recalled names carry a mark");
+    assert!(copied, "the row says the stored string is copied");
+    assert!(asked.is_empty(), "the first press only asks");
+    assert_eq!(save["name"], "Save anyway");
+    assert_eq!(save["description"], CONFIRM);
+    assert_eq!(confirm["role"], "status");
+    assert!(lists(&confirm, "states", "live-polite"), "{confirm}");
+    assert_eq!(confirm["name"], CONFIRM);
+    let request = only_create(&mut h);
     assert_eq!(
-        row_issue["name"],
-        "A new profile keeps its own secrets. Press Replace beside Connection string and type it \
-         again."
+        request.config.target.event_hub.as_deref(),
+        Some("orders"),
+        "the recalled names are saved as shown"
     );
+    assert_eq!(
+        request.stored_from,
+        Some(h.state().data_paths()),
+        "the stored string is copied from the launch folder's data folder"
+    );
+}
+
+/// [`recalled_from`] the string config with the row open and [`NEW`] typed into its name.
+fn confirm_by_keyboard() -> Harness {
+    let mut h = recalled_from(named_string_config(), WINDOW_SIZE);
+    h.press(NEW_PROFILE_KEY);
+    h.rt.paste(NEW);
+    h.settle();
+    h
+}
+
+#[test]
+fn two_returns_in_the_name_field_leave_the_confirm_up_and_focus_on_save_anyway() {
+    let mut h = confirm_by_keyboard();
+
+    h.key(Key::Enter);
+    let field_kept_focus = h.state().new_profile_name.focused;
+    h.key(Key::Enter);
+
+    assert!(
+        field_kept_focus,
+        "focus stays in the name field when the confirm appears"
+    );
+    assert!(creates(&mut h).is_empty());
+    assert_eq!(h.label_of(ROW_ISSUE_KEY).as_deref(), Some(CONFIRM));
+    assert_eq!(focused_key(&h.rt).as_deref(), Some(NEW_PROFILE_SAVE_KEY));
+}
+
+#[test]
+fn a_held_return_in_the_name_field_saves_nothing() {
+    let mut h = confirm_by_keyboard();
+    let enter = KeyEvent {
+        key: Key::Enter,
+        mods: Mods::default(),
+    };
+    h.key(Key::Enter);
+
+    h.key(Key::Enter);
+    for _ in 0..5 {
+        h.rt.repeat_key(enter.clone());
+        h.settle();
+    }
+
+    assert_eq!(focused_key(&h.rt).as_deref(), Some(NEW_PROFILE_SAVE_KEY));
+    assert!(creates(&mut h).is_empty());
+    assert_eq!(h.label_of(ROW_ISSUE_KEY).as_deref(), Some(CONFIRM));
 }

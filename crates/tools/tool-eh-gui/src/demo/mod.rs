@@ -560,11 +560,12 @@ impl Services for DemoServices {
     }
 
     /// Saves the new profile into the demo's own workspace, whatever workspace the request
-    /// names.
+    /// names, copying a stored secret only from a data folder under the demo's root.
     fn create_profile(&self, request: CreateRequest) {
         let handle = self.handle.clone();
         let request = CreateRequest {
             workspace: profiles::workspace(&self.root),
+            stored_from: copy_source(&self.root, request.stored_from),
             ..request
         };
         self.rt.spawn(async move {
@@ -636,18 +637,32 @@ impl Services for DemoServices {
     }
 }
 
-/// Where a demo Save config writes: `requested` when it lies under `root` and holds no `..`,
-/// else `root`.
+/// Where a demo Save config writes: `requested` when it lies under `root`, else `root`.
 pub fn save_dir(root: &Path, requested: &Path) -> PathBuf {
-    let climbs = requested
-        .components()
-        .any(|part| part == Component::ParentDir);
-    if requested.starts_with(root) && !climbs {
+    if under_root(root, requested) {
         requested.to_path_buf()
     } else {
         debug!("demo mode saves config.json under its own root");
         root.to_path_buf()
     }
+}
+
+/// The data folder a demo Save as profile copies a stored secret from: `stored_from` when it
+/// lies under `root`, else none.
+pub fn copy_source(root: &Path, stored_from: Option<DataPaths>) -> Option<DataPaths> {
+    match stored_from {
+        Some(source) if !under_root(root, source.base()) => {
+            debug!("demo mode copies a stored secret only from under its own root");
+            None
+        }
+        kept @ (Some(_) | None) => kept,
+    }
+}
+
+/// Whether `path` lies under `root` and holds no `..`.
+fn under_root(root: &Path, path: &Path) -> bool {
+    let climbs = path.components().any(|part| part == Component::ParentDir);
+    path.starts_with(root) && !climbs
 }
 
 /// `request` reading the demo's archive and writing under the demo's root, whatever folders

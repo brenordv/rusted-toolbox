@@ -7647,7 +7647,7 @@ dependencies = [
 [[package]]
 name = "rune"
 version = "0.0.1"
-source = "git+https://github.com/brenordv/rune?rev=2d53dba90f22d7e450a8e4363007aa36168629ae#2d53dba90f22d7e450a8e4363007aa36168629ae"
+source = "git+https://github.com/brenordv/rune?rev=6cf05a0ee0f445c25a33ceeede066b78bd73ef6a#6cf05a0ee0f445c25a33ceeede066b78bd73ef6a"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -7703,7 +7703,7 @@ dependencies = [
  "spellbook",
  "swash",
  "taffy",
- "tiny-skia-path 0.11.4 (git+https://github.com/brenordv/rune?rev=2d53dba90f22d7e450a8e4363007aa36168629ae)",
+ "tiny-skia-path 0.11.4 (git+https://github.com/brenordv/rune?rev=6cf05a0ee0f445c25a33ceeede066b78bd73ef6a)",
  "tokio",
  "unicode-segmentation",
  "wasm-bindgen",
@@ -7731,7 +7731,7 @@ dependencies = [
 [[package]]
 name = "rune-highlights"
 version = "0.0.1"
-source = "git+https://github.com/brenordv/rune?rev=2d53dba90f22d7e450a8e4363007aa36168629ae#2d53dba90f22d7e450a8e4363007aa36168629ae"
+source = "git+https://github.com/brenordv/rune?rev=6cf05a0ee0f445c25a33ceeede066b78bd73ef6a#6cf05a0ee0f445c25a33ceeede066b78bd73ef6a"
 dependencies = [
  "unicode-ident",
  "wasmparser",
@@ -7740,7 +7740,7 @@ dependencies = [
 [[package]]
 name = "rune-kit"
 version = "0.0.1"
-source = "git+https://github.com/brenordv/rune?rev=2d53dba90f22d7e450a8e4363007aa36168629ae#2d53dba90f22d7e450a8e4363007aa36168629ae"
+source = "git+https://github.com/brenordv/rune?rev=6cf05a0ee0f445c25a33ceeede066b78bd73ef6a#6cf05a0ee0f445c25a33ceeede066b78bd73ef6a"
 dependencies = [
  "icu_normalizer",
  "rune",
@@ -7752,12 +7752,12 @@ dependencies = [
 [[package]]
 name = "rune-motion"
 version = "0.1.0"
-source = "git+https://github.com/brenordv/rune?rev=2d53dba90f22d7e450a8e4363007aa36168629ae#2d53dba90f22d7e450a8e4363007aa36168629ae"
+source = "git+https://github.com/brenordv/rune?rev=6cf05a0ee0f445c25a33ceeede066b78bd73ef6a#6cf05a0ee0f445c25a33ceeede066b78bd73ef6a"
 
 [[package]]
 name = "rune-staging"
 version = "0.0.1"
-source = "git+https://github.com/brenordv/rune?rev=2d53dba90f22d7e450a8e4363007aa36168629ae#2d53dba90f22d7e450a8e4363007aa36168629ae"
+source = "git+https://github.com/brenordv/rune?rev=6cf05a0ee0f445c25a33ceeede066b78bd73ef6a#6cf05a0ee0f445c25a33ceeede066b78bd73ef6a"
 dependencies = [
  "wgpu",
 ]
@@ -7765,7 +7765,7 @@ dependencies = [
 [[package]]
 name = "rune-taffy"
 version = "0.0.1"
-source = "git+https://github.com/brenordv/rune?rev=2d53dba90f22d7e450a8e4363007aa36168629ae#2d53dba90f22d7e450a8e4363007aa36168629ae"
+source = "git+https://github.com/brenordv/rune?rev=6cf05a0ee0f445c25a33ceeede066b78bd73ef6a#6cf05a0ee0f445c25a33ceeede066b78bd73ef6a"
 dependencies = [
  "taffy",
 ]
@@ -9134,7 +9134,7 @@ dependencies = [
 [[package]]
 name = "tiny-skia-path"
 version = "0.11.4"
-source = "git+https://github.com/brenordv/rune?rev=2d53dba90f22d7e450a8e4363007aa36168629ae#2d53dba90f22d7e450a8e4363007aa36168629ae"
+source = "git+https://github.com/brenordv/rune?rev=6cf05a0ee0f445c25a33ceeede066b78bd73ef6a#6cf05a0ee0f445c25a33ceeede066b78bd73ef6a"
 dependencies = [
  "arrayref",
  "bytemuck",

@@ -13,7 +13,7 @@ pub use profile::{
 use super::details;
 use crate::app::dispatch;
 use crate::design::parts::{self, SheetFrame};
-use crate::design::tokens::{SHEET_WIDTH, SPACE_MD, SPACE_SM, SPACE_XL};
+use crate::design::tokens::{SHEET_WIDTH, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS};
 use crate::form::{
     AuthChoice, CredentialChoice, DISK_WRITE_LABELS, DISK_WRITE_MODES, FieldIssues, SecretSource,
     disk_write_index,
@@ -156,20 +156,22 @@ fn method_fields(s: &AppState, k: &Kit, issues: &FieldIssues, mut body: El) -> E
         AuthChoice::ConnectionString | AuthChoice::KeyVault => "Namespace (optional)",
     };
     let marks = s.recall_marks();
+    let namespace = field(k, names_note, &form.namespace, &issues.namespace, |s| {
+        &mut s.form.namespace
+    });
+    let event_hub = field(k, "Event hub", &form.event_hub, &issues.event_hub, |s| {
+        &mut s.form.event_hub
+    });
     body = body
-        .child(field(
+        .child(recall_marked(
             k,
-            names_note,
-            &form.namespace,
-            &marked(&issues.namespace, marks.namespace),
-            |s| &mut s.form.namespace,
+            namespace,
+            marks.namespace && issues.namespace.is_none(),
         ))
-        .child(field(
+        .child(recall_marked(
             k,
-            "Event hub",
-            &form.event_hub,
-            &marked(&issues.event_hub, marks.event_hub),
-            |s| &mut s.form.event_hub,
+            event_hub,
+            marks.event_hub && issues.event_hub.is_none(),
         ));
     if form.auth != AuthChoice::ConnectionString {
         body = body.child(credential(s, k, issues));
@@ -177,11 +179,14 @@ fn method_fields(s: &AppState, k: &Kit, issues: &FieldIssues, mut body: El) -> E
     body
 }
 
-/// A name field's issue: its form issue, else [`RECALLED_FIELD`] while it is `recalled`.
-fn marked(issue: &Option<String>, recalled: bool) -> Option<String> {
-    issue
-        .clone()
-        .or_else(|| recalled.then(|| RECALLED_FIELD.to_owned()))
+/// A name field with [`RECALLED_FIELD`] as a muted caption under it while `marked`. The field
+/// always sits in the same column, so the mark coming or going never remounts it.
+fn recall_marked(k: &Kit, field: El, marked: bool) -> El {
+    let mut group = col().gap(SPACE_XS).w_full().child(field);
+    if marked {
+        group = group.child(parts::caption(k, RECALLED_FIELD));
+    }
+    group
 }
 
 fn credential(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {

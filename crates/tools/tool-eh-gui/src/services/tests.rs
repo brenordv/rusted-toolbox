@@ -592,6 +592,7 @@ fn new_profile_request(workspace: &Workspace, name: &str, data_folder: &str) -> 
             connection_string: Some(SecretString::from(CONNECTION_STRING.to_owned())),
             client_secret: None,
         },
+        stored_from: None,
     }
 }
 
@@ -674,6 +675,158 @@ async fn a_create_whose_data_folder_is_not_plain_relative_fails_before_writing()
     assert!(text.contains("is not a plain relative folder"), "{text}");
     assert!(!workspace.root().exists());
     assert!(!folder.exists());
+}
+
+const CLIENT_SECRET: &str = "client-secret-4471";
+
+/// A source data folder under `root` whose secrets file holds `name` = `value`.
+fn source_with(root: &tempfile::TempDir, name: &str, value: &str) -> DataPaths {
+    let source = DataPaths::new(root.path().join("source"));
+    open_secrets(&source, |secrets| {
+        secrets.put(name, &SecretString::from(value.to_owned()))
+    })
+    .unwrap();
+    source
+}
+
+/// [`new_profile_request`] for `auth` with nothing typed and the stored secret in `source`.
+fn copying_request(
+    workspace: &Workspace,
+    auth: AuthMethodConfig,
+    source: Option<DataPaths>,
+) -> CreateRequest {
+    let mut request = new_profile_request(workspace, "orders-new", ".eh-data");
+    request.config.target = TargetConfig {
+        namespace: Some("orders.servicebus.windows.net".to_owned()),
+        event_hub: Some("orders".to_owned()),
+        consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+        auth,
+    };
+    request.given = SensitiveValues::default();
+    request.stored_from = source;
+    request
+}
+
+/// What the new profile's secrets file holds under `name`.
+fn new_profile_secret(workspace: &Workspace, name: &str) -> Option<String> {
+    let paths = DataPaths::new(workspace.root().join("orders-new").join(".eh-data"));
+    open_secrets(&paths, |secrets| secrets.get(name))
+        .unwrap()
+        .map(|value| value.expose().to_owned())
+}
+
+#[rstest::rstest]
+#[case::connection_string(connection_string_auth(), CONNECTION_STRING_SECRET.to_owned(), CONNECTION_STRING)]
+#[case::client_secret(client_secret_auth(), client_secret_name("client"), CLIENT_SECRET)]
+#[tokio::test]
+async fn a_create_from_a_stored_secret_copies_it_and_the_source_keeps_it(
+    #[case] auth: AuthMethodConfig,
+    #[case] name: String,
+    #[case] value: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = Workspace::at(root.path().join("workspace"));
+    let source = source_with(&root, &name, value);
+
+    let answer = created_profile(copying_request(&workspace, auth, Some(source.clone()))).await;
+
+    created(answer).unwrap();
+    assert_eq!(
+        new_profile_secret(&workspace, &name).as_deref(),
+        Some(value)
+    );
+    let kept = open_secrets(&source, |secrets| secrets.get(&name)).unwrap();
+    assert_eq!(kept.as_ref().map(SecretString::expose), Some(value));
+}
+
+#[tokio::test]
+async fn a_source_with_no_secrets_file_fails_and_creates_none_there() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = Workspace::at(root.path().join("workspace"));
+    let source = DataPaths::new(root.path().join("source"));
+
+    let answer = created_profile(copying_request(
+        &workspace,
+        connection_string_auth(),
+        Some(source.clone()),
+    ))
+    .await;
+
+    let text = created(answer).unwrap_err();
+    assert!(text.contains("There is no secrets file"), "{text}");
+    assert!(!source.secrets_db().exists());
+    assert!(!workspace.root().exists());
+}
+
+#[tokio::test]
+async fn a_stored_secret_missing_from_the_source_fails_naming_the_file_and_makes_no_profile() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = Workspace::at(root.path().join("workspace"));
+    let source = source_with(&root, "something-else", "x");
+
+    let answer = created_profile(copying_request(
+        &workspace,
+        connection_string_auth(),
+        Some(source.clone()),
+    ))
+    .await;
+
+    let text = created(answer).unwrap_err();
+    assert!(
+        text.contains(&source.secrets_db().display().to_string()),
+        "{text}"
+    );
+    assert!(
+        text.contains("The connection string is not in the secrets file"),
+        "{text}"
+    );
+    assert!(!workspace.root().join("orders-new").exists());
+}
+
+#[tokio::test]
+async fn a_create_with_no_source_copies_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = Workspace::at(root.path().join("workspace"));
+    source_with(&root, CONNECTION_STRING_SECRET, CONNECTION_STRING);
+
+    let answer = created_profile(copying_request(&workspace, connection_string_auth(), None)).await;
+
+    let text = created(answer).unwrap_err();
+    assert!(
+        text.contains("There is no connection string to save"),
+        "{text}"
+    );
+    assert_eq!(
+        new_profile_secret(&workspace, CONNECTION_STRING_SECRET),
+        None
+    );
+}
+
+#[rstest::rstest]
+#[case::client_secret(
+    client_secret_auth(),
+    SensitiveValues::default(),
+    Some("client secret")
+)]
+#[case::connection_string(
+    connection_string_auth(),
+    SensitiveValues::default(),
+    Some("connection string")
+)]
+#[case::client_secret_typed(
+    client_secret_auth(),
+    SensitiveValues { connection_string: None, client_secret: Some(SecretString::from(CLIENT_SECRET.to_owned())) },
+    None
+)]
+fn the_copied_kind_is_the_secret_the_config_uses_and_the_request_lacks(
+    #[case] auth: AuthMethodConfig,
+    #[case] given: SensitiveValues,
+    #[case] expected: Option<&str>,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let request = copying_request(&Workspace::at(root.path().to_owned()), auth, None);
+
+    assert_eq!(copied_kind(&request.config, &given), expected);
 }
 
 /// `paths` as the window resolves it: eh-gui's working folder is its launch folder.

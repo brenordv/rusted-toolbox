@@ -12,9 +12,10 @@ use common_utils::string_utils::SecretString;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use shared_azure::auth::{AuthMethod, CredentialKind};
-use shared_eventhub_core::connection::{DEFAULT_CONSUMER_GROUP, EventHubTarget};
+use shared_eventhub_core::connection::{DEFAULT_CONSUMER_GROUP, EventHubTarget, target_names};
 use shared_eventhub_core::engine::EngineConfig;
 use shared_eventhub_core::filters::CaptureFilters;
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::Duration;
@@ -597,16 +598,112 @@ pub fn resolve_target_with(
     given: SensitiveValues,
     secrets: Option<&SecretsStore>,
 ) -> anyhow::Result<EventHubTarget> {
+    let target = build_target(config, given, secrets)?;
+    info!(
+        auth = auth_method_name(&config.target.auth),
+        client_secret_present = target.client_secret.is_some(),
+        "Resolved the target"
+    );
+    Ok(target)
+}
+
+/// `config` with the namespace and event hub that the connection string in `given` names
+/// filling the ones `config` leaves out. It stays borrowed, unchanged, unless the config uses a
+/// connection string, `given` holds one, and a name is missing; a name the config has is kept.
+/// No secrets file is read and nothing is logged.
+///
+/// # Errors
+/// Fails when the given connection string cannot be parsed, names another namespace than the
+/// config's, or names no event hub while the config has none. The error never contains the
+/// connection string.
+pub fn with_typed_names<'a>(
+    config: &'a ToolConfig,
+    given: &SensitiveValues,
+) -> anyhow::Result<Cow<'a, ToolConfig>> {
+    let string_given = match config.target.auth {
+        AuthMethodConfig::ConnectionString { .. } => given.connection_string.is_some(),
+        AuthMethodConfig::Credential { .. } | AuthMethodConfig::KeyVaultConnectionString { .. } => {
+            false
+        }
+    };
+    let names_missing = config.target.namespace.is_none() || config.target.event_hub.is_none();
+    if !string_given || !names_missing {
+        return Ok(Cow::Borrowed(config));
+    }
+
+    let target = build_target(config, given.clone(), None)?;
+    // Only a Key Vault target has no names before its fetch, and the config uses a connection
+    // string here.
+    let Some(names) = target_names(&target) else {
+        return Ok(Cow::Borrowed(config));
+    };
+    let (namespace, event_hub) = names?;
+    let mut named = config.clone();
+    named.target.namespace.get_or_insert(namespace);
+    named.target.event_hub.get_or_insert(event_hub);
+    Ok(Cow::Owned(named))
+}
+
+/// `given` with each secret `config` uses that `given` lacks read from `secrets`: the
+/// connection string under connection-string auth, the client secret under a client-secret
+/// credential. A secret `given` holds is kept as it is.
+///
+/// # Errors
+/// Fails when a secret the config uses is neither in `given` nor in `secrets` (the error names
+/// only its kind, never a value), or when the secrets file cannot be read.
+pub fn with_stored_secrets(
+    config: &ToolConfig,
+    given: SensitiveValues,
+    secrets: &SecretsStore,
+) -> anyhow::Result<SensitiveValues> {
+    let connection_string = match config.target.auth {
+        AuthMethodConfig::ConnectionString { .. } => Some(
+            given_or_stored(
+                given.connection_string,
+                Some(secrets),
+                CONNECTION_STRING_SECRET,
+            )?
+            .context("The connection string is not in the secrets file")?,
+        ),
+        AuthMethodConfig::Credential { .. } | AuthMethodConfig::KeyVaultConnectionString { .. } => {
+            given.connection_string
+        }
+    };
+    let client_secret = match config.client_secret_id() {
+        Some(client_id) => Some(
+            given_or_stored(
+                given.client_secret,
+                Some(secrets),
+                &client_secret_name(client_id),
+            )?
+            .context("The client secret for this client id is not in the secrets file")?,
+        ),
+        None => given.client_secret,
+    };
+    Ok(SensitiveValues {
+        connection_string,
+        client_secret,
+    })
+}
+
+/// The event hub target `config` describes, with a secret in `given` winning over the one in
+/// `secrets`. Logs nothing.
+fn build_target(
+    config: &ToolConfig,
+    given: SensitiveValues,
+    secrets: Option<&SecretsStore>,
+) -> anyhow::Result<EventHubTarget> {
     let auth = match &config.target.auth {
         AuthMethodConfig::ConnectionString { .. } => AuthMethod::ConnectionString {
-            connection_string: match given.connection_string {
-                Some(connection_string) => connection_string,
-                None => stored(secrets, CONNECTION_STRING_SECRET)?.context(
-                    "config.json expects the connection string in the data folder's secrets \
-                     file, but it is not there; save the config again with the connection \
-                     string",
-                )?,
-            },
+            connection_string: given_or_stored(
+                given.connection_string,
+                secrets,
+                CONNECTION_STRING_SECRET,
+            )?
+            .context(
+                "config.json expects the connection string in the data folder's secrets file, \
+                 but it is not there; save the config again with the connection string",
+            )?,
         },
         AuthMethodConfig::Credential { credential } => AuthMethod::Credential {
             kind: credential.into(),
@@ -621,16 +718,12 @@ pub fn resolve_target_with(
             credential: credential.into(),
         },
     };
-    let client_secret = match (config.client_secret_id(), given.client_secret) {
-        (Some(_), Some(client_secret)) => Some(client_secret),
-        (Some(client_id), None) => stored(secrets, &client_secret_name(client_id))?,
-        (None, _) => None,
+    let client_secret = match config.client_secret_id() {
+        Some(client_id) => {
+            given_or_stored(given.client_secret, secrets, &client_secret_name(client_id))?
+        }
+        None => None,
     };
-    info!(
-        auth = auth_method_name(&config.target.auth),
-        client_secret_present = client_secret.is_some(),
-        "Resolved the target"
-    );
 
     Ok(EventHubTarget {
         auth,
@@ -639,6 +732,18 @@ pub fn resolve_target_with(
         event_hub_name: config.target.event_hub.clone(),
         consumer_group: config.target.consumer_group.clone(),
     })
+}
+
+/// `given` when it holds the secret, else the one stored under `name`.
+fn given_or_stored(
+    given: Option<SecretString>,
+    secrets: Option<&SecretsStore>,
+    name: &str,
+) -> anyhow::Result<Option<SecretString>> {
+    match given {
+        Some(secret) => Ok(Some(secret)),
+        None => stored(secrets, name),
+    }
 }
 
 /// The secret stored under `name`, or `None` when there is no secrets file.

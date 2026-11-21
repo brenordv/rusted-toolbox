@@ -14,7 +14,9 @@ mod toasts;
 
 pub use details::{ERROR_PREVIEW_CHARS, ErrorDetails, ErrorPreview, error_preview};
 pub use ending::{Failure, FailureStage};
-pub use new_profile::{NewProfileRow, ProfileFocus, RECALLED_FIELD, RowIssue};
+pub use new_profile::{
+    NewProfileRow, ProfileDestination, ProfileFocus, RECALLED_FIELD, RowIssue, RowLine,
+};
 pub use panes::{Pane, PaneFit};
 pub use profiles::{
     LAUNCH_FOLDER, NO_PROFILES, NO_WORKSPACE, ProfileList, ProfileNote, ProfileSwitch, Recalled,
@@ -30,6 +32,7 @@ use crate::design::tokens::{SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH};
 use crate::form::{ConnectForm, PendingSave};
 use crate::read::inspector::InspectorInput;
 use crate::read::{LogKind, ReadEffect, ReadInput, ReadState};
+use crate::send::run::Names;
 use crate::send::{SendEffect, SendInput, SendState};
 use crate::services::{ConnectRequest, CreateRequest, SaveRequest, Services};
 use chrono::{DateTime, TimeDelta, Utc};
@@ -237,8 +240,10 @@ pub enum Input {
     NewProfileCancelled,
     /// The profile name field changed.
     NewProfileNameEdited,
-    /// Save profile, or Return in the profile name field.
+    /// Save profile (Save anyway while the row asks to confirm).
     CreateProfilePressed,
+    /// Return in the profile name field.
+    NewProfileNameSubmitted,
     /// The answer to [`Effect::CreateProfile`] `request`: the new profile, or why it was not
     /// saved.
     ProfileCreated {
@@ -472,6 +477,7 @@ impl AppState {
             Input::NewProfileCancelled => self.new_profile_cancelled(&mut out),
             Input::NewProfileNameEdited => self.new_profile_name_edited(&mut out),
             Input::CreateProfilePressed => self.create_pressed(&mut out),
+            Input::NewProfileNameSubmitted => self.new_profile_name_submitted(&mut out),
             Input::ProfileCreated { request, result } => {
                 self.profile_created(request, result, &mut out);
             }
@@ -622,6 +628,23 @@ impl AppState {
             return;
         }
         let (config, given) = self.config_with_rules();
+        let filled = match self.home() {
+            ConfigHome::Profile(_) => match new_profile::filled_names(&config, &given) {
+                Ok(filled) => filled,
+                Err(text) => {
+                    self.config_save_failed(text);
+                    return;
+                }
+            },
+            ConfigHome::CurrentFolder(_) => None,
+        };
+        let config = match filled {
+            Some(filled) => {
+                self.names_filled(&filled.names);
+                filled.config
+            }
+            None => config,
+        };
         self.save_status = SaveStatus::Saving(SaveTo::Home(self.form.pending_save()));
         out.effects.push(Effect::SaveConfig(SaveRequest {
             config,
@@ -657,15 +680,31 @@ impl AppState {
                 self.save_status = SaveStatus::Saved;
                 self.send.refresh_destination(&self.form);
             }
-            Err(text) => {
-                warn!(error = %text, "saving config.json failed");
-                self.toast(
-                    ToastKind::Danger,
-                    format!("Could not save config.json: {text}"),
-                );
-                self.save_status = SaveStatus::Failed(text);
-            }
+            Err(text) => self.config_save_failed(text),
         }
+    }
+
+    /// Writes `names` into the form's blank name fields as typed text, so the form matches the
+    /// `config.json` the save writes and a second save keeps them.
+    fn names_filled(&mut self, names: &Names) {
+        self.form
+            .fill_names(Some(&names.namespace), Some(&names.event_hub));
+        self.send.refresh_destination(&self.form);
+        info!(
+            namespace = names.namespace.as_str(),
+            event_hub = names.event_hub.as_str(),
+            "Save config fills the names the typed connection string gives"
+        );
+    }
+
+    /// A Save config that failed with `text`: a Danger toast and the footer's "Not saved".
+    fn config_save_failed(&mut self, text: String) {
+        warn!(error = %text, "saving config.json failed");
+        self.toast(
+            ToastKind::Danger,
+            format!("Could not save config.json: {text}"),
+        );
+        self.save_status = SaveStatus::Failed(text);
     }
 
     /// Why the data folder cannot change now, or `None` when it can: nothing may be using the

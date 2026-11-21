@@ -2,7 +2,8 @@ use super::*;
 use shared_azure::auth::AuthMethod;
 use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
 use shared_eventhub_persistence::config::{
-    CONFIG_FILE_NAME, ConfigLoad, CredentialKindConfig, StoredSecret, TargetConfig, load_config,
+    AuthMethodConfig, CONFIG_FILE_NAME, ConfigLoad, CredentialKindConfig, StoredSecret,
+    TargetConfig, load_config,
 };
 use shared_eventhub_persistence::secrets::CONNECTION_STRING_SECRET;
 use shared_eventhub_persistence::workspace::{ProfileName, Workspace};

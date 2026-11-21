@@ -323,6 +323,40 @@ fn an_edited_name_no_longer_counts_as_recalled() {
 }
 
 #[test]
+fn an_undone_edit_still_counts_as_typed() {
+    let mut form = from_the_launch_folder();
+
+    form.namespace.insert("x");
+    form.namespace.undo();
+
+    assert_eq!(form.namespace.text, "orders.servicebus.windows.net");
+    assert!(!form.recalled_fields().namespace);
+}
+
+#[test]
+fn fill_names_writes_blank_fields_as_typed_and_keeps_text() {
+    let mut form = ConnectForm {
+        names_from_launch_folder: true,
+        ..ConnectForm::default()
+    };
+    form.event_hub = TextEdit::new("  ");
+    form.namespace = TextEdit::new("billing.servicebus.windows.net");
+
+    form.fill_names(Some("orders.servicebus.windows.net"), Some("orders"));
+
+    assert_eq!(form.namespace.text, "billing.servicebus.windows.net");
+    assert_eq!(form.event_hub.text, "orders");
+    assert!(!form.event_hub.is_pristine());
+    assert_eq!(
+        form.recalled_fields(),
+        RecalledFields {
+            namespace: true,
+            event_hub: false
+        }
+    );
+}
+
+#[test]
 fn names_not_from_the_launch_folder_or_empty_never_count_as_recalled() {
     let elsewhere = credential_form();
     let empty = ConnectForm {

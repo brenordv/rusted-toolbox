@@ -3,6 +3,5 @@
   {"t": 0.9, "type": "tap", "key": "profile-picker-trigger"},
   {"t": 1.4, "type": "tap", "key": "option2"},
   {"t": 2.0, "type": "tap", "key": "new-profile"},
-  {"t": 2.5, "type": "type", "text": "orders-new"},
-  {"t": 3.0, "type": "tap", "key": "new-profile-save"}
+  {"t": 2.5, "type": "type", "text": "orders-new"}
 ]}

@@ -19,9 +19,10 @@
   `azure_messaging_eventhubs` 0.16.0, `azure_security_keyvault_secrets` 1.1.0-beta.1,
   `azure_core_amqp` 1.2.0-beta.3 (test fixtures only), `redb` 4.6.0, `windows` 0.62.2 (eh-gui
   reads the Windows appearance through `UISettings`), and `rune` and `rune-kit` as git
-  dependencies pinned to a fork (`brenordv/rune`, rev `2d53dba90f22d7e450a8e4363007aa36168629ae`):
+  dependencies pinned to a fork (`brenordv/rune`, rev `6cf05a0ee0f445c25a33ceeede066b78bd73ef6a`):
   anomalyco/rune's rev `c4eda05889c984fff91ccd906e3c00cdfc4cae24` plus fixes for Windows dead
-  keys and blank lines in a field's accessible text. Removed: `azeventhubs` and `sled`.
+  keys, blank lines in a field's accessible text, and `TextEdit::is_pristine` after an edit of a
+  plain field. Removed: `azeventhubs` and `sled`.
 - Rune's `[patch.crates-io]` block (forks of `winit`, `wgpu-hal`, `parley_engine`, and
   `accesskit_windows` at anomalyco/rune's rev `c4eda05`) is copied into the root `Cargo.toml`
   and applies to the whole workspace, `seal-gui`'s eframe stack included. `wgpu-hal` stays at

@@ -472,7 +472,7 @@ const ROWS: &[Row] = &[
         covered: &["empty-connect", "connect"],
     },
     Row {
-        name: "the Save as profile row with both issues",
+        name: "the Save as profile row with a name issue and the confirm",
         build: new_profile_issues,
         reachable: &[
             crate::views::NEW_PROFILE_CANCEL_KEY,

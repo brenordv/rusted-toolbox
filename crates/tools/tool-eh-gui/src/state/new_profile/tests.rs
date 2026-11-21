@@ -5,6 +5,7 @@ use crate::form::{AuthChoice, CredentialChoice, SecretSource};
 use crate::read::inspector::ExportPhase;
 use crate::send::Destination;
 use crate::send::run::SendRun;
+use crate::services::SaveRequest;
 use crate::state::{ConnectionState, Input, SheetPurpose, recalled};
 use crate::test_harness::builders::{
     BILLING, ORDERS, ORDERS_DEV, billing_config, launch_folder, listing, orders_config, profile,
@@ -16,7 +17,7 @@ use shared_eventhub_core::filters::{CaptureFilters, TextFilter};
 use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_core::producer::Pacing;
 use shared_eventhub_persistence::config::{
-    AuthMethodConfig, ConfigLoad, CredentialKindConfig, TargetConfig, ToolConfig,
+    AuthMethodConfig, ConfigLoad, CredentialKindConfig, StoredSecret, TargetConfig, ToolConfig,
 };
 use shared_eventhub_persistence::paths::DataPaths;
 use std::path::PathBuf;
@@ -239,17 +240,17 @@ fn a_name_that_cannot_be_saved_refuses_the_press_on_the_name_line(
 }
 
 #[test]
-fn a_name_issue_keeps_the_row_issue_of_an_earlier_press() {
-    let mut s = typed(open_row(), NEW);
-    s.form.connection_string = SecretSource::stored();
+fn a_name_issue_keeps_the_confirm_of_an_earlier_press() {
+    let mut s = recalled_row();
     s.apply(Input::CreateProfilePressed);
     s.new_profile_name.clear();
 
-    s.apply(Input::CreateProfilePressed);
+    let out = s.apply(Input::CreateProfilePressed);
 
+    assert!(!creates(&out));
     assert_eq!(name_issue(&s), Some("Type a name for the new profile."));
-    assert_eq!(row_issue(&s), Some(RowIssue::StoredSecret));
-    assert!(s.new_profile_issue().is_some());
+    assert_eq!(row_issue(&s), Some(RowIssue::RecalledNames));
+    assert!(matches!(s.new_profile_line(), Some(RowLine::Confirm(_))));
 }
 
 #[test]
@@ -276,8 +277,10 @@ fn a_form_with_issues_refuses_the_press_and_shows_the_field_issues() {
     assert_eq!(name_issue(&s), None);
     assert_eq!(row_issue(&s), Some(RowIssue::FormIssues));
     assert_eq!(
-        s.new_profile_issue().as_deref(),
-        Some("Not saved: fix the fields marked below.")
+        s.new_profile_line(),
+        Some(RowLine::Issue(
+            "Not saved: fix the fields marked below.".to_owned()
+        ))
     );
 }
 
@@ -294,11 +297,11 @@ fn client_secret_form(s: &mut AppState) {
 }
 
 #[rstest::rstest]
-#[case::connection_string(false, "Connection string")]
-#[case::client_secret(true, "Client secret")]
-fn a_stored_secret_refuses_the_press_and_asks_for_it_again(
+#[case::connection_string(false, SecretKind::ConnectionString)]
+#[case::client_secret(true, SecretKind::ClientSecret)]
+fn a_stored_secret_is_copied_from_the_current_data_folder(
     #[case] client: bool,
-    #[case] field: &str,
+    #[case] kind: SecretKind,
 ) {
     let mut s = typed(open_row(), NEW);
     if client {
@@ -306,29 +309,71 @@ fn a_stored_secret_refuses_the_press_and_asks_for_it_again(
     } else {
         s.form.connection_string = SecretSource::stored();
     }
+    let source = s.data_paths();
 
     let out = s.apply(Input::CreateProfilePressed);
 
-    assert!(out.effects.is_empty());
-    assert_eq!(row_issue(&s), Some(RowIssue::StoredSecret));
-    assert_eq!(
-        s.new_profile_issue(),
-        Some(format!(
-            "A new profile keeps its own secrets. Press Replace beside {field} and type it again."
-        ))
-    );
+    let request = create_request(&out);
+    assert_eq!(request.stored_from, Some(source));
+    assert!(request.given.connection_string.is_none());
+    assert_eq!(row_issue(&s), None);
+    assert_eq!(s.new_profile_secret(), Some(kind));
 }
 
 #[test]
-fn names_recalled_from_the_launch_folder_refuse_the_press_and_keep_their_text() {
+fn typed_secrets_copy_nothing() {
+    let mut s = typed(open_row(), NEW);
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert_eq!(create_request(&out).stored_from, None);
+    assert_eq!(s.new_profile_secret(), None);
+}
+
+#[test]
+fn under_a_profile_the_stored_secret_comes_from_the_profiles_data_folder() {
+    let mut s = listed();
+    let request = load_request(&s.apply(Input::ProfilePicked(profile_home(ORDERS_DEV)))).0;
+    s.apply(Input::ProfileLoaded {
+        request,
+        result: loaded(orders_config()),
+    });
+    s.apply(Input::NewProfileOpened);
+    let mut s = typed(s, NEW);
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert_eq!(s.new_profile_secret(), Some(SecretKind::ConnectionString));
+    assert_eq!(
+        create_request(&out).stored_from,
+        Some(DataPaths::new(profile(ORDERS_DEV).dir().join(".eh-data")))
+    );
+}
+
+const BOTH_RECALLED: &str = "The namespace and event hub came from the launch folder's \
+                             config.json. A profile is trusted by eh send without asking.";
+
+#[test]
+fn names_recalled_from_the_launch_folder_ask_to_confirm_and_keep_their_text() {
     let mut s = recalled_row();
 
     let out = s.apply(Input::CreateProfilePressed);
 
     assert!(out.effects.is_empty());
+    assert_eq!(s.save_status, SaveStatus::Idle);
     assert_eq!(row_issue(&s), Some(RowIssue::RecalledNames));
     assert_eq!(s.form.namespace.text, "orders.servicebus.windows.net");
     assert_eq!(s.form.event_hub.text, "orders");
+    assert_eq!(
+        s.new_profile_line(),
+        Some(RowLine::Confirm(BOTH_RECALLED.to_owned()))
+    );
+}
+
+#[test]
+fn the_recall_marks_show_from_the_moment_the_row_opens() {
+    let s = recalled_row();
+
     assert_eq!(
         s.recall_marks(),
         RecalledFields {
@@ -336,66 +381,456 @@ fn names_recalled_from_the_launch_folder_refuse_the_press_and_keep_their_text() 
             event_hub: true
         }
     );
-    assert_eq!(
-        s.new_profile_issue().as_deref(),
-        Some(
-            "The namespace and event hub came from the launch folder's config.json. Type them \
-             again to save them in a profile."
-        )
-    );
+    assert_eq!(s.new_profile_line(), None);
 }
 
 #[test]
-fn one_edited_recalled_name_leaves_only_the_other_marked() {
+fn the_press_after_the_confirm_saves_the_recalled_names() {
+    let mut s = recalled_row();
+    s.apply(Input::CreateProfilePressed);
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    let request = create_request(&out);
+    assert_eq!(
+        request.config.target.namespace.as_deref(),
+        Some("orders.servicebus.windows.net")
+    );
+    assert_eq!(request.config.target.event_hub.as_deref(), Some("orders"));
+    assert_eq!(row_issue(&s), None);
+}
+
+#[test]
+fn return_while_the_confirm_shows_saves_nothing_and_asks_for_save_anyway() {
+    let mut s = recalled_row();
+    s.apply(Input::CreateProfilePressed);
+
+    let out = s.apply(Input::NewProfileNameSubmitted);
+
+    assert!(out.effects.is_empty() && !out.changed);
+    assert_eq!(
+        s.take_profile_focus(),
+        Some(ProfileFocus::SaveProfileButton)
+    );
+    assert_eq!(row_issue(&s), Some(RowIssue::RecalledNames));
+}
+
+#[test]
+fn return_with_recalled_names_and_no_confirm_yet_asks_to_confirm() {
+    let mut s = recalled_row();
+
+    let out = s.apply(Input::NewProfileNameSubmitted);
+
+    assert!(out.effects.is_empty());
+    assert_eq!(row_issue(&s), Some(RowIssue::RecalledNames));
+    assert_eq!(s.take_profile_focus(), None);
+}
+
+#[test]
+fn return_with_nothing_recalled_saves() {
+    let mut s = typed(open_row(), NEW);
+
+    let out = s.apply(Input::NewProfileNameSubmitted);
+
+    create_request(&out);
+}
+
+#[test]
+fn return_while_the_data_folder_is_held_leaves_focus_in_the_field() {
+    let rt = runtime();
+    let mut s = recalled_row();
+    s.apply(Input::CreateProfilePressed);
+    hold(&mut s, Holder::Abandoned, &rt);
+
+    let out = s.apply(Input::NewProfileNameSubmitted);
+
+    assert!(out.effects.is_empty() && !out.changed);
+    assert_eq!(s.take_profile_focus(), None);
+}
+
+#[test]
+fn one_edited_recalled_name_leaves_only_the_other_in_the_confirm_and_the_press_saves() {
     let mut s = recalled_row();
     s.apply(Input::CreateProfilePressed);
 
     let typed_length = s.form.namespace.text.len();
     s.form.namespace.set_selection(0, typed_length);
     s.form.namespace.insert("billing.servicebus.windows.net");
+    let line = s.new_profile_line();
+    let marks = s.recall_marks();
     let out = s.apply(Input::CreateProfilePressed);
 
-    assert!(out.effects.is_empty());
     assert_eq!(
-        s.recall_marks(),
+        line,
+        Some(RowLine::Confirm(
+            "The event hub came from the launch folder's config.json. A profile is trusted by \
+             eh send without asking."
+                .to_owned()
+        ))
+    );
+    assert_eq!(
+        marks,
         RecalledFields {
             namespace: false,
             event_hub: true
         }
     );
     assert_eq!(
-        s.new_profile_issue().as_deref(),
-        Some(
-            "The event hub came from the launch folder's config.json. Type it again to save it \
-             in a profile."
-        )
+        create_request(&out).config.target.namespace.as_deref(),
+        Some("billing.servicebus.windows.net")
     );
 }
 
 #[test]
-fn once_both_recalled_names_are_edited_the_press_goes_out() {
+fn once_both_recalled_names_are_edited_the_confirm_goes_and_the_press_saves() {
     let mut s = recalled_row();
     s.apply(Input::CreateProfilePressed);
     s.form.namespace.mark_edited();
     s.form.event_hub.mark_edited();
+    let line = s.new_profile_line();
 
     let out = s.apply(Input::CreateProfilePressed);
 
+    assert_eq!(line, None);
     let request = create_request(&out);
     assert_eq!(request.config.target.event_hub.as_deref(), Some("orders"));
     assert!(s.recall_marks().is_empty());
 }
 
 #[test]
-fn a_fixed_cause_clears_the_row_line_before_the_next_press() {
+fn with_every_recalled_name_edited_a_first_press_saves_without_a_confirm() {
+    let mut s = recalled_row();
+    s.form.namespace.mark_edited();
+    s.form.event_hub.mark_edited();
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    create_request(&out);
+}
+
+#[test]
+fn a_form_issue_on_the_second_press_replaces_the_confirm() {
+    let mut s = recalled_row();
+    s.apply(Input::CreateProfilePressed);
+    s.form.consumer_group.clear();
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert!(out.effects.is_empty());
+    assert_eq!(row_issue(&s), Some(RowIssue::FormIssues));
+}
+
+#[test]
+fn a_press_while_a_load_is_pending_keeps_the_confirm() {
+    let mut s = recalled_row();
+    s.apply(Input::CreateProfilePressed);
+    s.apply(Input::ProfilePicked(profile_home(BILLING)));
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert!(out.effects.is_empty() && !out.changed);
+    assert_eq!(row_issue(&s), Some(RowIssue::RecalledNames));
+}
+
+#[test]
+fn a_failed_load_keeps_the_confirm_and_a_landed_load_clears_it() {
+    let mut s = recalled_row();
+    s.apply(Input::CreateProfilePressed);
+    let failed = load_request(&s.apply(Input::ProfilePicked(profile_home(BILLING)))).0;
+    s.apply(Input::ProfileLoaded {
+        request: failed,
+        result: Err("unreadable".to_owned()),
+    });
+    let kept = row_issue(&s);
+    let landed = load_request(&s.apply(Input::ProfilePicked(profile_home(BILLING)))).0;
+
+    s.apply(Input::ProfileLoaded {
+        request: landed,
+        result: loaded(billing_config()),
+    });
+
+    assert_eq!(kept, Some(RowIssue::RecalledNames));
+    assert_eq!(row_issue(&s), None);
+}
+
+#[rstest::rstest]
+#[case::cancel(Input::NewProfileCancelled)]
+#[case::close_sheet(Input::CloseSheet)]
+#[case::connect(Input::ConnectPressed)]
+fn the_confirm_goes_with_the_row(#[case] input: Input) {
+    let mut s = recalled_row();
+    s.apply(Input::CreateProfilePressed);
+
+    s.apply(input);
+
+    assert!(!is_open(&s));
+    assert_eq!(s.new_profile_line(), None);
+}
+
+#[rstest::rstest]
+#[case::saved(Ok(()))]
+#[case::failed(Err("disk full".to_owned()))]
+fn a_save_config_while_the_confirm_shows_keeps_it_for_the_next_press(
+    #[case] answer: Result<(), String>,
+) {
+    let mut s = recalled_row();
+    s.apply(Input::CreateProfilePressed);
+    let save = s.apply(Input::SavePressed);
+    let during = s.apply(Input::CreateProfilePressed);
+
+    s.apply(Input::ConfigSaved(answer));
+    let line = s.new_profile_line();
+    let after = s.apply(Input::CreateProfilePressed);
+
+    save_request(&save);
+    assert!(during.effects.is_empty() && !during.changed);
+    assert_eq!(line, Some(RowLine::Confirm(BOTH_RECALLED.to_owned())));
+    create_request(&after);
+}
+
+/// [`open_row`] with [`NEW`] typed and a form the launch folder's `config.json` gave, naming a
+/// namespace the typed [`ORDERS`] string contradicts and no event hub.
+fn recalled_namespace_row() -> AppState {
+    let mut s = open_row();
+    let mut config = named_config();
+    config.target.namespace = Some("billing.servicebus.windows.net".to_owned());
+    config.target.event_hub = None;
+    config.target.auth = AuthMethodConfig::ConnectionString {
+        stored: StoredSecret::LocalDb,
+    };
+    s.form = recalled(&ConfigHome::CurrentFolder(launch_folder()), loaded(config)).form;
+    s.form.connection_string.edit_mut().replace_text(ORDERS);
+    typed(s, NEW)
+}
+
+#[test]
+fn a_fill_failure_on_save_anyway_keeps_the_confirm() {
+    let mut s = recalled_namespace_row();
+    s.apply(Input::CreateProfilePressed);
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert!(!creates(&out));
+    assert!(matches!(s.save_status, SaveStatus::Failed(_)));
+    assert_eq!(row_issue(&s), Some(RowIssue::RecalledNames));
+    assert!(matches!(s.new_profile_line(), Some(RowLine::Confirm(_))));
+}
+
+#[test]
+fn after_a_fill_failure_return_still_only_moves_focus_to_save_anyway() {
+    let mut s = recalled_namespace_row();
+    s.apply(Input::NewProfileNameSubmitted);
+    s.apply(Input::CreateProfilePressed);
+
+    let out = s.apply(Input::NewProfileNameSubmitted);
+
+    assert!(out.effects.is_empty());
+    assert_eq!(
+        s.take_profile_focus(),
+        Some(ProfileFocus::SaveProfileButton)
+    );
+    assert_eq!(row_issue(&s), Some(RowIssue::RecalledNames));
+}
+
+#[test]
+fn after_a_failed_create_the_next_press_with_recalled_names_asks_again() {
+    let mut s = recalled_row();
+    s.apply(Input::CreateProfilePressed);
+    let request = create_request(&s.apply(Input::CreateProfilePressed)).request;
+    s.apply(Input::ProfileCreated {
+        request,
+        result: Err("disk full".to_owned()),
+    });
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert!(!creates(&out));
+    assert_eq!(row_issue(&s), Some(RowIssue::RecalledNames));
+}
+
+#[test]
+fn a_typed_connection_string_fills_the_blank_names_of_the_new_profile() {
+    let mut s = typed(open_row(), NEW);
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    let request = create_request(&out);
+    assert_eq!(
+        request.config.target.namespace.as_deref(),
+        Some("orders.servicebus.windows.net")
+    );
+    assert_eq!(request.config.target.event_hub.as_deref(), Some("orders"));
+    assert!(
+        s.form.namespace.text.is_empty(),
+        "the form keeps its fields"
+    );
+}
+
+/// [`open_row`] with [`NEW`] typed and a namespace the typed string's endpoint contradicts.
+fn contradicted_row() -> AppState {
+    let mut s = typed(open_row(), NEW);
+    s.form.namespace.insert("billing.servicebus.windows.net");
+    s
+}
+
+#[test]
+fn a_fill_that_fails_ends_the_press_as_a_failed_save() {
+    let mut s = contradicted_row();
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert!(!creates(&out));
+    assert!(matches!(s.save_status, SaveStatus::Failed(_)));
+    let toasts = s.toasts().entries();
+    assert_eq!(toasts.len(), 1, "{toasts:?}");
+    assert!(
+        toasts[0]
+            .options
+            .text
+            .starts_with("Could not save profile orders-new: The configured namespace"),
+        "{}",
+        toasts[0].options.text
+    );
+    assert!(!toasts[0].options.text.contains("bGlzdGVu"));
+    assert!(is_open(&s));
+}
+
+#[test]
+fn the_destination_line_follows_the_form() {
+    let mut s = typed(open_row(), NEW);
+    let from_string = s.new_profile_destination();
+    s.form.namespace.insert("billing.servicebus.windows.net");
+    let invalid = s.new_profile_destination();
+    s.form.event_hub.insert("invoices");
+    let typed_names = s.new_profile_destination();
+    s.form.consumer_group.clear();
+    let with_issues = s.new_profile_destination();
+
+    assert_eq!(
+        from_string,
+        ProfileDestination::FromString(Names {
+            namespace: "orders.servicebus.windows.net".to_owned(),
+            event_hub: "orders".to_owned(),
+        })
+    );
+    assert_eq!(invalid, ProfileDestination::Invalid);
+    assert_eq!(
+        typed_names,
+        ProfileDestination::Typed(Names {
+            namespace: "billing.servicebus.windows.net".to_owned(),
+            event_hub: "invoices".to_owned(),
+        })
+    );
+    assert_eq!(with_issues, ProfileDestination::None);
+}
+
+#[test]
+fn a_stored_string_with_a_blank_name_names_no_destination() {
     let mut s = typed(open_row(), NEW);
     s.form.connection_string = SecretSource::stored();
+
+    assert_eq!(s.new_profile_destination(), ProfileDestination::None);
+}
+
+#[test]
+fn a_whitespace_only_name_field_takes_the_filled_name() {
+    let mut s = typed(open_row(), NEW);
+    s.form.event_hub.insert("   ");
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert_eq!(
+        create_request(&out).config.target.event_hub.as_deref(),
+        Some("orders")
+    );
+}
+
+fn save_request(out: &Outcome) -> &SaveRequest {
+    only(out, |effect| match effect {
+        Effect::SaveConfig(request) => Some(request),
+        _ => None,
+    })
+}
+
+/// [`listed`] switched to `orders-dev` (a stored string, no names) with [`ORDERS`] typed.
+fn orders_dev_home() -> AppState {
+    let mut s = listed();
+    let request = load_request(&s.apply(Input::ProfilePicked(profile_home(ORDERS_DEV)))).0;
+    s.apply(Input::ProfileLoaded {
+        request,
+        result: loaded(orders_config()),
+    });
+    s.form.connection_string.edit_mut().replace_text(ORDERS);
+    s
+}
+
+#[test]
+fn save_config_into_a_profile_fills_the_names_as_typed_and_a_second_save_keeps_them() {
+    let mut s = orders_dev_home();
+    s.form.event_hub.insert("  ");
+
+    let first = s.apply(Input::SavePressed);
+    let saved = save_request(&first).config.target.clone();
+    s.apply(Input::ConfigSaved(Ok(())));
+    let second = s.apply(Input::SavePressed);
+
+    assert_eq!(
+        (saved.namespace.as_deref(), saved.event_hub.as_deref()),
+        (Some("orders.servicebus.windows.net"), Some("orders"))
+    );
+    assert_eq!(s.form.namespace.text, "orders.servicebus.windows.net");
+    assert_eq!(s.form.event_hub.text, "orders");
+    assert!(!s.form.namespace.is_pristine() && !s.form.event_hub.is_pristine());
+    assert!(s.form.connection_string.is_stored(), "the save settled");
+    assert_eq!(save_request(&second).config.target, saved);
+}
+
+#[test]
+fn save_config_with_the_launch_folder_home_fills_nothing() {
+    let mut s = listed();
+
+    let out = s.apply(Input::SavePressed);
+
+    let target = &save_request(&out).config.target;
+    assert_eq!(
+        (target.namespace.as_deref(), target.event_hub.as_deref()),
+        (None, None)
+    );
+    assert!(s.form.namespace.text.is_empty());
+}
+
+#[test]
+fn a_fill_that_fails_ends_save_config_as_a_failed_save() {
+    let mut s = orders_dev_home();
+    s.form.namespace.insert("billing.servicebus.windows.net");
+
+    let out = s.apply(Input::SavePressed);
+
+    assert!(out.effects.is_empty());
+    assert!(matches!(s.save_status, SaveStatus::Failed(_)));
+    let toasts = s.toasts().entries();
+    assert_eq!(toasts.len(), 1, "{toasts:?}");
+    assert!(
+        toasts[0]
+            .options
+            .text
+            .starts_with("Could not save config.json: The configured namespace"),
+        "{}",
+        toasts[0].options.text
+    );
+    assert!(s.form.event_hub.text.is_empty());
+}
+
+#[test]
+fn a_fixed_cause_clears_the_row_line_before_the_next_press() {
+    let mut s = typed(open_row(), NEW);
+    s.form.connection_string = SecretSource::typed();
     s.apply(Input::CreateProfilePressed);
 
     s.form.connection_string.edit_mut().replace_text(ORDERS);
 
-    assert_eq!(row_issue(&s), Some(RowIssue::StoredSecret));
-    assert_eq!(s.new_profile_issue(), None);
+    assert_eq!(row_issue(&s), Some(RowIssue::FormIssues));
+    assert_eq!(s.new_profile_line(), None);
 }
 
 #[test]
@@ -590,7 +1025,7 @@ fn a_load_clears_both_issues() {
     let mut s = open_row();
     s.new_profile = NewProfileRow::Open {
         name_issue: Some("Type a name for the new profile.".to_owned()),
-        row_issue: Some(RowIssue::StoredSecret),
+        row_issue: Some(RowIssue::RecalledNames),
     };
 
     let request = load_request(&s.apply(Input::ProfilePicked(profile_home(BILLING)))).0;

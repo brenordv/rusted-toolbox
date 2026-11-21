@@ -806,3 +806,230 @@ fn engine_config_carries_the_capture_settings_and_the_target() {
     assert_eq!(engine.feedback_interval, Duration::from_secs(3));
     assert_eq!(engine.target.event_hub_name.as_deref(), Some("orders"));
 }
+
+const WITH_ENTITY_PATH: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=listen;SharedAccessKey=c2VjcmV0LWtleQ==;EntityPath=refunds";
+
+fn given_string(connection_string: &str) -> SensitiveValues {
+    SensitiveValues {
+        connection_string: Some(connection_string.to_owned().into()),
+        client_secret: None,
+    }
+}
+
+fn names(config: &ToolConfig) -> (Option<&str>, Option<&str>) {
+    (
+        config.target.namespace.as_deref(),
+        config.target.event_hub.as_deref(),
+    )
+}
+
+#[test]
+fn with_typed_names_fills_both_names_from_a_string_with_an_entity_path() {
+    let mut config = connection_string_config();
+    config.target.event_hub = None;
+
+    let named = with_typed_names(&config, &given_string(WITH_ENTITY_PATH)).unwrap();
+
+    assert!(matches!(named, Cow::Owned(_)));
+    assert_eq!(
+        names(&named),
+        (Some("orders.servicebus.windows.net"), Some("refunds"))
+    );
+}
+
+#[test]
+fn with_typed_names_fills_only_the_hub_when_the_namespace_is_set() {
+    let mut config = connection_string_config();
+    config.target.namespace = Some("orders.servicebus.windows.net".to_owned());
+    config.target.event_hub = None;
+
+    let named = with_typed_names(&config, &given_string(WITH_ENTITY_PATH)).unwrap();
+
+    assert_eq!(
+        names(&named),
+        (Some("orders.servicebus.windows.net"), Some("refunds"))
+    );
+}
+
+#[test]
+fn with_typed_names_keeps_a_configured_hub_and_fills_the_namespace() {
+    let config = connection_string_config();
+
+    let named = with_typed_names(&config, &with_connection_string()).unwrap();
+
+    assert_eq!(
+        names(&named),
+        (Some("orders.servicebus.windows.net"), Some("orders"))
+    );
+}
+
+fn both_named(auth: AuthMethodConfig) -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        namespace: Some("orders.servicebus.windows.net".to_owned()),
+        event_hub: Some("orders".to_owned()),
+        consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+        auth,
+    })
+}
+
+#[rstest::rstest]
+#[case::both_names_set(
+    both_named(AuthMethodConfig::ConnectionString { stored: StoredSecret::LocalDb }),
+    given_string(WITH_ENTITY_PATH)
+)]
+#[case::no_string_given(connection_string_config(), SensitiveValues::default())]
+#[case::credential_auth(
+    credential_config(CredentialKindConfig::DeveloperTools),
+    given_string(WITH_ENTITY_PATH)
+)]
+#[case::key_vault_auth(
+    key_vault_config(CredentialKindConfig::DeveloperTools),
+    given_string(WITH_ENTITY_PATH)
+)]
+fn with_typed_names_borrows_the_config_when_there_is_nothing_to_fill(
+    #[case] config: ToolConfig,
+    #[case] given: SensitiveValues,
+) {
+    let named = with_typed_names(&config, &given).unwrap();
+
+    assert!(matches!(named, Cow::Borrowed(_)));
+    assert_eq!(*named, config);
+}
+
+#[test]
+fn with_typed_names_fails_on_another_namespace_without_echoing_the_string() {
+    let mut config = connection_string_config();
+    config.target.namespace = Some("billing.servicebus.windows.net".to_owned());
+    config.target.event_hub = None;
+
+    let error = with_typed_names(&config, &given_string(WITH_ENTITY_PATH)).unwrap_err();
+
+    assert!(error.to_string().contains("does not match"), "{error:#}");
+    assert_no_secret_material(&error);
+}
+
+#[test]
+fn with_typed_names_fails_when_no_hub_is_named_anywhere() {
+    let mut config = connection_string_config();
+    config.target.event_hub = None;
+
+    let error = with_typed_names(&config, &with_connection_string()).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("An event hub name is required"),
+        "{error:#}"
+    );
+    assert_no_secret_material(&error);
+}
+
+#[test]
+fn with_typed_names_fails_on_a_string_that_does_not_parse_without_echoing_it() {
+    let mut config = connection_string_config();
+    config.target.event_hub = None;
+    let malformed =
+        "Endpoint=not a url;SharedAccessKeyName=listen;SharedAccessKey=c2VjcmV0LWtleQ==";
+
+    let error = with_typed_names(&config, &given_string(malformed)).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Invalid connection string"),
+        "{error:#}"
+    );
+    assert_no_secret_material(&error);
+}
+
+#[test]
+fn with_stored_secrets_reads_the_connection_string_the_config_uses() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    secrets
+        .put(
+            CONNECTION_STRING_SECRET,
+            &CONNECTION_STRING.to_owned().into(),
+        )
+        .unwrap();
+
+    let merged = with_stored_secrets(
+        &connection_string_config(),
+        SensitiveValues::default(),
+        &secrets,
+    )
+    .unwrap();
+
+    assert_eq!(
+        merged
+            .connection_string
+            .map(|value| value.expose().to_owned()),
+        Some(CONNECTION_STRING.to_owned())
+    );
+    assert!(merged.client_secret.is_none());
+}
+
+#[test]
+fn with_stored_secrets_reads_the_client_secret_of_the_configs_client() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    secrets
+        .put(
+            &client_secret_name("client"),
+            &CLIENT_SECRET.to_owned().into(),
+        )
+        .unwrap();
+
+    let merged = with_stored_secrets(
+        &credential_config(client_secret_kind()),
+        SensitiveValues::default(),
+        &secrets,
+    )
+    .unwrap();
+
+    assert_eq!(
+        merged.client_secret.map(|value| value.expose().to_owned()),
+        Some(CLIENT_SECRET.to_owned())
+    );
+    assert!(merged.connection_string.is_none());
+}
+
+#[test]
+fn with_stored_secrets_keeps_a_given_secret_over_the_stored_one() {
+    let fixture = Fixture::new();
+    let secrets = fixture.secrets();
+    secrets
+        .put(CONNECTION_STRING_SECRET, &"stored".to_owned().into())
+        .unwrap();
+
+    let merged = with_stored_secrets(
+        &connection_string_config(),
+        with_connection_string(),
+        &secrets,
+    )
+    .unwrap();
+
+    assert_eq!(
+        merged
+            .connection_string
+            .map(|value| value.expose().to_owned()),
+        Some(CONNECTION_STRING.to_owned())
+    );
+}
+
+#[rstest::rstest]
+#[case::connection_string(
+    connection_string_config(),
+    "The connection string is not in the secrets file"
+)]
+#[case::client_secret(
+    credential_config(client_secret_kind()),
+    "The client secret for this client id is not in the secrets file"
+)]
+fn with_stored_secrets_fails_naming_the_kind_when_the_secret_is_nowhere(
+    #[case] config: ToolConfig,
+    #[case] expected: &str,
+) {
+    let fixture = Fixture::new();
+
+    let error =
+        with_stored_secrets(&config, SensitiveValues::default(), &fixture.secrets()).unwrap_err();
+
+    assert_eq!(error.to_string(), expected);
+}

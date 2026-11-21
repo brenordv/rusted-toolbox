@@ -28,6 +28,9 @@ pub use shell::PILL_SCROLL_KEY;
 use crate::state::AppState;
 use rune::{Chord, Cx, El, KeyEvent, Tx};
 
+/// What a destination line says for a typed connection string that names no usable hub.
+pub(crate) const INVALID_CONNECTION_STRING: &str = "Not a valid connection string";
+
 /// The window's root.
 pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
     let dark = s.system_dark.unwrap_or(cx.system_dark());
