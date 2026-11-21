@@ -2,7 +2,7 @@
 //! it goes and hands back what a caller checks next.
 
 use super::Harness;
-use super::builders::{BILLING, billing_config, listing, state, with_profiles};
+use super::builders::{BILLING, billing_config, listing, profile, state, with_profiles};
 use super::services::ServiceCall;
 use crate::bridge::UiDelivery;
 use crate::bridge::test_support::detached_session;
@@ -12,9 +12,12 @@ use crate::read::ReadInput;
 use crate::read::test_support::captured;
 use crate::send::run::Names;
 use crate::send::{SendInput, SendRequest};
-use crate::services::{ConnectRequest, SaveRequest};
+use crate::services::{ConnectRequest, CreateRequest, SaveRequest};
 use crate::state::{AppState, Input, Section};
-use crate::views::{BODY_KEY, COUNT_KEY, PICKER_KEY, PROFILE_GROUP_KEY};
+use crate::views::{
+    BODY_KEY, COUNT_KEY, NAME_ISSUE_KEY, NEW_PROFILE_KEY, NEW_PROFILE_NAME_KEY,
+    NEW_PROFILE_SAVE_KEY, PICKER_KEY, PROFILE_GROUP_KEY,
+};
 use common_cli::app_logger::FileLogging;
 use rune::Key;
 use shared_eventhub_core::connection::target_names;
@@ -172,6 +175,52 @@ pub fn switch_dropping_a_typed_secret(connection_string: &str) -> (Harness, Save
         _ => None,
     });
     (h, save)
+}
+
+/// The profile [`save_as_profile`] saves.
+pub const NEW_PROFILE: &str = "orders-new";
+
+/// Journey 6: types `connection_string` into the sheet over the test workspace, opens Save as
+/// profile, pastes the string into the profile name and presses Save profile (refused), then
+/// saves the form as [`NEW_PROFILE`] and answers the save and its load. Returns the harness and
+/// the create's request.
+pub fn save_as_profile(connection_string: &str) -> (Harness, CreateRequest) {
+    let mut h = Harness::new(with_profiles(state()), WINDOW_SIZE);
+    open_listed_sheet(&mut h);
+    h.type_into("connection-string", connection_string);
+    h.press(NEW_PROFILE_KEY);
+    h.type_into(NEW_PROFILE_NAME_KEY, connection_string);
+    h.press(NEW_PROFILE_SAVE_KEY);
+    assert!(
+        h.has_key(NAME_ISSUE_KEY),
+        "a connection string is not a profile name"
+    );
+    h.type_into(NEW_PROFILE_NAME_KEY, NEW_PROFILE);
+    h.press(NEW_PROFILE_SAVE_KEY);
+    let request = only_call(&mut h, |call| match call {
+        ServiceCall::CreateProfile(request) => Some(request),
+        _ => None,
+    });
+    h.deliver(Input::ProfileCreated {
+        request: request.request,
+        result: Ok(profile(NEW_PROFILE)),
+    });
+    let load = match h.take_calls().as_slice() {
+        [
+            ServiceCall::ListProfiles { .. },
+            ServiceCall::LoadProfile { request, .. },
+        ] => *request,
+        other => panic!("expected a ListProfiles and a LoadProfile, got {other:?}"),
+    };
+    h.deliver(Input::ProfileLoaded {
+        request: load,
+        result: Ok(ConfigLoad::Loaded(Box::new(request.config.clone()))),
+    });
+    assert!(
+        h.has_text("Saved profile orders-new."),
+        "the note says the profile was saved"
+    );
+    (h, request)
 }
 
 /// The names a producer for the `orders` hub reports.

@@ -1,0 +1,6 @@
+{"events": [
+  {"t": 0.3, "type": "tap", "key": "connect"},
+  {"t": 0.9, "type": "tap", "key": "new-profile"},
+  {"t": 1.4, "type": "type", "text": "orders-new"},
+  {"t": 1.9, "type": "tap", "key": "new-profile-save"}
+]}

@@ -39,9 +39,10 @@ config, and never shown to screen readers.
 
 A profile is a saved connection: a folder in the workspace holding a `config.json` and, beside
 it, the data folder that config names. eh-gui and `eh` share the workspace: `EH_WORKSPACE` when
-it is set (an absolute folder), else `~/.eh/profiles`. eh-gui doesn't create profiles; make one
-with `eh read ... --profile NAME --save-config`, or move a folder holding an eh `config.json`
-into the workspace. Starting eh-gui in a new folder inside the workspace works too: Save config
+it is set (an absolute folder), else `~/.eh/profiles`. Save as profile in the connection sheet
+makes one from the form (below); `eh read ... --profile NAME --save-config` makes one too, and so
+does moving a folder holding an eh `config.json` into the workspace. Starting eh-gui in a new
+folder inside the workspace works too: Save config
 writes that folder's `config.json`, and from then on it is a profile named after the folder
 (the name follows `eh`'s profile name rules). The picker then lists that folder twice, as
 Launch folder and by its name.
@@ -65,6 +66,22 @@ Launch folder and by its name.
   Change do nothing.
 - A profile that can't be opened leaves everything as it was and says why under the picker. An
   outcome that lands after the sheet closed shows as a toast.
+- **Save as profile…** sits at the end of the Saves to row. It opens a row with a Profile name
+  field, the event hub the profile will name, and the data folder it keeps. Save profile (or
+  Return in the field) checks the name first: `eh`'s profile name rules, and not the name of a
+  listed profile, ignoring case. Then the form's own fields. A secret stored in the current data
+  folder isn't copied, because a new profile keeps its own secrets: the row asks you to press
+  Replace and type it again. A namespace or event hub that came from the launch folder's
+  `config.json` has to be typed again (any edit of the field counts). `eh send` trusts the event
+  hub a profile names, and a `config.json` can come with a cloned folder, so its names never
+  reach a profile unseen.
+- The profile gets what Save config would write, its data folder inside the profile folder: the
+  form's when it is a plain relative folder, `.eh-data` otherwise (after Change it is always
+  `.eh-data`). Once it is saved the typed secrets leave the form, and the sheet opens the new
+  profile the way a pick does. A workspace folder with that name and no `config.json` is reused.
+  Escape in the name field closes the row, a second Escape the sheet. Save as profile… is
+  disabled with the picker while something uses the data folder, and missing without a
+  workspace.
 
 ### Failures
 
@@ -430,6 +447,20 @@ EH_GUI_DEMO=profiles-failed cargo run -p eh-gui --features demo --bin eh-gui-dem
 EH_GUI_DEMO=profiles-unavailable cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --snap target/eh-gui-demo/phase27/no-workspace-960.png
 ```
 
+Save as profile: Save as profile… sits at the end of the Saves to row; the open row shows the
+focused name field, the event hub, the data folder, and Cancel / Save profile at its end; a name
+issue marks the field; the row issue (a stored string, after a pick of `orders-dev`) wraps
+inside the sheet; after a save the picker reads `orders-new` with the note under it. Repeat each
+without `--size` for 1280x800.
+
+```
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-sheet.json --at 1.2 --snap target/eh-gui-demo/phase29/button-960.png
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-row.json --at 1.6 --snap target/eh-gui-demo/phase29/row-open-960.png
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-name-issue.json --at 2.2 --snap target/eh-gui-demo/phase29/name-issue-960.png
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-row-issue.json --at 3.8 --snap target/eh-gui-demo/phase29/row-issue-960.png
+EH_GUI_DEMO=profiles cargo run -p eh-gui --features demo --bin eh-gui-demo -- --size 960x600 --script crates/tools/tool-eh-gui/demo-scripts/profile-new-saved.json --at 3.2 --snap target/eh-gui-demo/phase29/saved-960.png
+```
+
 Snapshots are dark: the app reads the system appearance itself, so `--theme light` changes
 nothing. With the system set to light, check in the real window: the sheet and popover scrims,
 the pane fills, the shadow and rim on the sheet, popovers, new-messages pill, and bulk bar, the
@@ -485,6 +516,12 @@ hub.
   Disconnect at once, then open the sheet (the picker is disabled until the cancelled connect
   stops); break a profile's `config.json` while the sheet is open and pick it (the note says
   why, nothing changes).
+- Save as profile: from a launch folder with no `config.json`, type a connection string and save
+  it under a new name (the sheet opens it; `eh profile list` lists it); from a launch folder
+  whose `config.json` names a hub, press Save profile (the namespace and event hub are asked for
+  again until edited); with a stored connection string (asked for again); with a taken name;
+  Escape in the name field (the row closes, the sheet stays); after Change picked a data folder
+  (the row shows `.eh-data`).
 - Template: turn it on with an order template, Regenerate a few samples, send 5 and see five
   different values in Read; type a broken placeholder and press Send (the editor and caption
   mark it); type into a large template with `RUNE_COMMIT_BUDGET_MS=8` (no commit over budget).

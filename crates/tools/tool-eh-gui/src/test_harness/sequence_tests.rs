@@ -1,6 +1,6 @@
 use super::Harness;
 use super::builders::{
-    BILLING, ORDERS, ORDERS_DEV, billing_config, launch_folder, listing, orders_config,
+    BILLING, ORDERS, ORDERS_DEV, billing_config, launch_folder, listing, orders_config, profile,
     profile_home, state, stopped, with_profiles,
 };
 use super::journeys::orders;
@@ -65,6 +65,10 @@ enum Open {
     Load {
         request: u64,
         dir: PathBuf,
+    },
+    Create {
+        request: u64,
+        name: String,
     },
 }
 
@@ -553,6 +557,14 @@ impl Sequence {
                 };
                 (input, format!("load {request}"))
             }
+            Open::Create { request, .. } => {
+                let request = request.wrapping_sub(1);
+                let input = Input::ProfileCreated {
+                    request,
+                    result: Err("disk full".to_owned()),
+                };
+                (input, format!("create {request}"))
+            }
             Open::Save | Open::Rebuild(_) => return "no stale form of this call".to_owned(),
         };
         self.h.deliver(input);
@@ -681,6 +693,17 @@ impl Sequence {
                 self.reopen_if_twice(how, Open::Load { request, dir });
                 format!("load {request} ok={ok}")
             }
+            Open::Create { request, name } => {
+                let ok = self.below(2) == 0;
+                let result = if ok {
+                    Ok(profile(&name))
+                } else {
+                    Err("disk full".to_owned())
+                };
+                self.h.deliver(Input::ProfileCreated { request, result });
+                self.reopen_if_twice(how, Open::Create { request, name });
+                format!("create {request} ok={ok}")
+            }
         }
     }
 
@@ -761,6 +784,10 @@ impl Sequence {
                 ServiceCall::LoadProfile { request, dir } => {
                     self.open.push(Open::Load { request, dir });
                 }
+                ServiceCall::CreateProfile(request) => self.open.push(Open::Create {
+                    request: request.request,
+                    name: request.name.as_str().to_owned(),
+                }),
                 ServiceCall::ReopenWindow => {}
                 ServiceCall::Quit => quits += 1,
                 ServiceCall::RebuildSearch(request) => self.open.push(Open::Rebuild(request)),

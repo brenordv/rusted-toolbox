@@ -1,20 +1,29 @@
 use super::builders::{
-    BILLING, ORDERS, ORDERS_DEV, cannot_load, launch_folder, orders_config, profile_home, state,
-    with_profiles,
+    BILLING, ORDERS, ORDERS_DEV, cannot_load, launch_folder, orders_config, profile, profile_home,
+    state, with_profiles,
 };
 use super::journeys::{open_listed_sheet, pick_with_pointer};
 use super::services::ServiceCall;
-use super::{Harness, a11y_node, lists};
+use super::{Harness, a11y_node, a11y_nodes, focused_key, lists};
 use crate::design::tokens::{WINDOW_MIN, WINDOW_SIZE};
-use crate::state::{AppState, Input, NO_PROFILES};
-use crate::views::{PICKER_KEY, PROFILE_GROUP_KEY, PROFILE_NOTE_KEY};
-use rune::Key;
+use crate::form::SecretSource;
+use crate::services::CreateRequest;
+use crate::state::{AppState, Input, NO_PROFILES, NewProfileRow, recalled};
+use crate::views::{
+    NAME_ISSUE_KEY, NEW_PROFILE_CANCEL_KEY, NEW_PROFILE_KEY, NEW_PROFILE_NAME_KEY,
+    NEW_PROFILE_ROW_KEY, NEW_PROFILE_SAVE_KEY, PICKER_KEY, PROFILE_GROUP_KEY, PROFILE_NOTE_KEY,
+    ROW_ISSUE_KEY,
+};
 use rune::accesskit::Action;
-use shared_eventhub_persistence::config::{CONFIG_FILE_NAME, ConfigLoad};
-use shared_eventhub_persistence::workspace::ProfileEntry;
+use rune::{Key, KeyEvent, Mods};
+use shared_eventhub_persistence::config::{
+    AuthMethodConfig, CONFIG_FILE_NAME, ConfigLoad, CredentialKindConfig, TargetConfig, ToolConfig,
+};
+use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry};
 
 const TRIGGER: &str = "profile-picker-trigger";
 const LOCKED: &str = "The data folder can change once the cancelled connection stops.";
+const NEW: &str = "orders-new";
 
 fn orders_form() -> AppState {
     let mut s = with_profiles(state());
@@ -306,4 +315,313 @@ fn choosing_the_current_home_starts_no_load() {
 
     assert!(h.take_calls().is_empty());
     assert!(!h.state().profile_picker_open);
+}
+
+/// The sheet open over a workspace with no profiles yet, with a typed connection string.
+fn empty_workspace_sheet() -> Harness {
+    let mut h = Harness::new(orders_form(), WINDOW_SIZE);
+    h.press("connect");
+    let request = match h.take_calls().as_slice() {
+        [ServiceCall::ListProfiles { request, .. }] => *request,
+        other => panic!("expected one ListProfiles, got {other:?}"),
+    };
+    h.deliver(Input::ProfilesListed {
+        request,
+        result: Ok(Vec::new()),
+    });
+    h
+}
+
+/// The only call recorded so far, which must be a create.
+fn only_create(h: &mut Harness) -> CreateRequest {
+    let mut calls = h.take_calls();
+    assert_eq!(calls.len(), 1, "expected one call, got {calls:?}");
+    let Some(ServiceCall::CreateProfile(request)) = calls.pop() else {
+        panic!("the call was not a CreateProfile");
+    };
+    request
+}
+
+/// The texts drawn inside the element keyed `key`.
+fn texts_within(h: &Harness, key: &str) -> Vec<String> {
+    let inside = format!("{}/", h.path_of(key));
+    h.rt.elements()
+        .into_iter()
+        .filter(|element| element.path.starts_with(&inside) && !element.exiting)
+        .filter_map(|element| element.text)
+        .collect()
+}
+
+fn row_open(h: &Harness) -> bool {
+    match h.state().new_profile_row() {
+        NewProfileRow::Open { .. } => true,
+        NewProfileRow::Closed => false,
+    }
+}
+
+#[test]
+fn a_profile_saved_with_return_opens_and_focus_comes_back_to_save_as_profile() {
+    let mut h = empty_workspace_sheet();
+
+    h.press(NEW_PROFILE_KEY);
+    let field_focused = h.state().new_profile_name.focused;
+    h.rt.paste(NEW);
+    h.settle();
+    h.key(Key::Enter);
+    let request = only_create(&mut h);
+    h.deliver(Input::ProfileCreated {
+        request: request.request,
+        result: Ok(profile(NEW)),
+    });
+    let focus_after_save = focused_key(&h.rt);
+    let load = match h.take_calls().as_slice() {
+        [
+            ServiceCall::ListProfiles { .. },
+            ServiceCall::LoadProfile { request, dir },
+        ] => {
+            assert_eq!(dir, profile(NEW).dir());
+            *request
+        }
+        other => panic!("expected a ListProfiles and a LoadProfile, got {other:?}"),
+    };
+    h.deliver(Input::ProfileLoaded {
+        request: load,
+        result: Ok(ConfigLoad::Loaded(Box::new(request.config))),
+    });
+
+    assert!(field_focused, "Save as profile… focuses the name field");
+    assert_eq!(request.name.as_str(), NEW);
+    assert_eq!(focus_after_save.as_deref(), Some(NEW_PROFILE_KEY));
+    assert_eq!(h.state().home(), &ConfigHome::Profile(profile(NEW)));
+    assert!(texts_within(&h, TRIGGER).iter().any(|text| text == NEW));
+    let saves_to = profile(NEW).dir().join(CONFIG_FILE_NAME);
+    assert!(h.has_text(&saves_to.display().to_string()));
+}
+
+#[test]
+fn with_no_picker_the_lock_reason_shows_once_and_save_as_profile_is_disabled() {
+    let mut h = Harness::new(orders_form(), WINDOW_SIZE);
+    h.deliver(Input::ConnectPressed);
+    h.deliver(Input::DisconnectPressed);
+    h.take_calls();
+    h.press("connect");
+    let request = match h.take_calls().as_slice() {
+        [ServiceCall::ListProfiles { request, .. }] => *request,
+        other => panic!("expected one ListProfiles, got {other:?}"),
+    };
+    h.deliver(Input::ProfilesListed {
+        request,
+        result: Ok(Vec::new()),
+    });
+
+    let tree = h.a11y();
+    let button = a11y_node(&tree, NEW_PROFILE_KEY).unwrap();
+    let shown = texts_within(&h, PROFILE_GROUP_KEY)
+        .iter()
+        .filter(|text| text.as_str() == LOCKED)
+        .count();
+
+    assert!(!h.has_key(TRIGGER), "no picker over an empty workspace");
+    assert!(lists(button, "states", "disabled"), "{button}");
+    assert_eq!(shown, 1, "the Profile group names the lock once");
+}
+
+#[test]
+fn escape_in_the_name_field_closes_the_row_and_keeps_the_sheet() {
+    let mut h = empty_workspace_sheet();
+    h.press(NEW_PROFILE_KEY);
+    h.rt.paste(NEW);
+    h.settle();
+
+    h.key(Key::Escape);
+
+    assert!(!row_open(&h));
+    assert!(h.state().sheet.is_some());
+    assert_eq!(focused_key(&h.rt).as_deref(), Some(NEW_PROFILE_KEY));
+}
+
+#[test]
+fn a_second_escape_closes_the_sheet() {
+    let mut h = empty_workspace_sheet();
+    h.press(NEW_PROFILE_KEY);
+    h.key(Key::Escape);
+
+    h.key(Key::Escape);
+
+    assert!(h.state().sheet.is_none());
+}
+
+#[test]
+fn tab_walks_from_the_picker_to_save_as_profile_and_through_the_open_row() {
+    let mut h = profiles_sheet(WINDOW_SIZE);
+    focus(&mut h, TRIGGER);
+    h.key(Key::Tab);
+    let after_picker = focused_key(&h.rt);
+    h.press(NEW_PROFILE_KEY);
+
+    h.key(Key::Tab);
+    let after_field = focused_key(&h.rt);
+    h.key(Key::Tab);
+    let after_cancel = focused_key(&h.rt);
+
+    assert_eq!(after_picker.as_deref(), Some(NEW_PROFILE_KEY));
+    assert_eq!(after_field.as_deref(), Some(NEW_PROFILE_CANCEL_KEY));
+    assert_eq!(after_cancel.as_deref(), Some(NEW_PROFILE_SAVE_KEY));
+}
+
+#[test]
+fn a_refused_name_focuses_the_field_again() {
+    let mut h = empty_workspace_sheet();
+    h.press(NEW_PROFILE_KEY);
+
+    h.press(NEW_PROFILE_SAVE_KEY);
+
+    assert!(h.state().new_profile_name.focused);
+    assert!(h.has_key(NAME_ISSUE_KEY));
+    assert!(h.take_calls().is_empty());
+}
+
+/// What the launch folder's `config.json` holds: Entra ID for the `orders` hub.
+fn named_config() -> ToolConfig {
+    ToolConfig::new(TargetConfig {
+        namespace: Some("orders.servicebus.windows.net".to_owned()),
+        event_hub: Some("orders".to_owned()),
+        consumer_group: "$Default".to_owned(),
+        auth: AuthMethodConfig::Credential {
+            credential: CredentialKindConfig::DeveloperTools,
+        },
+    })
+}
+
+/// The sheet over the listed workspace, launched in a folder whose `config.json` names a hub.
+fn recalled_sheet() -> Harness {
+    let mut s = with_profiles(state());
+    s.form = recalled(
+        &ConfigHome::CurrentFolder(launch_folder()),
+        Ok(ConfigLoad::Loaded(Box::new(named_config()))),
+    )
+    .form;
+    let mut h = Harness::new(s, WINDOW_SIZE);
+    open_listed_sheet(&mut h);
+    h
+}
+
+fn shift(h: &mut Harness, key: Key) {
+    h.rt.key(KeyEvent {
+        key,
+        mods: Mods {
+            shift: true,
+            ..Mods::default()
+        },
+    });
+    h.settle();
+}
+
+#[test]
+fn recalled_names_survive_focus_caret_moves_a_method_switch_a_save_and_a_reopen() {
+    let mut h = recalled_sheet();
+
+    h.press_named("connect-form", "Namespace");
+    h.key(Key::End);
+    h.key(Key::Home);
+    h.key(Key::Right);
+    shift(&mut h, Key::End);
+    h.key(Key::Tab);
+    h.press_named("connect-form", "Connection string");
+    h.type_into("connection-string", ORDERS);
+    h.press("save-config");
+    h.deliver(Input::ConfigSaved(Ok(())));
+    h.take_calls();
+    h.deliver(Input::CloseSheet);
+    open_listed_sheet(&mut h);
+
+    let form = &h.state().form;
+    assert!(form.connection_string.is_stored(), "the save settled");
+    assert_eq!(form.namespace.text, "orders.servicebus.windows.net");
+    assert!(form.recalled_fields().namespace && form.recalled_fields().event_hub);
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Edit {
+    Typed,
+    Deleted,
+    Pasted,
+}
+
+#[rstest::rstest]
+#[case::typed(Edit::Typed)]
+#[case::deleted(Edit::Deleted)]
+#[case::pasted(Edit::Pasted)]
+fn an_edit_of_a_recalled_name_makes_it_typed(#[case] edit: Edit) {
+    let mut h = recalled_sheet();
+    h.press_named("connect-form", "Namespace");
+
+    match edit {
+        Edit::Typed => h.key(Key::Text("x".into())),
+        Edit::Deleted => h.key(Key::Backspace),
+        Edit::Pasted => {
+            h.rt.paste("x");
+            h.settle();
+        }
+    }
+
+    let recalled = h.state().form.recalled_fields();
+    assert!(!recalled.namespace, "{edit:?} left the namespace recalled");
+    assert!(recalled.event_hub);
+}
+
+#[test]
+fn under_the_lock_save_as_profile_reads_as_disabled_with_the_reason() {
+    let h = picker_locked(WINDOW_SIZE);
+
+    let tree = h.a11y();
+    let button = a11y_node(&tree, NEW_PROFILE_KEY).unwrap();
+
+    assert!(lists(button, "states", "disabled"), "{button}");
+    assert!(!lists(button, "actions", "click"), "{button}");
+    assert_eq!(button["description"], LOCKED);
+}
+
+/// The sheet with the Save as profile row open and both issue lines showing: a stored
+/// connection string refused one press, then a name against the rules another.
+pub(super) fn new_profile_issues(size: (f32, f32)) -> Harness {
+    let mut s = orders_form();
+    s.form.connection_string = SecretSource::stored();
+    let mut h = Harness::new(s, size);
+    open_listed_sheet(&mut h);
+    h.press(NEW_PROFILE_KEY);
+    h.type_into(NEW_PROFILE_NAME_KEY, NEW);
+    h.press(NEW_PROFILE_SAVE_KEY);
+    h.type_into(NEW_PROFILE_NAME_KEY, "orders new");
+    h.press(NEW_PROFILE_SAVE_KEY);
+    h
+}
+
+#[test]
+fn the_row_is_a_named_group_and_its_issues_are_polite_live_regions() {
+    let h = new_profile_issues(WINDOW_SIZE);
+
+    let tree = h.a11y();
+
+    let group = a11y_node(&tree, NEW_PROFILE_ROW_KEY).unwrap();
+    assert_eq!(group["role"], "group");
+    assert_eq!(group["name"], "New profile");
+    let named_field = a11y_nodes(&tree)
+        .into_iter()
+        .filter(|node| node["name"] == "Profile name")
+        .count();
+    assert_eq!(named_field, 1, "the field's name is read once");
+    let name_issue = a11y_node(&tree, NAME_ISSUE_KEY).unwrap();
+    let row_issue = a11y_node(&tree, ROW_ISSUE_KEY).unwrap();
+    for issue in [name_issue, row_issue] {
+        assert_eq!(issue["role"], "status");
+        assert!(lists(issue, "states", "live-polite"), "{issue}");
+    }
+    let name = name_issue["name"].as_str().unwrap_or_default();
+    assert!(name.starts_with("A profile name uses letters"), "{name}");
+    assert_eq!(
+        row_issue["name"],
+        "A new profile keeps its own secrets. Press Replace beside Connection string and type it \
+         again."
+    );
 }

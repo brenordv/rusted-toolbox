@@ -1,17 +1,18 @@
 //! The connection sheet's Profile group: which `config.json` the sheet edits, where Save config
-//! writes, what the last pick left to say, and the profiles that can't load.
+//! writes, what the last pick left to say, the profiles that can't load, and the Save as profile
+//! row that saves the form into a new profile.
 
 use crate::app::dispatch;
 use crate::design::parts;
 use crate::design::tokens::{SHEET_FIELD_WIDTH, SPACE_SM};
 use crate::read::rows::{display_line, display_path};
 use crate::state::{
-    AppState, Input, LAUNCH_FOLDER, NO_PROFILES, ProfileList, ProfileNote, ProfileSwitch,
-    error_preview, home_label,
+    AppState, Input, LAUNCH_FOLDER, NO_PROFILES, NewProfileRow, ProfileFocus, ProfileList,
+    ProfileNote, ProfileSwitch, error_preview, home_label,
 };
 use crate::views::details;
-use rune::{El, LiveRegion, Tx, col};
-use rune_kit::{Kit, Select, SelectAppearance};
+use rune::{El, Key, KeyEvent, LiveRegion, TextEdit, Tx, col, row, spacer};
+use rune_kit::{Button, ButtonVariant, Kit, Select, SelectAppearance, TextInput};
 use shared_eventhub_persistence::config::CONFIG_FILE_NAME;
 use tracing::debug;
 
@@ -21,13 +22,30 @@ pub const GROUP_KEY: &str = "profile-group";
 pub const PICKER_KEY: &str = "profile-picker";
 /// The note line's key: a polite live region.
 pub const NOTE_KEY: &str = "profile-note";
+/// Save as profile…, at the end of the Saves to row.
+pub const NEW_PROFILE_KEY: &str = "new-profile";
+/// The Save as profile row: a group named "New profile".
+pub const NEW_PROFILE_ROW_KEY: &str = "new-profile-row";
+/// The profile name field.
+pub const NEW_PROFILE_NAME_KEY: &str = "new-profile-name";
+/// The name's issue line: a polite live region.
+pub const NAME_ISSUE_KEY: &str = "new-profile-name-issue";
+/// The row's issue line: a polite live region.
+pub const ROW_ISSUE_KEY: &str = "new-profile-issue";
+/// The row's Cancel.
+pub const NEW_PROFILE_CANCEL_KEY: &str = "new-profile-cancel";
+/// The row's Save profile.
+pub const NEW_PROFILE_SAVE_KEY: &str = "new-profile-save";
 const NOTE_DETAILS_KEY: &str = "profile-note-details";
 const PROFILE: &str = "Profile";
+const PROFILE_NAME: &str = "Profile name";
+const NO_DESTINATION: &str = "None yet; eh asks for one when sending";
 
 /// The group: its label, the picker (when there is more than the launch folder to pick) with
-/// the lock's reason under it, the note, the folder Save config writes to, the listing's
-/// caption, and a hairline. `overlays` receives the picker's open list, which must be painted
-/// after the scrim of any modal the group sits in.
+/// the lock's reason under it, the note, the folder Save config writes to with Save as
+/// profile… at its end (the lock's reason under it when no picker shows), the Save as profile
+/// row while it is open, the listing's caption, and a hairline. `overlays` receives the
+/// picker's open list, which must be painted after the scrim of any modal the group sits in.
 pub(super) fn group(s: &AppState, k: &Kit, overlays: &mut Vec<El>) -> El {
     let lock = s.data_folder_lock();
     let labels = picker_labels(s);
@@ -48,12 +66,176 @@ pub(super) fn group(s: &AppState, k: &Kit, overlays: &mut Vec<El>) -> El {
     if let Some(note) = s.profile_note() {
         group = group.child(note_line(k, note));
     }
-    let saves_to = s.home().dir().join(CONFIG_FILE_NAME);
-    group = group.child(parts::detail_row(k, "Saves to", &display_path(&saves_to)));
+    group = group.child(saves_to(s, k, lock));
+    if let (false, Ok(_), Some(reason)) = (picker_shown, s.workspace(), lock) {
+        group = group.child(parts::caption(k, reason));
+    }
+    match s.new_profile_row() {
+        NewProfileRow::Open { name_issue, .. } => {
+            group = group.child(new_profile_row(s, k, name_issue.as_deref(), lock));
+        }
+        NewProfileRow::Closed => {}
+    }
     if let Some(caption) = list_caption(s) {
         group = group.child(parts::caption(k, &caption));
     }
     group.child(parts::hairline(k).mt(SPACE_SM))
+}
+
+/// "Saves to" with the home's `config.json`, and Save as profile… at the row's end while there
+/// is a workspace and the Save as profile row is closed: disabled while the data folder is
+/// held (the save ends in a folder change), with the reason as its description.
+fn saves_to(s: &AppState, k: &Kit, lock: Option<&'static str>) -> El {
+    let saves_to = s.home().dir().join(CONFIG_FILE_NAME);
+    let mut line = row()
+        .gap(SPACE_SM)
+        .w_full()
+        .items_end()
+        .child(parts::detail_row(k, "Saves to", &display_path(&saves_to)).grow(1.0));
+    let closed = match s.new_profile_row() {
+        NewProfileRow::Closed => true,
+        NewProfileRow::Open { .. } => false,
+    };
+    if closed && s.workspace().is_ok() {
+        let mut button = Button::new("Save as profile…")
+            .variant(ButtonVariant::Outline)
+            .disabled(lock.is_some())
+            .on_press_tx(|s: &mut AppState, tx: &mut Tx| {
+                dispatch(s, Input::NewProfileOpened);
+                move_profile_focus(s, tx);
+            })
+            .build(k)
+            .key(NEW_PROFILE_KEY);
+        if let Some(reason) = lock {
+            button = button.description(reason);
+        }
+        line = line.child(button);
+    }
+    line
+}
+
+/// The Save as profile row: the profile name with its issue, where the profile will send and
+/// keep its data, the row's issue, and Cancel / Save profile. Both buttons are disabled while
+/// the profile saves; Save profile is also disabled while the data folder is held.
+fn new_profile_row(
+    s: &AppState,
+    k: &Kit,
+    name_issue: Option<&str>,
+    lock: Option<&'static str>,
+) -> El {
+    let creating = s.save_status.creating().is_some();
+    let mut block = col()
+        .key(NEW_PROFILE_ROW_KEY)
+        .role("group")
+        .label("New profile")
+        .gap(SPACE_SM)
+        .w_full()
+        .child(parts::field_label(k, PROFILE_NAME).a11y_hidden())
+        .child(
+            TextInput::new(&s.new_profile_name)
+                .label(PROFILE_NAME)
+                .width(None)
+                .invalid(name_issue.is_some())
+                .on_edit(name_edit)
+                .on_change(|s: &mut AppState, _: &mut Tx| {
+                    dispatch(s, Input::NewProfileNameEdited);
+                })
+                .on_submit(press_create)
+                .on_key(name_key)
+                .build(k)
+                .key(NEW_PROFILE_NAME_KEY),
+        );
+    if let Some(issue) = name_issue {
+        block = block.child(issue_line(k, NAME_ISSUE_KEY, issue));
+    }
+    let folder = display_line(s.new_profile_data_folder().chars());
+    block = block
+        .child(parts::detail_row(k, "Event hub", &destination(s)))
+        .child(parts::detail_row(k, "Data folder in the profile", &folder));
+    if let Some(issue) = s.new_profile_issue() {
+        block = block.child(issue_line(k, ROW_ISSUE_KEY, &issue));
+    }
+    let actions = row()
+        .gap(SPACE_SM)
+        .w_full()
+        .child(spacer())
+        .child(
+            Button::new("Cancel")
+                .variant(ButtonVariant::Ghost)
+                .disabled(creating)
+                .on_press_tx(|s: &mut AppState, tx: &mut Tx| {
+                    dispatch(s, Input::NewProfileCancelled);
+                    move_profile_focus(s, tx);
+                })
+                .build(k)
+                .key(NEW_PROFILE_CANCEL_KEY),
+        )
+        .child(
+            Button::new("Save profile")
+                .variant(ButtonVariant::Outline)
+                .disabled(creating || lock.is_some())
+                .on_press_tx(press_create)
+                .build(k)
+                .key(NEW_PROFILE_SAVE_KEY),
+        );
+    parts::reveal(block.child(actions))
+}
+
+fn name_edit(s: &mut AppState) -> &mut TextEdit {
+    &mut s.new_profile_name
+}
+
+/// Save profile, then focus where the press asked for it (the name field, when the name has an
+/// issue).
+fn press_create(s: &mut AppState, tx: &mut Tx) {
+    dispatch(s, Input::CreateProfilePressed);
+    move_profile_focus(s, tx);
+}
+
+/// Escape in the name field closes the row and is taken there, so the sheet's own Escape never
+/// closes the sheet with a name typed; while the profile saves it changes nothing.
+fn name_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
+    if key.key != Key::Escape {
+        return false;
+    }
+    dispatch(s, Input::NewProfileCancelled);
+    move_profile_focus(s, tx);
+    true
+}
+
+/// Moves focus to the Save as profile control the state asked for, once.
+pub(crate) fn move_profile_focus(s: &mut AppState, tx: &mut Tx) {
+    let Some(focus) = s.take_profile_focus() else {
+        return;
+    };
+    let key = match focus {
+        ProfileFocus::NameField => NEW_PROFILE_NAME_KEY,
+        ProfileFocus::SaveAsButton => NEW_PROFILE_KEY,
+    };
+    let ring = tx.focus_visible();
+    tx.focus(key, ring);
+}
+
+/// The namespace and event hub the new profile will name, as `namespace/hub`; while either is
+/// empty, that `eh send` asks for them.
+fn destination(s: &AppState) -> String {
+    let namespace = s.form.namespace.text.trim();
+    let event_hub = s.form.event_hub.text.trim();
+    if namespace.is_empty() || event_hub.is_empty() {
+        return NO_DESTINATION.to_owned();
+    }
+    display_line(format!("{namespace}/{event_hub}").chars())
+}
+
+/// An issue in the danger caption, as a polite live region named by the whole line.
+fn issue_line(k: &Kit, key: &str, text: &str) -> El {
+    col()
+        .key(key)
+        .role("status")
+        .label(text)
+        .live_region(LiveRegion::Polite)
+        .w_full()
+        .child(parts::issue(k, text).a11y_hidden())
 }
 
 /// "Launch folder", the listed profiles that load, and the current home when it is a profile

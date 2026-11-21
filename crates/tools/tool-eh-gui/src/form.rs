@@ -214,6 +214,21 @@ impl FieldIssues {
     }
 }
 
+/// Which of the namespace and event hub still hold, unedited, what the launch folder's
+/// `config.json` gave.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RecalledFields {
+    pub namespace: bool,
+    pub event_hub: bool,
+}
+
+impl RecalledFields {
+    /// Whether neither field counts as recalled.
+    pub fn is_empty(self) -> bool {
+        !self.namespace && !self.event_hub
+    }
+}
+
 /// The connection sheet's state. `Debug` prints no field text.
 pub struct ConnectForm {
     pub auth: AuthChoice,
@@ -231,6 +246,10 @@ pub struct ConnectForm {
     pub data_folder: String,
     pub disk_write: DiskWriteMode,
     pub received_msg_path: TextEdit,
+    /// Whether the namespace and event hub were filled from the launch folder's `config.json`.
+    /// App code sets those two fields only with `TextEdit::new` or `replace_text`, so only the
+    /// user's own edits make them count as typed (see [`Self::recalled_fields`]).
+    pub(crate) names_from_launch_folder: bool,
     /// Settings the sheet does not show (capture and export settings, `content_only`), kept from
     /// a recalled config so saving does not drop them.
     base: ToolConfig,
@@ -271,6 +290,7 @@ impl Default for ConnectForm {
             data_folder: base.storage.base_data_folder.clone(),
             disk_write: base.storage.disk_write.mode,
             received_msg_path: TextEdit::new(base.storage.disk_write.received_msg_path.as_str()),
+            names_from_launch_folder: false,
             base,
         }
     }
@@ -358,6 +378,29 @@ impl ConnectForm {
         }
     }
 
+    /// The secret the chosen method uses that is the one in the secrets file: the connection
+    /// string under connection-string auth, the client secret under a client-secret credential;
+    /// `None` when that secret is typed or the method uses none.
+    pub(crate) fn stored_secret(&self) -> Option<SecretKind> {
+        if self.auth == AuthChoice::ConnectionString && self.connection_string.is_stored() {
+            Some(SecretKind::ConnectionString)
+        } else if self.uses_client_secret() && self.client_secret.is_stored() {
+            Some(SecretKind::ClientSecret)
+        } else {
+            None
+        }
+    }
+
+    /// The names that still hold what the launch folder's `config.json` gave: each counts while
+    /// [`Self::names_from_launch_folder`] is set and the field is untouched (not empty, and no
+    /// user edit since the app set it). Nothing compares or clears the text.
+    pub(crate) fn recalled_fields(&self) -> RecalledFields {
+        RecalledFields {
+            namespace: self.names_from_launch_folder && untouched(&self.namespace),
+            event_hub: self.names_from_launch_folder && untouched(&self.event_hub),
+        }
+    }
+
     /// Switches the auth method; typed secrets are hidden again.
     pub fn set_auth(&mut self, auth: AuthChoice) {
         self.auth = auth;
@@ -370,7 +413,7 @@ impl ConnectForm {
         self.client_secret.hide();
     }
 
-    /// Wipes every typed secret (after a successful Connect).
+    /// Wipes every typed secret; a stored secret stays marked stored.
     pub fn clear_secrets(&mut self) {
         self.connection_string.clear();
         self.client_secret.clear();
@@ -500,6 +543,14 @@ impl ConnectForm {
             },
         }
     }
+}
+
+/// Whether `edit` holds what the app last set with `TextEdit::new` or `replace_text`, with no
+/// user edit since: Rune's pristine flag, and no undo or redo step. Rune records every edit of a
+/// plain field as a history step, but its plain-text edits leave the pristine flag set, so the
+/// flag alone misses typing, deleting, and pasting there.
+fn untouched(edit: &TextEdit) -> bool {
+    edit.is_pristine() && edit.history_len() == (0, 0)
 }
 
 fn required(edit: &TextEdit, message: &str) -> Option<String> {

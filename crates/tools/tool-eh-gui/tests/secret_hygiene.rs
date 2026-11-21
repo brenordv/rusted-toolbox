@@ -14,7 +14,7 @@ use eh_gui::tasks::StoreSlot;
 use eh_gui::test_harness::Harness;
 use eh_gui::test_harness::builders::state;
 use eh_gui::test_harness::journeys::{
-    Capturing, connect_and_capture, send_batched, switch_dropping_a_typed_secret,
+    Capturing, connect_and_capture, save_as_profile, send_batched, switch_dropping_a_typed_secret,
 };
 use eh_gui::test_harness::services::ServiceCall;
 use eh_gui::views::details::{COPY_KEY, FAILURE_KEY};
@@ -234,6 +234,7 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
     } = connect_and_capture(&typed);
     let (sent, send_request) = send_batched(&typed);
     let (switched, switched_save) = switch_dropping_a_typed_secret(&typed);
+    let (profiled, profile_save) = save_as_profile(&typed);
     let data = tempfile::tempdir().unwrap();
     let (mut refused, attempt, request) = off_allowlist_with_a_typed_key(&data.path().join("a"));
     let key_reached = request
@@ -273,6 +274,22 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
     assert!(key_reached && secret_reached);
     assert!(switched_save.given.connection_string.is_none());
     assert!(
+        profile_save
+            .given
+            .connection_string
+            .as_ref()
+            .is_some_and(|value| value.expose().contains(MARKER))
+    );
+    assert!(
+        profiled
+            .state()
+            .form
+            .connection_string
+            .edit()
+            .text
+            .is_empty()
+    );
+    assert!(
         switched
             .state()
             .form
@@ -304,11 +321,13 @@ fn typed_secrets_reach_no_log_toast_debug_output_or_tree() {
         client_details,
         refused_copied.unwrap_or_default(),
         client_copied.unwrap_or_default(),
-        format!("{connected:?}\n{send_request:?}\n{switched_save:?}"),
+        format!("{connected:?}\n{send_request:?}\n{switched_save:?}\n{profile_save:?}"),
         surfaces(&captured),
         surfaces(&sent),
         surfaces(&switched),
+        surfaces(&profiled),
         switched.state().config_caption.clone().unwrap_or_default(),
+        profiled.state().config_caption.clone().unwrap_or_default(),
         surfaces(&refused),
         surfaces(&client),
     ]

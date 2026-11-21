@@ -2,9 +2,10 @@
 //! subfolder each. A profile folder looks like any working folder: a
 //! `config.json` and, beside it, the data folder that config names.
 
-use crate::config::{ConfigLoad, ToolConfig, read_config};
+use crate::config::{CONFIG_FILE_NAME, ConfigLoad, ToolConfig, read_config};
 use crate::paths::DataPaths;
 use anyhow::{Context, bail};
+use common_file_utils::permissions::create_dir_all_owner_only;
 use common_utils::file_system::get_user_home_folder;
 use std::ffi::OsString;
 use std::io::ErrorKind;
@@ -188,6 +189,43 @@ impl Workspace {
                 second.name.to_string_lossy()
             ),
         }
+    }
+
+    /// The folder for a new profile named `name`, created when missing (with the root, when
+    /// that is missing too; owner-only on Unix): an existing folder whose name matches
+    /// ignoring ASCII case and that holds no `config.json` is used as it is, else
+    /// `<root>/<name>`.
+    ///
+    /// # Errors
+    /// Fails when the root exists but cannot be listed, when two folders match `name` ignoring
+    /// case, when the folder already holds a `config.json` or cannot be checked for one, and
+    /// when the folder cannot be created.
+    pub async fn new_profile(&self, name: &ProfileName) -> anyhow::Result<Profile> {
+        let profile = self.profile(name).await?;
+        let config = profile.dir.join(CONFIG_FILE_NAME);
+        let taken = tokio::fs::try_exists(&config)
+            .await
+            .with_context(|| format!("Failed to check for '{}'", config.display()))?;
+        if taken {
+            bail!(
+                "A profile named {} already exists in '{}'",
+                profile.name,
+                self.root.display()
+            );
+        }
+        let dir = profile.dir.clone();
+        let reused = tokio::task::spawn_blocking(move || {
+            // Only the log line reads it, so a folder that can't be inspected counts as new.
+            let reused = dir.is_dir();
+            create_dir_all_owner_only(&dir).with_context(|| {
+                format!("Failed to create the profile folder '{}'", dir.display())
+            })?;
+            anyhow::Ok(reused)
+        })
+        .await
+        .context("Creating the profile folder stopped unexpectedly")??;
+        debug!(path = %profile.dir.display(), reused, "profile folder ready");
+        Ok(profile)
     }
 
     /// Every profile folder: a subfolder holding an eh `config.json`,

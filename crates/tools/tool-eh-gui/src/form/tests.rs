@@ -250,6 +250,91 @@ fn debug_output_holds_no_field_text() {
 }
 
 #[rstest::rstest]
+#[case::stored_string(
+    AuthChoice::ConnectionString,
+    CredentialChoice::DeveloperTools,
+    Some(SecretKind::ConnectionString)
+)]
+#[case::stored_client_secret(
+    AuthChoice::Credential,
+    CredentialChoice::ClientSecret,
+    Some(SecretKind::ClientSecret)
+)]
+#[case::key_vault_client_secret(
+    AuthChoice::KeyVault,
+    CredentialChoice::ClientSecret,
+    Some(SecretKind::ClientSecret)
+)]
+#[case::method_uses_neither(AuthChoice::Credential, CredentialChoice::DeveloperTools, None)]
+fn stored_secret_names_the_stored_secret_the_method_uses(
+    #[case] auth: AuthChoice,
+    #[case] credential: CredentialChoice,
+    #[case] expected: Option<SecretKind>,
+) {
+    let form = ConnectForm {
+        auth,
+        credential,
+        connection_string: SecretSource::stored(),
+        client_secret: SecretSource::stored(),
+        ..ConnectForm::default()
+    };
+
+    assert_eq!(form.stored_secret(), expected);
+}
+
+#[test]
+fn a_typed_secret_is_not_a_stored_one() {
+    let form = ConnectForm {
+        connection_string: typed(MARKER),
+        ..ConnectForm::default()
+    };
+
+    assert_eq!(form.stored_secret(), None);
+}
+
+fn from_the_launch_folder() -> ConnectForm {
+    ConnectForm {
+        names_from_launch_folder: true,
+        ..credential_form()
+    }
+}
+
+#[test]
+fn names_set_by_the_app_from_the_launch_folder_count_as_recalled() {
+    let form = from_the_launch_folder();
+
+    assert_eq!(
+        form.recalled_fields(),
+        RecalledFields {
+            namespace: true,
+            event_hub: true,
+        }
+    );
+}
+
+#[test]
+fn an_edited_name_no_longer_counts_as_recalled() {
+    let mut form = from_the_launch_folder();
+
+    form.namespace.insert("x");
+    form.event_hub.mark_edited();
+
+    assert!(form.recalled_fields().is_empty());
+}
+
+#[test]
+fn names_not_from_the_launch_folder_or_empty_never_count_as_recalled() {
+    let elsewhere = credential_form();
+    let empty = ConnectForm {
+        names_from_launch_folder: true,
+        ..ConnectForm::default()
+    };
+
+    assert!(elsewhere.recalled_fields().is_empty());
+    assert!(empty.recalled_fields().is_empty());
+}
+
+#[rstest::rstest]
 #[case::nothing_typed(SecretSource::typed(), SecretSource::typed(), None)]
 #[case::connection_string(
     typed(MARKER),

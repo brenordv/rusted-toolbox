@@ -575,6 +575,107 @@ async fn a_profile_whose_config_is_broken_answers_why_without_its_values() {
     assert!(!text.contains("marker-4410"), "{text}");
 }
 
+fn new_profile_request(workspace: &Workspace, name: &str, data_folder: &str) -> CreateRequest {
+    let mut config = ToolConfig::new(TargetConfig {
+        namespace: None,
+        event_hub: None,
+        consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+        auth: connection_string_auth(),
+    });
+    config.storage.base_data_folder = data_folder.to_owned();
+    CreateRequest {
+        request: 6,
+        workspace: workspace.clone(),
+        name: ProfileName::parse(name).unwrap(),
+        config,
+        given: SensitiveValues {
+            connection_string: Some(SecretString::from(CONNECTION_STRING.to_owned())),
+            client_secret: None,
+        },
+    }
+}
+
+fn created(answer: Input) -> Result<Profile, String> {
+    match answer {
+        Input::ProfileCreated { request: 6, result } => result,
+        other => panic!("expected the answer to create 6, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_created_profile_holds_its_config_and_typed_string_and_lists_ready() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = Workspace::at(root.path().join("workspace"));
+
+    let answer = created_profile(new_profile_request(&workspace, "orders-new", ".eh-data")).await;
+
+    let profile = created(answer).unwrap();
+    assert_eq!(profile.dir(), workspace.root().join("orders-new"));
+    let paths = DataPaths::new(profile.dir().join(".eh-data"));
+    let stored = SecretsStore::open(&paths)
+        .unwrap()
+        .get(CONNECTION_STRING_SECRET)
+        .unwrap();
+    assert_eq!(
+        stored.as_ref().map(SecretString::expose),
+        Some(CONNECTION_STRING)
+    );
+    let entries = workspace.list().await.unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].profile.name(), "orders-new");
+    assert!(entries[0].state.is_ready());
+}
+
+#[tokio::test]
+async fn a_second_create_of_the_name_in_another_case_fails_and_writes_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = Workspace::at(root.path().join("workspace"));
+    created(created_profile(new_profile_request(&workspace, "orders-new", ".eh-data")).await)
+        .unwrap();
+    let config = workspace
+        .root()
+        .join("orders-new")
+        .join(shared_eventhub_persistence::config::CONFIG_FILE_NAME);
+    let before = std::fs::read(&config).unwrap();
+
+    let answer = created_profile(new_profile_request(&workspace, "ORDERS-NEW", "captures")).await;
+
+    let text = created(answer).unwrap_err();
+    assert!(
+        text.starts_with("A profile named orders-new already exists"),
+        "{text}"
+    );
+    assert_eq!(std::fs::read(&config).unwrap(), before);
+    assert_eq!(std::fs::read_dir(workspace.root()).unwrap().count(), 1);
+    assert!(
+        !workspace
+            .root()
+            .join("orders-new")
+            .join("captures")
+            .exists()
+    );
+}
+
+#[tokio::test]
+async fn a_create_whose_data_folder_is_not_plain_relative_fails_before_writing() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let workspace = Workspace::at(root.path().join("workspace"));
+    let folder = outside.path().join("data");
+
+    let answer = created_profile(new_profile_request(
+        &workspace,
+        "orders-new",
+        folder.to_str().unwrap(),
+    ))
+    .await;
+
+    let text = created(answer).unwrap_err();
+    assert!(text.contains("is not a plain relative folder"), "{text}");
+    assert!(!workspace.root().exists());
+    assert!(!folder.exists());
+}
+
 /// `paths` as the window resolves it: eh-gui's working folder is its launch folder.
 fn resolved_in(launch: &Path, paths: &DataPaths) -> DataPaths {
     DataPaths::new(launch.join(paths.base()))
