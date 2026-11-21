@@ -41,7 +41,10 @@ A profile is a saved connection: a folder in the workspace holding a `config.jso
 it, the data folder that config names. eh-gui and `eh` share the workspace: `EH_WORKSPACE` when
 it is set (an absolute folder), else `~/.eh/profiles`. eh-gui doesn't create profiles; make one
 with `eh read ... --profile NAME --save-config`, or move a folder holding an eh `config.json`
-into the workspace.
+into the workspace. Starting eh-gui in a new folder inside the workspace works too: Save config
+writes that folder's `config.json`, and from then on it is a profile named after the folder
+(the name follows `eh`'s profile name rules). The picker then lists that folder twice, as
+Launch folder and by its name.
 
 - The Profile picker at the top of the connection sheet lists **Launch folder** (the folder
   eh-gui started in, where it read `config.json` at launch) and every profile whose `config.json`

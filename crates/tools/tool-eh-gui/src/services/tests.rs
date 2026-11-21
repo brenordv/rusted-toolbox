@@ -1,4 +1,7 @@
 use super::*;
+use crate::form::ConnectForm;
+use crate::state::{Effect, Outcome, SheetPurpose};
+use common_cli::app_logger::FileLogging;
 use common_utils::string_utils::SecretString;
 use shared_azure::auth::AuthMethod;
 use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
@@ -570,4 +573,70 @@ async fn a_profile_whose_config_is_broken_answers_why_without_its_values() {
         "{text}"
     );
     assert!(!text.contains("marker-4410"), "{text}");
+}
+
+/// `paths` as the window resolves it: eh-gui's working folder is its launch folder.
+fn resolved_in(launch: &Path, paths: &DataPaths) -> DataPaths {
+    DataPaths::new(launch.join(paths.base()))
+}
+
+/// The one effect of `out` that `pick` takes.
+fn only<T>(out: Outcome, pick: impl FnMut(Effect) -> Option<T>) -> T {
+    let found: Vec<T> = out.effects.into_iter().filter_map(pick).collect();
+    let Ok([one]) = <[T; 1]>::try_from(found) else {
+        panic!("expected exactly one such effect");
+    };
+    one
+}
+
+#[tokio::test]
+async fn a_launch_folder_in_the_workspace_saved_once_opens_as_a_profile_that_connects() {
+    let root = tempfile::tempdir().unwrap();
+    let launch = root.path().join("orders-new");
+    std::fs::create_dir(&launch).unwrap();
+    let mut state = AppState::new(None, ConnectForm::default(), None, FileLogging::Off);
+    state.set_launch(launch.clone(), Ok(Workspace::at(root.path().to_owned())));
+    state
+        .form
+        .connection_string
+        .edit_mut()
+        .replace_text(CONNECTION_STRING);
+    let save = only(state.apply(Input::SavePressed), |effect| match effect {
+        Effect::SaveConfig(save) => Some(save),
+        _ => None,
+    });
+    open_secrets(&resolved_in(&launch, &save.paths), |secrets| {
+        save_config(&save.dir, &save.config, secrets, &save.given)
+    })
+    .unwrap();
+    state.apply(Input::ConfigSaved(Ok(())));
+    let (request, workspace) = only(
+        state.apply(Input::OpenSheet(SheetPurpose::Connect)),
+        |effect| match effect {
+            Effect::ListProfiles { request, workspace } => Some((request, workspace)),
+            _ => None,
+        },
+    );
+    state.apply(listed_profiles(request, workspace).await);
+    let home = state.home_for_label("orders-new").unwrap();
+    let (request, dir) = only(
+        state.apply(Input::ProfilePicked(home)),
+        |effect| match effect {
+            Effect::LoadProfile { request, dir } => Some((request, dir)),
+            _ => None,
+        },
+    );
+    state.apply(loaded_profile(request, &dir).await);
+    let connect = only(state.apply(Input::ConnectPressed), |effect| match effect {
+        Effect::PrepareSession { request, .. } => Some(request),
+        _ => None,
+    });
+
+    let target = resolve_target(&connect).await.unwrap();
+
+    assert_eq!(state.home().profile_name(), Some("orders-new"));
+    assert!(matches!(
+        target.auth,
+        AuthMethod::ConnectionString { connection_string } if connection_string.expose() == CONNECTION_STRING
+    ));
 }
