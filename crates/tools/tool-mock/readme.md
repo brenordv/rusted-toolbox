@@ -6,7 +6,7 @@ A fast and intuitive CLI tool for generating various types of mock data for test
 
 - **Personal Information**: Names, emails, addresses, phone numbers, birthdays
 - **Internet & Tech**: Usernames, passwords, URLs, image URLs, file URLs
-- **Random Data**: Dates, times, colors, integers, floats, car brands
+- **Random Data**: Dates, times, colors, integers, floats, car brands, GUIDs
 - **Commerce**: Company names, products, job titles, industries, buzzwords
 - **Flexible Options**: Support for ranges and data constraints
 - **Simple Output**: Only prints the requested value, no extra formatting
@@ -75,6 +75,9 @@ mock commerce.job-title
 - `random.integer` - Generate an integer (with `--min`, `--max` options)
 - `random.float` - Generate a float (with `--min`, `--max`, `--precision` options)
 - `random.car-brand` - Generate a car brand name
+- `random.guid` - Generate a random GUID (UUID v4, lowercase with hyphens)
+
+`random.guid` is a random test identifier, not a token, session id, or secret.
 
 ### Commerce
 - `commerce.company` - Generate a company name

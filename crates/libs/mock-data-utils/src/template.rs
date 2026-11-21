@@ -6,9 +6,10 @@
 //! writes a literal `{{`; everything else outside a placeholder, `}}` included, is copied as
 //! written. Values are inserted as generated, with no escaping unless the placeholder has
 //! `escape=json`, which escapes the value for the inside of a JSON string (RFC 8259 section
-//! 7: `"`, `\`, and U+0000 to U+001F). `{{now}}` and `{{utc-now}}` take no options but
-//! `escape` and render the time passed to [`Template::render`] as RFC 3339 to the
-//! millisecond: local time with its UTC offset, or UTC ending in `Z`.
+//! 7: `"`, `\`, and U+0000 to U+001F). `{{now}}`, `{{utc-now}}` and `{{sequence}}` take no
+//! options but `escape` and render a value passed to [`Template::render`]: the clock pair the
+//! time as RFC 3339 to the millisecond (local time with its UTC offset, or UTC ending in
+//! `Z`), and `{{sequence}}` the `sequence` value in decimal.
 //!
 //! Compiling checks every placeholder the way [`crate::generate_mock_data`] would, so a
 //! template that compiles renders without option errors. Every error starts with the
@@ -39,13 +40,15 @@ range=N: random.date, random.datetime, random.timestamp (years, 1 to 100000)
 past, future: random.date, random.time, random.datetime, random.timestamp
 locale=CODE: person.* except birthday, internet.username, commerce.company, commerce.job-title, commerce.industry
 escape=json: every placeholder (escapes \", \\, and U+0000 to U+001F inside a JSON string)
-now, utc-now: escape only; the current time, RFC 3339 in ms (now: local offset, utc-now: Z)";
+now, utc-now: escape only; the current time, RFC 3339 in ms (now: local offset, utc-now: Z)
+sequence: escape only; a count of the events that show it, from 0 at app start (not the event hub's sequence number)";
 
 /// A compiled template. `Debug` shows its counts, never its text.
 pub struct Template {
     segments: Vec<Segment>,
     placeholders: usize,
     notes: Vec<String>,
+    uses_sequence: bool,
 }
 
 /// One piece of a compiled template. `json` is true when the placeholder has `escape=json`.
@@ -56,27 +59,38 @@ enum Segment {
         at: Position,
         json: bool,
     },
-    Clock {
-        clock: Clock,
+    Given {
+        given: Given,
         at: Position,
         json: bool,
     },
 }
 
-/// A placeholder that renders the time passed to [`Template::render`].
+/// A placeholder that renders a value passed to [`Template::render`]: the time, in the local
+/// time zone or in UTC, or the `sequence` value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Clock {
+enum Given {
     Local,
     Utc,
+    Sequence,
 }
 
-impl Clock {
-    const ALL: [Clock; 2] = [Clock::Local, Clock::Utc];
+impl Given {
+    const ALL: [Given; 3] = [Given::Local, Given::Utc, Given::Sequence];
 
     fn name(self) -> &'static str {
         match self {
-            Clock::Local => "now",
-            Clock::Utc => "utc-now",
+            Given::Local => "now",
+            Given::Utc => "utc-now",
+            Given::Sequence => "sequence",
+        }
+    }
+
+    /// The [`placeholder_groups`] group the placeholder is listed under.
+    fn group(self) -> &'static str {
+        match self {
+            Given::Local | Given::Utc => "clock",
+            Given::Sequence => "counter",
         }
     }
 }
@@ -142,6 +156,7 @@ impl Template {
         let mut segments = Vec::new();
         let mut placeholders = 0;
         let mut notes = Vec::new();
+        let mut uses_sequence = false;
         // One note per type and locale pair, however often the pair repeats.
         let mut noted: Vec<(&'static str, Locale)> = Vec::new();
         let mut literal = String::new();
@@ -160,8 +175,11 @@ impl Template {
                     bail!("{at}: the template has more than {MAX_PLACEHOLDERS} placeholders");
                 }
                 let words = &after[..end];
-                let segment = match clock(words, at)? {
-                    Some((clock, json)) => Segment::Clock { clock, at, json },
+                let segment = match given(words, at)? {
+                    Some((given, json)) => {
+                        uses_sequence |= given == Given::Sequence;
+                        Segment::Given { given, at, json }
+                    }
                     None => {
                         let (options, json) = placeholder(words, at)?;
                         let inert = (options.data_type.command(), options.locale);
@@ -206,21 +224,25 @@ impl Template {
             segments,
             placeholders,
             notes,
+            uses_sequence,
         })
     }
 
-    /// One instance of the template: a fresh mock value for every type placeholder, and `now`
-    /// for every `{{now}}` (in the local time zone) and `{{utc-now}}`.
+    /// One instance of the template: a fresh mock value for every type placeholder, `now` for
+    /// every `{{now}}` (in the local time zone) and `{{utc-now}}`, and `sequence` in decimal
+    /// for every `{{sequence}}`.
     ///
     /// # Errors
     /// Fails when a generator fails, and once the output passes `max_bytes`. The error names
     /// the cap and, when a placeholder's value crossed it, that placeholder by its position and
     /// type; it never holds the template's own text.
-    pub fn render(&self, max_bytes: usize, now: DateTime<Utc>) -> Result<String> {
+    pub fn render(&self, max_bytes: usize, now: DateTime<Utc>, sequence: u64) -> Result<String> {
         let mut out = String::new();
-        // Each clock kind is formatted once, so one render shows one instant and one offset.
+        // Each given value is formatted once, so one render shows one instant, one offset,
+        // and one number.
         let mut local = None;
         let mut utc = None;
+        let mut number = None;
         for segment in &self.segments {
             match segment {
                 Segment::Literal(text) => push_value(&mut out, text, false, max_bytes)?,
@@ -231,15 +253,16 @@ impl Template {
                     push_value(&mut out, &value, *json, max_bytes)
                         .with_context(|| format!("{at}: {name}"))?;
                 }
-                Segment::Clock { clock, at, json } => {
-                    let value = match clock {
-                        Clock::Local => local.get_or_insert_with(|| {
+                Segment::Given { given, at, json } => {
+                    let value = match given {
+                        Given::Local => local.get_or_insert_with(|| {
                             local_text(now, *now.with_timezone(&Local).offset())
                         }),
-                        Clock::Utc => utc.get_or_insert_with(|| utc_text(now)),
+                        Given::Utc => utc.get_or_insert_with(|| utc_text(now)),
+                        Given::Sequence => number.get_or_insert_with(|| sequence.to_string()),
                     };
                     push_value(&mut out, value, *json, max_bytes)
-                        .with_context(|| format!("{at}: {}", clock.name()))?;
+                        .with_context(|| format!("{at}: {}", given.name()))?;
                 }
             }
         }
@@ -251,6 +274,11 @@ impl Template {
         self.placeholders
     }
 
+    /// True when the template holds a `{{sequence}}` placeholder.
+    pub fn uses_sequence(&self) -> bool {
+        self.uses_sequence
+    }
+
     /// One note per type that some placeholder gives a non-default locale it ignores (per
     /// type and locale pair, at the first such placeholder).
     pub fn inert_locale_notes(&self) -> &[String] {
@@ -259,31 +287,37 @@ impl Template {
 }
 
 /// The data types by prefix (`person`, `internet`, `random`, `commerce`), each with its
-/// commands in help order, then the `clock` group (`now`, `utc-now`).
+/// commands in help order, then the `clock` group (`now`, `utc-now`) and the `counter` group
+/// (`sequence`).
 pub fn placeholder_groups() -> Vec<(&'static str, Vec<&'static str>)> {
-    let mut groups: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
-    for data_type in &DataType::ALL {
+    let types = DataType::ALL.iter().map(|data_type| {
         let command = data_type.command();
         let prefix = command
             .split_once('.')
             .map_or(command, |(prefix, _)| prefix);
+        (prefix, command)
+    });
+    let given = Given::ALL
+        .into_iter()
+        .map(|given| (given.group(), given.name()));
+    let mut groups: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
+    for (group, name) in types.chain(given) {
         match groups.last_mut() {
-            Some((last, commands)) if *last == prefix => commands.push(command),
-            Some(_) | None => groups.push((prefix, vec![command])),
+            Some((last, names)) if *last == group => names.push(name),
+            Some(_) | None => groups.push((group, vec![name])),
         }
     }
-    groups.push(("clock", Clock::ALL.map(Clock::name).to_vec()));
     groups
 }
 
-/// The clock one placeholder's `words` name and whether it has `escape=json`, or `None` when
-/// they name something else (an empty placeholder included). `escape` is a clock's only
-/// option.
-fn clock(words: &str, at: Position) -> Result<Option<(Clock, bool)>> {
+/// The given value one placeholder's `words` name and whether it has `escape=json`, or `None`
+/// when they name something else (an empty placeholder included). `escape` is the only option
+/// of a given value.
+fn given(words: &str, at: Position) -> Result<Option<(Given, bool)>> {
     let mut words = words.split_whitespace();
-    let Some(clock) = words
+    let Some(given) = words
         .next()
-        .and_then(|name| Clock::ALL.into_iter().find(|clock| clock.name() == name))
+        .and_then(|name| Given::ALL.into_iter().find(|given| given.name() == name))
     else {
         return Ok(None);
     };
@@ -291,15 +325,15 @@ fn clock(words: &str, at: Position) -> Result<Option<(Clock, bool)>> {
     for word in words {
         let (key, value) = option_word(word);
         if key != "escape" {
-            bail!("{at}: unknown option '{}' for {}", quote(key), clock.name());
+            bail!("{at}: unknown option '{}' for {}", quote(key), given.name());
         }
         if json {
             bail!("{at}: 'escape' is given twice");
         }
-        check_escape(value, clock.name()).with_context(|| at.to_string())?;
+        check_escape(value, given.name()).with_context(|| at.to_string())?;
         json = true;
     }
-    Ok(Some((clock, json)))
+    Ok(Some((given, json)))
 }
 
 /// The options one placeholder's `words` (the text between its braces) describe, and whether

@@ -209,12 +209,16 @@ the SDK client does not reliably close its connection.
   `producer::insert_property` refuses a repeated key (the SDK would keep only
   the last value); neither error holds a value, so a front end can prefix
   its own position ("Line 3: ", "--property 2: "). The free function
-  `producer::next_event(&event, template, cap, now)` covers a fixed body or a
-  `mock_data_utils` template rendered fresh per event: pass
-  `|_| producer::next_event(&event, template, cap, Utc::now())`. Without a
-  template it returns `event` as given; with one, a render of at most `cap`
-  bytes under `event`'s content type, correlation id, and properties, with
-  `now` as the time its `{{now}}` and `{{utc-now}}` placeholders show.
+  `producer::next_event(&event, template, cap, now, sequence)` covers a fixed
+  body or a `mock_data_utils` template rendered fresh per event: pass
+  `|index| producer::next_event(&event, template, cap, Utc::now(), index)`.
+  Without a template it returns `event` as given; with one, a render of at
+  most `cap` bytes under `event`'s content type, correlation id, and
+  properties, with `now` as the time its `{{now}}` and `{{utc-now}}`
+  placeholders show and `sequence` as the number every `{{sequence}}` shows.
+  `send` asks for each event once by its zero-based index, so the index
+  counts the run's events from 0 (an event carried to the next batch is not
+  asked for again).
 - `SendPlan::new(count, routing, pacing)` takes 1 to 1,000,000 events.
   `Routing::automatic()` lets the service pick partitions;
   `Routing::partition_key(key)` sends every event with that key (one

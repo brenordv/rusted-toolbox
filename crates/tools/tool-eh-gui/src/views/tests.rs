@@ -840,10 +840,16 @@ fn the_placeholder_list_opens_and_mod_enter_closes_it() {
     press(&mut rt, crate::views::send::template::PLACEHOLDERS_KEY);
     let listed = has_text(&rt, "person.first-name");
     let clock_listed = has_text(&rt, "now\nutc-now");
+    let counter_listed = has_text(&rt, "counter")
+        && rt
+            .elements()
+            .iter()
+            .any(|element| element.text.as_deref() == Some("sequence"));
     command(&mut rt, Key::Enter);
 
     assert!(listed);
     assert!(clock_listed);
+    assert!(counter_listed);
     assert!(!rt.state.send.composer.placeholders_open);
 }
 

@@ -1,4 +1,5 @@
 use super::*;
+use mock_data_utils::template::Template;
 use shared_azure::auth::{AuthMethod, CredentialKind};
 use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
 use shared_eventhub_core::producer::{Pacing, Routing};
@@ -23,6 +24,10 @@ enum Sending {
     /// Never returns.
     Hangs,
     Panics,
+    /// Builds this many events, then never returns.
+    HangsAfter(u64),
+    /// Builds this many events, then panics.
+    PanicsAfter(u64),
 }
 
 #[derive(Clone, Copy)]
@@ -42,8 +47,8 @@ struct FakePort {
     closing: Closing,
     closed: AtomicUsize,
     seen_pacing: Mutex<Option<Pacing>>,
-    /// The placeholder count of the template the send received, when it received one.
-    seen_placeholders: Mutex<Option<usize>>,
+    /// The body of every event the send reported sent, built by the worker's event closure.
+    bodies: Mutex<Vec<String>>,
 }
 
 impl FakePort {
@@ -57,8 +62,12 @@ impl FakePort {
             closing: Closing::Closes,
             closed: AtomicUsize::new(0),
             seen_pacing: Mutex::new(None),
-            seen_placeholders: Mutex::new(None),
+            bodies: Mutex::new(Vec::new()),
         }
+    }
+
+    fn bodies(&self) -> Vec<String> {
+        self.bodies.lock().unwrap().clone()
     }
 }
 
@@ -110,13 +119,11 @@ impl SendPort for FakePort {
         &'a self,
         _producer: &'a u32,
         plan: &'a SendPlan,
-        _event: &'a OutgoingEvent,
-        template: Option<&'a Template>,
+        mut next_event: impl FnMut(u64) -> anyhow::Result<OutgoingEvent> + Send + 'a,
         _cancel: &'a AtomicBool,
         mut progress: impl FnMut(&SendProgress) + Send + 'a,
     ) -> impl Future<Output = SendSummary> + Send + 'a {
         *self.seen_pacing.lock().unwrap() = Some(plan.pacing());
-        *self.seen_placeholders.lock().unwrap() = template.map(Template::placeholder_count);
         let sending = self.sending;
         async move {
             let (sent, end, gap) = match sending {
@@ -133,11 +140,28 @@ impl SendPort for FakePort {
                 }
                 Sending::Hangs => return std::future::pending().await,
                 Sending::Panics => panic!("the fake send panicked"),
+                Sending::HangsAfter(built) => {
+                    for index in 0..built {
+                        next_event(index).unwrap();
+                    }
+                    return std::future::pending().await;
+                }
+                Sending::PanicsAfter(built) => {
+                    for index in 0..built {
+                        next_event(index).unwrap();
+                    }
+                    panic!("the fake send panicked");
+                }
             };
             for count in 1..=sent {
                 if count > 1 {
                     tokio::time::sleep(gap).await;
                 }
+                let event = next_event(count - 1).unwrap();
+                self.bodies
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8(event.body).unwrap());
                 progress(&SendProgress {
                     sent: count,
                     batches: count,
@@ -185,6 +209,15 @@ fn request(pacing: Pacing) -> SendRequest {
         template: None,
         plan: SendPlan::new(3, Routing::automatic(), pacing).unwrap(),
         cancel: Arc::new(AtomicBool::new(false)),
+        sequence: Arc::new(AtomicU64::new(0)),
+    }
+}
+
+fn templated(source: &str, sequence: &Arc<AtomicU64>) -> SendRequest {
+    SendRequest {
+        template: Some(Arc::new(Template::compile(source).unwrap())),
+        sequence: Arc::clone(sequence),
+        ..request(Pacing::batched())
     }
 }
 
@@ -270,19 +303,71 @@ async fn the_plan_reaches_the_send_with_its_pacing() {
 }
 
 #[rstest::rstest]
-#[case::with_a_template(Some("{{person.email}} {{random.integer}}"), Some(2))]
-#[case::without_one(None, None)]
+#[case::with_a_template(Some("n={{random.integer min=4 max=4}}"), "n=4")]
+#[case::without_one(None, "ping")]
 #[tokio::test(start_paused = true)]
-async fn the_request_template_reaches_the_send(
+async fn every_event_is_the_request_body_or_a_render_of_its_template(
     #[case] source: Option<&str>,
-    #[case] expected: Option<usize>,
+    #[case] body: &str,
 ) {
     let mut request = request(Pacing::batched());
     request.template = source.map(|source| Arc::new(Template::compile(source).unwrap()));
 
     let (_, port) = run(FakePort::new(Sending::Completes(3)), request).await;
 
-    assert_eq!(*port.seen_placeholders.lock().unwrap(), expected);
+    assert_eq!(port.bodies(), [body; 3]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_sequence_runs_on_across_runs_that_share_a_counter() {
+    let sequence = Arc::new(AtomicU64::new(0));
+
+    let (_, first) = run(
+        FakePort::new(Sending::Completes(3)),
+        templated("{{sequence}}", &sequence),
+    )
+    .await;
+    let (_, second) = run(
+        FakePort::new(Sending::Completes(3)),
+        templated("{{sequence}}", &sequence),
+    )
+    .await;
+
+    assert_eq!(first.bodies(), ["0", "1", "2"]);
+    assert_eq!(second.bodies(), ["3", "4", "5"]);
+    assert_eq!(sequence.load(Ordering::Relaxed), 6);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_template_without_a_sequence_leaves_the_counter_alone() {
+    let sequence = Arc::new(AtomicU64::new(0));
+
+    let (_, port) = run(
+        FakePort::new(Sending::Completes(3)),
+        templated("{{random.integer min=1 max=1}}", &sequence),
+    )
+    .await;
+
+    assert_eq!(port.bodies(), ["1", "1", "1"]);
+    assert_eq!(sequence.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn numbers_taken_by_a_failed_send_stay_taken() {
+    let sequence = Arc::new(AtomicU64::new(0));
+
+    let (posts, port) = run(
+        FakePort::new(Sending::FailsAfter(2)),
+        templated("{{sequence}}", &sequence),
+    )
+    .await;
+
+    assert!(matches!(
+        posts.finishes().as_slice(),
+        [(SendEnd::Failed(_), 2, None)]
+    ));
+    assert_eq!(port.bodies(), ["0", "1"]);
+    assert_eq!(sequence.load(Ordering::Relaxed), 2);
 }
 
 #[tokio::test(start_paused = true)]
@@ -450,6 +535,64 @@ fn a_worker_that_panics_still_ends_its_run() {
         posts.finishes().as_slice(),
         [(SendEnd::Failed(reason), _, None)] if reason == STOPPED_UNEXPECTEDLY
     ));
+}
+
+#[test]
+fn numbers_taken_before_a_worker_panic_stay_taken() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    let sequence = Arc::new(AtomicU64::new(0));
+    let posts = Posts::default();
+    let post = posts.post();
+
+    spawn_joined(
+        rt.handle(),
+        Arc::new(FakePort::new(Sending::PanicsAfter(2))),
+        templated("{{sequence}}", &sequence),
+        move |input| post(input),
+    );
+    rt.block_on(async {
+        for _ in 0..100 {
+            if !posts.finishes().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    });
+
+    assert!(matches!(
+        posts.finishes().as_slice(),
+        [(SendEnd::Failed(reason), _, None)] if reason == STOPPED_UNEXPECTEDLY
+    ));
+    assert_eq!(sequence.load(Ordering::Relaxed), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn numbers_taken_before_a_send_that_does_not_stop_stay_taken() {
+    let sequence = Arc::new(AtomicU64::new(0));
+    let request = templated("{{sequence}}", &sequence);
+    let cancel = Arc::clone(&request.cancel);
+    let posts = Posts::default();
+    let worker = spawn_worker(
+        Arc::new(FakePort::new(Sending::HangsAfter(2))),
+        request,
+        posts.post(),
+    );
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    cancel.store(true, Ordering::Release);
+
+    tokio::time::sleep(SEND_STOP_BOUND + Duration::from_secs(1)).await;
+    let finished = posts.finishes();
+    worker.abort();
+
+    assert!(matches!(
+        finished.as_slice(),
+        [(SendEnd::Failed(reason), 0, None)] if reason == DID_NOT_STOP
+    ));
+    assert_eq!(sequence.load(Ordering::Relaxed), 2);
 }
 
 impl Posts {

@@ -83,6 +83,7 @@ pub fn generate_mock_data(options: &MockOptions) -> Result<String> {
         DataType::Integer => generate_integer(options),
         DataType::Float => generate_float(options),
         DataType::CarBrand => generate_car_brand(options),
+        DataType::Guid => generate_guid(options),
 
         // Commerce
         DataType::Company => generate_company(options),
@@ -227,11 +228,11 @@ mod tests {
     }
 
     #[test]
-    fn all_holds_32_distinct_commands() {
+    fn all_holds_33_distinct_commands() {
         let commands: std::collections::HashSet<&str> =
             DataType::ALL.iter().map(DataType::command).collect();
 
-        assert_eq!(commands.len(), 32);
+        assert_eq!(commands.len(), 33);
     }
 
     #[test]

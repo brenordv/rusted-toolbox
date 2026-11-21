@@ -340,7 +340,7 @@ eh send -e orders --body ping -n 600 --interval-ms 1000
 | `--content-type TYPE` | the content type of every event, trimmed; a blank TYPE sets none |
 | `--interval-ms MS` | one event every MS milliseconds (1 to 3,600,000) instead of full batches |
 | `--property KEY=VALUE` | an application property on every event, repeatable; split at the first `=`, key and value trimmed, an empty value allowed, each key once. Every value is a string |
-| `--correlation-id ID` | the correlation id of every event, trimmed; a blank ID sets none |
+| `--correlation-id ID` | the correlation id of every event, trimmed; a blank ID sets none. Sent as written; placeholders work in the body only |
 | `--yes` | send to a target recalled from `config.json` without naming it again |
 
 ```bash
@@ -419,7 +419,7 @@ eh send -e orders --template -n 500 --content-type application/json --body \
 ```
 
 - A placeholder names a type (`person.email`, `random.integer`, ...; `eh send --help` lists all
-  32) and takes options as words: `min=N max=N` (`random.integer`, `random.float`),
+  33) and takes options as words: `min=N max=N` (`random.integer`, `random.float`),
   `precision=N`, `length=N` (up to 1048576), `age=N`, `range=N`, `past`, `future`,
   `locale=CODE` (`pt-br`, `ja-jp`, ...), and `escape=json` (below). Options a type ignores are
   ignored; a locale a type ignores prints a notice. Whitespace and newlines inside the braces
@@ -430,6 +430,11 @@ eh send -e orders --template -n 500 --content-type application/json --body \
   in an event shows the same instant. `{{now}}` reveals this machine's UTC offset; use
   `{{utc-now}}` to leave it out. Compared with the enqueued time the service stamps, expect the
   skew between this machine's clock and the broker's.
+- `{{sequence}}` takes no options but `escape` and puts in the event's number in the run, from
+  0: `-n 3` sends 0, 1, 2. Every one in an event shows the same number. Each run, `--dry-run`
+  included, starts at 0. It is not the sequence number the event hub assigns.
+- Each `{{random.guid}}` is a new GUID (UUID v4, lowercase with hyphens), even two in one
+  event. It is a random test identifier, not a token, session id, or secret.
 - `\{{` writes a literal `{{`; any other backslash stays as written. So a backslash right before
   a placeholder can't be written: `logs\\{{internet.username}}` sends
   `logs\{{internet.username}}`.
@@ -438,10 +443,10 @@ eh send -e orders --template -n 500 --content-type application/json --body \
   `D"ávila` (`{{person.last-name locale=pt-br}}`). Put `escape=json` on each placeholder inside
   a JSON string: `"customer": "{{person.last-name locale=pt-br escape=json}}"` sends
   `"customer": "D\"ávila"`. It escapes `"`, `\`, and U+0000 to U+001F (RFC 8259) and works
-  on every placeholder, `{{now}}` and `{{utc-now}}` included. It covers one level of JSON
-  string between quotes you write: not a placeholder outside quotes, JSON nested inside a JSON
-  string, or the template's own text. Any other escape is a compile error ("unknown escape
-  'xml' for person.last-name; use json").
+  on every placeholder, `{{now}}`, `{{utc-now}}` and `{{sequence}}` included. It covers one
+  level of JSON string between quotes you write: not a placeholder outside quotes, JSON nested
+  inside a JSON string, or the template's own text. Any other escape is a compile error
+  ("unknown escape 'xml' for person.last-name; use json").
 - The body must be UTF-8. A template that does not compile fails before anything is opened or
   saved, naming the line and column ("The --template body does not compile: line 3, column 14:
   unknown type 'person.fullname'"). A template holds at most 100,000 placeholders, and each

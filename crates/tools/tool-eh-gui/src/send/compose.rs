@@ -12,6 +12,7 @@ use shared_eventhub_core::producer::{
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 /// The largest body the editor sends, in bytes.
@@ -162,6 +163,9 @@ pub struct Composer {
     template: TemplateState,
     /// Whether the placeholder list shows.
     pub placeholders_open: bool,
+    /// The number the next event that shows `{{sequence}}` gets; it counts from 0 for the
+    /// composer's whole life.
+    sequence: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for Composer {
@@ -203,6 +207,7 @@ impl Default for Composer {
             pacing_open: false,
             template: TemplateState::Off,
             placeholders_open: false,
+            sequence: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -281,14 +286,24 @@ impl Composer {
         &self.template
     }
 
+    /// The `{{sequence}}` counter: its value is the number the next event that shows it gets.
+    pub fn sequence(&self) -> &Arc<AtomicU64> {
+        &self.sequence
+    }
+
+    fn next_sequence(&self) -> u64 {
+        self.sequence.load(Ordering::Relaxed)
+    }
+
     /// Recompiles the body after it changed, keeping the switch where it is.
     pub fn refresh_template(&mut self) {
-        self.template = TemplateState::for_body(self.template.is_on(), &self.body.text);
+        self.template =
+            TemplateState::for_body(self.template.is_on(), &self.body.text, self.next_sequence());
     }
 
     /// Turns the Template switch on or off; turning it off closes the placeholder list.
     pub fn set_template(&mut self, on: bool) {
-        self.template = TemplateState::for_body(on, &self.body.text);
+        self.template = TemplateState::for_body(on, &self.body.text, self.next_sequence());
         if !on {
             self.placeholders_open = false;
         }
@@ -296,7 +311,16 @@ impl Composer {
 
     /// Renders a new sample of a compiled template; true when there was one.
     pub fn regenerate(&mut self) -> bool {
-        self.template.regenerate()
+        self.template.regenerate(self.next_sequence())
+    }
+
+    /// Renders a new sample of a compiled template that uses `{{sequence}}`, so it shows the
+    /// number the next event gets; true when there was one.
+    pub fn resample_sequence(&mut self) -> bool {
+        match self.template.template() {
+            Some(template) if template.uses_sequence() => self.regenerate(),
+            Some(_) | None => false,
+        }
     }
 
     fn routing(&self) -> Option<Routing> {

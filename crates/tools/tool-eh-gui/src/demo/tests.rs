@@ -1,5 +1,6 @@
 use super::*;
 use crate::state::ConnectionState;
+use mock_data_utils::template::Template;
 use shared_eventhub_core::connection::EventHubIdentity;
 use shared_eventhub_core::engine::{
     Checkpoint, EngineCommand, EngineEvent, MessageSink, RunEnd, StoreOutcome,
@@ -7,6 +8,7 @@ use shared_eventhub_core::engine::{
 use shared_eventhub_core::filters::{CaptureFilters, TextFilter};
 use shared_eventhub_core::models::CapturedMessage;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Records the order of sink calls.
 #[derive(Clone, Default)]
@@ -456,6 +458,7 @@ fn send_request(count: u64, pacing: shared_eventhub_core::producer::Pacing) -> S
         )
         .unwrap(),
         cancel: Arc::new(AtomicBool::new(false)),
+        sequence: Arc::new(AtomicU64::new(0)),
     }
 }
 
@@ -537,6 +540,27 @@ async fn a_cancel_during_a_paced_wait_ends_the_demo_send_within_a_poll() {
         at <= Duration::from_millis(1_500) + shared_eventhub_core::cancel::CANCEL_POLL,
         "{at:?}"
     );
+}
+
+#[rstest::rstest]
+#[case::numbered("{{sequence}}", 25)]
+#[case::without_a_sequence("{{person.email}}", 0)]
+#[tokio::test(start_paused = true)]
+async fn a_demo_send_takes_a_number_for_every_event_it_counts(
+    #[case] source: &str,
+    #[case] left: u64,
+) {
+    let posts = SendPosts::default();
+    let started = tokio::time::Instant::now();
+    let request = SendRequest {
+        template: Some(Arc::new(Template::compile(source).unwrap())),
+        ..send_request(25, shared_eventhub_core::producer::Pacing::batched())
+    };
+    let sequence = Arc::clone(&request.sequence);
+
+    send::demo_send(request, posts.sink(started)).await;
+
+    assert_eq!(sequence.load(Ordering::Relaxed), left);
 }
 
 #[tokio::test(start_paused = true)]

@@ -29,6 +29,13 @@ fn each_event_prints_with_a_blank_line_between_events() {
 }
 
 #[test]
+fn each_event_shows_its_index_as_the_sequence() {
+    let (_, out) = printed("{{sequence}}", 3);
+
+    assert_eq!(out, "0\n\n1\n\n2\n");
+}
+
+#[test]
 fn a_two_line_template_prints_two_lines_per_event() {
     let (_, out) = printed("{\n  \"n\": {{random.integer min=2 max=2}}\n}", 2);
 

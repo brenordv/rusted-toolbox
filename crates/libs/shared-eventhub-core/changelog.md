@@ -31,7 +31,8 @@
   auth), so a form can name the destination before sending.
 - `producer::next_event` builds the event to send: the body as given, or a fresh render of a
   `mock_data_utils` template under the same content type, with the caller's `now` as the time
-  `{{now}}` and `{{utc-now}}` show. Adds the `mock-data-utils` dependency.
+  `{{now}}` and `{{utc-now}}` show and the caller's `sequence` as the number `{{sequence}}`
+  shows. Adds the `mock-data-utils` dependency.
 - `RunSummary::failed_partitions` lists the partitions that ended in `Failed`, in map order.
 - `OutgoingEvent` carries a correlation id and string application properties (and derives
   `Default`); `next_event` keeps both on a rendered event. `producer::parse_property` and

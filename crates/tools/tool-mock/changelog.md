@@ -1,8 +1,9 @@
 # Changelog
 
 ## 2.2.0
+- `random.guid`: a random GUID (UUID v4).
 - Fixed: `--length`/`-n` above 1,048,576 for `internet.password` and
-  `commerce.product-description` is refused with exit 1 (mock-data-utils 3.1.0's cap). Before, a
+  `commerce.product-description` is refused with exit 1 (mock-data-utils 4.0.0's cap). Before, a
   huge value could exhaust memory or abort the process on the allocation.
 - The inert-locale check comes from mock-data-utils (`locale_is_inert`), so the tool and
   message templates share one rule.

@@ -61,8 +61,8 @@ pub(crate) fn ending(printed: &Printed, count: u64) -> (String, RunOutcome) {
 }
 
 /// Renders `template` `count` times into `out`, each line of a render escaped
-/// on its own and a blank line between events. Checks `shutdown` before each
-/// event.
+/// on its own and a blank line between events; the event's zero-based index is
+/// the number its `{{sequence}}` shows. Checks `shutdown` before each event.
 ///
 /// # Errors
 /// Fails when a render fails, naming the event's zero-based index, and when
@@ -79,7 +79,7 @@ pub(crate) fn print_renders(
             return Ok(Printed::Interrupted(index));
         }
         let body = template
-            .render(cap, Utc::now())
+            .render(cap, Utc::now(), index)
             .with_context(|| format!("event {index}"))?;
         match write_event(&mut out, &body, index > 0) {
             Ok(()) => {}

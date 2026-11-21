@@ -99,7 +99,8 @@ pub(crate) struct SendArgs {
 
     /// Treat the body as a template: every {{type option=value}} placeholder
     /// gets a fresh mock value in each event, {{now}} and {{utc-now}} the time
-    /// the event is built (see the list below)
+    /// the event is built, {{sequence}} the event's number in the run from 0
+    /// (see the list below)
     #[arg(long = "template")]
     pub template: bool,
 

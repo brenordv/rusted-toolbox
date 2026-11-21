@@ -2,6 +2,7 @@ use crate::models::MockOptions;
 use anyhow::Result;
 use chrono::{Duration, Local, NaiveTime, Timelike, Utc};
 use rand::RngExt;
+use uuid::Uuid;
 
 /// Generate a random date
 pub fn generate_date(options: &MockOptions) -> Result<String> {
@@ -166,6 +167,11 @@ pub fn generate_car_brand(_options: &MockOptions) -> Result<String> {
 
     let brand = car_brands[rand::rng().random_range(0..car_brands.len())];
     Ok(brand.to_string())
+}
+
+/// Generate a random GUID: a version 4 UUID, hyphenated and lowercase.
+pub fn generate_guid(_options: &MockOptions) -> Result<String> {
+    Ok(Uuid::new_v4().to_string())
 }
 
 #[cfg(test)]

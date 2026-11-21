@@ -6,11 +6,11 @@ use super::{apply_from_runtime, resolve_target};
 use crate::archive::bulk::progress_due;
 use crate::send::compose::BODY_CAP;
 use crate::send::run::Names;
+use crate::send::template::take_sequence;
 use crate::send::{SendInput, SendRequest};
 use crate::services::ConnectRequest;
 use crate::state::{AppState, Input, SEND_STOP_BOUND};
 use chrono::Utc;
-use mock_data_utils::template::Template;
 use rune::AppHandle;
 use shared_eventhub_core::cancel::{CANCEL_POLL, flag_set};
 use shared_eventhub_core::connection::EventHubTarget;
@@ -54,14 +54,13 @@ pub trait SendPort: Send + Sync + 'static {
     /// The names the producer resolved.
     fn names(producer: &Self::Producer) -> Names;
 
-    /// Sends `event` as `plan` says (a fresh render of `template` per event when there is one),
-    /// calling `progress` after each batch.
+    /// Sends the events `plan` counts, asking `next_event` for each one by its zero-based index,
+    /// and calls `progress` after each batch.
     fn send<'a>(
         &'a self,
         producer: &'a Self::Producer,
         plan: &'a SendPlan,
-        event: &'a OutgoingEvent,
-        template: Option<&'a Template>,
+        next_event: impl FnMut(u64) -> anyhow::Result<OutgoingEvent> + Send + 'a,
         cancel: &'a AtomicBool,
         progress: impl FnMut(&SendProgress) + Send + 'a,
     ) -> impl Future<Output = SendSummary> + Send + 'a;
@@ -95,17 +94,11 @@ impl SendPort for HubPort {
         &'a self,
         producer: &'a EventHubProducer,
         plan: &'a SendPlan,
-        event: &'a OutgoingEvent,
-        template: Option<&'a Template>,
+        next_event: impl FnMut(u64) -> anyhow::Result<OutgoingEvent> + Send + 'a,
         cancel: &'a AtomicBool,
         progress: impl FnMut(&SendProgress) + Send + 'a,
     ) -> impl Future<Output = SendSummary> + Send + 'a {
-        producer.send(
-            plan,
-            move |_| next_event(event, template, BODY_CAP, Utc::now()),
-            cancel,
-            progress,
-        )
+        producer.send(plan, next_event, cancel, progress)
     }
 
     async fn close(&self, producer: EventHubProducer) -> anyhow::Result<()> {
@@ -186,6 +179,7 @@ pub async fn run_send<P: SendPort>(
         template,
         plan,
         cancel,
+        sequence,
     } = request;
     let started = Instant::now();
     let finish = |summary: SendSummary, close_error: Option<String>| {
@@ -242,14 +236,17 @@ pub async fn run_send<P: SendPort>(
             });
         }
     };
-    let send = port.send(
-        &producer,
-        &plan,
-        &event,
-        template.as_deref(),
-        &cancel,
-        progress,
-    );
+    let template = template.as_deref();
+    let next = |_: u64| {
+        next_event(
+            &event,
+            template,
+            BODY_CAP,
+            Utc::now(),
+            take_sequence(template, &sequence),
+        )
+    };
+    let send = port.send(&producer, &plan, next, &cancel, progress);
     let (summary, stop_by) = bounded_after_cancel(send, &cancel, || {
         warn!(run, "the send did not stop in time after its cancel");
         finish(

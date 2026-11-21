@@ -92,7 +92,15 @@ async fn send_with_progress<O: Write, E: Write>(
     let summary = {
         let send = producer.send(
             &job.plan,
-            |_| next_event(&job.event, job.template.as_deref(), RENDER_CAP, Utc::now()),
+            |index| {
+                next_event(
+                    &job.event,
+                    job.template.as_deref(),
+                    RENDER_CAP,
+                    Utc::now(),
+                    index,
+                )
+            },
             shutdown,
             |progress| line.draw_with(|_| send_line(progress, requested)),
         );

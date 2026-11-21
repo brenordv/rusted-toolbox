@@ -6,6 +6,7 @@ use chrono::Utc;
 use mock_data_utils::template::Template;
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The most bytes of a sample the Send section shows.
 pub const SAMPLE_SHOWN_BYTES: usize = 16 * 1024;
@@ -49,8 +50,9 @@ impl fmt::Debug for TemplateState {
 }
 
 impl TemplateState {
-    /// The state for `body` with the switch `on`: compiled, and rendered once when it compiles.
-    pub fn for_body(on: bool, body: &str) -> Self {
+    /// The state for `body` with the switch `on`: compiled, and rendered once when it compiles,
+    /// with `next` as the number its `{{sequence}}` shows.
+    pub fn for_body(on: bool, body: &str, next: u64) -> Self {
         if !on {
             return Self::Off;
         }
@@ -59,7 +61,7 @@ impl TemplateState {
         }
         match Template::compile(body) {
             Ok(template) => Self::Ready {
-                sample: sample_of(&template),
+                sample: sample_of(&template, next),
                 template: Arc::new(template),
                 generation: 0,
             },
@@ -75,15 +77,16 @@ impl TemplateState {
         }
     }
 
-    /// Renders a new sample; true when there was a compiled template to render.
-    pub fn regenerate(&mut self) -> bool {
+    /// Renders a new sample with `next` as the number its `{{sequence}}` shows; true when
+    /// there was a compiled template to render.
+    pub fn regenerate(&mut self, next: u64) -> bool {
         match self {
             Self::Ready {
                 template,
                 sample,
                 generation,
             } => {
-                *sample = sample_of(template);
+                *sample = sample_of(template, next);
                 *generation += 1;
                 true
             }
@@ -109,10 +112,21 @@ impl TemplateState {
     }
 }
 
-fn sample_of(template: &Template) -> Result<String, String> {
+fn sample_of(template: &Template, next: u64) -> Result<String, String> {
     template
-        .render(BODY_CAP, Utc::now())
+        .render(BODY_CAP, Utc::now(), next)
         .map_err(|error| format!("{error:#}"))
+}
+
+/// The number an event built from `template` shows: for a template that uses `{{sequence}}`,
+/// `counter`'s value, which then moves on by one; otherwise 0, with `counter` left alone.
+pub fn take_sequence(template: Option<&Template>, counter: &AtomicU64) -> u64 {
+    match template {
+        // The add alone keeps the numbers unique; a reader that sees an older value only
+        // shows a lower next number.
+        Some(template) if template.uses_sequence() => counter.fetch_add(1, Ordering::Relaxed),
+        Some(_) | None => 0,
+    }
 }
 
 /// The part of `sample` the Send section shows: at most [`SAMPLE_SHOWN_BYTES`], cut at a

@@ -109,6 +109,7 @@ Random Data:
   random.integer        - Generate an integer (with --min, --max options)
   random.float          - Generate a float (with --min, --max, --precision options)
   random.car-brand      - Generate a car brand name
+  random.guid           - Generate a random GUID (UUID v4)
 
 Commerce:
   commerce.company      - Generate a company name
@@ -252,6 +253,22 @@ mod tests {
         assert!(help.contains("Locales:"));
         for code in Locale::all_codes() {
             assert!(help.contains(code), "missing locale code {code}");
+        }
+    }
+
+    #[test]
+    fn help_text_lists_every_data_type() {
+        let commands: Vec<&str> = DATA_TYPE_HELP
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .collect();
+
+        for data_type in &DataType::ALL {
+            assert!(
+                commands.contains(&data_type.command()),
+                "missing {}",
+                data_type.command()
+            );
         }
     }
 }

@@ -1,4 +1,5 @@
 use super::compose::{BODY_CAP, PacingChoice, RoutingChoice};
+use super::template::TemplateState;
 use super::*;
 use chrono::TimeDelta;
 use rstest::rstest;
@@ -482,6 +483,146 @@ fn regenerate_bumps_the_generation_of_a_compiled_template() {
         send.composer.template(),
         super::template::TemplateState::Ready { generation: 1, .. }
     ));
+}
+
+fn sample_text(send: &SendState) -> Option<String> {
+    match send.composer.template() {
+        TemplateState::Ready { sample, .. } => sample.clone().ok(),
+        TemplateState::Off | TemplateState::OverCap | TemplateState::Invalid(_) => None,
+    }
+}
+
+fn generation(send: &SendState) -> Option<u64> {
+    match send.composer.template() {
+        TemplateState::Ready { generation, .. } => Some(*generation),
+        TemplateState::Off | TemplateState::OverCap | TemplateState::Invalid(_) => None,
+    }
+}
+
+#[test]
+fn the_sample_shows_the_number_the_next_event_gets_and_regenerate_keeps_it() {
+    let mut send = ready();
+    send.composer.sequence().store(4, Ordering::Relaxed);
+    send.composer.body.replace_text("n={{sequence}}");
+
+    send.composer.set_template(true);
+    let switched = sample_text(&send);
+    send.composer.body.replace_text("m={{sequence}}");
+    send.composer.refresh_template();
+    let edited = sample_text(&send);
+    send.composer.regenerate();
+
+    assert_eq!(switched.as_deref(), Some("n=4"));
+    assert_eq!(edited.as_deref(), Some("m=4"));
+    assert_eq!(sample_text(&send).as_deref(), Some("m=4"));
+    assert_eq!(send.composer.sequence().load(Ordering::Relaxed), 4);
+}
+
+#[rstest]
+#[case::numbered(Some("{{sequence}}"), Some(4))]
+#[case::without_a_sequence(Some("{{person.email}}"), None)]
+#[case::switch_off(None, None)]
+fn a_press_hands_the_composers_counter_to_the_run(
+    #[case] source: Option<&str>,
+    #[case] from: Option<u64>,
+) {
+    let mut send = ready();
+    send.composer
+        .body
+        .replace_text(source.unwrap_or("{{sequence}}"));
+    send.composer.set_template(source.is_some());
+    send.composer.sequence().store(4, Ordering::Relaxed);
+
+    let out = apply(&mut send, SendInput::SendPressed);
+
+    let [SendEffect::StartSend(request)] = out.effects.as_slice() else {
+        panic!("expected StartSend, got {:?}", out.effects);
+    };
+    assert!(Arc::ptr_eq(&request.sequence, send.composer.sequence()));
+    assert_eq!(
+        sequence_from(request.template.as_deref(), &request.sequence),
+        from
+    );
+}
+
+#[rstest]
+#[case::completed(SendEnd::Completed)]
+#[case::cancelled(SendEnd::Cancelled)]
+#[case::failed(SendEnd::Failed("throttled".to_owned()))]
+fn the_end_of_a_run_renders_a_sequence_sample_with_the_next_number(#[case] end: SendEnd) {
+    let mut send = with_template("n={{sequence}}");
+    let out = apply(&mut send, SendInput::SendPressed);
+    let [SendEffect::StartSend(request)] = out.effects.as_slice() else {
+        panic!("expected StartSend, got {:?}", out.effects);
+    };
+    let run = request.run;
+    request.sequence.fetch_add(3, Ordering::Relaxed);
+
+    apply(
+        &mut send,
+        SendInput::Finished {
+            run,
+            summary: summary(3, end),
+            close_error: None,
+        },
+    );
+
+    assert_eq!(sample_text(&send).as_deref(), Some("n=3"));
+}
+
+#[test]
+fn the_end_of_a_started_run_renders_a_sequence_sample_with_the_next_number() {
+    let mut send = with_template("n={{sequence}}");
+    let run = sending(&mut send, Utc::now());
+    send.composer.sequence().fetch_add(2, Ordering::Relaxed);
+
+    apply(
+        &mut send,
+        SendInput::Finished {
+            run,
+            summary: summary(2, SendEnd::Completed),
+            close_error: None,
+        },
+    );
+
+    assert_eq!(sample_text(&send).as_deref(), Some("n=2"));
+}
+
+#[test]
+fn the_end_of_a_run_keeps_the_sample_of_a_template_without_a_sequence() {
+    let mut send = with_template("{{internet.password length=64}}");
+    let before = sample_text(&send);
+    let run = sending(&mut send, Utc::now());
+
+    apply(
+        &mut send,
+        SendInput::Finished {
+            run,
+            summary: summary(1, SendEnd::Completed),
+            close_error: None,
+        },
+    );
+
+    assert!(before.is_some());
+    assert_eq!(sample_text(&send), before);
+    assert_eq!(generation(&send), Some(0));
+}
+
+#[test]
+fn the_end_of_another_run_renders_no_sample() {
+    let mut send = with_template("n={{sequence}}");
+    let run = sending(&mut send, Utc::now());
+
+    apply(
+        &mut send,
+        SendInput::Finished {
+            run: run + 1,
+            summary: summary(1, SendEnd::Completed),
+            close_error: None,
+        },
+    );
+
+    assert_eq!(generation(&send), Some(0));
 }
 
 #[test]

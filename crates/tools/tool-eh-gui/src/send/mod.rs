@@ -18,7 +18,7 @@ use shared_eventhub_core::producer::{OutgoingEvent, SendEnd, SendPlan, SendSumma
 use shared_eventhub_persistence::config::{AuthMethodConfig, resolve_target_with};
 use shared_eventhub_persistence::paths::DataPaths;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tracing::{debug, info, warn};
 
 /// The destination a connection form resolves to.
@@ -110,7 +110,8 @@ pub enum SendEffect {
 }
 
 /// Send `event` as `plan` says to the target `target` describes; results go back tagged `run`.
-/// With `template`, each event is a fresh render of it under `event`'s content type.
+/// With `template`, each event is a fresh render of it under `event`'s content type, and an
+/// event that shows `{{sequence}}` takes its number from `sequence`.
 #[derive(Debug)]
 pub struct SendRequest {
     pub run: u64,
@@ -119,6 +120,7 @@ pub struct SendRequest {
     pub template: Option<Arc<Template>>,
     pub plan: SendPlan,
     pub cancel: Arc<AtomicBool>,
+    pub sequence: Arc<AtomicU64>,
 }
 
 /// What a Send transition did.
@@ -230,12 +232,15 @@ impl SendState {
         self.next_run += 1;
         let run = self.next_run;
         let cancel = Arc::new(AtomicBool::new(false));
+        let sequence = Arc::clone(self.composer.sequence());
+        let sequence_from = sequence_from(template.as_deref(), &sequence);
         info!(
             run,
             requested = plan.count(),
             partition_key = plan.routing().key().is_some(),
             pacing = %plan.pacing().describe(),
             template = template.is_some(),
+            sequence_from,
             "send started"
         );
         let (config, given) = cx.form.to_config();
@@ -259,6 +264,7 @@ impl SendState {
                 template,
                 plan,
                 cancel,
+                sequence,
             })],
             ..SendOutcome::changed()
         }
@@ -364,6 +370,7 @@ impl SendState {
                 return SendOutcome::default();
             }
         };
+        self.composer.resample_sequence();
         let failed = ended_failed(&summary, close_error.as_deref());
         info!(
             run,
@@ -397,6 +404,13 @@ impl SendState {
             ..SendOutcome::changed()
         }
     }
+}
+
+/// The first number a run takes from `sequence`, when `template` uses `{{sequence}}`.
+fn sequence_from(template: Option<&Template>, sequence: &AtomicU64) -> Option<u64> {
+    template
+        .filter(|template| template.uses_sequence())
+        .map(|_| sequence.load(Ordering::Relaxed))
 }
 
 fn end_name(summary: &SendSummary) -> &'static str {

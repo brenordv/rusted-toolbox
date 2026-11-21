@@ -226,6 +226,7 @@ name it.
   names it ("Line 3: no '=' (write it as key=value)", "Line 5: the key 'run' is given twice")
   and moves focus there. Both are per send and never saved to `config.json`. They go to the hub
   as plain text: never put a secret in them. Read's inspector shows both on a received event.
+  Both are sent as written; placeholders work in the body only.
 - **Event body**: a monospace editor; Return types a newline. Bodies over 1 MiB don't fit the
   editor (use `eh send --body-file`). A body that fits the editor can still be too large for one
   batch: the SDK limits a single event to about half the event hub's publish limit (about 128 KB
@@ -233,15 +234,26 @@ name it.
 - **Template** (the switch beside "Event body"): the body becomes a template, and every
   `{{type option=value}}` placeholder gets a fresh mock value in each event, and `{{now}}` and
   `{{utc-now}}` the time the event is built, as with `eh send --template` (the `eh` readme has
-  the syntax and its limits). "Show placeholders" lists the types, the clock placeholders, and
-  the options. Under the editor a Sample block shows one render, with the time of that render;
-  Regenerate draws another. While the template does not compile, the block says where and why,
-  and a Send press marks the editor and blocks the send until it is fixed. A sample that fails to render (a value
-  too large for 1 MiB, say) shows its error but does not block Send; the send then fails at its
-  first event. Values go in unescaped, so a JSON template can break on a value holding `"`,
-  unless the placeholder has `escape=json` (`"{{person.last-name locale=pt-br escape=json}}"`),
-  which escapes `"`, `\`, and U+0000 to U+001F for one level of JSON string between quotes
-  you write; "Show placeholders" lists it with the other options.
+  the syntax and its limits). "Show placeholders" lists the types, the clock placeholders, the
+  counter, and the options. Under the editor a Sample block shows one render, with the time of
+  that render; Regenerate draws another. While the template does not compile, the block says
+  where and why, and a Send press marks the editor and blocks the send until it is fixed. A
+  sample that fails to render (a value too large for 1 MiB, say) shows its error but does not
+  block Send; the send then fails at its first event. Values go in unescaped, so a JSON template
+  can break on a value holding `"`, unless the placeholder has `escape=json`
+  (`"{{person.last-name locale=pt-br escape=json}}"`), which escapes `"`, `\`, and U+0000 to
+  U+001F for one level of JSON string between quotes you write; "Show placeholders" lists it
+  with the other options.
+
+  `{{sequence}}` puts in a count of the events that show it, from 0 when eh-gui starts and
+  across sends and profile switches (unlike `eh send`, where each run starts at 0); sends whose
+  template lacks it don't count. The Sample shows the number the next send starts from, and
+  Regenerate keeps it. While a send runs, the Sample can show a number that send has already
+  used; it renders again with the next free number when the send ends. A failed or cancelled
+  send keeps the numbers its events took, so the next send can skip some. Restart eh-gui to
+  count from 0 again. It is not the number in Read's Seq column. Error messages number a send's
+  events from 0 within that send. Each `{{random.guid}}` is a new GUID, a test identifier and
+  not a secret.
 - **Send** (Ctrl+Enter or Cmd+Enter from any Send field). The line beside it shows the run:
   connecting, then the sent count, the pacing, and the elapsed time; Cancel stops before the next
   batch or during a paced wait within about a tenth of a second. A batch already handed to the

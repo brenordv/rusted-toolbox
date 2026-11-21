@@ -475,7 +475,10 @@ fn the_send_long_help_lists_placeholders_and_options() {
     assert!(help.contains("commerce.product-description"), "{help}");
     assert!(help.contains("min=N max=N"), "{help}");
     assert!(help.contains("clock: now, utc-now"), "{help}");
+    assert!(help.contains("counter: sequence"), "{help}");
+    assert!(help.contains("random.guid"), "{help}");
     assert!(help.contains("escape=json: every placeholder"), "{help}");
+    assert!(help.contains("sequence: escape only"), "{help}");
 }
 
 #[test]

@@ -4,6 +4,7 @@
 use super::hub::{DEMO_HUB, DEMO_NAMESPACE};
 use crate::archive::bulk::progress_due;
 use crate::send::run::Names;
+use crate::send::template::take_sequence;
 use crate::send::{SendInput, SendRequest};
 use chrono::Utc;
 use shared_eventhub_core::cancel::flag_set;
@@ -17,10 +18,16 @@ pub const BATCH_STEP_EVERY: Duration = Duration::from_millis(100);
 
 /// Counts `request`'s events up to its plan's count without sending anything: a paced plan
 /// one event per interval, the first at once; a batched one by a tenth of the count every
-/// [`BATCH_STEP_EVERY`]. Ends `Cancelled` when the cancel flag is set before a step.
+/// [`BATCH_STEP_EVERY`]. Every event counted takes its `{{sequence}}` number as a sent one
+/// does. Ends `Cancelled` when the cancel flag is set before a step.
 pub async fn demo_send(request: SendRequest, post: impl Fn(SendInput) + Send) {
     let SendRequest {
-        run, plan, cancel, ..
+        run,
+        plan,
+        cancel,
+        template,
+        sequence,
+        ..
     } = request;
     let started = Instant::now();
     post(SendInput::Started {
@@ -52,7 +59,11 @@ pub async fn demo_send(request: SendRequest, post: impl Fn(SendInput) + Send) {
             end = SendEnd::Cancelled;
             break;
         }
+        let before = sent;
         sent = (sent + step).min(count);
+        for _ in before..sent {
+            take_sequence(template.as_deref(), &sequence);
+        }
         batches += 1;
         let now = Instant::now().into_std();
         if progress_due(last_post, now) {

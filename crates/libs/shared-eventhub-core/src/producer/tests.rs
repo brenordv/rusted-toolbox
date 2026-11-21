@@ -198,6 +198,27 @@ async fn events_are_packed_into_as_few_batches_as_fit() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn an_event_carried_to_the_next_batch_is_not_built_again() {
+    let publisher = FakePublisher::new(6);
+    let mut asked = Vec::new();
+
+    let summary = send_loop::run(
+        &publisher,
+        &plan(3),
+        |index| {
+            asked.push(index);
+            numbered(index)
+        },
+        &AtomicBool::new(false),
+        |_| {},
+    )
+    .await;
+
+    assert_eq!((summary.sent, summary.batches), (3, 2));
+    assert_eq!(asked, [0, 1, 2]);
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_event_too_large_for_an_empty_batch_fails_naming_it() {
     let publisher = FakePublisher::new(3);
     let mut asked = Vec::new();
@@ -736,7 +757,7 @@ fn without_a_template_the_event_is_the_body_as_given() {
         ..OutgoingEvent::default()
     };
 
-    let next = next_event(&event, None, RENDER_CAP, render_time()).unwrap();
+    let next = next_event(&event, None, RENDER_CAP, render_time(), 0).unwrap();
 
     assert_eq!(next, event);
 }
@@ -749,7 +770,7 @@ fn a_clock_placeholder_renders_the_given_instant() {
         ..OutgoingEvent::default()
     };
 
-    let next = next_event(&event, Some(&template), RENDER_CAP, render_time()).unwrap();
+    let next = next_event(&event, Some(&template), RENDER_CAP, render_time(), 0).unwrap();
 
     assert_eq!(next.body, b"{\"at\": \"2026-11-14T23:46:40.123Z\"}");
     assert_eq!(next.content_type.as_deref(), Some("application/json"));
@@ -764,10 +785,26 @@ fn with_a_template_the_event_is_a_render_under_the_same_content_type() {
         ..OutgoingEvent::default()
     };
 
-    let next = next_event(&event, Some(&template), RENDER_CAP, render_time()).unwrap();
+    let next = next_event(&event, Some(&template), RENDER_CAP, render_time(), 0).unwrap();
 
     assert_eq!(next.body, b"{\"n\": 4}");
     assert_eq!(next.content_type.as_deref(), Some("application/json"));
+}
+
+#[test]
+fn a_sequence_placeholder_renders_the_given_number() {
+    let template = Template::compile("{{sequence}}").unwrap();
+
+    let next = next_event(
+        &OutgoingEvent::default(),
+        Some(&template),
+        RENDER_CAP,
+        render_time(),
+        7,
+    )
+    .unwrap();
+
+    assert_eq!(next.body, b"7");
 }
 
 #[test]
@@ -779,7 +816,7 @@ fn a_rendered_event_keeps_the_correlation_id_and_properties() {
         ..event("ignored")
     };
 
-    let next = next_event(&event, Some(&template), RENDER_CAP, render_time()).unwrap();
+    let next = next_event(&event, Some(&template), RENDER_CAP, render_time(), 0).unwrap();
 
     assert_eq!(next.body, b"4");
     assert_eq!(next.correlation_id.as_deref(), Some("run-7"));
@@ -791,7 +828,7 @@ fn a_render_past_the_cap_fails_naming_the_placeholder_and_not_the_text() {
     let template = Template::compile("secret-literal {{internet.password length=64}}").unwrap();
     let event = OutgoingEvent::default();
 
-    let error = next_event(&event, Some(&template), 32, render_time()).unwrap_err();
+    let error = next_event(&event, Some(&template), 32, render_time(), 0).unwrap_err();
 
     let rendered = format!("{error:#}");
     assert!(

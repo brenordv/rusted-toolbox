@@ -171,6 +171,7 @@ pub enum DataType {
     Integer,
     Float,
     CarBrand,
+    Guid,
 
     // Commerce
     Company,
@@ -184,7 +185,7 @@ pub enum DataType {
 impl DataType {
     /// Every data type, grouped by prefix in help order. Update alongside a new enum variant;
     /// the exhaustive match in [`DataType::command`] is what the compiler checks.
-    pub const ALL: [DataType; 32] = [
+    pub const ALL: [DataType; 33] = [
         DataType::FirstName,
         DataType::LastName,
         DataType::FullName,
@@ -211,6 +212,7 @@ impl DataType {
         DataType::Integer,
         DataType::Float,
         DataType::CarBrand,
+        DataType::Guid,
         DataType::Company,
         DataType::Product,
         DataType::ProductDescription,
@@ -248,6 +250,7 @@ impl DataType {
             DataType::Integer => "random.integer",
             DataType::Float => "random.float",
             DataType::CarBrand => "random.car-brand",
+            DataType::Guid => "random.guid",
             DataType::Company => "commerce.company",
             DataType::Product => "commerce.product",
             DataType::ProductDescription => "commerce.product-description",
@@ -324,6 +327,7 @@ impl DataType {
             "  random.integer        - Generate an integer (with --min, --max options)",
             "  random.float          - Generate a float (with --min, --max, --precision options)",
             "  random.car-brand      - Generate a car brand name",
+            "  random.guid           - Generate a random GUID (UUID v4)",
             "",
             "Commerce:",
             "  commerce.company      - Generate a company name",
@@ -445,12 +449,13 @@ mod tests {
                 DataType::Integer => 23,
                 DataType::Float => 24,
                 DataType::CarBrand => 25,
-                DataType::Company => 26,
-                DataType::Product => 27,
-                DataType::ProductDescription => 28,
-                DataType::JobTitle => 29,
-                DataType::Industry => 30,
-                DataType::Buzzword => 31,
+                DataType::Guid => 26,
+                DataType::Company => 27,
+                DataType::Product => 28,
+                DataType::ProductDescription => 29,
+                DataType::JobTitle => 30,
+                DataType::Industry => 31,
+                DataType::Buzzword => 32,
             }
         }
 
@@ -497,6 +502,7 @@ mod tests {
             DataType::Integer,
             DataType::Float,
             DataType::CarBrand,
+            DataType::Guid,
             DataType::Product,
             DataType::ProductDescription,
             DataType::Buzzword,

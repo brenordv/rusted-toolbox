@@ -135,8 +135,9 @@ pub fn insert_property(
 
 /// The event to send: `event` as given, or with `template` a fresh render
 /// of it (at most `cap` bytes, with `now` as the time its `{{now}}` and
-/// `{{utc-now}}` placeholders show) under `event`'s content type,
-/// correlation id, and properties.
+/// `{{utc-now}}` placeholders show and `sequence` as the number every
+/// `{{sequence}}` shows) under `event`'s content type, correlation id, and
+/// properties.
 ///
 /// # Errors
 /// Fails when the render fails; the error names the placeholder by its
@@ -146,10 +147,11 @@ pub fn next_event(
     template: Option<&Template>,
     cap: usize,
     now: DateTime<Utc>,
+    sequence: u64,
 ) -> anyhow::Result<OutgoingEvent> {
     match template {
         Some(template) => Ok(OutgoingEvent {
-            body: template.render(cap, now)?.into_bytes(),
+            body: template.render(cap, now, sequence)?.into_bytes(),
             content_type: event.content_type.clone(),
             correlation_id: event.correlation_id.clone(),
             properties: event.properties.clone(),
