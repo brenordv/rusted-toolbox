@@ -16,6 +16,7 @@ use crate::read::{ExportOneRequest, ReadInput};
 use crate::send::SendRequest;
 use crate::state::{AppState, Input};
 use crate::tasks::StoreSlot;
+use crate::views::move_profile_focus;
 use crate::views::shell::{keep_toast_focus, return_toast_focus};
 use anyhow::Context;
 use rune::{AppHandle, Tx};
@@ -26,10 +27,10 @@ use shared_eventhub_persistence::config::{
     SensitiveValues, ToolConfig, load_config, needs_stored_secret, resolve_target_with, save_config,
 };
 use shared_eventhub_persistence::export::{ExportOptions, ExportOutcome, WritingSink};
-use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::paths::{DataPaths, plain_relative};
 use shared_eventhub_persistence::search::{SearchPage, SearchQuery};
 use shared_eventhub_persistence::secrets::SecretsStore;
-use shared_eventhub_persistence::workspace::Workspace;
+use shared_eventhub_persistence::workspace::{ConfigHome, Profile, ProfileName, Workspace};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -57,6 +58,17 @@ pub struct SaveRequest {
     pub paths: DataPaths,
 }
 
+/// A request to save a form as a new profile: the workspace, the checked name, and the config
+/// and typed secrets to write there; `request` ties its answer to it.
+#[derive(Debug)]
+pub struct CreateRequest {
+    pub request: u64,
+    pub workspace: Workspace,
+    pub name: ProfileName,
+    pub config: ToolConfig,
+    pub given: SensitiveValues,
+}
+
 /// The side effects the state machine asks for. Each runs in the background and reports back
 /// as an [`Input`].
 pub trait Services {
@@ -71,6 +83,9 @@ pub trait Services {
     fn list_profiles(&self, request: u64, workspace: Workspace);
     /// Reads `dir`'s `config.json`; reports [`Input::ProfileLoaded`] for `request`.
     fn load_profile(&self, request: u64, dir: PathBuf);
+    /// Saves the request's config and secrets into a new profile folder; reports
+    /// [`Input::ProfileCreated`] for its request.
+    fn create_profile(&self, request: CreateRequest);
     fn reopen_window(&self);
     /// Closes the store, then ends the app.
     fn quit(&self);
@@ -147,6 +162,50 @@ pub(crate) async fn loaded_profile(request: u64, dir: &Path) -> Input {
     Input::ProfileLoaded { request, result }
 }
 
+/// The answer to `request`: the new profile, its `config.json` and secrets written, or why it
+/// was not saved.
+pub(crate) async fn created_profile(request: CreateRequest) -> Input {
+    let id = request.request;
+    let result = create_profile(request)
+        .await
+        .map_err(|error| format!("{error:#}"));
+    Input::ProfileCreated {
+        request: id,
+        result,
+    }
+}
+
+/// Makes the profile folder, then saves the config into it with its secrets in the data folder
+/// it names. A data folder that is not plain relative would sit outside the profile folder, so
+/// it is refused before anything is written.
+async fn create_profile(request: CreateRequest) -> anyhow::Result<Profile> {
+    let CreateRequest {
+        workspace,
+        name,
+        config,
+        given,
+        ..
+    } = request;
+    let folder = config.storage.base_data_folder.trim();
+    if !plain_relative(folder) {
+        anyhow::bail!(
+            "A new profile keeps its data folder inside the profile folder, and '{folder}' is not \
+             a plain relative folder"
+        );
+    }
+    let profile = workspace.new_profile(&name).await?;
+    let paths = ConfigHome::Profile(profile.clone()).data_paths(folder);
+    let dir = profile.dir().to_path_buf();
+    let joined = tokio::task::spawn_blocking(move || {
+        open_secrets(&paths, |secrets| {
+            save_config(&dir, &config, secrets, &given)
+        })
+    })
+    .await;
+    blocking_result(joined, "Saving the profile stopped unexpectedly")?;
+    Ok(profile)
+}
+
 impl Services for ProdServices {
     fn prepare_session(&self, attempt: u64, request: ConnectRequest) {
         let (handle, rt, slot) = (self.handle.clone(), self.rt.clone(), Arc::clone(&self.slot));
@@ -195,6 +254,14 @@ impl Services for ProdServices {
         self.rt.spawn(async move {
             let loaded = loaded_profile(request, &dir).await;
             apply_from_runtime(&handle, loaded);
+        });
+    }
+
+    fn create_profile(&self, request: CreateRequest) {
+        let handle = self.handle.clone();
+        self.rt.spawn(async move {
+            let created = created_profile(request).await;
+            apply_from_runtime(&handle, created);
         });
     }
 
@@ -461,7 +528,7 @@ pub(crate) fn apply_from_runtime(handle: &AppHandle<AppState>, input: Input) {
 
 /// Applies `input`, moves its commit as it asks, and runs its effects; returns whether anything
 /// the view reads changed. Focus on a toast control the input folded away or removed moves to
-/// the front card.
+/// the front card, and focus the Save as profile row asked for moves there.
 pub(crate) fn apply_input(state: &mut AppState, tx: &mut Tx, input: Input) -> bool {
     let opener = state.toast_hold();
     let outcome = state.apply(input);
@@ -469,6 +536,7 @@ pub(crate) fn apply_input(state: &mut AppState, tx: &mut Tx, input: Input) -> bo
     run_effects(state, outcome.effects);
     return_toast_focus(state, tx, opener);
     keep_toast_focus(state, tx);
+    move_profile_focus(state, tx);
     outcome.changed
 }
 

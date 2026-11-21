@@ -3,7 +3,12 @@
 
 mod profile;
 
-pub use profile::{GROUP_KEY as PROFILE_GROUP_KEY, NOTE_KEY as PROFILE_NOTE_KEY, PICKER_KEY};
+pub(crate) use profile::move_profile_focus;
+pub use profile::{
+    GROUP_KEY as PROFILE_GROUP_KEY, NAME_ISSUE_KEY, NEW_PROFILE_CANCEL_KEY, NEW_PROFILE_KEY,
+    NEW_PROFILE_NAME_KEY, NEW_PROFILE_ROW_KEY, NEW_PROFILE_SAVE_KEY, NOTE_KEY as PROFILE_NOTE_KEY,
+    PICKER_KEY, ROW_ISSUE_KEY,
+};
 
 use super::details;
 use crate::app::dispatch;
@@ -14,7 +19,9 @@ use crate::form::{
     disk_write_index,
 };
 use crate::read::rows::display_path;
-use crate::state::{AppState, Input, SaveStatus, SheetPurpose, ToastKind, error_preview};
+use crate::state::{
+    AppState, Input, RECALLED_FIELD, SaveStatus, SaveTo, SheetPurpose, ToastKind, error_preview,
+};
 use rune::{El, FileDialogOptions, ScrollSpec, TextEdit, Tx, col, row, spacer};
 use rune_kit::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
@@ -148,25 +155,33 @@ fn method_fields(s: &AppState, k: &Kit, issues: &FieldIssues, mut body: El) -> E
         AuthChoice::Credential => "Namespace",
         AuthChoice::ConnectionString | AuthChoice::KeyVault => "Namespace (optional)",
     };
+    let marks = s.recall_marks();
     body = body
         .child(field(
             k,
             names_note,
             &form.namespace,
-            &issues.namespace,
+            &marked(&issues.namespace, marks.namespace),
             |s| &mut s.form.namespace,
         ))
         .child(field(
             k,
             "Event hub",
             &form.event_hub,
-            &issues.event_hub,
+            &marked(&issues.event_hub, marks.event_hub),
             |s| &mut s.form.event_hub,
         ));
     if form.auth != AuthChoice::ConnectionString {
         body = body.child(credential(s, k, issues));
     }
     body
+}
+
+/// A name field's issue: its form issue, else [`RECALLED_FIELD`] while it is `recalled`.
+fn marked(issue: &Option<String>, recalled: bool) -> Option<String> {
+    issue
+        .clone()
+        .or_else(|| recalled.then(|| RECALLED_FIELD.to_owned()))
 }
 
 fn credential(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {
@@ -288,7 +303,10 @@ fn choose_data_folder(_: &mut AppState, tx: &mut rune::Tx) {
 fn footer(s: &AppState, k: &Kit, purpose: SheetPurpose) -> El {
     let caption = match &s.save_status {
         SaveStatus::Idle => None,
-        SaveStatus::Saving(_) => Some("Saving config.json".to_owned()),
+        SaveStatus::Saving(SaveTo::Home(_)) => Some("Saving config.json".to_owned()),
+        SaveStatus::Saving(SaveTo::NewProfile { name, .. }) => {
+            Some(format!("Saving profile {}", name.as_str()))
+        }
         SaveStatus::Saved => Some("Saved config.json".to_owned()),
         SaveStatus::Failed(error) => Some(error_preview(&format!("Not saved: {error}")).shown),
     };

@@ -6,6 +6,7 @@
 
 mod details;
 mod ending;
+mod new_profile;
 mod panes;
 mod profiles;
 mod send;
@@ -13,6 +14,7 @@ mod toasts;
 
 pub use details::{ERROR_PREVIEW_CHARS, ErrorDetails, ErrorPreview, error_preview};
 pub use ending::{Failure, FailureStage};
+pub use new_profile::{NewProfileRow, ProfileFocus, RECALLED_FIELD, RowIssue};
 pub use panes::{Pane, PaneFit};
 pub use profiles::{
     LAUNCH_FOLDER, NO_PROFILES, NO_WORKSPACE, ProfileList, ProfileNote, ProfileSwitch, Recalled,
@@ -29,16 +31,19 @@ use crate::form::{ConnectForm, PendingSave};
 use crate::read::inspector::InspectorInput;
 use crate::read::{LogKind, ReadEffect, ReadInput, ReadState};
 use crate::send::{SendEffect, SendInput, SendState};
-use crate::services::{ConnectRequest, SaveRequest, Services};
+use crate::services::{ConnectRequest, CreateRequest, SaveRequest, Services};
 use chrono::{DateTime, TimeDelta, Utc};
 use common_cli::app_logger::FileLogging;
 use common_utils::file_system::get_current_dir;
 use ending::{log_summary, session_failures};
+use rune::TextEdit;
 use rune_kit::PaneState;
 use shared_eventhub_core::engine::{EngineEvent, RunEnd, RunSummary};
 use shared_eventhub_persistence::config::{ConfigLoad, SensitiveValues, ToolConfig};
 use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry, Workspace};
+use shared_eventhub_persistence::workspace::{
+    ConfigHome, Profile, ProfileEntry, ProfileName, Workspace,
+};
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{debug, info, warn};
@@ -145,14 +150,23 @@ pub enum ToastKind {
     Danger,
 }
 
-/// The result of the last Save config, shown as a caption in the sheet.
+/// The result of the last save (Save config or Save profile), shown as a caption in the sheet.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SaveStatus {
     Idle,
-    /// A save runs; what it writes for each secret updates the form when it lands.
-    Saving(PendingSave),
+    /// A save runs to where `SaveTo` says.
+    Saving(SaveTo),
     Saved,
     Failed(String),
+}
+
+/// Where a running save writes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SaveTo {
+    /// The home's `config.json`; what it writes for each secret updates the form when it lands.
+    Home(PendingSave),
+    /// A new profile folder named `name`, for create `request`.
+    NewProfile { name: ProfileName, request: u64 },
 }
 
 impl SaveStatus {
@@ -160,6 +174,14 @@ impl SaveStatus {
         match self {
             Self::Saving(_) => true,
             Self::Idle | Self::Saved | Self::Failed(_) => false,
+        }
+    }
+
+    /// The name of the profile a running save creates; `None` for any other status.
+    pub fn creating(&self) -> Option<&ProfileName> {
+        match self {
+            Self::Saving(SaveTo::NewProfile { name, .. }) => Some(name),
+            Self::Saving(SaveTo::Home(_)) | Self::Idle | Self::Saved | Self::Failed(_) => None,
         }
     }
 }
@@ -209,6 +231,20 @@ pub enum Input {
         request: u64,
         result: Result<Vec<ProfileEntry>, String>,
     },
+    /// Save as profile… was pressed: the row with the profile name opens.
+    NewProfileOpened,
+    /// Cancel, or Escape in the profile name field.
+    NewProfileCancelled,
+    /// The profile name field changed.
+    NewProfileNameEdited,
+    /// Save profile, or Return in the profile name field.
+    CreateProfilePressed,
+    /// The answer to [`Effect::CreateProfile`] `request`: the new profile, or why it was not
+    /// saved.
+    ProfileCreated {
+        request: u64,
+        result: Result<Profile, String>,
+    },
     Read(ReadInput),
     Archive(ArchiveInput),
     Send(SendInput),
@@ -250,6 +286,8 @@ pub enum Effect {
         request: u64,
         dir: PathBuf,
     },
+    /// Save the form as a new profile; the result comes back as [`Input::ProfileCreated`].
+    CreateProfile(CreateRequest),
     ReopenWindow,
     /// Close the store and end the process.
     Quit,
@@ -299,6 +337,12 @@ pub struct AppState {
     pub profile_picker_open: bool,
     /// Where `config.json` lives, the picker's list, and the pending load.
     profiles: profiles::Profiles,
+    /// The name typed in the Save as profile row; emptied when the row opens and after a save.
+    pub(crate) new_profile_name: TextEdit,
+    /// Whether the row shows, and why its last Save profile could not start.
+    new_profile: NewProfileRow,
+    /// The row control focus moves to once the view shows it, until taken.
+    pending_focus: Option<ProfileFocus>,
     /// Connect attempts abandoned while preparing, until each answers; they hold the data
     /// folder meanwhile.
     abandoned_attempts: Vec<u64>,
@@ -366,6 +410,9 @@ impl AppState {
             sheet: None,
             profile_picker_open: false,
             profiles: profiles::Profiles::new(get_current_dir()),
+            new_profile_name: TextEdit::new(""),
+            new_profile: NewProfileRow::Closed,
+            pending_focus: None,
             abandoned_attempts: Vec::new(),
             show_issues: false,
             save_status: SaveStatus::Idle,
@@ -399,7 +446,7 @@ impl AppState {
             Input::ConnectPressed => self.connect_pressed(&mut out),
             Input::DisconnectPressed => self.disconnect_pressed(&mut out),
             Input::SavePressed => self.save_pressed(&mut out),
-            Input::ConfigSaved(result) => self.config_saved(result),
+            Input::ConfigSaved(result) => self.config_saved(result, &mut out),
             Input::DataFolderPicked(folder) => self.data_folder_picked(folder, &mut out),
             Input::Toast(input) => self.toast_input(input, &mut out),
             Input::ShowDetails { title, text, toast } => self.show_details(title, &text, toast),
@@ -420,6 +467,13 @@ impl AppState {
             }
             Input::ProfilesListed { request, result } => {
                 self.profiles_listed(request, result, &mut out);
+            }
+            Input::NewProfileOpened => self.new_profile_opened(&mut out),
+            Input::NewProfileCancelled => self.new_profile_cancelled(&mut out),
+            Input::NewProfileNameEdited => self.new_profile_name_edited(&mut out),
+            Input::CreateProfilePressed => self.create_pressed(&mut out),
+            Input::ProfileCreated { request, result } => {
+                self.profile_created(request, result, &mut out);
             }
             Input::Read(input) => self.read_input(input, &mut out),
             Input::Archive(input) => self.archive_input(input, &mut out),
@@ -568,7 +622,7 @@ impl AppState {
             return;
         }
         let (config, given) = self.config_with_rules();
-        self.save_status = SaveStatus::Saving(self.form.pending_save());
+        self.save_status = SaveStatus::Saving(SaveTo::Home(self.form.pending_save()));
         out.effects.push(Effect::SaveConfig(SaveRequest {
             config,
             given,
@@ -577,9 +631,21 @@ impl AppState {
         }));
     }
 
-    fn config_saved(&mut self, result: Result<(), String>) {
+    fn config_saved(&mut self, result: Result<(), String>, out: &mut Outcome) {
         let pending = match std::mem::replace(&mut self.save_status, SaveStatus::Idle) {
-            SaveStatus::Saving(pending) => Some(pending),
+            SaveStatus::Saving(SaveTo::Home(pending)) => Some(pending),
+            creating @ SaveStatus::Saving(SaveTo::NewProfile { .. }) => {
+                match &result {
+                    Ok(()) => debug!("a config.json save answered while a profile saves; dropped"),
+                    Err(text) => debug!(
+                        error = %text,
+                        "a failed config.json save answered while a profile saves; dropped"
+                    ),
+                }
+                self.save_status = creating;
+                out.changed = false;
+                return;
+            }
             SaveStatus::Idle | SaveStatus::Saved | SaveStatus::Failed(_) => None,
         };
         match result {

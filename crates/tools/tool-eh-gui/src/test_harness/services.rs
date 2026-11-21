@@ -6,7 +6,7 @@ use crate::archive::bulk::BulkRequest;
 use crate::read::ExportOneRequest;
 use crate::read::search::RebuildRequest;
 use crate::send::SendRequest;
-use crate::services::{ConnectRequest, SaveRequest, Services};
+use crate::services::{ConnectRequest, CreateRequest, SaveRequest, Services};
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::workspace::Workspace;
 use std::path::PathBuf;
@@ -30,6 +30,7 @@ pub enum ServiceCall {
         request: u64,
         dir: PathBuf,
     },
+    CreateProfile(CreateRequest),
     ReopenWindow,
     Quit,
     RebuildSearch(RebuildRequest),
@@ -112,6 +113,10 @@ impl Services for RecordingServices {
 
     fn load_profile(&self, request: u64, dir: PathBuf) {
         self.0.push(ServiceCall::LoadProfile { request, dir });
+    }
+
+    fn create_profile(&self, request: CreateRequest) {
+        self.0.push(ServiceCall::CreateProfile(request));
     }
 
     fn reopen_window(&self) {

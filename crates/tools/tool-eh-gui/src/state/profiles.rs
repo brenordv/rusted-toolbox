@@ -1,5 +1,6 @@
 //! Profiles in the app state: the folder `config.json` is read from and saved to (the home),
-//! the profiles the picker lists, the one load a pick starts, and what that load left to say.
+//! the profiles the picker lists, the one load a pick (or a saved new profile) starts, and what
+//! that load left to say.
 //!
 //! A pick only starts a load; the answer changes the home, and only through `apply_load`, when
 //! nothing holds the data folder. Request ids only go up, so an answer to an older list or load
@@ -78,6 +79,10 @@ pub enum ProfileNote {
     LoadFailed { name: String, text: String },
     /// The answer came while something held the data folder; nothing changed.
     NotSwitched(&'static str),
+    /// A new profile was saved under this name and is opening.
+    Created(String),
+    /// A new profile was saved while something held the data folder; the home did not change.
+    CreatedNotSwitched { name: String, reason: &'static str },
 }
 
 impl ProfileNote {
@@ -96,6 +101,11 @@ impl ProfileNote {
                 text.trim_end_matches('.')
             ),
             Self::NotSwitched(reason) => format!("Not switched. {reason}"),
+            Self::Created(name) => format!("Saved profile {name}."),
+            Self::CreatedNotSwitched { name, reason } => format!(
+                "Saved profile {name}, with what you typed. Not switched. {reason} Pick it under \
+                 Profile in the connection sheet to use it."
+            ),
         };
         display_line(text.chars())
     }
@@ -104,7 +114,10 @@ impl ProfileNote {
     pub fn is_failure(&self) -> bool {
         match self {
             Self::LoadFailed { .. } => true,
-            Self::SecretCleared(_) | Self::NotSwitched(_) => false,
+            Self::SecretCleared(_)
+            | Self::NotSwitched(_)
+            | Self::Created(_)
+            | Self::CreatedNotSwitched { .. } => false,
         }
     }
 
@@ -112,8 +125,11 @@ impl ProfileNote {
     fn toast(&self) -> (ToastKind, Option<&'static str>) {
         match self {
             Self::LoadFailed { .. } => (ToastKind::Danger, None),
-            Self::NotSwitched(_) => (ToastKind::Info, Some("Profile not switched")),
+            Self::NotSwitched(_) | Self::CreatedNotSwitched { .. } => {
+                (ToastKind::Info, Some("Profile not switched"))
+            }
             Self::SecretCleared(_) => (ToastKind::Info, Some("Profile switched")),
+            Self::Created(_) => (ToastKind::Info, Some("Profile saved")),
         }
     }
 }
@@ -140,16 +156,22 @@ impl Recalled {
 }
 
 /// The form, rules, export settings, and caption `load` (the reading of `home`'s
-/// `config.json`) gives. A failed read logs once and leaves the defaults.
+/// `config.json`) gives. A launch folder's config marks the form's names as recalled from it.
+/// A failed read logs once and leaves the defaults.
 pub fn recalled(home: &ConfigHome, load: Result<ConfigLoad, String>) -> Recalled {
     match load {
         Ok(ConfigLoad::Missing) => Recalled::defaults(None),
         Ok(ConfigLoad::Foreign) => Recalled::defaults(Some(FOREIGN_CAPTION.to_owned())),
         Ok(ConfigLoad::Loaded(config)) => {
-            let (form, loaded) = ConnectForm::from_config(&config);
-            let source = match home.profile_name() {
-                Some(name) => format!("profile {}", display_line(name.chars())),
-                None => "config.json".to_owned(),
+            let (mut form, loaded) = ConnectForm::from_config(&config);
+            let source = match home {
+                ConfigHome::CurrentFolder(_) => {
+                    form.names_from_launch_folder = true;
+                    "config.json".to_owned()
+                }
+                ConfigHome::Profile(profile) => {
+                    format!("profile {}", display_line(profile.name().chars()))
+                }
             };
             Recalled {
                 form,
@@ -287,7 +309,7 @@ impl AppState {
         self.profiles.home = home;
     }
 
-    fn next_profile_request(&mut self) -> u64 {
+    pub(super) fn next_profile_request(&mut self) -> u64 {
         let request = self.profiles.next_request;
         self.profiles.next_request += 1;
         request
@@ -366,6 +388,12 @@ impl AppState {
             }
             return;
         }
+        self.start_load(to, out);
+    }
+
+    /// Starts loading `to`'s `config.json`, even when `to` is the current home, in place of
+    /// any pending load; the answer changes the home only through `apply_load`.
+    pub(super) fn start_load(&mut self, to: ConfigHome, out: &mut Outcome) {
         let request = self.next_profile_request();
         let dir = to.dir().to_path_buf();
         debug!(request, profile = log_label(&to), "loading a profile");
@@ -446,6 +474,7 @@ impl AppState {
             | ConnectionState::Stopping { .. } => {}
         }
         self.show_issues = false;
+        self.clear_new_profile_issues();
         self.config_caption = caption;
         let paths = self.data_paths();
         self.change_data_folder(paths, out);
@@ -457,7 +486,7 @@ impl AppState {
 
     /// Shows `note` under the picker while the sheet is open; with the sheet closed nothing
     /// would show it, so it toasts instead.
-    fn set_profile_note(&mut self, note: ProfileNote) {
+    pub(super) fn set_profile_note(&mut self, note: ProfileNote) {
         if self.sheet.is_some() {
             self.profiles.note = Some(note);
             return;

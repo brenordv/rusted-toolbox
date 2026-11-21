@@ -4,7 +4,7 @@
 //! config only says where to find them.
 
 use crate::export::{DiskWriteConfig, DiskWriteMode, ExportFormat};
-use crate::paths::DataPaths;
+use crate::paths::{DEFAULT_DATA_FOLDER, DataPaths};
 use crate::secrets::{CONNECTION_STRING_SECRET, SecretsStore, client_secret_name};
 use anyhow::Context;
 use common_file_utils::atomic_write::write_via_temp;
@@ -158,7 +158,7 @@ pub struct StorageConfig {
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
-            base_data_folder: ".eh-data".to_owned(),
+            base_data_folder: DEFAULT_DATA_FOLDER.to_owned(),
             disk_write: DiskWriteSettings::default(),
             export: ExportSettings::default(),
         }

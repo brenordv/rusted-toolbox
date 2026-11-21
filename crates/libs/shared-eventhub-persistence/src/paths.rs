@@ -3,9 +3,12 @@
 use anyhow::Context;
 use common_file_utils::atomic_write::write_via_temp;
 use common_file_utils::permissions::create_dir_all_owner_only;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tracing::info;
 
+/// The data folder a config names unless told otherwise, relative to the folder its
+/// `config.json` is in.
+pub const DEFAULT_DATA_FOLDER: &str = ".eh-data";
 const ARCHIVE_FILE_NAME: &str = "archive.redb";
 const SECRETS_FILE_NAME: &str = "secrets.redb";
 const GITIGNORE_FILE_NAME: &str = ".gitignore";
@@ -103,9 +106,66 @@ impl DataPaths {
     }
 }
 
+/// Whether `folder` is a plain relative path: at least one name, nothing but names and `.`,
+/// and no name ending in a space or a period. Joined under a folder, such a path stays inside
+/// it on every platform. Windows trims trailing spaces and periods from a path's last segment,
+/// so `.. ` would act as `..`; a drive prefix (`C:x`) or a leading separator (`\x`) is not
+/// absolute there, yet leaves the folder it is joined under.
+pub fn plain_relative(folder: &str) -> bool {
+    let mut named = false;
+    for component in Path::new(folder).components() {
+        match component {
+            Component::Normal(part) => {
+                if matches!(part.as_encoded_bytes().last(), Some(b' ' | b'.')) {
+                    return false;
+                }
+                named = true;
+            }
+            Component::CurDir => {}
+            Component::Prefix(_) | Component::RootDir | Component::ParentDir => return false,
+        }
+    }
+    named
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[rstest::rstest]
+    #[case::default_folder(".eh-data")]
+    #[case::nested("captures/x")]
+    #[case::current_folder_first("./x")]
+    fn a_folder_of_names_is_plain_relative(#[case] folder: &str) {
+        assert!(plain_relative(folder));
+    }
+
+    #[rstest::rstest]
+    #[case::empty("")]
+    #[case::current_folder(".")]
+    #[case::parent("..")]
+    #[case::climbing_first("../x")]
+    #[case::climbing_last("x/..")]
+    #[case::parent_with_a_trailing_space(".. ")]
+    #[case::trailing_period("x.")]
+    fn a_folder_that_could_leave_its_parent_is_not_plain_relative(#[case] folder: &str) {
+        assert!(!plain_relative(folder));
+    }
+
+    #[test]
+    fn an_absolute_folder_is_not_plain_relative() {
+        let absolute = tempfile::tempdir().unwrap();
+
+        assert!(!plain_relative(absolute.path().to_str().unwrap()));
+    }
+
+    #[cfg(windows)]
+    #[rstest::rstest]
+    #[case::leading_separator("\\x")]
+    #[case::drive_relative("C:x")]
+    fn a_windows_rooted_or_drive_relative_folder_is_not_plain_relative(#[case] folder: &str) {
+        assert!(!plain_relative(folder));
+    }
 
     #[test]
     fn paths_sit_inside_the_base_folder() {

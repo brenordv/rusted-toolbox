@@ -53,6 +53,7 @@ impl Services for NoServices {
     fn switch_data_folder(&self, _paths: DataPaths) {}
     fn list_profiles(&self, _request: u64, _workspace: Workspace) {}
     fn load_profile(&self, _request: u64, _dir: PathBuf) {}
+    fn create_profile(&self, _request: CreateRequest) {}
     fn reopen_window(&self) {}
     fn quit(&self) {}
     fn rebuild_search(&self, _request: RebuildRequest) {}

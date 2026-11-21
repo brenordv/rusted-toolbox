@@ -153,6 +153,10 @@ pub fn run_effects(state: &mut AppState, effects: Vec<Effect>) {
                 Some(services) => services.load_profile(request, dir),
                 None => services_missing(state, "open the profile"),
             },
+            Effect::CreateProfile(request) => match &state.services {
+                Some(services) => services.create_profile(request),
+                None => services_missing(state, "save the profile"),
+            },
             Effect::ReopenWindow => match &state.services {
                 Some(services) => services.reopen_window(),
                 None => services_missing(state, "reopen the window"),

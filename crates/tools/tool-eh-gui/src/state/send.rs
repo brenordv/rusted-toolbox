@@ -28,12 +28,13 @@ impl AppState {
         }
     }
 
-    /// Closes the sheet (on any path) with its picker and note, hides typed secrets, and
-    /// recomputes the destination the form resolves to.
+    /// Closes the sheet (on any path) with its picker, note, and Save as profile row, hides
+    /// typed secrets, and recomputes the destination the form resolves to.
     pub(super) fn close_sheet(&mut self) {
         self.sheet = None;
         self.profile_picker_open = false;
         self.clear_profile_note();
+        self.close_new_profile_row();
         self.form.hide_secrets();
         self.send.refresh_destination(&self.form);
     }

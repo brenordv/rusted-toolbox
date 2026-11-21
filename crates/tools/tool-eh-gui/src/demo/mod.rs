@@ -20,9 +20,10 @@ use crate::read::search::RebuildRequest;
 use crate::send::compose::PacingChoice;
 use crate::send::{SendInput, SendRequest};
 use crate::services::{
-    AppPort, ConnectRequest, SaveRequest, Services, apply_from_runtime, filter_hook, gate,
-    listed_profiles, loaded_profile, open_secrets, report_ready, spawn_bulk_export,
-    spawn_export_one, spawn_list_flush, spawn_rebuild, spawn_search_archive, spawn_tick,
+    AppPort, ConnectRequest, CreateRequest, SaveRequest, Services, apply_from_runtime,
+    created_profile, filter_hook, gate, listed_profiles, loaded_profile, open_secrets,
+    report_ready, spawn_bulk_export, spawn_export_one, spawn_list_flush, spawn_rebuild,
+    spawn_search_archive, spawn_tick,
 };
 use crate::state::{AppState, Input, Section, SheetPurpose, ToastInput, ToastKind};
 use crate::tasks::StoreSlot;
@@ -555,6 +556,20 @@ impl Services for DemoServices {
         self.rt.spawn(async move {
             let loaded = loaded_profile(request, &dir).await;
             apply_from_runtime(&handle, loaded);
+        });
+    }
+
+    /// Saves the new profile into the demo's own workspace, whatever workspace the request
+    /// names.
+    fn create_profile(&self, request: CreateRequest) {
+        let handle = self.handle.clone();
+        let request = CreateRequest {
+            workspace: profiles::workspace(&self.root),
+            ..request
+        };
+        self.rt.spawn(async move {
+            let created = created_profile(request).await;
+            apply_from_runtime(&handle, created);
         });
     }
 

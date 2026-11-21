@@ -194,6 +194,88 @@ async fn two_folders_that_match_ignoring_case_fail_naming_both() {
 }
 
 #[tokio::test]
+async fn a_new_profile_creates_its_folder_and_a_missing_root() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = Workspace::at(root.path().join("missing"));
+
+    let profile = workspace.new_profile(&name("orders-new")).await.unwrap();
+
+    assert_eq!(profile.name(), "orders-new");
+    assert_eq!(
+        profile.dir(),
+        root.path().join("missing").join("orders-new")
+    );
+    assert!(profile.dir().is_dir());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_new_profile_folder_and_its_new_root_have_no_group_or_other_bits() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let workspace = Workspace::at(root.path().join("missing"));
+
+    let profile = workspace.new_profile(&name("orders-new")).await.unwrap();
+
+    for dir in [workspace.root(), profile.dir()] {
+        let mode = std::fs::metadata(dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "{}", dir.display());
+    }
+}
+
+#[tokio::test]
+async fn a_folder_without_a_config_is_reused_with_its_spelling() {
+    let root = tempfile::tempdir().unwrap();
+    profile_folder(root.path(), "Orders", None);
+
+    let profile = Workspace::at(root.path().to_owned())
+        .new_profile(&name("orders"))
+        .await
+        .unwrap();
+
+    assert_eq!(profile.name(), "Orders");
+    assert_eq!(profile.dir(), root.path().join("Orders"));
+}
+
+#[tokio::test]
+async fn a_folder_holding_a_config_is_refused_naming_the_profile() {
+    let root = tempfile::tempdir().unwrap();
+    profile_folder(root.path(), "orders", Some(READY_CONFIG));
+
+    let error = Workspace::at(root.path().to_owned())
+        .new_profile(&name("ORDERS"))
+        .await
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        error.starts_with("A profile named orders already exists in "),
+        "{error}"
+    );
+    let kept = std::fs::read_to_string(root.path().join("orders").join(CONFIG_FILE_NAME)).unwrap();
+    assert_eq!(kept, READY_CONFIG);
+}
+
+#[tokio::test]
+async fn a_file_named_like_the_new_profile_fails_naming_its_path() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("orders");
+    std::fs::write(&file, "x").unwrap();
+
+    let error = Workspace::at(root.path().to_owned())
+        .new_profile(&name("orders"))
+        .await
+        .unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains(&file.display().to_string()),
+        "{error:#}"
+    );
+    assert!(file.is_file());
+}
+
+#[tokio::test]
 async fn a_missing_workspace_lists_nothing() {
     let root = tempfile::tempdir().unwrap();
 

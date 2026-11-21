@@ -1,6 +1,8 @@
 use super::builders::{ORDERS, export_state, send_state, state};
 use super::journeys::orders;
-use super::profile_tests::{load_failed_note, picker_locked, picker_open, profiles_sheet};
+use super::profile_tests::{
+    load_failed_note, new_profile_issues, picker_locked, picker_open, profiles_sheet,
+};
 use super::services::ServiceCall;
 use super::toast_tests::toasted;
 use super::worst_cases::{WORST, long_connect_failure, long_text};
@@ -461,6 +463,20 @@ const ROWS: &[Row] = &[
         build: profiles_sheet,
         reachable: &[
             "profile-picker-trigger",
+            crate::views::NEW_PROFILE_KEY,
+            "sheet-connect",
+            "save-config",
+            "cancel",
+        ],
+        disabled: &[],
+        covered: &["empty-connect", "connect"],
+    },
+    Row {
+        name: "the Save as profile row with both issues",
+        build: new_profile_issues,
+        reachable: &[
+            crate::views::NEW_PROFILE_CANCEL_KEY,
+            crate::views::NEW_PROFILE_SAVE_KEY,
             "sheet-connect",
             "save-config",
             "cancel",
@@ -483,7 +499,11 @@ const ROWS: &[Row] = &[
         name: "profile picker under the lock",
         build: picker_locked,
         reachable: &["sheet-connect", "save-config", "cancel"],
-        disabled: &["profile-picker-trigger", "change-folder"],
+        disabled: &[
+            "profile-picker-trigger",
+            crate::views::NEW_PROFILE_KEY,
+            "change-folder",
+        ],
         covered: &["empty-connect", "connect"],
     },
     Row {
