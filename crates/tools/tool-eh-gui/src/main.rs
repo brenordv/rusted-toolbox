@@ -61,8 +61,8 @@ fn run(file_logging: FileLogging) -> anyhow::Result<()> {
     let ran = app.try_run();
     // Dropping a runtime waits without limit for blocking work that has started (an archive
     // scan, an at-end pass the user chose not to wait for), which would keep the process alive
-    // with no window. The quit path has already awaited the archive's close, and every stored
-    // batch is committed.
+    // with no window. The quit path has waited for the archive's close, up to its bound, and
+    // every stored batch is committed.
     runtime.shutdown_background();
     ran.map_err(|reason| anyhow::anyhow!(reason))
         .with_context(|| format!("Could not start the window; {GPU_HINT}"))?;

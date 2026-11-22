@@ -167,7 +167,8 @@ fn jobs_running(s: &AppState) -> bool {
     s.connection.session().is_some()
         || s.save_status.is_saving()
         || s.read.export_running()
-        || s.archive.busy()
+        || s.archive.inspector.export.is_running()
+        || s.archive.bulk.is_running()
         || s.send.is_running()
 }
 

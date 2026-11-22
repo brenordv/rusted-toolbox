@@ -12,7 +12,7 @@
   creation time (`created_on`), so a sink can tell a recreated hub of the same
   name from the original.
 - `connection::validated_namespace` and `connection::validated_event_hub_name` are public, so a
-  form can check a namespace or event hub name with the same rules `connect` applies, before
+  form can check a namespace or event hub name with the same rules a run applies, before
   connecting. Neither echoes a rejected value.
 - A stored checkpoint ahead of its partition's last sequence number (a recreated event hub,
   empty or not) fails that partition at start with a message naming both numbers, instead of
@@ -22,12 +22,12 @@
   `TIME_SHAPES` parse capture-rule timestamps (an RFC3339 timestamp or a date; During needs a
   full timestamp; a window's start may not follow its end), so the CLI and the GUI accept the
   same input.
-- `producer`: `open_producer` on the same target validation and auth dispatch as `connect`,
+- `producer`: `open_producer` on the same target validation and auth dispatch as a run,
   `EventHubProducer::send` (batched or paced with `Pacing::interval`, partition-key routing,
   cancel before a batch, during its creation, or during a paced wait, counts and end reason
   in `SendSummary`), and `close`. `cancel::flag_set` and `CANCEL_POLL` wait on a cancel flag.
 - `connection::target_names` returns the namespace and event hub a target resolves to, by the
-  rules `connect` and `open_producer` apply, without any network call (`None` for Key Vault
+  rules a run and `open_producer` apply, without any network call (`None` for Key Vault
   auth), so a form can name the destination before sending.
 - `producer::next_event` builds the event to send: the body as given, or a fresh render of a
   `mock_data_utils` template under the same content type, with the caller's `now` as the time

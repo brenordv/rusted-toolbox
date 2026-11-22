@@ -80,19 +80,23 @@ impl StoreSlot {
     pub async fn acquire_for_session(&self, folder: &DataPaths) -> anyhow::Result<MessageStore> {
         let mut state = self.state.lock().await;
         let current = self.checked_current(folder)?;
-        let failure = match &*state {
-            SlotState::Open { base, store } if *base == current => store
-                .write_failure()
-                .map(|cause| (cause, store.is_last_handle())),
-            SlotState::Open { .. } | SlotState::Unopened | SlotState::Closed => None,
-        };
-        match failure {
-            Some((cause, true)) => close_failed(&mut state, &cause).await,
-            Some((cause, false)) => anyhow::bail!(
-                "Writing to the archive failed earlier ({cause}). It reopens once the running \
-                 session, export, or search ends; then Connect again."
-            ),
-            None => {}
+        // The state is taken out so a failed archive can be closed by value; every arm but the
+        // close puts back what it took before anything can fail or wait.
+        match std::mem::replace(&mut *state, SlotState::Unopened) {
+            SlotState::Open { base, store } if base == current => match store.write_failure() {
+                Some(cause) if store.is_last_handle() => close_failed(base, store, &cause).await,
+                Some(cause) => {
+                    *state = SlotState::Open { base, store };
+                    anyhow::bail!(
+                        "Writing to the archive failed earlier ({cause}). It reopens once the \
+                         running session, export, or search ends; then Connect again."
+                    );
+                }
+                None => *state = SlotState::Open { base, store },
+            },
+            other @ (SlotState::Open { .. } | SlotState::Unopened | SlotState::Closed) => {
+                *state = other;
+            }
         }
         open_or_share(&mut state, current).await
     }
@@ -176,12 +180,9 @@ async fn open_or_share(state: &mut SlotState, current: DataPaths) -> anyhow::Res
     Ok(store)
 }
 
-/// Takes the open handle, whose writer failed with `cause`, out of `state` (leaving it
-/// `Unopened`) and closes it, so the next open starts a new writer.
-async fn close_failed(state: &mut SlotState, cause: &str) {
-    let SlotState::Open { base, store } = std::mem::replace(state, SlotState::Unopened) else {
-        return;
-    };
+/// Closes `store`, the handle to the archive of `base` whose writer failed with `cause`, so the
+/// next open starts a new writer.
+async fn close_failed(base: DataPaths, store: MessageStore, cause: &str) {
     info!(
         folder = %base.base().display(),
         cause,

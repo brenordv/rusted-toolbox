@@ -355,7 +355,7 @@ fn a_picked_file_exports_the_selected_result_back_to_the_export_section() {
     };
     assert_eq!(request.section, ListSection::Export);
     assert_eq!(request.key, key);
-    assert!(archive.busy());
+    assert!(archive.inspector.export.is_running());
 }
 
 #[test]
@@ -384,7 +384,7 @@ fn a_running_export_survives_a_new_search_and_a_new_folder() {
 
     archive.search();
     archive.folder_changed();
-    let still_running = archive.busy();
+    let still_running = archive.inspector.export.is_running();
     archive.act(ArchiveInput::Inspector(InspectorInput::ExportDone {
         owner,
         key,
@@ -393,7 +393,7 @@ fn a_running_export_survives_a_new_search_and_a_new_folder() {
     }));
 
     assert!(still_running);
-    assert!(!archive.busy());
+    assert!(!archive.inspector.export.is_running());
     assert_eq!(archive.inspector.format, ExportFormat::Json);
 }
 
@@ -431,7 +431,7 @@ fn exported_feedback_stays_hidden_once_the_data_folder_changed() {
     }));
 
     assert!(archive.inspector.feedback.is_none());
-    assert!(!archive.busy());
+    assert!(!archive.inspector.export.is_running());
 }
 
 #[test]

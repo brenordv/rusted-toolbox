@@ -359,7 +359,8 @@ pub struct AppState {
     /// What happened to the home's `config.json` when it was last read, as caption text.
     pub config_caption: Option<String>,
     /// The folder settings the home's `config.json` named outside the home when it was last
-    /// read, which were not used, as caption text; gone once the user picks a data folder.
+    /// read, which were not used, as caption text; gone once the user picks a data folder or
+    /// a Save config writes the home's `config.json`.
     pub folders_caption: Option<String>,
     pub file_logging: FileLogging,
     toasts: toasts::Toasts,
@@ -681,7 +682,11 @@ impl AppState {
         match result {
             Ok(()) => {
                 match &pending {
-                    Some(pending) => self.form.settle_after_save(pending),
+                    Some(pending) => {
+                        self.form.settle_after_save(pending);
+                        // The file the caption describes was replaced by what the form holds.
+                        self.folders_caption = None;
+                    }
                     None => debug!("a save finished that this state did not start"),
                 }
                 self.save_status = SaveStatus::Saved;

@@ -156,11 +156,6 @@ impl ArchiveState {
         !self.fetch_in_flight() && self.form.parsed().is_ok()
     }
 
-    /// Whether a bulk export or a message export still writes files.
-    pub fn busy(&self) -> bool {
-        self.bulk.is_running() || self.inspector.export.is_running()
-    }
-
     /// Whether anything was searched since the data folder last changed.
     pub fn searched(&self) -> bool {
         self.last_query.is_some()

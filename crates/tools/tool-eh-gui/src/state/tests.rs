@@ -702,6 +702,7 @@ enum Waiting {
     ReadExport,
     ArchiveExport,
     Bulk,
+    Send,
 }
 
 impl Fixture {
@@ -723,6 +724,10 @@ impl Fixture {
             Waiting::Bulk => {
                 let export = self.bulk_running();
                 bulk_done(export, clean_finish())
+            }
+            Waiting::Send => {
+                let run = self.send_running();
+                send_finished(run, shared_eventhub_core::producer::SendEnd::Cancelled)
             }
         }
     }
@@ -756,6 +761,7 @@ impl Fixture {
     "exporting a message from Export"
 )]
 #[case::bulk(Waiting::Bulk, Job::BulkExport, "writing the export")]
+#[case::send(Waiting::Send, Job::Send, "sending")]
 fn a_job_still_running_after_thirty_seconds_reopens_the_window_on_read_with_its_notice(
     #[case] job: Waiting,
     #[case] waited: Job,
@@ -784,6 +790,7 @@ fn a_job_still_running_after_thirty_seconds_reopens_the_window_on_read_with_its_
 #[case::read_export(Waiting::ReadExport)]
 #[case::archive_export(Waiting::ArchiveExport)]
 #[case::bulk(Waiting::Bulk)]
+#[case::send(Waiting::Send)]
 fn force_quit_quits_a_window_reopened_for_a_job_still_running(#[case] job: Waiting) {
     let mut f = fixture();
     f.reopened_for(job);
@@ -798,6 +805,7 @@ fn force_quit_quits_a_window_reopened_for_a_job_still_running(#[case] job: Waiti
 #[case::read_export(Waiting::ReadExport)]
 #[case::archive_export(Waiting::ArchiveExport)]
 #[case::bulk(Waiting::Bulk)]
+#[case::send(Waiting::Send)]
 fn the_waited_job_ending_takes_the_notice_and_force_quit_away_without_quitting(
     #[case] job: Waiting,
 ) {

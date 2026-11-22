@@ -128,7 +128,7 @@ cursor.
 
 | Format | Layout |
 |---|---|
-| txt | the details block, then the body. After the broker metadata the block has `content type` and `correlation id` (`[unavailable]` when absent) and `properties:` with one indented `key: value` line per property in key order, or `properties: none`. A line break in any of them is written as `\n` or `\r`, so it cannot start a line of the block |
+| txt | the details block, then the body. After the broker metadata the block has `content type` and `correlation id` (`[unavailable]` when absent) and `properties:` with one indented `key: value` line per property in key order, or `properties: none`. A line break in any of them is written as `\n`, `\r`, or `\u{...}` (U+0085, U+2028, U+2029), so it cannot start a line of the block, and a backslash as `\\` |
 | csv | `entity_path,partition_id,event_id,timestamp,content_type,correlation_id,properties,message_content`; an absent content type or correlation id is an empty cell, and `properties` is the JSON object as text (`{}` for none) |
 | json | the same fields as an object; an absent content type or correlation id is `null`, and `properties` is an object |
 

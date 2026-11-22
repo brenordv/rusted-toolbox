@@ -39,7 +39,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::task::JoinError;
-use tracing::{debug, error, info, info_span, trace};
+use tracing::{debug, error, info, info_span, trace, warn};
 
 /// A request to start a session: the config, the typed secrets, and the data folder it is for.
 #[derive(Debug)]
@@ -92,7 +92,7 @@ pub trait Services {
     /// [`Input::ProfileCreated`] for its request.
     fn create_profile(&self, request: CreateRequest);
     fn reopen_window(&self);
-    /// Closes the store, then ends the app.
+    /// Closes the store, waiting a bounded time for it, then ends the app.
     fn quit(&self);
     /// Runs a quick-search rebuild off the UI thread; reports [`ReadInput::SearchRebuilt`].
     fn rebuild_search(&self, request: RebuildRequest);
@@ -341,7 +341,12 @@ impl Services for ProdServices {
     fn quit(&self) {
         let (handle, slot) = (self.handle.clone(), Arc::clone(&self.slot));
         self.rt.spawn(async move {
-            slot.close_for_quit().await;
+            // The close runs in its own task, so it goes on to its end after the wait gives up.
+            let closing = tokio::spawn({
+                let slot = Arc::clone(&slot);
+                async move { slot.close_for_quit().await }
+            });
+            closed_within(closing, ARCHIVE_CLOSE_BOUND, &slot.current()).await;
             handle.quit();
         });
     }
@@ -380,6 +385,23 @@ impl Services for ProdServices {
     fn start_send(&self, request: SendRequest) {
         sending::spawn_send(&self.rt, self.handle.clone(), request);
     }
+}
+
+/// How long a quit waits for the archive to close. Every stored batch is already committed, so
+/// a close that does not finish in this time loses nothing.
+const ARCHIVE_CLOSE_BOUND: Duration = Duration::from_secs(5);
+
+/// Awaits `close`, the closing of the archive in `folder`, for at most `bound`; returns whether
+/// it finished. A close still running at the bound is logged once and no longer awaited.
+pub(crate) async fn closed_within(close: impl Future, bound: Duration, folder: &DataPaths) -> bool {
+    let finished = tokio::time::timeout(bound, close).await.is_ok();
+    if !finished {
+        warn!(
+            folder = %folder.base().display(),
+            "the archive did not close in time; quitting anyway"
+        );
+    }
+    finished
 }
 
 /// Reads `request`'s page from the archive of its data folder and posts it.

@@ -29,7 +29,9 @@ pub enum Job {
     ReadMessageExport,
     /// The Export inspector's export of one message.
     ArchiveMessageExport,
+    /// The Export section's export of every match of a search.
     BulkExport,
+    /// A send run, from its press until its producer is closed.
     Send,
 }
 

@@ -194,6 +194,39 @@ async fn a_blocking_task_that_dies_is_reported_with_what_stopped() {
     );
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_close_that_never_ends_is_given_up_on_at_the_bound() {
+    let folder = DataPaths::new("data");
+    let started = tokio::time::Instant::now();
+
+    let finished = closed_within(std::future::pending::<()>(), ARCHIVE_CLOSE_BOUND, &folder).await;
+
+    assert!(!finished);
+    assert_eq!(started.elapsed(), ARCHIVE_CLOSE_BOUND);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_close_that_ends_is_not_waited_for_any_longer() {
+    let folder = DataPaths::new("data");
+    let started = tokio::time::Instant::now();
+
+    let finished = closed_within(std::future::ready(()), ARCHIVE_CLOSE_BOUND, &folder).await;
+
+    assert!(finished);
+    assert_eq!(started.elapsed(), Duration::ZERO);
+}
+
+#[tokio::test]
+async fn a_slot_closed_for_quit_within_the_bound_refuses_the_next_open() {
+    let root = tempfile::tempdir().unwrap();
+    let (slot, paths) = seeded_slot(root.path(), 1).await;
+
+    let finished = closed_within(slot.close_for_quit(), ARCHIVE_CLOSE_BOUND, &paths).await;
+
+    assert!(finished);
+    assert!(slot.acquire(&paths).await.is_err());
+}
+
 /// A slot whose current folder under `root` holds `count` stored messages ("order 0", ...).
 async fn seeded_slot(root: &std::path::Path, count: i64) -> (StoreSlot, DataPaths) {
     use shared_eventhub_core::connection::EventHubIdentity;

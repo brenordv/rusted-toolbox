@@ -17,8 +17,9 @@ const UNAVAILABLE: &str = "[unavailable]";
 /// `key: value` line each, in key order, or `properties: none`), then the
 /// body. A body that is not the exact payload carries a `body note` line
 /// saying why. A line break in the content type, the correlation id, or a
-/// property's key or value is written as `\n` or `\r`, so each stays on its
-/// own line of the block.
+/// property's key or value is written escaped (`\n`, `\r`, or `\u{...}` for
+/// U+0085, U+2028, and U+2029), so each stays on its own line of the block,
+/// and a backslash is written as `\\`.
 pub fn format_full_message(message: &CapturedMessage) -> String {
     let enqueued = message.enqueued_time.map_or_else(
         || UNAVAILABLE.to_owned(),
@@ -69,14 +70,27 @@ fn one_line_or_unavailable(value: Option<&str>) -> Cow<'_, str> {
     value.map_or(Cow::Borrowed(UNAVAILABLE), one_line)
 }
 
-/// `text` with each line feed written as `\n` and each carriage return as
-/// `\r`.
+/// `text` on one line: a line feed is written as `\n`, a carriage return as
+/// `\r`, and the line separators U+0085, U+2028, and U+2029 as `\u{85}`,
+/// `\u{2028}`, and `\u{2029}`. A backslash is written as `\\`, so a typed
+/// backslash followed by `n` reads differently from a line feed.
 fn one_line(text: &str) -> Cow<'_, str> {
-    if text.contains(['\n', '\r']) {
-        Cow::Owned(text.replace('\n', "\\n").replace('\r', "\\r"))
-    } else {
-        Cow::Borrowed(text)
+    if !text.contains(['\\', '\n', '\r', '\u{85}', '\u{2028}', '\u{2029}']) {
+        return Cow::Borrowed(text);
     }
+    let mut line = String::with_capacity(text.len() + 1);
+    for character in text.chars() {
+        match character {
+            '\\' => line.push_str("\\\\"),
+            '\n' => line.push_str("\\n"),
+            '\r' => line.push_str("\\r"),
+            '\u{85}' => line.push_str("\\u{85}"),
+            '\u{2028}' => line.push_str("\\u{2028}"),
+            '\u{2029}' => line.push_str("\\u{2029}"),
+            other => line.push(other),
+        }
+    }
+    Cow::Owned(line)
 }
 
 /// The details block's properties lines: `properties:` and one indented
@@ -248,10 +262,17 @@ mod tests {
         let mut rendered = message("0", 1, "x");
         rendered.content_type = Some("text/plain\nevent offset: forged".to_owned());
         rendered.correlation_id = Some("run\r\nid: forged".to_owned());
-        rendered.properties = BTreeMap::from([(
-            "note\npartition id".to_owned(),
-            "first\r\nevent sequence number: 999".to_owned(),
-        )]);
+        rendered.properties = BTreeMap::from([
+            (
+                "note\npartition id".to_owned(),
+                "first\r\nevent sequence number: 999".to_owned(),
+            ),
+            (
+                "separators".to_owned(),
+                "next\u{85}line\u{2028}paragraph\u{2029}end".to_owned(),
+            ),
+            ("typed".to_owned(), "a\\nb".to_owned()),
+        ]);
 
         let block = format_full_message(&rendered);
 
@@ -261,11 +282,17 @@ mod tests {
                  correlation id: run\\r\\nid: forged\n\
                  properties:\n\
                  \x20 note\\npartition id: first\\r\\nevent sequence number: 999\n\
+                 \x20 separators: next\\u{85}line\\u{2028}paragraph\\u{2029}end\n\
+                 \x20 typed: a\\\\nb\n\
                  \n"
             ),
             "{block}"
         );
         assert_eq!(block.matches("\nevent sequence number: ").count(), 1);
+        assert!(
+            !block.contains(['\u{85}', '\u{2028}', '\u{2029}']),
+            "{block}"
+        );
     }
 
     #[test]

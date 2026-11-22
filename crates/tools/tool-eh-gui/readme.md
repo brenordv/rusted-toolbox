@@ -290,9 +290,9 @@ path that is absolute, climbs with `..`, or names a network share is replaced by
 (`.eh-data`, `exports`, `inbound`) before the sheet is filled, and the folder is never touched.
 A replaced received message path also sets Message files to Off. The Profile group then shows
 which settings were not used ("config.json names a data folder outside this folder; it was not
-used."), until the next load or until you pick a data folder with Change. A folder you pick
-with Change, or type in the sheet, is used as given for this session. A data folder you pick
-outside the launch folder and save there with Save config is not used at the next launch.
+used."), until the next load, a Save config, or a data folder picked with Change. A folder you
+pick with Change, or type in the sheet, is used as given for this session. A data folder you
+pick outside the launch folder and save there with Save config is not used at the next launch.
 To keep one, pick a profile first and save there: a profile's `config.json` may name an
 absolute folder.
 
@@ -340,6 +340,8 @@ seconds. While the notice shows, a connection failure shows as a toast.
 
 Once eh-gui quits, by Force quit or not, the process ends without waiting for background work
 that has not stopped (an archive search page still scanning, an at-end pass Force quit left).
+The quit waits up to 5 seconds for the archive to close; every stored message is already
+committed, so an archive that does not close in that time loses nothing.
 
 ## GPU
 

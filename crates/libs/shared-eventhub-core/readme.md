@@ -23,10 +23,10 @@ authenticate (`shared_azure::auth::AuthMethod`):
 A `ClientSecret` credential kind takes its secret from
 `EventHubTarget::client_secret`, for either the event hub or the vault.
 
-`connect` validates before any network call, then opens the client and reads
-the event hub's properties. Opening only establishes the AMQP connection, so
-that read is what proves the credential works; its partition list also
-validates any requested partitions.
+A run validates the target before any network call, then opens the client
+and reads the event hub's properties. Opening only establishes the AMQP
+connection, so that read is what proves the credential works; its partition
+list also validates any requested partitions.
 
 Validation rules:
 
@@ -198,7 +198,7 @@ Events and statistics:
 
 ## Sending
 
-`open_producer(&target)` validates the same `EventHubTarget` as `connect`
+`open_producer(&target)` validates the same `EventHubTarget` as a run does
 (the consumer group is ignored) and opens a producer. Opening only
 establishes the AMQP connection; the credential is first used when the first
 batch is created. `EventHubProducer::fully_qualified_namespace` and

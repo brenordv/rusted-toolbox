@@ -848,6 +848,30 @@ fn picking_a_data_folder_clears_the_folders_caption() {
 }
 
 #[test]
+fn a_save_config_that_succeeds_clears_the_folders_caption() {
+    let mut s = with_the_folders_caption();
+    let saved_into = saved_to(&s.apply(Input::SavePressed)).0;
+
+    s.apply(Input::ConfigSaved(Ok(())));
+
+    assert_eq!(saved_into, launch_folder());
+    assert_eq!(s.save_status, SaveStatus::Saved);
+    assert_eq!(s.folders_caption, None);
+}
+
+#[test]
+fn a_save_config_that_fails_keeps_the_folders_caption() {
+    let mut s = with_the_folders_caption();
+    let caption = s.folders_caption.clone();
+    s.apply(Input::SavePressed);
+
+    s.apply(Input::ConfigSaved(Err("disk full".to_owned())));
+
+    assert!(matches!(s.save_status, SaveStatus::Failed(_)));
+    assert_eq!(s.folders_caption, caption);
+}
+
+#[test]
 fn a_profile_s_relative_data_folder_sits_in_the_profile_folder() {
     let mut s = listed();
     switch(&mut s, profile_home(ORDERS_DEV), loaded(orders_config()));

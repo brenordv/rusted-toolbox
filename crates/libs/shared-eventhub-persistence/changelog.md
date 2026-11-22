@@ -36,9 +36,9 @@
   The dev-only `test-support` feature makes `store::test_support` public (`failing_store`,
   `store_with_dead_writer`) for other crates' tests.
 - Exports with metadata carry the event's content type, correlation id, and application
-  properties: after the capture time in the txt details block (line breaks written as `\n` and
-  `\r`), and the columns `content_type`, `correlation_id`, and `properties` (a JSON object)
-  before `message_content` in csv and json. The csv header changed with it, so a condensed csv
+  properties: after the capture time in the txt details block (line breaks, the other line
+  separators, and backslashes written as escapes), and the columns `content_type`,
+  `correlation_id`, and `properties` (a JSON object) before `message_content` in csv and json. The csv header changed with it, so a condensed csv
   that has the earlier five-column header is refused on append by the header check; a condensed
   json file takes the new rows. `WritingSink`'s message files use the same details block and
   gain the three entries. Exports without metadata are unchanged.

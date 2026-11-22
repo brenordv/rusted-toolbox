@@ -328,9 +328,10 @@ when there is none. Files go to `--export-folder` (default `exports`, relative t
 folder unless absolute; a path with `..` can leave the git-ignored folder):
 
 - txt: the details and the body (`--include-metadata false`: the body only). After the broker
-  metadata the details have `content type` and `correlation id` (`[unavailable]` when the event has none) and the
-  application properties: `properties:` and one indented `key: value` line each, in key order,
-  or `properties: none`. A line break in any of them is written as `\n` or `\r`.
+  metadata the details have `content type` and `correlation id` (`[unavailable]` when the
+  event has none) and the application properties: `properties:` and one indented `key: value`
+  line each, in key order, or `properties: none`. A line break in any of them is written as
+  `\n`, `\r`, or `\u{...}` (U+0085, U+2028, U+2029), and a backslash as `\\`.
 - csv: `entity_path,partition_id,event_id,timestamp,content_type,correlation_id,properties,message_content`,
   or `message_content` alone without metadata. `entity_path` is the archive's event hub;
   `content_type` and `correlation_id` are empty when the event has none; `properties` holds

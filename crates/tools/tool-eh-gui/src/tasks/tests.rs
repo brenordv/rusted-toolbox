@@ -311,6 +311,18 @@ async fn a_session_on_a_healthy_archive_shares_the_open_handle() {
 }
 
 #[tokio::test]
+async fn a_session_after_close_for_quit_is_refused_and_the_slot_stays_closed() {
+    let f = folders();
+    let slot = StoreSlot::new(f.a.clone());
+    slot.close_for_quit().await;
+
+    let error = slot.acquire_for_session(&f.a).await.err().unwrap();
+
+    assert_eq!(error.to_string(), "eh-gui is quitting");
+    assert!(matches!(*slot.state.try_lock().unwrap(), SlotState::Closed));
+}
+
+#[tokio::test]
 async fn a_session_for_a_previous_folder_is_refused() {
     let f = folders();
     let slot = StoreSlot::new(f.a.clone());

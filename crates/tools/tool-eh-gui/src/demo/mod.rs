@@ -709,7 +709,7 @@ impl DemoSession {
         start: oneshot::Receiver<()>,
     ) -> anyhow::Result<EngineSession> {
         let paths = data_paths(&self.root);
-        let store = self.slot.acquire(&paths).await?;
+        let store = self.slot.acquire_for_session(&paths).await?;
         let disk_write = &request.config.storage.disk_write;
         let filters = request.config.capture.filters.clone();
         let sink = WritingSink::new(

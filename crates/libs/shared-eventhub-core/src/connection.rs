@@ -179,39 +179,25 @@ pub(crate) fn auth_method_name(auth: &AuthMethod) -> &'static str {
     }
 }
 
-/// Validates `target`, opens a consumer client for it, and reads the event
-/// hub's partition list.
-///
-/// Opening only establishes the AMQP connection; authorization happens on the
-/// first service call, so the partition listing is what proves the credential
-/// works. For Key Vault auth the connection string is fetched first and never
-/// stored beyond this call.
-///
-/// # Errors
-/// Fails when the target is incomplete or inconsistent, when the namespace
-/// host is outside [`EVENT_HUBS_ALLOWED_HOST_SUFFIXES`], when a credential
-/// cannot be built or the Key Vault fetch fails, and when the service rejects
-/// the connection or the credential. Errors name the namespace and event hub
-/// and never contain connection-string or secret material.
-pub async fn connect(target: &EventHubTarget) -> anyhow::Result<EventHubConnection> {
-    let opened = open_client(target).await?;
-    let properties = opened.client.get_eventhub_properties().await;
-    opened.into_connection(properties).await
-}
-
 /// A consumer client opened for a validated target. Its AMQP connection is
-/// up, and no service call has exercised the credential yet.
+/// up, and no service call has exercised the credential yet: authorization
+/// happens on the first one.
 pub(crate) struct OpenedClient {
     pub(crate) client: ConsumerClient,
     fully_qualified_namespace: String,
     event_hub_name: String,
 }
 
-/// Validates `target` and opens a consumer client for it. The open spawns no
-/// task, so a caller may drop the returned future to abandon it.
+/// Validates `target` and opens a consumer client for it. For Key Vault auth
+/// the connection string is fetched first and never stored beyond this call.
+/// The open spawns no task, so a caller may drop the returned future to
+/// abandon it.
 ///
 /// # Errors
-/// Fails as [`connect`] does up to the open; errors never contain
+/// Fails when the target is incomplete or inconsistent, when the namespace
+/// host is outside [`EVENT_HUBS_ALLOWED_HOST_SUFFIXES`], when a credential
+/// cannot be built or the Key Vault fetch fails, and when the service rejects
+/// the connection. Errors name the namespace and event hub and never contain
 /// connection-string or secret material.
 pub(crate) async fn open_client(target: &EventHubTarget) -> anyhow::Result<OpenedClient> {
     let resolved = resolve_target(target).await?;
@@ -232,7 +218,8 @@ pub(crate) async fn open_client(target: &EventHubTarget) -> anyhow::Result<Opene
 
 impl OpenedClient {
     /// Turns the client and the event hub properties read with it into a
-    /// connection.
+    /// connection. That read is the first service call, so its success is
+    /// what proves the credential works.
     ///
     /// # Errors
     /// Fails when the properties read failed, closing the client first and
@@ -289,7 +276,9 @@ pub(crate) async fn close_client_quietly(client: ConsumerClient) {
 /// connection string from Key Vault for Key Vault auth.
 ///
 /// # Errors
-/// Fails as [`connect`] does before it opens a client; errors never contain
+/// Fails when the target is incomplete or inconsistent, when the namespace
+/// host is outside [`EVENT_HUBS_ALLOWED_HOST_SUFFIXES`], and when the Key
+/// Vault credential cannot be built or the fetch fails; errors never contain
 /// connection-string or secret material.
 pub(crate) async fn resolve_target(target: &EventHubTarget) -> anyhow::Result<ResolvedTarget> {
     match &target.auth {
@@ -317,14 +306,14 @@ pub(crate) async fn resolve_target(target: &EventHubTarget) -> anyhow::Result<Re
 }
 
 /// The namespace and event hub `target` resolves to, worked out without any
-/// network call or secret fetch, by the same rules [`connect`] applies.
-/// `None` for Key Vault auth, whose connection string is only known once it
-/// is fetched.
+/// network call or secret fetch, by the rules that validate a target before
+/// a client is opened for it. `None` for Key Vault auth, whose connection
+/// string is only known once it is fetched.
 ///
 /// # Errors
-/// The inner result fails as [`connect`] does for an incomplete or
-/// inconsistent target; errors never contain connection-string or secret
-/// material.
+/// The inner result fails for an incomplete or inconsistent target and for
+/// a namespace host outside [`EVENT_HUBS_ALLOWED_HOST_SUFFIXES`]; errors
+/// never contain connection-string or secret material.
 pub fn target_names(target: &EventHubTarget) -> Option<anyhow::Result<(String, String)>> {
     let resolved = match &target.auth {
         AuthMethod::ConnectionString { connection_string } => {

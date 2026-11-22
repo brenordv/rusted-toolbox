@@ -80,7 +80,7 @@ fn the_export_covers_the_last_search_from_its_start_not_the_edited_form() {
         request.options.export_folder,
         paths().base().join("exports")
     );
-    assert!(archive.busy());
+    assert!(archive.bulk.is_running());
 }
 
 #[test]
@@ -268,7 +268,7 @@ fn a_run_that_stopped_shows_its_error() {
             .as_deref()
             .is_some_and(|text| text.contains("read failed"))
     );
-    assert!(!archive.busy());
+    assert!(!archive.bulk.is_running());
 }
 
 #[test]
