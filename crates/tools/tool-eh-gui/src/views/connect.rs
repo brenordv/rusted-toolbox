@@ -408,6 +408,7 @@ fn secret(
             .secure()
             .revealed(revealed)
             .label(label)
+            .width(None)
             .placeholder(label)
             .invalid(issue.is_some())
             .trailing(toggle)

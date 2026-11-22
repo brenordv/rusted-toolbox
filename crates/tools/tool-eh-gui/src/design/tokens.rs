@@ -68,7 +68,8 @@ pub const LIVE_DOT_SIZE: f32 = 8.0;
 pub const HAIRLINE: f32 = 1.0;
 /// The focus ring an app part draws, the width the kit's own small controls use.
 pub const FOCUS_RING_WIDTH: f32 = 2.0;
-pub const SHEET_WIDTH: f32 = 520.0;
+/// The connect sheet's widest width; a narrower window narrows it.
+pub const SHEET_WIDTH: f32 = 640.0;
 /// A control as wide as the sheet's fields: the sheet less its 24 pt inset on each side.
 pub const SHEET_FIELD_WIDTH: f32 = SHEET_WIDTH - 2.0 * SPACE_XL;
 /// The error details sheet's widest width, wider than a form sheet for long lines of text.
