@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.0
+- `AppLogger::init` returns `FileLogging`: `Off` (no file layer asked for, or logging off),
+  `Writing(path)` with the log file it actually opened, or `Failed { path, error }` with the path
+  it tried and the cause (which until now went only to stderr). `CommonToolArgsNoVerbose::
+  app_boot_up_with_level` passes the value through, so a GUI tool can show its log path without
+  rebuilding it. The value is not `#[must_use]`; existing callers compile unchanged.
+- `file_layer` and `init` share one open path, so the reported path is the one opened even when
+  daily rotation crosses midnight between calls.
+
 ## 1.7.1
 - `create_log_dir` and `open_log_file` now delegate to `common-file-utils` 2.2.0's
   `permissions` module, which was extracted from them so `shared-crypto` can create identity

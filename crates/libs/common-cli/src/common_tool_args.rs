@@ -1,4 +1,4 @@
-use crate::app_logger::AppLogger;
+use crate::app_logger::{AppLogger, FileLogging};
 use crate::broken_pipe::{BrokenPipe, write_out};
 use crate::header_format::{format_config_section, render_standard_header};
 use crate::tool_log_level::ToolLogLevel;
@@ -202,6 +202,9 @@ impl CommonToolArgsNoVerbose {
     /// Verbose-mode line shows whatever `verbose` renders (a count, for a tool
     /// with a `-v` count flag), and the Log-level line shows the resolved
     /// effective level, never the raw flag.
+    ///
+    /// Returns what the file sink is doing (see [`AppLogger::init`]), so a tool
+    /// can show the log path it actually opened.
     pub fn app_boot_up_with_level(
         &self,
         app_name: &str,
@@ -210,10 +213,10 @@ impl CommonToolArgsNoVerbose {
         verbose: impl std::fmt::Display,
         force_disable_log: bool,
         tool_header_printer: Option<impl FnOnce()>,
-    ) {
+    ) -> FileLogging {
         let effective_level = self.resolved_level(derived_level);
 
-        AppLogger::new(
+        let file_logging = AppLogger::new(
             app_name,
             effective_level.clone(),
             self.log_to_stdout,
@@ -223,7 +226,7 @@ impl CommonToolArgsNoVerbose {
         .init(force_disable_log);
 
         if !self.app_header {
-            return;
+            return file_logging;
         }
 
         let header = render_standard_header(
@@ -236,6 +239,7 @@ impl CommonToolArgsNoVerbose {
             self.rotate_log_file_by_day,
         );
         print_header_block(&header, tool_header_printer);
+        file_logging
     }
 }
 

@@ -1,0 +1,8 @@
+{"events": [
+  {"t": 0.3, "type": "drag", "key": "sidebar-grip", "dx": -44, "dur": 0.3},
+  {"t": 0.8, "type": "wheel", "key": "send-destination", "dy": -600},
+  {"t": 1.0, "type": "tap", "key": "send-properties"},
+  {"t": 1.2, "type": "key", "name": "End", "cmd": true},
+  {"t": 1.3, "type": "key", "name": "Enter"},
+  {"t": 1.4, "type": "type", "text": "trace=00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", "every": 0.005}
+]}

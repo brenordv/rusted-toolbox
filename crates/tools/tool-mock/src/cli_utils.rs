@@ -2,6 +2,7 @@ use crate::models::MockConfig;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::tool_exit_helpers::exit_error;
+use mock_data_utils::locale_is_inert;
 use mock_data_utils::models::{DataType, Locale};
 use tracing::{error, warn};
 
@@ -108,6 +109,7 @@ Random Data:
   random.integer        - Generate an integer (with --min, --max options)
   random.float          - Generate a float (with --min, --max, --precision options)
   random.car-brand      - Generate a car brand name
+  random.guid           - Generate a random GUID (UUID v4)
 
 Commerce:
   commerce.company      - Generate a company name
@@ -116,13 +118,6 @@ Commerce:
   commerce.job-title    - Generate a job title
   commerce.industry     - Generate an industry name
   commerce.buzzword     - Generate a business buzzword";
-
-/// True when a non-default locale was requested for a data type whose
-/// generator ignores it; `initialize` logs a warning for this case so the
-/// flag is never silently inert.
-fn locale_is_inert(locale: Locale, data_type: &DataType) -> bool {
-    locale != Locale::En && !data_type.is_locale_aware()
-}
 
 /// Reject bounds where the minimum exceeds the maximum.
 ///
@@ -250,14 +245,6 @@ mod tests {
     }
 
     #[test]
-    fn locale_is_inert_only_for_non_default_locale_on_unaware_types() {
-        assert!(locale_is_inert(Locale::JaJp, &DataType::Buzzword));
-        assert!(!locale_is_inert(Locale::En, &DataType::Buzzword));
-        assert!(!locale_is_inert(Locale::JaJp, &DataType::FirstName));
-        assert!(!locale_is_inert(Locale::En, &DataType::FirstName));
-    }
-
-    #[test]
     fn help_text_lists_data_types_and_locales() {
         let help = get_help_text();
 
@@ -266,6 +253,22 @@ mod tests {
         assert!(help.contains("Locales:"));
         for code in Locale::all_codes() {
             assert!(help.contains(code), "missing locale code {code}");
+        }
+    }
+
+    #[test]
+    fn help_text_lists_every_data_type() {
+        let commands: Vec<&str> = DATA_TYPE_HELP
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .collect();
+
+        for data_type in &DataType::ALL {
+            assert!(
+                commands.contains(&data_type.command()),
+                "missing {}",
+                data_type.command()
+            );
         }
     }
 }

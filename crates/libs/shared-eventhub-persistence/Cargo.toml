@@ -1,0 +1,35 @@
+[package]
+name = "shared-eventhub-persistence"
+version = "1.0.0"
+description = "Shared EventHub persistence: redb message archive, search, disk exporters, disk-write modes, and config.json with a local secrets store."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+# Dev-only: makes `store::test_support` public, so another crate's tests can get an archive whose
+# writes fail or whose writer thread dies. Release builds leave it out.
+test-support = []
+
+[dependencies]
+# Internal
+common-file-utils = { workspace = true }
+common-utils = { workspace = true }
+shared-azure = { workspace = true }
+shared-eventhub-core = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+chrono = { workspace = true }
+csv = { workspace = true }
+redb = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }

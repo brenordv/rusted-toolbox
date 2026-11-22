@@ -1,5 +1,35 @@
 # Changelog
 
+## 4.0.0
+- BREAKING: `DataType` gains `Guid` (`random.guid`), so an exhaustive `match` needs its arm.
+  `random.guid` is a random GUID (UUID v4, lowercase with hyphens); `DataType::ALL` holds 33
+  types.
+- New `template` module: `Template::compile` turns text with `{{type option=value}}`
+  placeholders (`\{{` for a literal `{{`) into a template, checking every placeholder's type and
+  options up front; errors start with the placeholder's line and column and quote at most 40
+  characters. `render(max_bytes, now, sequence)` produces one instance with fresh values,
+  failing past the cap with an error that names the placeholder by position and type, never the
+  template's text. At most 100,000 placeholders per template. `placeholder_groups()` and
+  `OPTIONS_HELP` describe the syntax for help screens.
+- `{{now}}` and `{{utc-now}}` render `render`'s `now` as RFC 3339 to the millisecond: local time
+  with its UTC offset (`2026-11-15T14:03:07.123-03:00`), or UTC ending in `Z`. They take no
+  options, and every one in a render shows the same instant. `placeholder_groups()` lists them as
+  the `clock` group.
+- `{{sequence}}` renders `render`'s `sequence` in decimal; it takes no options but `escape`, and
+  every one in a render shows the same number. `Template::uses_sequence()` says whether a
+  template holds one, and `placeholder_groups()` lists it as the `counter` group.
+- `escape=json` on any placeholder, the clock ones included, escapes its value for the inside
+  of a JSON string (RFC 8259: `"`, `\`, and U+0000 to U+001F). The value takes any ASCII case
+  (`json`, `Json`, `JSON`); the `escape` key is lowercase like every option. Any other escape is
+  a compile error ("unknown escape 'xml' for person.last-name; use json"). The cap counts the
+  escaped value. `OPTIONS_HELP` lists it.
+- Fixed: `length` for `internet.password` and `commerce.product-description` is capped at 1 MiB
+  (`MAX_LENGTH`), and a larger value returns an error. Before, a large value could abort the
+  process on the allocation or exhaust memory. `mock internet.password -n 2000000` now exits 1.
+- `DataType::ALL`, `DataType::command()` (the dotted name), and `PartialEq`/`Eq` on `DataType`;
+  `from_command` looks names up in `ALL`.
+- `locale_is_inert`, moved here from tool-mock.
+
 ## 3.0.0
 - BREAKING: `MockOptions` gained a `locale: Locale` field, so literal construction needs the
   new field (use `Locale::default()` for the old behavior; every existing generator output is

@@ -1,5 +1,49 @@
 # Workspace Changelog
 
+## v7
+- Rebuilt the Azure Event Hubs tooling on the official `azure_messaging_eventhubs` SDK and a redb
+  archive:
+  - New tool: `eh` 1.0.0 (`crates/tools/tool-eh`), one CLI with `eh read` (capture into the local
+    archive), `eh export` (txt, csv, or json), and `eh send` (one body sent `-n` times, batched
+    or one every `--interval-ms`; `--template` placeholders that get fresh mock values in every
+    event; `--dry-run` prints the rendered events instead of sending; `--property` and
+    `--correlation-id` on every event). Profiles are saved connections in a workspace
+    (`.eh/profiles` in the home folder, or the folder in `EH_WORKSPACE`): `--profile NAME` uses
+    one and `eh profile list` shows them. `eh` with no arguments in a terminal opens a menu.
+  - New tool: `eh-gui` 1.0.0 (`crates/tools/tool-eh-gui`), a desktop app on Rune with a Read
+    section (live capture, statistics, quick filter, inspector), an Export section (archive
+    search by time window and text or regex, results loaded as you scroll, export of one message
+    or of every match with live counts and cancel), and a Send section (body editor, templates,
+    pacing, correlation id and properties). The connect sheet has a Profile picker over the
+    workspace `eh` uses, and Save as profile saves the form as a new one.
+  - New libraries: `shared-azure` (credentials and Key Vault secrets), `shared-eventhub-core`
+    (message model, capture filters, the capture engine, statistics), and
+    `shared-eventhub-persistence` (redb archive, checkpoints, export log, exporters, config.json
+    and the secrets file).
+  - Removed: `tool-eventhub-read` (`eh-read`), `tool-eventhub-export` (`eh-export`), and the
+    `shared-eventhub` library. Data captured by `eh-read` 1.1.0 (sled) is not migrated; the last
+    released 1.1.0 binaries still read it.
+- Workspace dependencies added: `azure_core` 1.2.0-beta.2, `azure_identity` 1.1.0-beta.2,
+  `azure_messaging_eventhubs` 0.16.0, `azure_security_keyvault_secrets` 1.1.0-beta.2,
+  `azure_core_amqp` 1.2.0-beta.3 (test fixtures only), `redb` 5.0.0, `async-trait` 0.1.92
+  (`shared-azure`), `inquire` 0.9.5 (`eh`'s menu, crossterm backend only), `rustls` 0.23.46
+  (`shared-eventhub-core` sets the process crypto provider), `windows` 0.62.2 (eh-gui
+  reads the Windows appearance through `UISettings`), and `rune` and `rune-kit` as git
+  dependencies pinned to a fork (`brenordv/rune`, rev `6cf05a0ee0f445c25a33ceeede066b78bd73ef6a`):
+  anomalyco/rune's rev `c4eda05889c984fff91ccd906e3c00cdfc4cae24` plus fixes for Windows dead
+  keys, blank lines in a field's accessible text, and `TextEdit::is_pristine` after an edit of a
+  plain field. Removed: `azeventhubs`, `sled`, and `rand06-compat`.
+- Major dependency bumps: `rsa` 0.9.10 to 0.10.0 (`whisper`), `jsonwebtoken` 11.1.0 to 12.0.0
+  (`jwt`), `rusqlite` 0.41.1 to 0.43.0 (`netquality`), `rfd` 0.17.2 to 0.18.0 (`seal-gui`),
+  `notify` 8.2.2 to 9.0.0 with `notify-debouncer-full` 0.7.0 to 0.8.0 (`seal`'s watch mode), and
+  `rstest` 0.28.0 to 0.29.0 (tests).
+- `url` 2.5.8 to 2.5.9 for RUSTSEC-2026-0592 (a stack overflow in `Url::origin()` on nested
+  `blob:` URLs); `form_urlencoded` moves to 1.2.3 with it.
+- Rune's `[patch.crates-io]` block (forks of `winit`, `wgpu-hal`, `parley_engine`, and
+  `accesskit_windows` at anomalyco/rune's rev `c4eda05`) is copied into the root `Cargo.toml`
+  and applies to the whole workspace, `seal-gui`'s eframe stack included. `wgpu-hal` stays at
+  Rune's 30.0.1.
+
 ## v6
 - Updated dependencies.
 

@@ -1,0 +1,4 @@
+{"events": [
+  {"t": 0.3, "type": "drag", "key": "sidebar-grip", "dx": 200, "dur": 0.3},
+  {"t": 1.0, "type": "drag", "key": "inspector-grip", "dx": -400, "dur": 0.3}
+]}

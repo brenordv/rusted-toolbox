@@ -23,8 +23,10 @@ common-utils = { path = "crates/libs/common-utils" }
 common-utils-ext = { path = "crates/libs/common-utils-ext" }
 logging-otel = { path = "crates/libs/logging-otel" }
 mock-data-utils = { path = "crates/libs/mock-data-utils" }
+shared-azure = { path = "crates/libs/shared-azure" }
 shared-crypto = { path = "crates/libs/shared-crypto" }
-shared-eventhub = { path = "crates/libs/shared-eventhub" }
+shared-eventhub-core = { path = "crates/libs/shared-eventhub-core" }
+shared-eventhub-persistence = { path = "crates/libs/shared-eventhub-persistence" }
 shared-head-tail = { path = "crates/libs/shared-head-tail" }
 
 # External
@@ -32,21 +34,25 @@ age = { version = "0.12.1", features = ["armor"] }
 aho-corasick = "1.1.5"
 anyhow = "1.0.104"
 arboard = "3.7.0"
-azeventhubs = "0.20.0"
+async-trait = "0.1.92"
+azure_core = "1.2.0-beta.2"
+azure_identity = "1.1.0-beta.2"
+azure_messaging_eventhubs = "0.16.0"
+azure_security_keyvault_secrets = "1.1.0-beta.2"
 base64 = "0.23.1"
 camino = "1.2.6"
 cfspeedtest = "2.2.2"
 chrono = { version = "0.4.45", features = ["serde"] }
-clap = { version = "4.6.7", features = ["derive"] }
+clap = { version = "4.6.9", features = ["derive"] }
 colored = "3.1.1"
 crossterm = "0.29.0"
 csv = "1.4.0"
-ctrlc = "3.5.2"
+ctrlc = "3.5.3"
 dns-lookup = "4.0.2"
 eframe = { version = "0.37.0" }
 egui = { version = "0.37.0" }
 fake = { version = "5.1.0", features = ["derive", "chrono"] }
-filetime = "0.2.29"
+filetime = "0.2.30"
 futures-util = "0.3.34"
 gif = "0.14.2"
 globset = "0.4.21"
@@ -56,59 +62,98 @@ hurl_core = "8.1.0"
 image = "0.25.10"
 imagequant = "4.4.1"
 indicatif = "0.18.6"
-jsonwebtoken = "11.1.0"
+# eh's interactive menu. Only the crossterm backend: it reuses the crossterm 0.29 eh already has.
+inquire = { version = "0.9.5", default-features = false, features = ["crossterm"] }
+jsonwebtoken = "12.0.0"
 mime_guess = "2.0.5"
-notify = "8.2.1"
-notify-debouncer-full = "0.7.0"
+notify = "9.0.0"
+notify-debouncer-full = "0.8.0"
 num_cpus = "1.17.0"
 once_cell = "1.21.4"
 percent-encoding = "2.3.2"
 qrcodegen = "1.8.0"
 raccoon-otel = "1.1.0"
-rand = "0.10.3"
-rand06-compat = "0.2.0"
+rand = "0.10.4"
 ratatui = "0.30.2"
 rayon = "1.12.0"
-regex = "1.13.1"
+redb = "5.0.0"
+regex = "1.13.2"
 # Workspace default reqwest (gitignore). netquality pins its
 # own 0.12 to match cfspeedtest; see crates/tools/tool-netquality/Cargo.toml.
 reqwest = { version = "0.13.5", features = ["json"] }
-rfd = { version = "0.17.2" }
-rsa = { version = "0.9.10", features = ["sha2"] }
+rfd = { version = "0.18.0" }
+rsa = { version = "0.10.0", features = ["pkcs1v15"] }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
-rusqlite = { version = "0.41.1", features = ["bundled"] }
+# Only for setting the process crypto provider (shared-eventhub-core's `tls`); default
+# features, the same set the Azure crates enable.
+rustls = "0.23.46"
+# Rune is pre-release and not on crates.io (the crates.io `rune` is an unrelated scripting
+# language), so it is a git dependency pinned to one reviewed rev. The rev is on a fork
+# (brenordv/rune, branch `c4eda05-fixes`, tag `c4eda05-fixes-2`): anomalyco/rune's dev rev
+# c4eda05 plus three commits and nothing else. On Windows a dead key's character types (winit's
+# `KeyEvent::text`); a multi-line field's blank line is one accessible text run holding its
+# line break (upstream gives the line before the last a run shorter than its character lengths,
+# and a UI Automation read of it aborts the app); and typing, deleting, or pasting in a plain
+# field clears `TextEdit::is_pristine` (upstream's plain-text fast path leaves it set).
+# `tooling` and `keys-overlay` stay off: they write element trees, message bodies included, to
+# disk.
+rune = { git = "https://github.com/brenordv/rune", rev = "6cf05a0ee0f445c25a33ceeede066b78bd73ef6a", default-features = false, features = [
+    "accessibility", "dbus", "embedded-fonts", "metal-backend", "svg", "native-file-dialog",
+] }
+rune-kit = { git = "https://github.com/brenordv/rune", rev = "6cf05a0ee0f445c25a33ceeede066b78bd73ef6a" }
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 # The decoder behind warp's query filter; https parses the raw query string
 # through it so repeated keys survive with warp's decoding semantics.
 serde_urlencoded = "0.7.1"
 sha256 = "1.6.0"
-sled = "0.34.7"
 surge-ping = "0.9.1"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["full"] }
-# Exact pin: tokio-util 0.7.20 adds a second `Encoder` impl (`&[u8]`) to
-# `LengthDelimitedCodec`, and fe2o3-amqp 0.10, which azeventhubs 0.20
-# requires, fails type inference against it. Lift the pin once azeventhubs
-# moves to a newer fe2o3-amqp.
-tokio-util = { version = "=0.7.19", features = ["io"] }
+tokio-util = { version = "0.7.20", features = ["io"] }
 tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-url = "2.5.8"
-uuid = { version = "1.29.0", features = ["v4"] }
-walkdir = "2.5.0"
-warp = { version = "0.4.3", features = ["server"] }
+url = "2.5.9"
+uuid = { version = "1.29.3", features = ["v4"] }
+walkdir = "2.5.1"
+warp = { version = "0.4.4", features = ["server"] }
+# Windows' WinRT bindings (Microsoft's windows-rs); eh-gui reads the system appearance with
+# `UISettings`. Features are chosen per crate.
+windows = { version = "0.62.2", default-features = false }
 # Write/compress path only; the default bzip2/lzma/zstd/aes surface stays off.
 # The zlib-rs flate2 backend is the pure-Rust one zip's own `deflate`
 # meta-feature selects; bare `deflate-flate2` leaves flate2 backend-less
 # and fails to compile.
-zip = { version = "9.2.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.8.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # Dev dependencies
+azure_core_amqp = "1.2.0-beta.3"
 http-body-util = "0.1.5"
-rstest = "0.28.0"
+rstest = "0.29.0"
 tempfile = "3.27.0"
+
+# Rune's vendored forks, copied from Rune's root Cargo.toml at anomalyco/rune's c4eda05: Cargo
+# applies a dependency's [patch] only inside that dependency's own workspace, so an app building
+# Rune repeats it. The Rune fork above changes no vendored crate, so these stay on anomalyco's
+# c4eda05; a fork commit that touches `vendor/` moves them to the fork's rev. [patch] applies
+# to this whole workspace, so seal-gui's eframe stack builds on these forks too. Each fork is the
+# crates.io crate plus Rune's committed vendor/<name>.patch:
+# - winit: Windows window creation without the TaskbarList call and at the requested position;
+#   a macOS IME reconversion API; Wayland touchpad scroll deltas scaled by 12, which every winit
+#   app here (seal-gui included) gets on Wayland.
+# - wgpu-hal (30.0.1, below the 30.0.2 eframe alone would lock): DX12 adapter exposure, FXC
+#   loaded on first compile, partial presents on a FLIP_SEQUENTIAL swap chain; eframe renders
+#   with wgpu, so seal-gui on DX12 gets that swap chain.
+# - parley_engine: bidi rule L1, shaping caches, segmenter hooks (only Rune uses parley).
+# - accesskit_windows: heading and landmark properties for UI Automation.
+# Every Rune bump re-diffs this table and repeats the fork review.
+[patch.crates-io]
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "c4eda05889c984fff91ccd906e3c00cdfc4cae24" }
+winit = { git = "https://github.com/anomalyco/rune", rev = "c4eda05889c984fff91ccd906e3c00cdfc4cae24" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "c4eda05889c984fff91ccd906e3c00cdfc4cae24" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "c4eda05889c984fff91ccd906e3c00cdfc4cae24" }
 
 [profile.release]
 lto = true

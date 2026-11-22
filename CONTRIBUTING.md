@@ -30,7 +30,9 @@ The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
    - `crates/libs/cli-signal-monitor`: watches for Ctrl+C and runs the tool's graceful-shutdown path.
    - `crates/libs/logging-otel`: OpenTelemetry extension for the logging in `common-cli`.
    - `crates/libs/mock-data-utils`: the mock-data generators behind `tool-mock`.
-   - `crates/libs/shared-eventhub`: EventHub-specific shared code.
+   - `crates/libs/shared-azure`: Azure credentials, Key Vault secret fetching, and host suffix checks.
+   - `crates/libs/shared-eventhub-core`: the Event Hubs capture engine, message model, filters, and statistics behind `eh`.
+   - `crates/libs/shared-eventhub-persistence`: the message archive, search, exporters, and `config.json` handling behind `eh`.
    - `crates/libs/shared-head-tail`: the shared engine machinery behind `tool-head` and `tool-tail`.
    - If more than one tool needs it, it belongs in one of these crates rather than duplicating logic.
 3. **Root `README.md`**: add a reference to any new tool here, and keep the links pointing at `crates/tools/<crate>/readme.md`.
@@ -52,7 +54,7 @@ Dependency versions live in one place: the root `Cargo.toml`.
 
 ## Continuous integration
 - `.github/workflows/ci.yml` runs on every push to `master` and every PR: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets --locked -- -D warnings` on Linux, plus `cargo test --workspace --locked` on Windows, Linux, and macOS.
-- `.github/workflows/deps-audit.yml` runs `cargo deny check advisories` (RustSec database, config in `deny.toml`) weekly and whenever a PR or push touches a manifest, `Cargo.lock`, `deny.toml`, or the workflow itself.
+- `.github/workflows/deps-audit.yml` runs `cargo deny --all-features --locked check advisories sources licenses` (RustSec database, allowed git sources, license allow list; config in `deny.toml`) weekly and whenever a PR, or a push to `master`, touches a manifest, `Cargo.lock`, `deny.toml`, or the workflow itself. A PR run checks the PR's own `deny.toml`, so it is advisory: a change to the license `allow` list or an `exceptions` or `clarify` entry needs the owner's review. A plain `cargo deny check` also runs `bans`, which is not configured and only warns (duplicate crate versions).
 - `.github/dependabot.yml` keeps the SHA-pinned actions in the workflows fresh with weekly PRs.
 - `.github/workflows/release.yml` runs on `v*` tags: it builds release binaries on each OS and attaches archives to a GitHub Release.
 - `rust-toolchain.toml` pins the toolchain to a specific version (currently 1.99, bumped deliberately alongside a clippy/fmt pass) and ensures `rustfmt` and `clippy` are available.
@@ -69,7 +71,7 @@ Dependency versions live in one place: the root `Cargo.toml`.
 - Respect existing patterns; follow the repo's conventions over personal preference.
 - Functions around 50 LOC when feasible; extract pure helpers for parsing, graph building, and process execution.
 - Never use nested ternaries (Rust's `if/else if/else` or match statements keep control flow clear).
-- Avoid `unwrap`/`expect` in library code; return typed errors. Use `?` (from `anyhow`) for propagation and convert to a single error type at the boundary.
+- Avoid `unwrap`/`expect` outside test code; propagate with `?` and add `.context(...)` (from `anyhow`) at each level. Workspace libs use `anyhow` just like the tools; a typed `thiserror` enum is warranted only if a crate is published for external consumers or a caller needs to match on failure modes.
 - Use the repo's `edition` from `Cargo.toml`; don't change it without approval.
 - When defining the CLI options, follow the examples of the other tools.
 - `arg_required_else_help = true` belongs only on parsers whose arguments or subcommand are required anyway; it turns an empty argv into help on stderr with exit code 2. Tools where a bare run is the point must not use it: stdin filters read the pipe when given no FILE (`cat`, `head`, `tail`, `b64`, `remove-zw`), some tools have a bare default action (`ts` converts "now", `guid` generates one, `gitignore` scans the current dir), and `http-server` serves `.` on its default port. clap keys the check on argv being empty, not on stdin being a terminal, so `producer | tool` counts as "no args" and the pipe breaks.

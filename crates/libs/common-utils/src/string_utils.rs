@@ -1,4 +1,5 @@
 use chrono::Duration;
+use std::fmt::{Debug, Display, Formatter};
 
 /// Makes `input` safer to use as a filename, by character substitution only:
 /// filesystem-reserved characters (`< > : " | ? * \ /`) and other special
@@ -118,14 +119,7 @@ pub fn format_bytes_to_string(bytes: u64) -> String {
     let whole_part = parts[0];
     let decimal_part = parts[1];
 
-    // Add thousand separators to the integer part
-    let mut formatted_with_commas = String::new();
-    for (i, c) in whole_part.chars().rev().enumerate() {
-        if i != 0 && i % 3 == 0 {
-            formatted_with_commas.insert(0, ',');
-        }
-        formatted_with_commas.insert(0, c);
-    }
+    let formatted_with_commas = group_thousands(whole_part);
 
     let decimal_suffix = if *unit == "bytes" {
         "".to_string()
@@ -134,6 +128,68 @@ pub fn format_bytes_to_string(bytes: u64) -> String {
     };
 
     format!("{formatted_with_commas}{decimal_suffix} {unit}")
+}
+
+/// `value` with a comma between each group of three digits, for counts shown to people:
+/// `12403` becomes `12,403`.
+pub fn format_thousands(value: u64) -> String {
+    group_thousands(&value.to_string())
+}
+
+/// `text` with the whitespace around it removed, or `None` when nothing is left.
+pub fn non_blank(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
+/// `digits` (a run of ASCII digits) with a comma between each group of three, from the right.
+fn group_thousands(digits: &str) -> String {
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i != 0 && (digits.len() - i).is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(c);
+    }
+    grouped
+}
+
+/// A secret value (connection string, token, key) that cannot leak through
+/// formatting: `Debug` and `Display` both render `<redacted>`. The raw value
+/// is reachable only through [`expose`](Self::expose).
+///
+/// Deliberately implements no serde traits, and `common-utils` carries no
+/// serde dependency: a struct that embeds a `SecretString` and derives
+/// `Serialize` fails to compile, so a secret can never reach serialized
+/// output by accident. A carrier that must deserialize a secret converts at
+/// its own boundary with `#[serde(from = "String")]` and `From<String>`.
+#[derive(Clone, PartialEq)]
+pub struct SecretString(String);
+
+impl SecretString {
+    /// The raw secret. Keep the result out of logs, error messages, and
+    /// serialized output; call sites of this method are the audit surface.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for SecretString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<redacted>")
+    }
+}
+
+impl Debug for SecretString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<redacted>")
+    }
+}
+
+impl From<String> for SecretString {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
 }
 
 #[cfg(test)]
@@ -187,5 +243,62 @@ mod tests {
     #[case::above_tb_stays_in_tb(1024 * (1 << 40), "1,024.00 TB")]
     fn format_bytes_cases(#[case] bytes: u64, #[case] expected: &str) {
         assert_eq!(format_bytes_to_string(bytes), expected);
+    }
+
+    #[rstest]
+    #[case::zero(0, "0")]
+    #[case::three_digits(999, "999")]
+    #[case::four_digits(1000, "1,000")]
+    #[case::six_digits(123_456, "123,456")]
+    #[case::seven_digits(1_234_567, "1,234,567")]
+    #[case::largest(u64::MAX, "18,446,744,073,709,551,615")]
+    fn format_thousands_cases(#[case] value: u64, #[case] expected: &str) {
+        assert_eq!(format_thousands(value), expected);
+    }
+
+    #[rstest]
+    #[case::kept("application/json", Some("application/json"))]
+    #[case::trimmed("  application/json ", Some("application/json"))]
+    #[case::inner_spaces_kept(" a b ", Some("a b"))]
+    #[case::empty("", None)]
+    #[case::spaces("   ", None)]
+    #[case::tab("\t", None)]
+    fn non_blank_cases(#[case] text: &str, #[case] expected: Option<&str>) {
+        assert_eq!(non_blank(text).as_deref(), expected);
+    }
+
+    #[test]
+    fn secret_string_debug_and_display_redact_the_value() {
+        let secret = SecretString::from("super-secret-value".to_string());
+
+        assert_eq!(format!("{secret:?}"), "<redacted>");
+        assert_eq!(format!("{secret}"), "<redacted>");
+    }
+
+    #[test]
+    fn secret_string_redacts_inside_a_derived_debug_carrier() {
+        #[derive(Debug)]
+        struct Carrier {
+            secret: SecretString,
+        }
+
+        let carrier = Carrier {
+            secret: "super-secret-value".to_string().into(),
+        };
+        let rendered = format!("{carrier:?}");
+
+        assert!(
+            !rendered.contains("super-secret-value"),
+            "leaked: {rendered}"
+        );
+        assert!(rendered.contains("<redacted>"));
+        assert_eq!(carrier.secret.expose(), "super-secret-value");
+    }
+
+    #[test]
+    fn secret_string_expose_returns_the_raw_value() {
+        let secret: SecretString = "super-secret-value".to_string().into();
+
+        assert_eq!(secret.expose(), "super-secret-value");
     }
 }

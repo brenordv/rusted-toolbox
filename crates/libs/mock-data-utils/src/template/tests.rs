@@ -1,0 +1,653 @@
+use super::*;
+use crate::MAX_LENGTH;
+use chrono::NaiveDate;
+use rstest::rstest;
+use uuid::Uuid;
+
+const CAP: usize = 1 << 20;
+
+/// A fixed render time with a non-zero millisecond part: the exact text the clock
+/// placeholders print is the behavior under test.
+fn instant() -> DateTime<Utc> {
+    NaiveDate::from_ymd_opt(2026, 11, 14)
+        .unwrap()
+        .and_hms_milli_opt(23, 46, 40, 123)
+        .unwrap()
+        .and_utc()
+}
+
+fn compile_error(source: &str) -> String {
+    format!("{:#}", Template::compile(source).unwrap_err())
+}
+
+#[rstest]
+#[case::plain("plain text", "plain text")]
+#[case::escaped("a \\{{ b", "a {{ b")]
+#[case::closing_braces_alone("a }} b", "a }} b")]
+#[case::other_backslashes("logs\\day \\n \\{", "logs\\day \\n \\{")]
+#[case::lone_brace("{\"a\": 1}", "{\"a\": 1}")]
+#[case::backslash_before_a_placeholder(
+    "logs\\\\{{internet.username}}",
+    "logs\\{{internet.username}}"
+)]
+#[case::empty("", "")]
+fn text_without_placeholders_renders_as_written(#[case] source: &str, #[case] rendered: &str) {
+    let template = Template::compile(source).unwrap();
+
+    assert_eq!(template.render(CAP, instant(), 0).unwrap(), rendered);
+    assert_eq!(template.placeholder_count(), 0);
+}
+
+#[test]
+fn every_data_type_compiles_and_renders_as_a_placeholder() {
+    for data_type in &DataType::ALL {
+        let source = format!("{{{{{}}}}}", data_type.command());
+
+        let template = Template::compile(&source).unwrap();
+
+        assert_eq!(template.placeholder_count(), 1, "{source}");
+        assert!(template.render(CAP, instant(), 0).is_ok(), "{source}");
+    }
+}
+
+#[test]
+fn a_fixed_integer_renders_its_value() {
+    let template = Template::compile("{{random.integer min=5 max=5}}").unwrap();
+
+    assert_eq!(template.render(CAP, instant(), 0).unwrap(), "5");
+}
+
+#[test]
+fn an_integer_range_stays_inside_its_bounds() {
+    let template = Template::compile("{{random.integer min=1 max=6}}").unwrap();
+
+    for _ in 0..200 {
+        let value: i32 = template.render(CAP, instant(), 0).unwrap().parse().unwrap();
+        assert!((1..=6).contains(&value), "{value}");
+    }
+}
+
+#[rstest]
+#[case::unclosed(
+    "{\"a\": 1,\n\"b\": 2,\n  \"c\": {{person.email",
+    "line 3, column 8: '{{' is not closed"
+)]
+#[case::empty("x {{  }}", "line 1, column 3: the placeholder is empty")]
+#[case::unknown_type(
+    "{{person.fullname}}",
+    "line 1, column 1: unknown type 'person.fullname'"
+)]
+#[case::unknown_option(
+    "{{person.email colour=red}}",
+    "line 1, column 1: unknown option 'colour' for person.email"
+)]
+#[case::bad_number(
+    "{{random.integer min=x}}",
+    "line 1, column 1: 'min' needs a whole number, not 'x'"
+)]
+#[case::negative_unsigned(
+    "{{random.date range=-1}}",
+    "line 1, column 1: 'range' needs a whole number, not '-1'"
+)]
+#[case::missing_value("{{random.integer min}}", "line 1, column 1: 'min' needs a value")]
+#[case::bare_word_with_value("{{random.date past=1}}", "line 1, column 1: 'past' takes no value")]
+#[case::twice(
+    "{{random.integer min=1 min=2}}",
+    "line 1, column 1: 'min' is given twice"
+)]
+#[case::min_over_max(
+    "{{random.integer min=9 max=1}}",
+    "line 1, column 1: min (9) must be <= max (1)"
+)]
+#[case::range_zero("{{random.date range=0}}", "line 1, column 1: range must be >= 1")]
+#[case::length_over_cap(
+    "{{internet.password length=1048577}}",
+    "line 1, column 1: length (1048577) must be <= 1048576"
+)]
+#[case::unknown_locale(
+    "{{person.city locale=xx-yy}}",
+    "line 1, column 1: unknown locale 'xx-yy'; the codes are en,"
+)]
+fn compile_errors_name_the_line_column_and_problem(#[case] source: &str, #[case] expected: &str) {
+    let error = compile_error(source);
+
+    assert!(error.starts_with(expected), "{error}");
+}
+
+#[test]
+fn the_length_cap_itself_compiles() {
+    assert!(Template::compile(&format!("{{{{internet.password length={MAX_LENGTH}}}}}")).is_ok());
+}
+
+#[test]
+fn a_long_unknown_type_is_quoted_cut_short() {
+    let name = "x".repeat(200);
+
+    let error = compile_error(&format!("{{{{{name}}}}}"));
+
+    assert!(
+        error.ends_with(&format!("unknown type '{}…'", "x".repeat(QUOTE_LIMIT))),
+        "{error}"
+    );
+}
+
+#[test]
+fn columns_count_characters_after_non_ascii_text() {
+    let error = compile_error("café ☕ {{nope}}");
+
+    assert!(error.starts_with("line 1, column 8:"), "{error}");
+}
+
+#[test]
+fn positions_follow_earlier_placeholders_and_escapes() {
+    let error = compile_error("{{random.integer}} \\{{ x\n  {{bad}}");
+
+    assert!(error.starts_with("line 2, column 3:"), "{error}");
+}
+
+#[test]
+fn a_non_default_locale_on_an_unaware_type_gives_one_note() {
+    let template = Template::compile("{{random.integer locale=pt-br}}").unwrap();
+
+    assert_eq!(
+        template.inert_locale_notes(),
+        [
+            "line 1, column 1: locale=pt-br has no effect on random.integer, which is not locale-aware"
+        ]
+    );
+}
+
+#[test]
+fn a_repeated_inert_locale_gives_one_note_per_type_and_locale() {
+    let template = Template::compile(
+        "{{random.integer locale=pt-br}} {{random.integer locale=pt-br}} \
+         {{random.integer locale=ja-jp}} {{random.float locale=pt-br}}",
+    )
+    .unwrap();
+
+    assert_eq!(template.inert_locale_notes().len(), 3);
+}
+
+#[test]
+fn a_template_past_the_placeholder_cap_is_refused_and_the_cap_itself_compiles() {
+    let at_cap = "{{random.integer}}".repeat(MAX_PLACEHOLDERS);
+    let over_cap = format!("{at_cap}{{{{random.integer}}}}");
+
+    let compiled = Template::compile(&at_cap).map(|template| template.placeholder_count());
+    let error = compile_error(&over_cap);
+
+    assert_eq!(compiled.unwrap(), MAX_PLACEHOLDERS);
+    assert!(
+        error.ends_with(&format!("has more than {MAX_PLACEHOLDERS} placeholders")),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_long_non_ascii_option_value_is_quoted_cut_at_a_character() {
+    let value = "é".repeat(60);
+
+    let error = compile_error(&format!("{{{{random.integer min={value}}}}}"));
+
+    assert!(
+        error.ends_with(&format!("not '{}…'", "é".repeat(QUOTE_LIMIT))),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_render_error_holds_none_of_the_templates_text() {
+    let template = Template::compile(
+        "secret-literal {{internet.password\n   length=600000  }} {{internet.password length=600000}}",
+    )
+    .unwrap();
+
+    let error = format!("{:#}", template.render(CAP, instant(), 0).unwrap_err());
+
+    assert!(!error.contains("secret-literal"), "{error}");
+    assert!(!error.contains("length="), "{error}");
+}
+
+#[test]
+fn a_locale_on_an_aware_type_gives_no_note() {
+    let template = Template::compile("{{person.city locale=pt-br}}").unwrap();
+
+    assert!(template.inert_locale_notes().is_empty());
+}
+
+#[test]
+fn whitespace_and_newlines_inside_braces_are_ignored_and_text_around_is_kept() {
+    let template = Template::compile("Olá «{{\n  random.integer\tmin=3   max=3\n}}» ☕\n").unwrap();
+
+    assert_eq!(template.render(CAP, instant(), 0).unwrap(), "Olá «3» ☕\n");
+}
+
+#[test]
+fn render_fails_past_the_cap_naming_the_placeholder_that_crossed_it() {
+    let template =
+        Template::compile("{{internet.password length=600000}}{{internet.password length=600000}}")
+            .unwrap();
+
+    let error = format!("{:#}", template.render(CAP, instant(), 0).unwrap_err());
+
+    assert_eq!(
+        error,
+        "line 1, column 36: internet.password: the rendered body passes the 1048576-byte limit"
+    );
+}
+
+#[test]
+fn render_under_the_cap_succeeds() {
+    let template = Template::compile("{{internet.password length=600000}}").unwrap();
+
+    assert_eq!(template.render(CAP, instant(), 0).unwrap().len(), 600_000);
+}
+
+#[test]
+fn render_fails_when_literal_text_passes_the_cap() {
+    let template = Template::compile("0123456789").unwrap();
+
+    let error = format!("{:#}", template.render(4, instant(), 0).unwrap_err());
+
+    assert_eq!(error, "the rendered body passes the 4-byte limit");
+}
+
+#[test]
+fn two_renders_draw_fresh_values() {
+    let template = Template::compile("{{internet.password length=64}}").unwrap();
+
+    assert_ne!(
+        template.render(CAP, instant(), 0).unwrap(),
+        template.render(CAP, instant(), 0).unwrap()
+    );
+}
+
+#[test]
+fn debug_shows_counts_and_none_of_the_text() {
+    let template = Template::compile("secret-body {{person.email}} tail").unwrap();
+
+    let rendered = format!("{template:?}");
+
+    assert_eq!(rendered, "Template { segments: 3, placeholders: 1 }");
+}
+
+#[test]
+fn placeholder_groups_cover_every_type_once_under_its_prefix_then_the_clock_and_counter() {
+    let groups = placeholder_groups();
+
+    let prefixes: Vec<&str> = groups.iter().map(|(prefix, _)| *prefix).collect();
+    let types: usize = groups[..4].iter().map(|(_, commands)| commands.len()).sum();
+    assert_eq!(
+        prefixes,
+        [
+            "person", "internet", "random", "commerce", "clock", "counter"
+        ]
+    );
+    assert_eq!(types, DataType::ALL.len());
+    assert!(groups[0].1.contains(&"person.first-name"));
+    assert!(groups[2].1.contains(&"random.guid"));
+    assert_eq!(groups[4].1, ["now", "utc-now"]);
+    assert_eq!(groups[5].1, ["sequence"]);
+}
+
+#[test]
+fn options_help_names_the_escape_the_clock_and_the_sequence_placeholders() {
+    let lines: Vec<&str> = OPTIONS_HELP.lines().collect();
+
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("escape=json: every placeholder"))
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("now, utc-now: escape only"))
+    );
+    assert!(lines.last().unwrap().starts_with(
+        "sequence: escape only; a count of the events that show it, from 0 at app start \
+         (not the event hub's sequence number)"
+    ));
+}
+
+#[rstest]
+#[case::zero(0, "0")]
+#[case::seven(7, "7")]
+#[case::largest(u64::MAX, "18446744073709551615")]
+fn sequence_renders_the_given_number_in_decimal(#[case] sequence: u64, #[case] text: &str) {
+    let template = Template::compile("{{sequence}}").unwrap();
+
+    assert_eq!(template.render(CAP, instant(), sequence).unwrap(), text);
+}
+
+#[test]
+fn every_sequence_in_one_render_shows_the_same_number() {
+    let template = Template::compile("{{sequence}}-{{ sequence }}").unwrap();
+
+    assert_eq!(template.render(CAP, instant(), 42).unwrap(), "42-42");
+}
+
+#[test]
+fn escape_json_on_a_sequence_renders_the_same_digits() {
+    let template = Template::compile("{\"n\": {{sequence escape=json}}}").unwrap();
+
+    assert_eq!(template.render(CAP, instant(), 9).unwrap(), "{\"n\": 9}");
+}
+
+#[rstest]
+#[case::sequence("{{sequence}}", true)]
+#[case::sequence_beside_text_and_types("id {{random.integer}} #{{sequence escape=json}}", true)]
+#[case::clocks_only("{{now}} {{utc-now}}", false)]
+#[case::types_only("{{person.email}}", false)]
+#[case::no_placeholders("plain", false)]
+fn uses_sequence_reports_a_sequence_placeholder(#[case] source: &str, #[case] expected: bool) {
+    let template = Template::compile(source).unwrap();
+
+    assert_eq!(template.uses_sequence(), expected);
+}
+
+#[test]
+fn every_random_guid_is_a_new_lowercase_hyphenated_version_4_uuid() {
+    let template = Template::compile("{{random.guid}} {{random.guid}}").unwrap();
+
+    let rendered = template.render(CAP, instant(), 0).unwrap();
+
+    let (first, second) = rendered.split_once(' ').unwrap();
+    for text in [first, second] {
+        let parsed = Uuid::parse_str(text).unwrap();
+        assert_eq!(parsed.hyphenated().to_string(), text);
+        assert_eq!(parsed.get_version_num(), 4);
+    }
+    assert_ne!(first, second);
+}
+
+#[test]
+fn utc_now_renders_the_instant_in_utc_to_the_millisecond() {
+    let template = Template::compile("{{utc-now}}").unwrap();
+
+    assert_eq!(
+        template.render(CAP, instant(), 0).unwrap(),
+        "2026-11-14T23:46:40.123Z"
+    );
+}
+
+#[rstest]
+#[case::west_of_utc(FixedOffset::west_opt(3 * 3600).unwrap(), "2026-11-14T20:46:40.123-03:00")]
+#[case::at_utc(FixedOffset::east_opt(0).unwrap(), "2026-11-14T23:46:40.123+00:00")]
+fn local_text_shows_the_offset_and_never_z(#[case] offset: FixedOffset, #[case] text: &str) {
+    assert_eq!(local_text(instant(), offset), text);
+}
+
+#[test]
+fn now_and_utc_now_in_one_render_name_the_same_instant() {
+    let template = Template::compile("at {{now}} / {{utc-now}}.").unwrap();
+
+    let rendered = template.render(CAP, instant(), 0).unwrap();
+
+    let inner = rendered
+        .strip_prefix("at ")
+        .and_then(|rest| rest.strip_suffix('.'))
+        .unwrap();
+    let (local, utc) = inner.split_once(" / ").unwrap();
+    assert_eq!(DateTime::parse_from_rfc3339(local).unwrap(), instant());
+    assert_eq!(DateTime::parse_from_rfc3339(utc).unwrap(), instant());
+    assert!(!local.ends_with('Z'), "{local}");
+}
+
+#[test]
+fn a_repeated_now_renders_the_same_text() {
+    let template = Template::compile("{{now}}|{{now}}").unwrap();
+
+    let rendered = template.render(CAP, instant(), 0).unwrap();
+
+    let (first, second) = rendered.split_once('|').unwrap();
+    assert_eq!(first, second);
+}
+
+#[rstest]
+#[case::spaces("{{ now }}")]
+#[case::newlines("{{\nutc-now\n}}")]
+fn clock_placeholders_take_whitespace_inside_the_braces(#[case] source: &str) {
+    let template = Template::compile(source).unwrap();
+
+    assert_eq!(template.placeholder_count(), 1);
+}
+
+#[rstest]
+#[case::bare_word("{{now past}}", "line 1, column 1: unknown option 'past' for now")]
+#[case::key_value("{{utc-now x=1}}", "line 1, column 1: unknown option 'x' for utc-now")]
+#[case::case_sensitive("{{Now}}", "line 1, column 1: unknown type 'Now'")]
+#[case::sequence_option(
+    "{{sequence min=1}}",
+    "line 1, column 1: unknown option 'min' for sequence"
+)]
+#[case::sequence_case_sensitive("{{Sequence}}", "line 1, column 1: unknown type 'Sequence'")]
+fn given_placeholders_refuse_options_and_other_spellings(
+    #[case] source: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(compile_error(source), expected);
+}
+
+#[test]
+fn clock_placeholders_count_and_give_no_locale_note() {
+    let template = Template::compile("{{now}}{{utc-now}}").unwrap();
+
+    assert_eq!(template.placeholder_count(), 2);
+    assert!(template.inert_locale_notes().is_empty());
+}
+
+#[test]
+fn a_clock_value_past_the_cap_fails_naming_the_placeholder_and_not_the_text() {
+    let template = Template::compile("prefix-text {{utc-now}}").unwrap();
+
+    let error = format!("{:#}", template.render(16, instant(), 0).unwrap_err());
+
+    assert_eq!(
+        error,
+        "line 1, column 13: utc-now: the rendered body passes the 16-byte limit"
+    );
+}
+
+fn json_escaped(value: &str) -> String {
+    let mut out = String::new();
+    push_json_escaped(&mut out, value);
+    out
+}
+
+#[test]
+fn every_char_round_trips_and_only_quote_backslash_and_c0_controls_change() {
+    let mut changed = Vec::new();
+
+    for c in char::MIN..=char::MAX {
+        let text = c.to_string();
+        let escaped = json_escaped(&text);
+        let parsed: String = serde_json::from_str(&format!("\"{escaped}\"")).unwrap();
+        assert_eq!(parsed, text, "{c:?}");
+        if escaped != text {
+            changed.push(c);
+        }
+    }
+
+    let expected: Vec<char> = ('\u{0}'..='\u{1f}').chain(['"', '\\']).collect();
+    assert_eq!(changed, expected);
+}
+
+#[rstest]
+#[case::quote("\"", "\\\"")]
+#[case::backslash("\\", "\\\\")]
+#[case::line_feed("\n", "\\n")]
+#[case::carriage_return("\r", "\\r")]
+#[case::tab("\t", "\\t")]
+#[case::backspace("\u{8}", "\\b")]
+#[case::form_feed("\u{c}", "\\f")]
+#[case::nul("\u{0}", "\\u0000")]
+#[case::start_of_heading("\u{1}", "\\u0001")]
+#[case::unit_separator("\u{1f}", "\\u001f")]
+#[case::delete_kept("\u{7f}", "\u{7f}")]
+#[case::c1_kept("\u{85}", "\u{85}")]
+#[case::non_ascii_and_solidus_kept("ação/", "ação/")]
+#[case::empty("", "")]
+fn json_escaping_writes_rfc_8259_escapes(#[case] value: &str, #[case] escaped: &str) {
+    assert_eq!(json_escaped(value), escaped);
+}
+
+#[rstest]
+#[case::escaped(true, "a\\\"b")]
+#[case::as_generated(false, "a\"b")]
+fn push_value_escapes_only_when_asked(#[case] json: bool, #[case] expected: &str) {
+    let mut out = String::new();
+
+    push_value(&mut out, "a\"b", json, CAP).unwrap();
+
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn push_value_checks_the_cap_after_escaping() {
+    let quotes = "\"".repeat(10);
+    let mut escaped = String::new();
+    let mut plain = String::new();
+
+    let escaped_result = push_value(&mut escaped, &quotes, true, 15);
+    let plain_result = push_value(&mut plain, &quotes, false, 15);
+
+    assert_eq!(
+        format!("{:#}", escaped_result.unwrap_err()),
+        "the rendered body passes the 15-byte limit"
+    );
+    assert!(plain_result.is_ok());
+}
+
+#[test]
+fn an_escaped_value_inside_quotes_parses_as_json() {
+    let value = "say \"hi\" \\ a\\b\nnext\tcol \u{1} \u{1f} ação 🦀";
+    let mut body = String::from("{\"v\": \"");
+
+    push_value(&mut body, value, true, CAP).unwrap();
+    body.push_str("\"}");
+
+    let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(parsed["v"], value);
+}
+
+#[test]
+fn a_pt_br_last_name_template_with_escape_renders_valid_json_every_time() {
+    let template =
+        Template::compile("{\"n\": \"{{person.last-name locale=pt-br escape=json}}\"}").unwrap();
+
+    for _ in 0..2_000 {
+        let rendered = template.render(CAP, instant(), 0).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        assert!(!parsed["n"].as_str().unwrap().is_empty(), "{rendered}");
+    }
+}
+
+#[test]
+fn escape_json_on_a_clock_renders_the_same_text() {
+    let escaped = Template::compile("{{utc-now escape=json}} {{now escape=json}}").unwrap();
+    let plain = Template::compile("{{utc-now}} {{now}}").unwrap();
+
+    assert_eq!(
+        escaped.render(CAP, instant(), 0).unwrap(),
+        plain.render(CAP, instant(), 0).unwrap()
+    );
+}
+
+fn segment_flags(source: &str) -> Vec<bool> {
+    Template::compile(source)
+        .unwrap()
+        .segments
+        .iter()
+        .filter_map(|segment| match segment {
+            Segment::Literal(_) => None,
+            Segment::Mock { json, .. } | Segment::Given { json, .. } => Some(*json),
+        })
+        .collect()
+}
+
+#[rstest]
+#[case::mock_with_escape("{{person.last-name escape=json}}", [true])]
+#[case::mock_without("{{person.last-name}}", [false])]
+#[case::clock_with_escape("{{now escape=json}}", [true])]
+#[case::clock_without("{{utc-now}}", [false])]
+#[case::sequence_with_escape("{{sequence escape=json}}", [true])]
+#[case::sequence_without("{{sequence}}", [false])]
+#[case::beside_a_locale("{{person.city locale=pt-br escape=json}}", [true])]
+#[case::mock_upper_case("{{person.last-name escape=JSON}}", [true])]
+#[case::mock_mixed_case("{{person.last-name escape=jSoN}}", [true])]
+#[case::clock_title_case("{{now escape=Json}}", [true])]
+fn compile_records_escape_json_on_the_segment(#[case] source: &str, #[case] flags: [bool; 1]) {
+    assert_eq!(segment_flags(source), flags);
+}
+
+#[test]
+fn escape_json_keeps_the_inert_locale_note() {
+    let template = Template::compile("{{random.integer locale=pt-br escape=json}}").unwrap();
+
+    assert_eq!(template.inert_locale_notes().len(), 1);
+}
+
+#[rstest]
+#[case::unknown(
+    "{{person.last-name escape=xml}}",
+    "line 1, column 1: unknown escape 'xml' for person.last-name; use json"
+)]
+#[case::upper_case_key(
+    "{{person.last-name ESCAPE=json}}",
+    "line 1, column 1: unknown option 'ESCAPE' for person.last-name"
+)]
+#[case::upper_case_key_on_a_clock(
+    "{{now ESCAPE=json}}",
+    "line 1, column 1: unknown option 'ESCAPE' for now"
+)]
+#[case::twice_in_different_cases(
+    "{{person.email escape=json escape=JSON}}",
+    "line 1, column 1: 'escape' is given twice"
+)]
+#[case::empty(
+    "{{person.email escape=}}",
+    "line 1, column 1: unknown escape '' for person.email; use json"
+)]
+#[case::bare(
+    "{{person.email escape}}",
+    "line 1, column 1: 'escape' needs a value, as in escape=json"
+)]
+#[case::twice(
+    "{{person.email escape=json escape=xml}}",
+    "line 1, column 1: 'escape' is given twice"
+)]
+#[case::unknown_on_a_clock(
+    "{{now escape=xml}}",
+    "line 1, column 1: unknown escape 'xml' for now; use json"
+)]
+#[case::twice_on_a_clock(
+    "{{utc-now escape=json escape=json}}",
+    "line 1, column 1: 'escape' is given twice"
+)]
+#[case::bare_on_a_clock(
+    "{{utc-now escape}}",
+    "line 1, column 1: 'escape' needs a value, as in escape=json"
+)]
+#[case::another_option_after_the_escape(
+    "{{now escape=json past}}",
+    "line 1, column 1: unknown option 'past' for now"
+)]
+fn escape_errors_name_the_line_column_and_problem(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(compile_error(source), expected);
+}
+
+#[test]
+fn a_long_unknown_escape_is_quoted_cut_short() {
+    let value = "x".repeat(80);
+
+    let error = compile_error(&format!("{{{{person.email escape={value}}}}}"));
+
+    assert!(
+        error.ends_with(&format!(
+            "unknown escape '{}…' for person.email; use json",
+            "x".repeat(QUOTE_LIMIT)
+        )),
+        "{error}"
+    );
+}

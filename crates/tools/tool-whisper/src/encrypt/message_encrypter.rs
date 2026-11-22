@@ -1,9 +1,8 @@
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use rand06_compat::Rand0_6CompatExt;
 use rsa::pkcs8::EncodePublicKey;
 use rsa::traits::PublicKeyParts;
-use rsa::{Pkcs1v15Encrypt, RsaPublicKey};
+use rsa::{Pkcs1v15Encrypt, PublicKey};
 use tracing::debug;
 
 /// PKCS#1 v1.5 padding overhead in bytes: RFC 8017 section 7.2.1 caps the plaintext at k - 11,
@@ -12,11 +11,11 @@ const PKCS1V15_OVERHEAD: usize = 11;
 
 #[derive(Clone)]
 pub struct MessageEncrypter {
-    public_key: RsaPublicKey,
+    public_key: PublicKey,
 }
 
 impl MessageEncrypter {
-    pub fn new(public_key: RsaPublicKey) -> Result<MessageEncrypter> {
+    pub fn new(public_key: PublicKey) -> Result<MessageEncrypter> {
         Ok(MessageEncrypter { public_key })
     }
 
@@ -40,12 +39,10 @@ impl MessageEncrypter {
 
     pub fn encrypt_message(&self, msg: &str) -> Result<String> {
         debug!("Encrypting message...");
-        let rng = rand::rng();
-        let mut rng06 = rng.compat();
         let msg_bytes = msg.as_bytes();
         let encrypted = self
             .public_key
-            .encrypt(&mut rng06, Pkcs1v15Encrypt, msg_bytes)?;
+            .encrypt(&mut rand::rng(), Pkcs1v15Encrypt, msg_bytes)?;
         Ok(BASE64.encode(encrypted))
     }
 }
@@ -53,14 +50,12 @@ impl MessageEncrypter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rsa::RsaPrivateKey;
+    use rsa::PrivateKey;
     use std::sync::LazyLock;
 
-    static TEST_PUBLIC_KEY: LazyLock<RsaPublicKey> = LazyLock::new(|| {
-        let rng = rand::rng();
-        let mut rng06 = rng.compat();
-        let private_key = RsaPrivateKey::new(&mut rng06, 2048).expect("key generation");
-        RsaPublicKey::from(&private_key)
+    static TEST_PUBLIC_KEY: LazyLock<PublicKey> = LazyLock::new(|| {
+        let private_key = PrivateKey::new(&mut rand::rng(), 2048).expect("key generation");
+        PublicKey::from(&private_key)
     });
 
     fn test_encrypter() -> MessageEncrypter {

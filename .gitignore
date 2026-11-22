@@ -47,7 +47,6 @@
 .FBCIndex
 .FBCLockFolder
 .FBCSemaphoreFile
-.HFS+ Private Directory Data[]
 .LSOverride
 .MobileBackups
 .MobileBackups.trash
@@ -136,8 +135,6 @@
 Backups.backupdb
 Desktop DB
 Desktop DF
-Icon[
-]
 MobileBackups.trash
 Network Trash Folder
 Temporary Items
@@ -184,3 +181,29 @@ vite.config.ts.timestamp-*
 web_modules/
 yarn-debug.log*
 yarn-error.log*
+.aider.input.history
+.aider.chat.history.md
+.aider.llm.history
+.aider.tags.cache.v*
+.claude/*.local.json
+.claude/**/*.log
+.claude/worktrees/
+CLAUDE.local.md
+gemini-debug.log
+.gemini-clipboard/
+.playwright-mcp/
+.remember/
+.superpowers/
+.idea/sonarlint.xml
+.idea/**/copilot.data.migration.*.xml
+.idea/kubernetes/configs/kubeconfig_*
+Icon[
+]
+.HFS+ Private Directory Data[
+]
+.nitro/
+.astro/
+.turbo
+.nx/cache
+.nx/workspace-data
+.nx/migrate-runs

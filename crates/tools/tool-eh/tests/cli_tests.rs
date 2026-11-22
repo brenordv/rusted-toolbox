@@ -1,0 +1,1317 @@
+use chrono::{DateTime, Duration, SubsecRound, Utc};
+use shared_eventhub_core::connection::EventHubIdentity;
+use shared_eventhub_core::engine::{Checkpoint, MessageSink};
+use shared_eventhub_core::models::{BodyKind, CapturedMessage, MessageKey};
+use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::store::MessageStore;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+
+const EXE: &str = env!("CARGO_BIN_EXE_eh");
+const SECRET_KEY: &str = "c2VjcmV0LWtleS1uZXZlci1wcmludGVk";
+const NAMESPACE: &str = "orders.servicebus.windows.net";
+const HUB: &str = "orders";
+
+fn connection_string() -> String {
+    format!(
+        "Endpoint=sb://{NAMESPACE}/;SharedAccessKeyName=listen;SharedAccessKey={SECRET_KEY};EntityPath={HUB}"
+    )
+}
+
+/// Runs eh in `cwd` with the workspace `<cwd>/profiles`, so no test reads or
+/// writes the real one.
+fn eh(cwd: &Path, args: &[&str]) -> Output {
+    eh_with_workspace(cwd, &cwd.join("profiles"), args)
+}
+
+fn eh_with_workspace(cwd: &Path, workspace: &Path, args: &[&str]) -> Output {
+    Command::new(EXE)
+        .args(args)
+        .current_dir(cwd)
+        .env("EH_WORKSPACE", workspace)
+        .env_remove("EH_CONNECTION_STRING")
+        .env_remove("EH_CLIENT_SECRET")
+        .env_remove("RUST_LOG")
+        .output()
+        .expect("failed to run eh")
+}
+
+fn stdout_of(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn stderr_of(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(files_under(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files.sort();
+    files
+}
+
+fn read_all(files: &[PathBuf]) -> String {
+    files
+        .iter()
+        .map(|file| std::fs::read_to_string(file).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn message(sequence_number: i64, enqueued_time: DateTime<Utc>, body: &str) -> CapturedMessage {
+    CapturedMessage {
+        key: MessageKey {
+            partition_id: "0".to_owned(),
+            sequence_number,
+        },
+        offset: Some(format!("offset-{sequence_number}")),
+        partition_key: None,
+        enqueued_time: Some(enqueued_time),
+        processed_at: enqueued_time,
+        message_id: None,
+        correlation_id: None,
+        content_type: None,
+        properties: BTreeMap::new(),
+        body: body.to_owned(),
+        body_kind: BodyKind::Utf8,
+    }
+}
+
+/// Archives three messages enqueued three, two, and one hour ago, then closes
+/// the archive so the binary can open it.
+async fn seed_archive(data: &Path) -> Vec<DateTime<Utc>> {
+    let store = MessageStore::open(&DataPaths::new(data)).unwrap();
+    store
+        .bind(&EventHubIdentity {
+            fully_qualified_namespace: NAMESPACE.to_owned(),
+            event_hub_name: HUB.to_owned(),
+            created_on: None,
+        })
+        .await
+        .unwrap();
+    let now = Utc::now();
+    let times: Vec<DateTime<Utc>> = (1..=3)
+        .map(|hours_ago| now - Duration::hours(4 - hours_ago))
+        .collect();
+    let bodies = ["order-1 created", "payment ok", "order-2 created"];
+    for (index, (time, body)) in times.iter().zip(bodies).enumerate() {
+        let sequence_number = i64::try_from(index).unwrap() + 1;
+        let message = message(sequence_number, *time, body);
+        let checkpoint = Checkpoint {
+            partition_id: "0".to_owned(),
+            sequence_number,
+            offset: message.offset.clone(),
+            enqueued_time: message.enqueued_time,
+            updated_at: Utc::now(),
+        };
+        store.store(&message, &checkpoint, true).await.unwrap();
+    }
+    store.close().await.unwrap();
+    times
+}
+
+#[test]
+fn help_exits_zero_and_lists_the_subcommands_and_key_flags() {
+    let root = tempfile::tempdir().unwrap();
+
+    let top = eh(root.path(), &["--help"]);
+    let read = eh(root.path(), &["read", "--help"]);
+    let export = eh(root.path(), &["export", "--help"]);
+
+    for output in [&top, &read, &export] {
+        assert!(output.status.success(), "{}", stderr_of(output));
+    }
+    assert!(stdout_of(&top).contains("read") && stdout_of(&top).contains("export"));
+    assert!(stdout_of(&top).contains("profile"), "{}", stdout_of(&top));
+    assert!(stdout_of(&read).contains("--profile <NAME>"));
+    assert!(stdout_of(&export).contains("--profile <NAME>"));
+    assert!(stdout_of(&read).contains("--connection-string"));
+    assert!(stdout_of(&read).contains("--disk-mode"));
+    assert!(stdout_of(&export).contains("--export-format"));
+    assert!(stdout_of(&export).contains("--ignore-export-log"));
+}
+
+/// A bare `eh` opens the menu only when stdin, stdout, and stderr are terminals. In a pipe it
+/// must print the help at once; `output()` has no timeout, so the child is polled and killed
+/// past a deadline, and a regression fails instead of hanging the run. The pipes are read only
+/// after the child exits, which holds because the help (about 1.3 KB) fits in a pipe's buffer.
+#[test]
+fn eh_with_no_arguments_in_a_pipe_prints_the_help_and_exits_2_without_waiting() {
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let root = tempfile::tempdir().unwrap();
+    let mut child = Command::new(EXE)
+        .current_dir(root.path())
+        .env("EH_WORKSPACE", root.path().join("profiles"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("a bare eh in a pipe was still running after 10 s");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let output = child.wait_with_output().unwrap();
+
+    assert_eq!(output.status.code(), Some(2), "{}", stderr_of(&output));
+    assert!(
+        stderr_of(&output).contains("Usage"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(stdout_of(&output).is_empty(), "{}", stdout_of(&output));
+}
+
+#[test]
+fn send_help_lists_the_body_count_routing_and_pacing_flags() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["send", "--help"]);
+
+    assert!(output.status.success(), "{}", stderr_of(&output));
+    let help = stdout_of(&output);
+    for flag in [
+        "--body ",
+        "--body-file",
+        "--count",
+        "--partition-key",
+        "--content-type",
+        "--interval-ms",
+        "--yes",
+    ] {
+        assert!(help.contains(flag), "{flag} missing: {help}");
+    }
+    assert!(!help.contains("--consumer-group"), "{help}");
+}
+
+#[test]
+fn send_without_a_target_fails_before_touching_anything() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["send", "--body", "x"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("No event hub given"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+}
+
+/// A send to a namespace that does not exist ends in a connection error (exit 1). The TLS
+/// connector is built before the connect, so a missing rustls default would show here as a
+/// panic (exit 101) in a build that enables more than one rustls provider. Its only network use
+/// is a DNS lookup that finds no such host.
+#[test]
+fn a_send_to_a_namespace_that_does_not_exist_fails_to_connect_without_a_panic() {
+    let root = tempfile::tempdir().unwrap();
+    let unreachable = "Endpoint=sb://eh-tests-no-such-namespace.servicebus.windows.net/;\
+                       SharedAccessKeyName=x;SharedAccessKey=eA==;EntityPath=orders";
+
+    let output = eh(
+        root.path(),
+        &["send", "--no-config", "-s", unreachable, "--body", "x"],
+    );
+
+    let stderr = stderr_of(&output);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(!stderr.contains("CryptoProvider"), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
+fn a_missing_body_file_fails_before_the_target_or_config_is_touched() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--body-file",
+            "missing.json",
+            "-s",
+            &connection_string(),
+            "-e",
+            HUB,
+            "--save-config",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("Failed to read the body file 'missing.json'"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+    assert!(!stderr_of(&output).contains(SECRET_KEY));
+}
+
+#[test]
+fn a_template_dry_run_prints_the_renders_with_no_target_and_creates_nothing() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--dry-run",
+            "-n",
+            "3",
+            "--body",
+            "{\"n\": {{random.integer min=1 max=1}}}",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    assert_eq!(
+        stdout_of(&output),
+        "{\"n\": 1}\n\n{\"n\": 1}\n\n{\"n\": 1}\n"
+    );
+    assert!(
+        stderr_of(&output).contains("Dry run: 3 event(s) rendered, nothing sent."),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+}
+
+#[test]
+fn a_utc_now_dry_run_prints_the_time_each_event_is_built() {
+    let root = tempfile::tempdir().unwrap();
+    let before = Utc::now().trunc_subsecs(3);
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--dry-run",
+            "-n",
+            "2",
+            "--body",
+            "{{utc-now}}",
+        ],
+    );
+
+    let after = Utc::now();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    let stdout = stdout_of(&output);
+    let events: Vec<&str> = stdout.lines().filter(|line| !line.is_empty()).collect();
+    assert_eq!(events.len(), 2, "{stdout}");
+    for event in events {
+        let at = DateTime::parse_from_rfc3339(event).unwrap();
+        assert!(event.ends_with('Z'), "{event}");
+        assert!(before <= at && at <= after, "{event}");
+    }
+}
+
+#[test]
+fn a_template_dry_run_never_reads_the_folders_config_json() {
+    let root = tempfile::tempdir().unwrap();
+    let config = root.path().join("config.json");
+    std::fs::write(
+        &config,
+        r#"{"tool": "eh", "schema_version": "not a number"}"#,
+    )
+    .unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--dry-run",
+            "--body",
+            "{{random.integer min=7 max=7}}",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    assert_eq!(stdout_of(&output), "7\n");
+    assert!(
+        !stderr_of(&output).contains("config.json"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert_eq!(files_under(root.path()), [config]);
+}
+
+#[test]
+fn a_template_that_does_not_compile_fails_before_the_target_is_saved() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--body",
+            "{\"name\": \"{{person.fullname}}\"}",
+            "-s",
+            &connection_string(),
+            "-e",
+            HUB,
+            "--save-config",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("line 1, column 11: unknown type 'person.fullname'"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+    assert!(!stderr_of(&output).contains(SECRET_KEY));
+}
+
+#[test]
+fn a_template_body_file_that_is_not_utf8_fails_naming_the_offset() {
+    let root = tempfile::tempdir().unwrap();
+    let body = root.path().join("event.bin");
+    std::fs::write(&body, b"{\"a\": \xc3\x28}").unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--template",
+            "--body-file",
+            "event.bin",
+            "-s",
+            &connection_string(),
+            "--save-config",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("the byte at offset 6 is not valid"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert_eq!(files_under(root.path()), [body]);
+}
+
+#[test]
+fn a_body_file_over_the_cap_fails_naming_the_cap_and_creates_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let body = root.path().join("big.bin");
+    std::fs::File::create(&body)
+        .unwrap()
+        .set_len(20 * 1024 * 1024 + 1)
+        .unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "send",
+            "--body-file",
+            "big.bin",
+            "-s",
+            &connection_string(),
+            "--save-config",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("over the 20971520-byte limit"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert_eq!(files_under(root.path()), [body]);
+}
+
+#[test]
+fn a_body_piped_on_stdin_is_read_before_the_target_is_checked() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let root = tempfile::tempdir().unwrap();
+    let mut child = Command::new(EXE)
+        .args(["--app-header", "send", "--body-file", "-"])
+        .current_dir(root.path())
+        .env("EH_WORKSPACE", root.path().join("profiles"))
+        .env_remove("EH_CONNECTION_STRING")
+        .env_remove("EH_CLIENT_SECRET")
+        .env_remove("RUST_LOG")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"{\"orderId\": 1}")
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("No event hub given"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+}
+
+#[test]
+fn a_recalled_target_is_refused_until_it_is_named_or_confirmed() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("config.json"),
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"event_hub":"{HUB}","auth":{{"method":"connection-string","stored":"local-db"}}}}}}"#
+        ),
+    )
+    .unwrap();
+
+    let output = eh(root.path(), &["send", "--body", "x"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("This run would send to namespace (from the connection string), event hub orders, taken from this folder's config.json. Name it with --namespace and -e, or pass --yes."),
+        "{stderr}"
+    );
+    assert!(!root.path().join(".eh-data").exists());
+}
+
+#[test]
+fn an_environment_string_without_a_hub_does_not_send_to_the_recalled_hub() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("config.json"),
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"event_hub":"{HUB}","auth":{{"method":"connection-string","stored":"local-db"}}}}}}"#
+        ),
+    )
+    .unwrap();
+    let namespace_level =
+        format!("Endpoint=sb://{NAMESPACE}/;SharedAccessKeyName=send;SharedAccessKey={SECRET_KEY}");
+
+    let output = Command::new(EXE)
+        .args(["send", "--body", "x"])
+        .current_dir(root.path())
+        .env("EH_WORKSPACE", root.path().join("profiles"))
+        .env("EH_CONNECTION_STRING", namespace_level)
+        .env_remove("EH_CLIENT_SECRET")
+        .env_remove("RUST_LOG")
+        .output()
+        .expect("failed to run eh");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("This run would send to namespace (from the connection string), event hub orders, taken from this folder's config.json (the connection string in EH_CONNECTION_STRING does not name an event hub by itself). Name the event hub with -e, or pass --yes."),
+        "{stderr}"
+    );
+    assert!(!stderr.contains(SECRET_KEY), "{stderr}");
+    assert!(!root.path().join(".eh-data").exists());
+}
+
+#[test]
+fn a_config_json_naming_a_data_folder_outside_its_folder_is_refused_and_the_folder_stays_empty() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_folder = outside.path().display().to_string().replace('\\', "/");
+    let config = root.path().join("config.json");
+    std::fs::write(
+        &config,
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"namespace":"{NAMESPACE}","event_hub":"{HUB}","auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}},"storage":{{"base_data_folder":"{outside_folder}"}}}}"#
+        ),
+    )
+    .unwrap();
+
+    let export = eh(root.path(), &["export"]);
+    let read = eh(root.path(), &["read"]);
+
+    for output in [&export, &read] {
+        assert_eq!(output.status.code(), Some(1), "{}", stderr_of(output));
+        assert!(
+            stderr_of(output).contains("config.json names a data folder outside this folder"),
+            "{}",
+            stderr_of(output)
+        );
+        assert!(
+            stderr_of(output).contains("Pass -b FOLDER to choose one for this run, or keep the setup in a profile (--profile NAME)."),
+            "{}",
+            stderr_of(output)
+        );
+    }
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    assert_eq!(files_under(root.path()), [config]);
+}
+
+#[test]
+fn read_without_a_target_fails_before_touching_anything() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["read"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("No event hub given"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(files_under(root.path()).is_empty());
+}
+
+#[test]
+fn a_dump_filter_with_no_keyword_fails_before_touching_anything() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "read",
+            "--no-config",
+            "-s",
+            &connection_string(),
+            "--dump-filter",
+            ",",
+        ],
+    );
+
+    let stderr = stderr_of(&output);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr.contains("--dump-filter needs at least one keyword"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains(SECRET_KEY), "{stderr}");
+    assert!(files_under(root.path()).is_empty());
+}
+
+#[test]
+fn a_data_folder_that_is_not_an_eh_folder_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let project = root.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::write(project.join(".gitignore"), "target/\n").unwrap();
+    std::fs::write(project.join("Cargo.toml"), "[package]\n").unwrap();
+
+    let output = eh(
+        root.path(),
+        &[
+            "read",
+            "-s",
+            &connection_string(),
+            "-b",
+            "project",
+            "--no-config",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("is not an eh data folder"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(!project.join("archive.redb").exists());
+    assert!(!project.join("secrets.redb").exists());
+    assert!(!stderr_of(&output).contains(SECRET_KEY));
+}
+
+#[tokio::test]
+async fn export_writes_every_archived_message_and_the_export_log_skips_them_next_time() {
+    let root = tempfile::tempdir().unwrap();
+    seed_archive(&root.path().join(".eh-data")).await;
+
+    let first = eh(root.path(), &["export"]);
+    let second = eh(root.path(), &["export"]);
+    let again = eh(root.path(), &["export", "-i"]);
+
+    assert!(first.status.success(), "{}", stderr_of(&first));
+    assert!(
+        stdout_of(&first).contains("Exported: 3 | Skipped (already exported): 0 | Failed: 0"),
+        "{}",
+        stdout_of(&first)
+    );
+    assert!(
+        stdout_of(&second).contains("Exported: 0 | Skipped (already exported): 3"),
+        "{}",
+        stdout_of(&second)
+    );
+    assert!(
+        stdout_of(&again).contains("Exported: 3 |"),
+        "{}",
+        stdout_of(&again)
+    );
+    let files = files_under(&root.path().join(".eh-data").join("exports"));
+    assert_eq!(files.len(), 3, "{files:?}");
+    assert!(read_all(&files).contains("payment ok"));
+}
+
+#[tokio::test]
+async fn csv_and_json_carry_the_bound_hub_and_metadata_can_be_left_out() {
+    let root = tempfile::tempdir().unwrap();
+    seed_archive(&root.path().join(".eh-data")).await;
+
+    let csv = eh(
+        root.path(),
+        &[
+            "export",
+            "-f",
+            "csv",
+            "--export-folder",
+            "csv",
+            "--condense-output",
+        ],
+    );
+    let json = eh(
+        root.path(),
+        &["export", "-f", "json", "--export-folder", "json", "-i"],
+    );
+    let bare = eh(
+        root.path(),
+        &[
+            "export",
+            "-f",
+            "csv",
+            "--export-folder",
+            "bare",
+            "--include-metadata",
+            "false",
+            "--condense-output",
+            "-i",
+        ],
+    );
+
+    for output in [&csv, &json, &bare] {
+        assert!(output.status.success(), "{}", stderr_of(output));
+    }
+    let data = root.path().join(".eh-data");
+    let csv_text = read_all(&files_under(&data.join("csv")));
+    assert!(
+        csv_text.starts_with(
+            "entity_path,partition_id,event_id,timestamp,content_type,correlation_id,properties,\
+             message_content"
+        ),
+        "{csv_text}"
+    );
+    assert!(csv_text.contains("orders,0,2,"), "{csv_text}");
+    let json_text = read_all(&files_under(&data.join("json")));
+    assert!(
+        json_text.contains("\"entity_path\": \"orders\""),
+        "{json_text}"
+    );
+    let bare_text = read_all(&files_under(&data.join("bare")));
+    assert!(bare_text.starts_with("message_content\n"), "{bare_text}");
+    assert!(!bare_text.contains("orders,"), "{bare_text}");
+}
+
+#[tokio::test]
+async fn time_and_regex_filters_narrow_the_export() {
+    let root = tempfile::tempdir().unwrap();
+    let times = seed_archive(&root.path().join(".eh-data")).await;
+    let after_first = (times[0] + Duration::minutes(30)).to_rfc3339();
+
+    let newer = eh(
+        root.path(),
+        &[
+            "export",
+            "--export-folder",
+            "newer",
+            "--newer-than",
+            &after_first,
+        ],
+    );
+    let regex = eh(
+        root.path(),
+        &[
+            "export",
+            "--export-folder",
+            "regex",
+            "--filter-regex",
+            "order-\\d+",
+            "-i",
+        ],
+    );
+
+    assert!(newer.status.success(), "{}", stderr_of(&newer));
+    assert!(regex.status.success(), "{}", stderr_of(&regex));
+    let data = root.path().join(".eh-data");
+    let newer_text = read_all(&files_under(&data.join("newer")));
+    assert_eq!(files_under(&data.join("newer")).len(), 2);
+    assert!(!newer_text.contains("order-1 created"), "{newer_text}");
+    let regex_text = read_all(&files_under(&data.join("regex")));
+    assert_eq!(files_under(&data.join("regex")).len(), 2);
+    assert!(!regex_text.contains("payment ok"), "{regex_text}");
+}
+
+#[test]
+fn export_without_an_archive_fails_and_creates_nothing() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["export", "-b", "missing"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("No archive in"),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(stderr_of(&output).contains("run `eh read`"));
+    assert!(!root.path().join("missing").exists());
+}
+
+#[tokio::test]
+async fn export_while_the_archive_is_in_use_fails_naming_the_lock() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join(".eh-data");
+    seed_archive(&data).await;
+    let held = MessageStore::open(&DataPaths::new(&data)).unwrap();
+
+    let output = eh(root.path(), &["export"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("in use by another eh or eh-gui"),
+        "{}",
+        stderr_of(&output)
+    );
+    held.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn save_config_stores_the_secret_apart_and_a_later_run_recalls_the_target() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join(".eh-data");
+    seed_archive(&data).await;
+    let held = MessageStore::open(&DataPaths::new(&data)).unwrap();
+    let connection_string = connection_string();
+
+    let saving = eh(
+        root.path(),
+        &[
+            "--app-header",
+            "read",
+            "-s",
+            &connection_string,
+            "--namespace",
+            NAMESPACE,
+            "-e",
+            HUB,
+            "--save-config",
+        ],
+    );
+    let recalling = eh(root.path(), &["--app-header", "read"]);
+    held.close().await.unwrap();
+
+    for output in [&saving, &recalling] {
+        assert_eq!(output.status.code(), Some(1), "{}", stderr_of(output));
+        assert!(
+            stderr_of(output).contains("in use by another eh or eh-gui"),
+            "{}",
+            stderr_of(output)
+        );
+        assert!(!stdout_of(output).contains(SECRET_KEY));
+        assert!(!stderr_of(output).contains(SECRET_KEY));
+    }
+    let saved = std::fs::read_to_string(root.path().join("config.json")).unwrap();
+    assert!(!saved.contains(SECRET_KEY), "{saved}");
+    assert!(saved.contains("\"stored\": \"local-db\""), "{saved}");
+    assert!(data.join("secrets.redb").exists());
+    assert!(
+        stderr_of(&saving).contains("the connection string is stored in"),
+        "{}",
+        stderr_of(&saving)
+    );
+    let header = stdout_of(&recalling);
+    assert!(
+        header.contains(&format!(
+            "  - Target: namespace {NAMESPACE}, event hub {HUB}"
+        )),
+        "{header}"
+    );
+    assert!(header.contains("  - Auth: connection string"), "{header}");
+    assert!(header.contains("  - config.json: used"), "{header}");
+    assert!(
+        stderr_of(&recalling).contains("Using config.json:"),
+        "{}",
+        stderr_of(&recalling)
+    );
+}
+
+#[test]
+fn an_invalid_eh_config_json_fails_without_echoing_what_it_holds() {
+    let root = tempfile::tempdir().unwrap();
+    let pasted = connection_string();
+    std::fs::write(
+        root.path().join("config.json"),
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"auth":{{"method":"{pasted}"}}}}}}"#
+        ),
+    )
+    .unwrap();
+
+    let output = eh(root.path(), &["export"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("is an eh config, but it is not valid"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains(SECRET_KEY), "{stderr}");
+    assert!(!root.path().join(".eh-data").exists());
+}
+
+#[test]
+fn a_connection_string_variable_that_is_not_unicode_fails_naming_it() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = Command::new(EXE)
+        .args(["read"])
+        .current_dir(root.path())
+        .env("EH_WORKSPACE", root.path().join("profiles"))
+        .env("EH_CONNECTION_STRING", not_unicode())
+        .env_remove("EH_CLIENT_SECRET")
+        .output()
+        .expect("failed to run eh");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("EH_CONNECTION_STRING is set but is not valid Unicode"),
+        "{}",
+        stderr_of(&output)
+    );
+}
+
+#[cfg(windows)]
+fn not_unicode() -> std::ffi::OsString {
+    use std::os::windows::ffi::OsStringExt;
+
+    std::ffi::OsString::from_wide(&[0xD800])
+}
+
+#[cfg(unix)]
+fn not_unicode() -> std::ffi::OsString {
+    use std::os::unix::ffi::OsStringExt;
+
+    std::ffi::OsString::from_vec(vec![0xff])
+}
+
+#[test]
+fn a_foreign_config_json_is_ignored_with_a_notice_and_never_overwritten() {
+    let root = tempfile::tempdir().unwrap();
+    let foreign = "{\"tool\": \"other\", \"port\": 8080}";
+    std::fs::write(root.path().join("config.json"), foreign).unwrap();
+
+    let reading = eh(root.path(), &["read"]);
+    let saving = eh(
+        root.path(),
+        &["read", "-s", &connection_string(), "--save-config"],
+    );
+
+    assert_eq!(reading.status.code(), Some(1));
+    assert!(
+        stderr_of(&reading).contains("config.json here is not an eh config; ignored"),
+        "{}",
+        stderr_of(&reading)
+    );
+    assert!(stderr_of(&reading).contains("No event hub given"));
+    assert_eq!(saving.status.code(), Some(1));
+    assert!(
+        stderr_of(&saving).contains("belongs to another tool"),
+        "{}",
+        stderr_of(&saving)
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("config.json")).unwrap(),
+        foreign
+    );
+}
+
+/// A temp folder with a current folder `here` (where eh runs) and a
+/// workspace `profiles` beside it.
+struct ProfileFixture {
+    root: tempfile::TempDir,
+}
+
+impl ProfileFixture {
+    fn new() -> Self {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("here")).unwrap();
+        Self { root }
+    }
+
+    fn here(&self) -> PathBuf {
+        self.root.path().join("here")
+    }
+
+    fn workspace(&self) -> PathBuf {
+        self.root.path().join("profiles")
+    }
+
+    fn eh(&self, args: &[&str]) -> Output {
+        eh_with_workspace(&self.here(), &self.workspace(), args)
+    }
+
+    /// Writes an eh `config.json` naming the test hub into the profile
+    /// folder `name`.
+    fn write_profile(&self, name: &str) -> PathBuf {
+        let dir = self.workspace().join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            format!(
+                r#"{{"tool":"eh","schema_version":1,"target":{{"namespace":"{NAMESPACE}","event_hub":"{HUB}","auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}}}}"#
+            ),
+        )
+        .unwrap();
+        dir
+    }
+}
+
+#[test]
+fn profile_list_on_an_empty_workspace_says_there_are_none() {
+    let fixture = ProfileFixture::new();
+
+    let output = fixture.eh(&["profile", "list"]);
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr_of(&output));
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "No profiles in '{}' yet. Save one with: eh read --profile NAME --save-config \
+             <target flags>\n",
+            fixture.workspace().display()
+        )
+    );
+}
+
+#[test]
+fn profile_list_fails_when_the_workspace_is_a_file() {
+    let fixture = ProfileFixture::new();
+    std::fs::write(fixture.workspace(), "not a folder").unwrap();
+
+    let output = fixture.eh(&["profile", "list"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("Failed to list the workspace"),
+        "{}",
+        stderr_of(&output)
+    );
+}
+
+#[tokio::test]
+async fn save_config_with_a_profile_creates_it_and_a_later_run_recalls_it() {
+    let fixture = ProfileFixture::new();
+    let profile = fixture.workspace().join("p");
+    let data = profile.join(".eh-data");
+    seed_archive(&data).await;
+    let held = MessageStore::open(&DataPaths::new(&data)).unwrap();
+    let connection_string = connection_string();
+
+    let saving = fixture.eh(&[
+        "read",
+        "--profile",
+        "p",
+        "--save-config",
+        "-s",
+        &connection_string,
+        "-e",
+        HUB,
+    ]);
+    let recalling = fixture.eh(&["--app-header", "read", "--profile", "p"]);
+    let listing = fixture.eh(&["profile", "list"]);
+    held.close().await.unwrap();
+
+    for output in [&saving, &recalling] {
+        assert_eq!(output.status.code(), Some(1), "{}", stderr_of(output));
+        assert!(
+            stderr_of(output).contains("in use by another eh or eh-gui"),
+            "{}",
+            stderr_of(output)
+        );
+        assert!(!stderr_of(output).contains(SECRET_KEY));
+        assert!(!stdout_of(output).contains(SECRET_KEY));
+    }
+    let saved = std::fs::read_to_string(profile.join("config.json")).unwrap();
+    assert!(!saved.contains(SECRET_KEY), "{saved}");
+    assert!(
+        saved.contains(&format!("\"namespace\": \"{NAMESPACE}\"")),
+        "{saved}"
+    );
+    assert!(
+        saved.contains(&format!("\"event_hub\": \"{HUB}\"")),
+        "{saved}"
+    );
+    assert!(data.join("secrets.redb").exists());
+    assert!(
+        stderr_of(&saving).contains("Saved profile p; the connection string is stored in"),
+        "{}",
+        stderr_of(&saving)
+    );
+    let header = stdout_of(&recalling);
+    assert!(header.contains("  - Profile: p"), "{header}");
+    assert!(
+        header.contains(&format!(
+            "  - Target: namespace {NAMESPACE}, event hub {HUB}"
+        )),
+        "{header}"
+    );
+    assert!(
+        stderr_of(&recalling).contains("Using profile p:"),
+        "{}",
+        stderr_of(&recalling)
+    );
+    assert_eq!(listing.status.code(), Some(0), "{}", stderr_of(&listing));
+    assert!(
+        stdout_of(&listing).contains(&format!(
+            "  p  namespace {NAMESPACE}, event hub {HUB}, auth connection string (stored)"
+        )),
+        "{}",
+        stdout_of(&listing)
+    );
+    assert!(files_under(&fixture.here()).is_empty());
+}
+
+#[test]
+fn export_with_a_profile_reads_the_profiles_data_folder_only() {
+    let fixture = ProfileFixture::new();
+    let profile = fixture.write_profile("p");
+
+    let output = fixture.eh(&["export", "--profile", "p"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains(&format!(
+            "No archive in '{}'",
+            profile.join(".eh-data").display()
+        )),
+        "{stderr}"
+    );
+    assert!(!fixture.here().join(".eh-data").exists());
+}
+
+#[test]
+fn a_profile_run_logs_the_profile_once_logging_is_up() {
+    let fixture = ProfileFixture::new();
+    fixture.write_profile("p");
+
+    let output = fixture.eh(&["--log-level", "info", "export", "--profile", "p"]);
+
+    let stderr = stderr_of(&output);
+    assert_eq!(
+        stderr.matches("Using profile profile=p dir=").count(),
+        1,
+        "{stderr}"
+    );
+}
+
+#[test]
+fn export_with_a_missing_profile_fails_without_the_save_hint() {
+    let fixture = ProfileFixture::new();
+
+    let output = fixture.eh(&["export", "--profile", "missing"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(stderr.contains("No profile named missing in"), "{stderr}");
+    assert!(
+        stderr.contains("`eh profile list` shows the saved ones"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("--save-config"), "{stderr}");
+}
+
+#[rstest::rstest]
+#[case::parent("../x", "A profile name uses letters")]
+#[case::device("con", "con is a device name on Windows")]
+fn a_bad_profile_name_fails_and_creates_nothing(#[case] name: &str, #[case] expected: &str) {
+    let fixture = ProfileFixture::new();
+
+    let output = fixture.eh(&[
+        "read",
+        "--profile",
+        name,
+        "--save-config",
+        "-s",
+        &connection_string(),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains(expected),
+        "{}",
+        stderr_of(&output)
+    );
+    assert!(!fixture.workspace().exists());
+    assert!(files_under(fixture.root.path()).is_empty());
+}
+
+#[tokio::test]
+async fn a_working_folder_moved_into_the_workspace_is_a_profile() {
+    let fixture = ProfileFixture::new();
+    let profile = fixture.write_profile("moved");
+    seed_archive(&profile.join(".eh-data")).await;
+
+    let listing = fixture.eh(&["profile", "list"]);
+    let export = fixture.eh(&["export", "--profile", "moved"]);
+
+    assert!(
+        stdout_of(&listing).contains("  moved  namespace"),
+        "{}",
+        stdout_of(&listing)
+    );
+    assert!(export.status.success(), "{}", stderr_of(&export));
+    assert!(
+        stdout_of(&export).contains("Exported: 3 |"),
+        "{}",
+        stdout_of(&export)
+    );
+    let files = files_under(&profile.join(".eh-data").join("exports"));
+    assert_eq!(files.len(), 3, "{files:?}");
+    assert!(files_under(&fixture.here()).is_empty());
+}
+
+/// Ctrl-C delivered to a running `eh export` as a real SIGINT. Unix only:
+/// sending Ctrl-C to a child process on Windows takes the
+/// `GenerateConsoleCtrlEvent` system call, which needs unsafe FFI.
+#[cfg(unix)]
+mod interrupt {
+    use super::*;
+    use std::io::Read;
+    use std::process::{ChildStdout, Stdio};
+
+    const PARTITIONS: i64 = 200;
+    const PER_PARTITION: i64 = 100;
+    const SEEDED: u64 = 20_000;
+
+    /// Archives `SEEDED` messages, one store task per partition so the
+    /// archive's writer can group their commits.
+    async fn seed_many(data: &Path) {
+        let store = MessageStore::open(&DataPaths::new(data)).unwrap();
+        store
+            .bind(&EventHubIdentity {
+                fully_qualified_namespace: NAMESPACE.to_owned(),
+                event_hub_name: HUB.to_owned(),
+                created_on: None,
+            })
+            .await
+            .unwrap();
+        let enqueued = Utc::now() - Duration::hours(1);
+        let mut tasks = tokio::task::JoinSet::new();
+        for partition in 0..PARTITIONS {
+            let store = store.clone();
+            tasks.spawn(async move {
+                for sequence_number in 1..=PER_PARTITION {
+                    let mut message = message(sequence_number, enqueued, "body");
+                    message.key.partition_id = partition.to_string();
+                    let checkpoint = Checkpoint {
+                        partition_id: partition.to_string(),
+                        sequence_number,
+                        offset: None,
+                        enqueued_time: Some(enqueued),
+                        updated_at: Utc::now(),
+                    };
+                    store.store(&message, &checkpoint, true).await.unwrap();
+                }
+            });
+        }
+        while let Some(joined) = tasks.join_next().await {
+            joined.unwrap();
+        }
+        store.close().await.unwrap();
+    }
+
+    /// Reads `stdout` until `needle` has appeared, returning everything read.
+    fn read_until(stdout: &mut ChildStdout, needle: &str) -> Vec<u8> {
+        let mut seen = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        while !String::from_utf8_lossy(&seen).contains(needle) {
+            let read = stdout.read(&mut buffer).unwrap();
+            assert_ne!(read, 0, "eh closed stdout before printing {needle:?}");
+            seen.extend_from_slice(&buffer[..read]);
+        }
+        seen
+    }
+
+    /// The exported count from the summary line
+    /// `Exported: N | Skipped (already exported): ...`.
+    fn summary_exported_count(stdout: &str) -> u64 {
+        let line = stdout
+            .lines()
+            .find(|line| line.contains("| Skipped (already exported):"))
+            .expect("the export summary line");
+        line.trim_start_matches("Exported: ")
+            .split(' ')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn ctrl_c_stops_an_export_between_messages_and_exits_130() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join(".eh-data");
+        seed_many(&data).await;
+        let mut child = Command::new(EXE)
+            .args(["export"])
+            .current_dir(root.path())
+            .env("EH_WORKSPACE", root.path().join("profiles"))
+            .env_remove("EH_CONNECTION_STRING")
+            .env_remove("EH_CLIENT_SECRET")
+            .env_remove("RUST_LOG")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        let mut seen = read_until(&mut stdout, "Exported: ");
+
+        let signalled = Command::new("kill")
+            .args(["-INT", &child.id().to_string()])
+            .status()
+            .unwrap();
+        stdout.read_to_end(&mut seen).unwrap();
+        let status = child.wait().unwrap();
+
+        assert!(signalled.success());
+        let stdout = String::from_utf8_lossy(&seen).into_owned();
+        assert_eq!(status.code(), Some(130), "{stdout}");
+        assert!(
+            stdout.contains("Cancelled; every written file is complete."),
+            "{stdout}"
+        );
+        let exported = summary_exported_count(&stdout);
+        assert!(exported < SEEDED, "the export ran to the end: {stdout}");
+        let written = files_under(&data.join("exports"));
+        assert_eq!(written.len() as u64, exported);
+    }
+}

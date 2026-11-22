@@ -1,18 +1,22 @@
-//! Mock data generators for `tool-mock`.
+//! Mock data generators, and message templates filled with them.
 //!
 //! [`generate_mock_data`] dispatches a [`models::MockOptions`] to one of the
 //! private generator modules (personal, internet, random, commerce). Input is
 //! validated first, so an out-of-range option (`min > max`, `range == 0`, a
-//! year offset or precision past the caps below) returns an error instead of
-//! panicking on an empty or unrepresentable random range. The generators stay
-//! private so no caller can reach them with unvalidated options.
+//! year offset, precision, or length past the caps below) returns an error
+//! instead of panicking on an empty or unrepresentable random range or
+//! aborting on a huge allocation. The generators stay private so no caller
+//! can reach them with unvalidated options. [`template::Template`] compiles
+//! text with `{{type option=value}}` placeholders and renders it with fresh
+//! values.
 
 use crate::generators::*;
-use crate::models::{DataType, MockOptions};
+use crate::models::{DataType, Locale, MockOptions};
 use anyhow::Result;
 
 mod generators;
 pub mod models;
+pub mod template;
 
 /// Upper bound accepted for the year-offset options (`age`, `range`). Keeps
 /// the derived date arithmetic well inside chrono's representable calendar
@@ -24,14 +28,26 @@ pub const MAX_YEAR_OFFSET: u32 = 100_000;
 /// carries, while keeping the formatted output small.
 pub const MAX_PRECISION: u32 = 100;
 
+/// Upper bound accepted for `length` (1 MiB). The password and product
+/// description generators build a string of that many characters or bytes,
+/// so an unbounded value is an allocation large enough to abort the process.
+pub const MAX_LENGTH: usize = 1 << 20;
+
+/// True when a non-default locale was requested for a data type whose
+/// generator ignores it.
+pub fn locale_is_inert(locale: Locale, data_type: &DataType) -> bool {
+    locale != Locale::En && !data_type.is_locale_aware()
+}
+
 /// Generate mock data based on the specified data type and options.
 ///
 /// # Errors
 /// Returns an error when the options are invalid for the requested type: `min`
 /// greater than `max` for integers and floats, a `range` of zero or above
 /// [`MAX_YEAR_OFFSET`] for the date, datetime, and timestamp types, an `age`
-/// above [`MAX_YEAR_OFFSET`] for birthdays, or a float `precision` above
-/// [`MAX_PRECISION`].
+/// above [`MAX_YEAR_OFFSET`] for birthdays, a float `precision` above
+/// [`MAX_PRECISION`], or a `length` above [`MAX_LENGTH`] for passwords and
+/// product descriptions.
 pub fn generate_mock_data(options: &MockOptions) -> Result<String> {
     validate(options, &options.data_type)?;
 
@@ -67,6 +83,7 @@ pub fn generate_mock_data(options: &MockOptions) -> Result<String> {
         DataType::Integer => generate_integer(options),
         DataType::Float => generate_float(options),
         DataType::CarBrand => generate_car_brand(options),
+        DataType::Guid => generate_guid(options),
 
         // Commerce
         DataType::Company => generate_company(options),
@@ -81,7 +98,8 @@ pub fn generate_mock_data(options: &MockOptions) -> Result<String> {
 /// Rejects option values that would otherwise reach an empty or
 /// unrepresentable random range and panic: `min > max` for numeric types, a
 /// zero or over-cap `range` for the date-based types that offset by it, an
-/// over-cap `age` for birthdays, and an over-cap float `precision`.
+/// over-cap `age` for birthdays, and an over-cap float `precision`; and an
+/// over-cap `length` for the types that allocate it.
 fn validate(options: &MockOptions, data_type: &DataType) -> Result<()> {
     match data_type {
         DataType::Integer | DataType::Float => {
@@ -110,6 +128,13 @@ fn validate(options: &MockOptions, data_type: &DataType) -> Result<()> {
             }
             _ => {}
         },
+        DataType::Password | DataType::ProductDescription => {
+            if let Some(length) = options.length
+                && length > MAX_LENGTH
+            {
+                anyhow::bail!("length ({length}) must be <= {MAX_LENGTH}");
+            }
+        }
         _ => {}
     }
 
@@ -137,43 +162,6 @@ mod tests {
         }
     }
 
-    // Update this list when adding a DataType variant. The compiler will not
-    // catch a missing entry; the from_command round-trip below partially does.
-    const ALL_VARIANTS: [DataType; 32] = [
-        DataType::FirstName,
-        DataType::LastName,
-        DataType::FullName,
-        DataType::Email,
-        DataType::Phone,
-        DataType::Street,
-        DataType::City,
-        DataType::State,
-        DataType::Country,
-        DataType::PostalCode,
-        DataType::Address,
-        DataType::Birthday,
-        DataType::Username,
-        DataType::Password,
-        DataType::Url,
-        DataType::ImageUrl,
-        DataType::FileUrl,
-        DataType::Date,
-        DataType::Time,
-        DataType::DateTime,
-        DataType::Timestamp,
-        DataType::ColorHex,
-        DataType::ColorRgb,
-        DataType::Integer,
-        DataType::Float,
-        DataType::CarBrand,
-        DataType::Company,
-        DataType::Product,
-        DataType::ProductDescription,
-        DataType::JobTitle,
-        DataType::Industry,
-        DataType::Buzzword,
-    ];
-
     // Extracts the dotted command tokens (e.g. "person.first-name") from the
     // help text produced by `all_commands`.
     fn advertised_commands() -> Vec<String> {
@@ -187,10 +175,64 @@ mod tests {
 
     #[test]
     fn generate_mock_data_produces_non_empty_for_every_variant() {
-        for variant in ALL_VARIANTS {
+        for variant in &DataType::ALL {
             let output = generate_mock_data(&options_for(variant.clone())).unwrap();
             assert!(!output.is_empty(), "empty output for {variant:?}");
         }
+    }
+
+    #[rstest::rstest]
+    #[case::password(DataType::Password)]
+    #[case::product_description(DataType::ProductDescription)]
+    fn validate_length_over_cap_errors(#[case] data_type: DataType) {
+        let mut opts = options_for(data_type);
+        opts.length = Some(MAX_LENGTH + 1);
+
+        let error = generate_mock_data(&opts).unwrap_err();
+
+        assert!(format!("{error:#}").contains("length"), "{error:#}");
+    }
+
+    #[test]
+    fn validate_password_length_at_cap_generates() {
+        let mut opts = options_for(DataType::Password);
+        opts.length = Some(MAX_LENGTH);
+
+        assert_eq!(generate_mock_data(&opts).unwrap().len(), MAX_LENGTH);
+    }
+
+    #[test]
+    fn validate_ignores_length_on_types_that_do_not_use_it() {
+        let mut opts = options_for(DataType::Buzzword);
+        opts.length = Some(usize::MAX);
+
+        assert!(generate_mock_data(&opts).is_ok());
+    }
+
+    #[test]
+    fn locale_is_inert_only_for_non_default_locale_on_unaware_types() {
+        assert!(locale_is_inert(Locale::JaJp, &DataType::Buzzword));
+        assert!(!locale_is_inert(Locale::En, &DataType::Buzzword));
+        assert!(!locale_is_inert(Locale::JaJp, &DataType::FirstName));
+        assert!(!locale_is_inert(Locale::En, &DataType::FirstName));
+    }
+
+    #[test]
+    fn every_data_type_round_trips_through_its_command() {
+        for data_type in &DataType::ALL {
+            assert_eq!(
+                DataType::from_command(data_type.command()).as_ref(),
+                Ok(data_type)
+            );
+        }
+    }
+
+    #[test]
+    fn all_holds_33_distinct_commands() {
+        let commands: std::collections::HashSet<&str> =
+            DataType::ALL.iter().map(DataType::command).collect();
+
+        assert_eq!(commands.len(), 33);
     }
 
     #[test]

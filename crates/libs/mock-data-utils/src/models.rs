@@ -138,7 +138,7 @@ pub struct MockOptions {
 }
 
 /// Available data types within each category
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataType {
     // Personal Information
     FirstName,
@@ -171,6 +171,7 @@ pub enum DataType {
     Integer,
     Float,
     CarBrand,
+    Guid,
 
     // Commerce
     Company,
@@ -182,51 +183,90 @@ pub enum DataType {
 }
 
 impl DataType {
+    /// Every data type, grouped by prefix in help order. Update alongside a new enum variant;
+    /// the exhaustive match in [`DataType::command`] is what the compiler checks.
+    pub const ALL: [DataType; 33] = [
+        DataType::FirstName,
+        DataType::LastName,
+        DataType::FullName,
+        DataType::Email,
+        DataType::Phone,
+        DataType::Street,
+        DataType::City,
+        DataType::State,
+        DataType::Country,
+        DataType::PostalCode,
+        DataType::Address,
+        DataType::Birthday,
+        DataType::Username,
+        DataType::Password,
+        DataType::Url,
+        DataType::ImageUrl,
+        DataType::FileUrl,
+        DataType::Date,
+        DataType::Time,
+        DataType::DateTime,
+        DataType::Timestamp,
+        DataType::ColorHex,
+        DataType::ColorRgb,
+        DataType::Integer,
+        DataType::Float,
+        DataType::CarBrand,
+        DataType::Guid,
+        DataType::Company,
+        DataType::Product,
+        DataType::ProductDescription,
+        DataType::JobTitle,
+        DataType::Industry,
+        DataType::Buzzword,
+    ];
+
+    /// The dotted command name (`"person.first-name"`).
+    pub fn command(&self) -> &'static str {
+        match self {
+            DataType::FirstName => "person.first-name",
+            DataType::LastName => "person.last-name",
+            DataType::FullName => "person.full-name",
+            DataType::Email => "person.email",
+            DataType::Phone => "person.phone",
+            DataType::Street => "person.street",
+            DataType::City => "person.city",
+            DataType::State => "person.state",
+            DataType::Country => "person.country",
+            DataType::PostalCode => "person.postal-code",
+            DataType::Address => "person.address",
+            DataType::Birthday => "person.birthday",
+            DataType::Username => "internet.username",
+            DataType::Password => "internet.password",
+            DataType::Url => "internet.url",
+            DataType::ImageUrl => "internet.image-url",
+            DataType::FileUrl => "internet.file-url",
+            DataType::Date => "random.date",
+            DataType::Time => "random.time",
+            DataType::DateTime => "random.datetime",
+            DataType::Timestamp => "random.timestamp",
+            DataType::ColorHex => "random.color-hex",
+            DataType::ColorRgb => "random.color-rgb",
+            DataType::Integer => "random.integer",
+            DataType::Float => "random.float",
+            DataType::CarBrand => "random.car-brand",
+            DataType::Guid => "random.guid",
+            DataType::Company => "commerce.company",
+            DataType::Product => "commerce.product",
+            DataType::ProductDescription => "commerce.product-description",
+            DataType::JobTitle => "commerce.job-title",
+            DataType::Industry => "commerce.industry",
+            DataType::Buzzword => "commerce.buzzword",
+        }
+    }
+
     /// Parse data type from string command (e.g., "person.first-name")
     pub fn from_command(command: &str) -> Result<Self, String> {
-        match command {
-            // Personal Information
-            "person.first-name" => Ok(DataType::FirstName),
-            "person.last-name" => Ok(DataType::LastName),
-            "person.full-name" => Ok(DataType::FullName),
-            "person.email" => Ok(DataType::Email),
-            "person.phone" => Ok(DataType::Phone),
-            "person.street" => Ok(DataType::Street),
-            "person.city" => Ok(DataType::City),
-            "person.state" => Ok(DataType::State),
-            "person.country" => Ok(DataType::Country),
-            "person.postal-code" => Ok(DataType::PostalCode),
-            "person.address" => Ok(DataType::Address),
-            "person.birthday" => Ok(DataType::Birthday),
-
-            // Internet & Tech
-            "internet.username" => Ok(DataType::Username),
-            "internet.password" => Ok(DataType::Password),
-            "internet.url" => Ok(DataType::Url),
-            "internet.image-url" => Ok(DataType::ImageUrl),
-            "internet.file-url" => Ok(DataType::FileUrl),
-
-            // Random Data
-            "random.date" => Ok(DataType::Date),
-            "random.time" => Ok(DataType::Time),
-            "random.datetime" => Ok(DataType::DateTime),
-            "random.timestamp" => Ok(DataType::Timestamp),
-            "random.color-hex" => Ok(DataType::ColorHex),
-            "random.color-rgb" => Ok(DataType::ColorRgb),
-            "random.integer" => Ok(DataType::Integer),
-            "random.float" => Ok(DataType::Float),
-            "random.car-brand" => Ok(DataType::CarBrand),
-
-            // Commerce
-            "commerce.company" => Ok(DataType::Company),
-            "commerce.product" => Ok(DataType::Product),
-            "commerce.product-description" => Ok(DataType::ProductDescription),
-            "commerce.job-title" => Ok(DataType::JobTitle),
-            "commerce.industry" => Ok(DataType::Industry),
-            "commerce.buzzword" => Ok(DataType::Buzzword),
-
-            _ => Err(format!("Unknown data type: {command}")),
-        }
+        Self::ALL
+            .iter()
+            .find(|data_type| data_type.command() == command)
+            .cloned()
+            .ok_or_else(|| format!("Unknown data type: {command}"))
     }
 
     /// Reports whether this data type's generator draws from the `fake`
@@ -287,6 +327,7 @@ impl DataType {
             "  random.integer        - Generate an integer (with --min, --max options)",
             "  random.float          - Generate a float (with --min, --max, --precision options)",
             "  random.car-brand      - Generate a car brand name",
+            "  random.guid           - Generate a random GUID (UUID v4)",
             "",
             "Commerce:",
             "  commerce.company      - Generate a company name",
@@ -376,6 +417,53 @@ mod tests {
         }
     }
 
+    // The exhaustive match stops compiling when a variant is added, the prompt to extend
+    // `ALL` alongside it; the assertions pin every variant's place in `ALL`.
+    #[test]
+    fn data_type_all_is_exhaustive_over_the_enum() {
+        fn position(data_type: &DataType) -> usize {
+            match data_type {
+                DataType::FirstName => 0,
+                DataType::LastName => 1,
+                DataType::FullName => 2,
+                DataType::Email => 3,
+                DataType::Phone => 4,
+                DataType::Street => 5,
+                DataType::City => 6,
+                DataType::State => 7,
+                DataType::Country => 8,
+                DataType::PostalCode => 9,
+                DataType::Address => 10,
+                DataType::Birthday => 11,
+                DataType::Username => 12,
+                DataType::Password => 13,
+                DataType::Url => 14,
+                DataType::ImageUrl => 15,
+                DataType::FileUrl => 16,
+                DataType::Date => 17,
+                DataType::Time => 18,
+                DataType::DateTime => 19,
+                DataType::Timestamp => 20,
+                DataType::ColorHex => 21,
+                DataType::ColorRgb => 22,
+                DataType::Integer => 23,
+                DataType::Float => 24,
+                DataType::CarBrand => 25,
+                DataType::Guid => 26,
+                DataType::Company => 27,
+                DataType::Product => 28,
+                DataType::ProductDescription => 29,
+                DataType::JobTitle => 30,
+                DataType::Industry => 31,
+                DataType::Buzzword => 32,
+            }
+        }
+
+        for (index, data_type) in DataType::ALL.iter().enumerate() {
+            assert_eq!(position(data_type), index, "{data_type:?}");
+        }
+    }
+
     #[test]
     fn locale_aware_set_is_exactly_the_fake_backed_types() {
         let aware = [
@@ -414,6 +502,7 @@ mod tests {
             DataType::Integer,
             DataType::Float,
             DataType::CarBrand,
+            DataType::Guid,
             DataType::Product,
             DataType::ProductDescription,
             DataType::Buzzword,

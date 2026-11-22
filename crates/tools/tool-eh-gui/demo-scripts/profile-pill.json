@@ -1,0 +1,7 @@
+{"events": [
+  {"t": 0.3, "type": "tap", "key": "connect"},
+  {"t": 0.9, "type": "tap", "key": "profile-picker-trigger"},
+  {"t": 1.4, "type": "tap", "key": "option2"},
+  {"t": 2.0, "type": "tap", "key": "cancel"},
+  {"t": 2.6, "type": "tap", "key": "pill"}
+]}

@@ -1,9 +1,10 @@
 use crate::models::{TouchArgs, TouchTimeWord};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use common_utils::file_system::get_full_filepath_from_string;
-use filetime::{FileTime, set_file_times, set_symlink_file_times};
-use std::fs::File;
+use filetime::FileTime;
+use std::fs::{self, File, FileTimes};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Creates a file if it doesn't exist based on the no_create flag.
 ///
@@ -117,8 +118,8 @@ fn read_current_times(args: &TouchArgs, file_obj: &Path) -> Result<(FileTime, Fi
         std::fs::metadata(file_obj)?
     };
     Ok((
-        FileTime::from_last_access_time(&metadata),
-        FileTime::from_last_modification_time(&metadata),
+        FileTime::from(metadata.accessed()?),
+        FileTime::from(metadata.modified()?),
     ))
 }
 
@@ -187,25 +188,57 @@ fn resolve_final_times(
 /// - `file_obj`: Path to target file/symlink
 /// - `final_atime`: New access time
 /// - `final_mtime`: New modification time
+///
+/// # Errors
+/// Returns an error when either time is out of range for the platform, or
+/// when the timestamp update fails.
 fn update_file_times(
     args: &TouchArgs,
     file_obj: &PathBuf,
     final_atime: FileTime,
     final_mtime: FileTime,
 ) -> Result<()> {
+    let times = FileTimes::new()
+        .set_accessed(to_system_time(final_atime)?)
+        .set_modified(to_system_time(final_mtime)?);
+
     if args.no_dereference {
-        set_symlink_file_times(file_obj, final_atime, final_mtime).context(format!(
+        fs::set_times_nofollow(file_obj, times).context(format!(
             "Failed to set file times for symlink: [{}]",
             file_obj.display()
         ))?;
     } else {
-        set_file_times(file_obj, final_atime, final_mtime).context(format!(
+        fs::set_times(file_obj, times).context(format!(
             "Failed to set file times for file: [{}]",
             file_obj.display()
         ))?;
     }
 
     Ok(())
+}
+
+/// Converts a [`FileTime`] into the [`SystemTime`] the std timestamp calls take.
+///
+/// # Errors
+/// Returns an error when the platform cannot represent the time (on Windows,
+/// anything before 1601-01-01T00:00:00Z).
+fn to_system_time(time: FileTime) -> Result<SystemTime> {
+    let seconds = time.unix_seconds();
+    let whole_seconds = Duration::from_secs(seconds.unsigned_abs());
+    let whole = if seconds < 0 {
+        UNIX_EPOCH.checked_sub(whole_seconds)
+    } else {
+        UNIX_EPOCH.checked_add(whole_seconds)
+    };
+
+    whole
+        .and_then(|t| t.checked_add(Duration::from_nanos(u64::from(time.nanoseconds()))))
+        .ok_or_else(|| {
+            anyhow!(
+                "Time out of range for this platform: {} seconds from the Unix epoch",
+                seconds
+            )
+        })
 }
 
 #[cfg(test)]
@@ -216,17 +249,23 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// Both timestamps set to 2000-01-01 00:00:00 UTC, the fixed past instant
+    /// the tests pin files and links to.
+    fn pinned_file_times() -> FileTimes {
+        let pinned = to_system_time(FileTime::from_unix_time(946_684_800, 0)).unwrap();
+        FileTimes::new().set_accessed(pinned).set_modified(pinned)
+    }
+
     /// Pins both timestamps of `path` to a fixed past instant and returns the
     /// values read back from the filesystem. Starting from a pinned past
     /// instant makes "updated" and "unchanged" assertions unambiguous
     /// regardless of when the file was created.
     fn pin_file_times(path: &std::path::Path) -> (FileTime, FileTime) {
-        let pinned = FileTime::from_unix_time(946_684_800, 0); // 2000-01-01 00:00:00 UTC
-        set_file_times(path, pinned, pinned).unwrap();
+        fs::set_times(path, pinned_file_times()).unwrap();
         let metadata = fs::metadata(path).unwrap();
         (
-            FileTime::from_last_access_time(&metadata),
-            FileTime::from_last_modification_time(&metadata),
+            FileTime::from(metadata.accessed().unwrap()),
+            FileTime::from(metadata.modified().unwrap()),
         )
     }
 
@@ -428,8 +467,8 @@ mod tests {
 
         // Check that only access time was updated
         let metadata = fs::metadata(&file_path).unwrap();
-        let new_atime = FileTime::from_last_access_time(&metadata);
-        let new_mtime = FileTime::from_last_modification_time(&metadata);
+        let new_atime = FileTime::from(metadata.accessed().unwrap());
+        let new_mtime = FileTime::from(metadata.modified().unwrap());
 
         assert_ne!(new_atime, original_atime); // Access time should be different
         assert_eq!(new_mtime, original_mtime); // Modification time should be same
@@ -456,8 +495,8 @@ mod tests {
 
         // Check that only modification time was updated
         let metadata = fs::metadata(&file_path).unwrap();
-        let new_atime = FileTime::from_last_access_time(&metadata);
-        let new_mtime = FileTime::from_last_modification_time(&metadata);
+        let new_atime = FileTime::from(metadata.accessed().unwrap());
+        let new_mtime = FileTime::from(metadata.modified().unwrap());
 
         assert_eq!(new_atime, original_atime); // Access time should be same
         assert_ne!(new_mtime, original_mtime); // Modification time should be different
@@ -484,10 +523,116 @@ mod tests {
 
         // Check that both times were updated
         let metadata = fs::metadata(&file_path).unwrap();
-        let new_atime = FileTime::from_last_access_time(&metadata);
-        let new_mtime = FileTime::from_last_modification_time(&metadata);
+        let new_atime = FileTime::from(metadata.accessed().unwrap());
+        let new_mtime = FileTime::from(metadata.modified().unwrap());
 
         assert_ne!(new_atime, original_atime); // Access time should be different
         assert_ne!(new_mtime, original_mtime); // Modification time should be different
+    }
+
+    #[test]
+    fn to_system_time_round_trips_times_on_both_sides_of_the_epoch() {
+        // Nanoseconds in whole 100 ns steps: Windows keeps file times at that resolution.
+        for time in [
+            FileTime::from_unix_time(946_684_800, 123_456_700),
+            FileTime::from_unix_time(-1_000, 500_000_000),
+        ] {
+            let system_time = to_system_time(time).unwrap();
+
+            assert_eq!(FileTime::from(system_time), time);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn update_file_times_rejects_a_time_before_1601_and_leaves_the_file_alone() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("too_old.txt");
+        fs::write(&file_path, "test").unwrap();
+        let (original_atime, original_mtime) = pin_file_times(&file_path);
+        // One day before 1601-01-01T00:00:00Z, where Windows file time starts.
+        let too_old = FileTime::from_unix_time(-11_644_473_600 - 86_400, 0);
+        let args = create_test_touch_args();
+
+        let result = update_file_times(&args, &file_path, too_old, too_old);
+
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("out of range"), "{error:#}");
+        let metadata = fs::metadata(&file_path).unwrap();
+        assert_eq!(FileTime::from(metadata.accessed().unwrap()), original_atime);
+        assert_eq!(FileTime::from(metadata.modified().unwrap()), original_mtime);
+    }
+
+    #[test]
+    fn touch_file_updates_a_directorys_times() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path().join("a_directory");
+        fs::create_dir(&dir_path).unwrap();
+        let (original_atime, original_mtime) = pin_file_times(&dir_path);
+        let mut args = create_test_touch_args();
+        args.files = vec![dir_path.to_str().unwrap().to_string()];
+
+        touch_file(dir_path.to_str().unwrap(), &args).unwrap();
+
+        let metadata = fs::metadata(&dir_path).unwrap();
+        assert_ne!(FileTime::from(metadata.accessed().unwrap()), original_atime);
+        assert_ne!(FileTime::from(metadata.modified().unwrap()), original_mtime);
+    }
+
+    #[test]
+    fn touch_file_updates_a_read_only_files_times() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("read_only.txt");
+        fs::write(&file_path, "test").unwrap();
+
+        // Let any file-content scanner triggered by the write above finish,
+        // then make the file read-only and pin its timestamps.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let mut permissions = fs::metadata(&file_path).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&file_path, permissions).unwrap();
+        let (original_atime, original_mtime) = pin_file_times(&file_path);
+        let mut args = create_test_touch_args();
+        args.files = vec![file_path.to_str().unwrap().to_string()];
+
+        touch_file(file_path.to_str().unwrap(), &args).unwrap();
+
+        let metadata = fs::metadata(&file_path).unwrap();
+        assert_ne!(FileTime::from(metadata.accessed().unwrap()), original_atime);
+        assert_ne!(FileTime::from(metadata.modified().unwrap()), original_mtime);
+        temp_dir.close().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn touch_file_no_dereference_moves_the_link_and_leaves_the_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let target_path = temp_dir.path().join("target.txt");
+        let link_path = temp_dir.path().join("link.txt");
+        fs::write(&target_path, "test").unwrap();
+        std::os::unix::fs::symlink(&target_path, &link_path).unwrap();
+        fs::set_times_nofollow(&link_path, pinned_file_times()).unwrap();
+        let pinned_link_mtime = FileTime::from(
+            fs::symlink_metadata(&link_path)
+                .unwrap()
+                .modified()
+                .unwrap(),
+        );
+        let (_, pinned_target_mtime) = pin_file_times(&target_path);
+        let mut args = create_test_touch_args();
+        args.no_dereference = true;
+        args.files = vec![link_path.to_str().unwrap().to_string()];
+
+        touch_file(link_path.to_str().unwrap(), &args).unwrap();
+
+        let link_mtime = FileTime::from(
+            fs::symlink_metadata(&link_path)
+                .unwrap()
+                .modified()
+                .unwrap(),
+        );
+        let target_mtime = FileTime::from(fs::metadata(&target_path).unwrap().modified().unwrap());
+        assert_ne!(link_mtime, pinned_link_mtime);
+        assert_eq!(target_mtime, pinned_target_mtime);
     }
 }

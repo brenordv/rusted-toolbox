@@ -1,0 +1,17 @@
+{"events": [
+  {"t": 0.3, "type": "tap", "key": "connect"},
+  {"t": 0.9, "type": "tap", "key": "connection-string/value/input"},
+  {"t": 1.1, "type": "key", "name": "Tab"},
+  {"t": 1.2, "type": "key", "name": "Tab"},
+  {"t": 1.4, "type": "paste", "text": "demo.servicebus.windows.net"},
+  {"t": 1.6, "type": "key", "name": "Tab"},
+  {"t": 1.8, "type": "paste", "text": "demo"},
+  {"t": 2.2, "type": "tap", "key": "save-config"},
+  {"t": 3.0, "type": "tap", "key": "profile-picker-trigger"},
+  {"t": 3.5, "type": "tap", "key": "option1"},
+  {"t": 4.2, "type": "tap", "key": "profile-picker-trigger"},
+  {"t": 4.7, "type": "tap", "key": "option0"},
+  {"t": 5.4, "type": "tap", "key": "new-profile"},
+  {"t": 5.9, "type": "paste", "text": "orders-new"},
+  {"t": 6.4, "type": "tap", "key": "new-profile-save"}
+]}

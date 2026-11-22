@@ -1,6 +1,6 @@
-# Only the advisories check runs in CI (deps-audit.yml passes
-# `check advisories`), so the licenses/bans/sources sections stay
-# unconfigured on purpose.
+# CI runs the advisories, sources and licenses checks (deps-audit.yml passes
+# `check advisories sources licenses`). The bans section stays unconfigured:
+# its duplicate-version and wildcard checks only warn.
 #
 # Vulnerability advisories error at the default severity. `unmaintained` is
 # scoped to workspace (direct) dependencies: the tree carries transitively
@@ -11,22 +11,74 @@
 [advisories]
 unmaintained = "workspace"
 ignore = [
-    # No fixed release exists (Marvin timing sidechannel in the rsa crate).
-    # Reached only through whisper's peer-to-peer encryption between two
-    # local terminals; exploiting it needs an oracle timing many
-    # decryptions, which that usage does not expose.
-    { id = "RUSTSEC-2023-0071", reason = "rsa: no safe upgrade exists; whisper's local peer-to-peer usage exposes no timing oracle" },
-    # The fix is azure_core >= 0.22, a manifest migration in the on-hold
-    # EventHub crates (shared-eventhub, eh-read, eh-export); it lands with
-    # that rework, not before.
-    { id = "RUSTSEC-2026-0275", reason = "azure_core header logging: remediation belongs to the deferred EventHub rework" },
-    # Notice-class advisory with no safe upgrade, reached only through the
-    # same on-hold EventHub chain.
-    { id = "RUSTSEC-2026-0174", reason = "http-types ASCII notice: no safe upgrade; EventHub chain only, deferred with that rework" },
     # No age release moves past p256/elliptic-curve 0.13, which pin
     # crypto-bigint 0.5 (the fix is 0.7.6). age reaches it only through
     # its p256tag and mlkem768p256tag recipient types; shared-crypto
     # builds only x25519 recipients and identities, so the affected
     # arithmetic never runs.
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via age 0.12.1's p256 tag recipients: no safe upgrade; seal uses only x25519" },
+    # An "unmaintained" notice with no vulnerability, CVE, or fixed release
+    # (issued 2026-11-17, every version affected). chrono is a direct
+    # dependency of many members, so leaving it means a move to jiff or time
+    # across the workspace, planned as its own work.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (informational, no vulnerability); no safe upgrade; replacing it is a separate migration" },
 ]
+
+# Every crate comes from crates.io except Rune (eh-gui's UI framework), which is
+# not published there. Rune's own crates come from a fork (brenordv/rune) pinned to
+# one reviewed rev: anomalyco/rune's c4eda05 plus three fixes. The forks in the root
+# Cargo.toml's [patch.crates-io] come from anomalyco/rune at c4eda05. Advisory data
+# does not cover git or patched crates, so each Rune bump repeats a manual review of
+# those forks instead; this check stops any other git source from arriving
+# unreviewed, and every git source must name a commit (`rev`), not a branch or tag.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+required-git-spec = "rev"
+allow-git = ["https://github.com/anomalyco/rune", "https://github.com/brenordv/rune"]
+
+# Every crate in the dependency tree must carry one of these licenses, or one
+# that its entry in `exceptions` allows. The list is the set the tree needed on
+# 2026-11-16, each one checked against the FSF's license list as a software
+# license compatible with this workspace's GPL-3.0-only (the license of
+# every member; none sets `publish = false`, so `private.ignore` would not skip
+# them). For an `OR` expression only the licenses that satisfy it are listed,
+# never every alternative it names. A license is added here deliberately, never
+# to make a run pass. A pull request run checks the PR's own copy of this file,
+# so a change to `allow`, or a new exception or clarify entry, needs the owner's
+# review. Dev-dependencies are not checked (cargo-deny's `include-dev` default).
+[licenses]
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "ISC",
+    "MIT",
+    # GPL-compatible through MPL-2.0 section 3.3, unless a crate is marked
+    # "Incompatible With Secondary Licenses"; cargo-deny can't see that notice.
+    "MPL-2.0",
+    "NCSA",
+    "Unicode-3.0",
+    "Zlib",
+]
+# A license the FSF list doesn't recommend for software, or doesn't name, is
+# allowed for one crate here and never in `allow`, so it covers no other crate.
+# An entry matches every version of its crate; a later release under some other
+# license outside `allow` still fails the check.
+exceptions = [
+    # CC0-1.0 is GPL-compatible, but the FSF doesn't recommend it for software
+    # (it has no patent grant).
+    { crate = "notify", allow = ["CC0-1.0"] },
+    # OFL-1.1 and the Ubuntu Font Licence cover the font files egui bundles; the
+    # crate's code is MIT OR Apache-2.0.
+    { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+    # CDLA-Permissive-2.0 is a data license covering the Mozilla CA root
+    # certificates these crates ship for TLS.
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+    { crate = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+]
+# cargo-deny's default, stated.
+confidence-threshold = 0.8

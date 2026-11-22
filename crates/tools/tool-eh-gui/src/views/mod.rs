@@ -1,0 +1,66 @@
+//! The view: a pure function of the state. Handlers dispatch inputs; nothing here does I/O.
+
+mod connect;
+pub mod details;
+mod export;
+mod inspector;
+mod message_list;
+mod read;
+mod rules_form;
+mod sections;
+mod send;
+pub(crate) mod shell;
+
+pub(crate) use connect::move_profile_focus;
+pub use connect::{
+    NAME_ISSUE_KEY, NEW_PROFILE_CANCEL_KEY, NEW_PROFILE_KEY, NEW_PROFILE_NAME_KEY,
+    NEW_PROFILE_ROW_KEY, NEW_PROFILE_SAVE_KEY, PICKER_KEY, PROFILE_GROUP_KEY, PROFILE_NOTE_KEY,
+    ROW_ISSUE_KEY, SAVE_STATUS_KEY, SAVE_STATUS_LINES,
+};
+pub use export::{BULK_METADATA_KEY, CONDENSE_KEY, LOCAL_TIME_KEY, SKIP_EXPORTED_KEY};
+pub use inspector::{EXPORT_METADATA_KEY, READ_METADATA_KEY};
+pub use read::{PARTITIONS_SCROLL_KEY, SEARCH_KEY};
+pub use send::sidebar::{CORRELATION_ID_KEY, COUNT_KEY, INTERVAL_KEY, PROPERTIES_KEY};
+pub use send::template::{PLACEHOLDERS_KEY, REGENERATE_KEY, SWITCH_KEY};
+pub use send::{BODY_KEY, SEND_BUTTON_KEY};
+pub use shell::PILL_SCROLL_KEY;
+
+use crate::state::AppState;
+use rune::{Chord, Cx, El, KeyEvent, Tx};
+
+/// What a destination line says for a typed connection string that names no usable hub.
+pub(crate) const INVALID_CONNECTION_STRING: &str = "Not a valid connection string";
+
+/// The window's root.
+pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
+    let dark = s.system_dark.unwrap_or(cx.system_dark());
+    let k = s.ds.kit(dark);
+    let mut layer = Vec::new();
+    let body = shell::shell(s, cx, k, dark, &mut layer);
+    connect::sheet(s, k, &mut layer);
+    shell::toasts(s, k, &mut layer);
+    // Last on the layer, so the details are the top modal, over the sheet and the toasts.
+    details::modal(s, k, &mut layer);
+    rune_kit::root(body, layer)
+}
+
+/// Keys no focused control took: the Send shortcuts (`mod+enter` while the Send section shows,
+/// `mod+1..3` to pick a section), `mod+f`, which focuses the Read list's quick search, `alt+t`,
+/// which fans the toasts out and focuses the front card, and Escape, which folds them.
+pub fn window_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
+    if send::send_keys(s, key, tx) {
+        return true;
+    }
+    let focus_search = Chord::parse("mod+f").is_ok_and(|chord| chord.matches_tx(key, tx));
+    if focus_search {
+        tx.focus(read::SEARCH_KEY, true);
+        return true;
+    }
+    if Chord::parse("alt+t").is_ok_and(|chord| chord.matches_tx(key, tx)) {
+        return shell::fan_out_toasts(s, tx);
+    }
+    shell::fold_toasts_on_escape(s, key, tx)
+}
+
+#[cfg(test)]
+mod tests;
