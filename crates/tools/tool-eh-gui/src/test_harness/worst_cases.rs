@@ -1,7 +1,8 @@
 //! The layout sweep's worst cases: the largest inputs each surface takes.
 
 use super::Harness;
-use super::builders::{export_state, send_state};
+use super::builders::{export_state, send_state, state, test_workspace};
+use super::journeys::open_listed_sheet;
 use super::services::ServiceCall;
 use super::sweep_tests::{
     Row, TOOLBAR, cut_dangers, export_bulk_running, export_selected, failed_with, orders_form,
@@ -13,10 +14,11 @@ use crate::bridge::UiDelivery;
 use crate::design::tokens::{INSPECTOR_MAX, SIDEBAR_MAX};
 use crate::send::compose::BODY_CAP;
 use crate::state::{Input, ToastInput};
-use crate::views::{EXPORT_METADATA_KEY, READ_METADATA_KEY, SEND_BUTTON_KEY};
+use crate::views::{EXPORT_METADATA_KEY, NEW_PROFILE_KEY, READ_METADATA_KEY, SEND_BUTTON_KEY};
 use shared_eventhub_core::engine::EngineEvent;
 use shared_eventhub_core::producer::SendEnd;
 use shared_eventhub_persistence::export::ExportOutcome;
+use std::path::PathBuf;
 
 /// Words that wrap: about 2,000 characters.
 pub(super) fn long_text() -> String {
@@ -113,6 +115,21 @@ fn widest_panes_on_export(size: (f32, f32)) -> Harness {
     h
 }
 
+/// A launch folder about 300 characters deep, relative so it reads the same on every machine.
+fn deep_folder() -> PathBuf {
+    std::iter::repeat_n("a-checkout-folder-nested-under-another-one", 7).collect()
+}
+
+/// The listed connect sheet of a window launched in [`deep_folder`]: Save as profile shares the
+/// Saves to row with the long path, and Change shares the data folder row with a second one.
+fn sheet_in_a_deep_folder(size: (f32, f32)) -> Harness {
+    let mut s = state();
+    s.set_launch(deep_folder(), Ok(test_workspace()));
+    let mut h = Harness::new(s, size);
+    open_listed_sheet(&mut h);
+    h
+}
+
 /// Four cut danger toasts at once (three stay), fanned out.
 fn four_toasts_fanned(size: (f32, f32)) -> Harness {
     let mut h = cut_dangers(size, 4);
@@ -190,6 +207,19 @@ pub(super) const WORST: &[Row] = &[
         ],
         disabled: &[],
         covered: &[],
+    },
+    Row {
+        name: "the sheet in a deep launch folder",
+        build: sheet_in_a_deep_folder,
+        reachable: &[
+            NEW_PROFILE_KEY,
+            "change-folder",
+            "sheet-connect",
+            "save-config",
+            "cancel",
+        ],
+        disabled: &[],
+        covered: &["empty-connect", "connect"],
     },
     Row {
         name: "both panes at their widest on Export",
