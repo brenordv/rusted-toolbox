@@ -21,10 +21,11 @@ pub fn get_current_dir() -> PathBuf {
 /// `app_name` under the user's home, falling back to the current directory when
 /// the home cannot be resolved.
 ///
-/// `app_name` must be a plain name with no path separators. Every caller passes
-/// its own `env!("CARGO_PKG_NAME")`, which cannot contain separators; the value
-/// is joined under the user's home and reaches `create_dir_all`, so this
-/// contract is the guard against path traversal.
+/// `app_name` must be a plain name with no path separators: a package name
+/// (`env!("CARGO_PKG_NAME")` cannot contain separators) or another fixed name
+/// from the code, never text from outside the program. The value is joined
+/// under the user's home and reaches `create_dir_all`, so this contract is the
+/// guard against path traversal.
 ///
 /// Note that this is the app DATA folder, not where the executable is (necessarily) located.
 pub fn get_app_folder(app_name: &str) -> PathBuf {
@@ -37,7 +38,8 @@ pub fn get_app_folder(app_name: &str) -> PathBuf {
 
 /// Returns a named subfolder within the application folder for `app_name`.
 ///
-/// `app_name` carries the same no-separator contract as [` get_app_folder `].
+/// `app_name` carries the same no-separator contract as [` get_app_folder `],
+/// and `sub_folder` is a fixed name from the code as well.
 pub fn get_app_sub_folder(app_name: &str, sub_folder: &str) -> PathBuf {
     get_app_folder(app_name).join(sub_folder)
 }

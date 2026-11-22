@@ -29,6 +29,7 @@ We currently have the following tools:
 25. A regex value extractor called [rxget](crates/tools/tool-rxget/readme.md) that pulls matched values out of text files, with per-file or per-run uniqueness and optional filename prefixes;
 26. A file encryption tool called [seal](crates/tools/tool-seal/readme.md) that seals files to `age1...` public keys and opens them with identity files (the age format, key-based only).
 27. A desktop companion to seal called [seal-gui](crates/tools/tool-seal-gui/readme.md): the same key-based age encryption in a window, with text sealing to ASCII armor, drag-and-drop file batches, key generation, and a saved recipient book.
+28. A text-to-speech client called [speak](crates/tools/tool-speak/readme.md) that sends text (an argument, or stdin) to a speech server you run and plays the audio, so an agent can say an explanation aloud. It ships with an agent skill.
 
 ## Ok, but why?
 Well, three main reasons:
@@ -201,6 +202,8 @@ Convenience command:
 ```bash
 curl -sSL https://raw.githubusercontent.com/brenordv/rusted-toolbox/refs/heads/master/convenience-build-ubuntu.sh | bash
 ```
+The tools that play sound (`speak`) need the ALSA development files (`libasound2-dev`) to build. When the
+script cannot install them it says so, leaves those tools out, and installs every other tool.
 
 #### Convenience build for MacOs
 Convenience command:

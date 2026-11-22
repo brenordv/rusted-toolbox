@@ -38,10 +38,11 @@ jobs:
         run: |
           vcpkg install libxml2:x64-windows-static-md
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-      # eframe (seal-gui) and Rune (eh-gui) need these to build on Linux, per their READMEs.
+      # eframe (seal-gui) and Rune (eh-gui) need these to build on Linux, per their READMEs;
+      # rodio (common-audio) needs the ALSA development files.
       - name: Install GUI system libraries (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev libssl-dev libasound2-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       # A tag can point at a commit that never went through a PR, so the

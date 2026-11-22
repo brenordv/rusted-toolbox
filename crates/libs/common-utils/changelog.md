@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.1
+- Documentation: `get_app_folder` and `get_app_sub_folder` take a fixed name from the code (a package name, or a shared folder name such as the one `speak` keeps its settings under), never text from outside the program.
+
 ## 2.3.0
 - Added `string_utils::display_line`: text on one line, with control characters, line and paragraph separators, and bidirectional controls each turned into a space. Moved from eh-gui.
 - Added `string_utils::error_preview`, `ErrorPreview`, and `ERROR_PREVIEW_CHARS`: a failure text on one line, cut at 140 characters with "…". Moved from eh-gui.

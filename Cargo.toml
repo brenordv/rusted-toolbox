@@ -15,6 +15,7 @@ license = "GPL-3.0-only"
 [workspace.dependencies]
 # Internal
 cli-signal-monitor = { path = "crates/libs/cli-signal-monitor" }
+common-audio = { path = "crates/libs/common-audio" }
 common-cli = { path = "crates/libs/common-cli" }
 common-file-utils = { path = "crates/libs/common-file-utils" }
 common-gui = { path = "crates/libs/common-gui" }
@@ -83,6 +84,9 @@ regex = "1.13.2"
 # own 0.12 to match cfspeedtest; see crates/tools/tool-netquality/Cargo.toml.
 reqwest = { version = "0.13.5", features = ["json"] }
 rfd = { version = "0.18.0" }
+# Sound playback behind `common-audio`. Only the output device and the decoders for the formats
+# the tools accept; on Linux the build needs the ALSA development files (`libasound2-dev`).
+rodio = { version = "0.23.0", default-features = false, features = ["playback", "wav", "mp3", "flac", "vorbis"] }
 rsa = { version = "0.10.0", features = ["pkcs1v15"] }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
 # Only for setting the process crypto provider (shared-eventhub-core's `tls`); default

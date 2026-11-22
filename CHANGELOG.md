@@ -49,6 +49,18 @@
   `eh-gui` (now 1.0.1, no behavior change) so other Rune tools share one copy.
   `common-utils` 2.3.0 gains `string_utils::display_line` and `error_preview`, also moved from
   eh-gui.
+- New tool: `speak` 1.0.0 (`crates/tools/tool-speak`) sends text, from its argument or a piped
+  stdin, to a text-to-speech server and plays the audio it answers with. The server address is
+  asked on the first run in a terminal and kept in `~/.rusted-toolbox/tool-speak/config.json`;
+  no flag sets it. An agent skill ships beside it (`crates/tools/tool-speak/skill/SKILL.md`).
+- New library: `common-audio` 1.0.0 decodes a sound (WAV, MP3, FLAC, Ogg Vorbis) and plays it
+  on the default output device. Workspace dependency added: `rodio` 0.23.0 (features
+  `playback`, `wav`, `mp3`, `flac`, `vorbis`). On Linux the build now needs the ALSA
+  development files (`libasound2-dev`): CI and the release workflow install them, and
+  `convenience-build-ubuntu.sh` leaves the tools that play sound out, with a warning, when it
+  cannot.
+- `common-serialization-utils` 1.2.0 gains `save_object_to_json_file` (pretty JSON, written
+  atomically).
 
 ## v6
 - Updated dependencies.

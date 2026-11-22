@@ -1,0 +1,21 @@
+[package]
+name = "common-audio"
+version = "1.0.0"
+description = "Decodes a sound (WAV, MP3, FLAC, Ogg Vorbis) and plays it on the default output device."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+# Dev-only: `test_support::tone_wav`, a valid WAV built in memory. A consumer lists this crate
+# under [dev-dependencies] with the feature on; release builds leave it out.
+test-support = []
+
+[dependencies]
+# External
+anyhow = { workspace = true }
+rodio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
