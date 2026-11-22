@@ -15,6 +15,7 @@ use anyhow::Context;
 use chrono::Utc;
 use common_utils::string_utils::sanitize_string_for_filename;
 use formats::{Layout, write_message};
+use redb::ReadableTable;
 use render::{file_timestamp, month_and_day};
 use serde::{Deserialize, Serialize};
 use shared_eventhub_core::models::{CapturedMessage, MessageKey};

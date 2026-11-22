@@ -56,5 +56,5 @@
 - Azure SDK pins: `azure_messaging_eventhubs` 0.16.0 on `azure_core`
   1.2.0-beta.2 (one `azure_core` shared with `shared-azure`'s
   `azure_identity` 1.1.0-beta.2 and `azure_security_keyvault_secrets`
-  1.1.0-beta.1). `azure_core_amqp` 1.2.0-beta.3 is a dev-dependency for test
+  1.1.0-beta.2). `azure_core_amqp` 1.2.0-beta.3 is a dev-dependency for test
   fixtures.

@@ -42,4 +42,4 @@
   that has the earlier five-column header is refused on append by the header check; a condensed
   json file takes the new rows. `WritingSink`'s message files use the same details block and
   gain the three entries. Exports without metadata are unchanged.
-- Dependency: `redb` 4.6.0.
+- Dependency: `redb` 5.0.0.

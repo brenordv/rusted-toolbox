@@ -3,6 +3,7 @@
 use crate::store::MessageStore;
 use crate::store::schema::{BY_TIME, MESSAGES, NO_ENQUEUED_TIME, decode_message};
 use anyhow::Context;
+use redb::ReadableTable;
 use shared_eventhub_core::filters::CaptureFilters;
 use shared_eventhub_core::models::CapturedMessage;
 use std::num::NonZeroUsize;
@@ -71,7 +72,7 @@ impl MessageStore {
             scanned: 0,
         };
         let entries = by_time
-            .range::<(i64, &str, i64)>((start, Bound::Unbounded))
+            .range((start, Bound::Unbounded))
             .context("Failed to scan the archive's time index")?;
         for entry in entries {
             let (key, _) = entry.context("Failed to read the archive's time index")?;

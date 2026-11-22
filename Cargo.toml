@@ -38,16 +38,16 @@ async-trait = "0.1.92"
 azure_core = "1.2.0-beta.2"
 azure_identity = "1.1.0-beta.2"
 azure_messaging_eventhubs = "0.16.0"
-azure_security_keyvault_secrets = "1.1.0-beta.1"
+azure_security_keyvault_secrets = "1.1.0-beta.2"
 base64 = "0.23.1"
 camino = "1.2.6"
 cfspeedtest = "2.2.2"
 chrono = { version = "0.4.45", features = ["serde"] }
-clap = { version = "4.6.7", features = ["derive"] }
+clap = { version = "4.6.9", features = ["derive"] }
 colored = "3.1.1"
 crossterm = "0.29.0"
 csv = "1.4.0"
-ctrlc = "3.5.2"
+ctrlc = "3.5.3"
 dns-lookup = "4.0.2"
 eframe = { version = "0.37.0" }
 egui = { version = "0.37.0" }
@@ -66,8 +66,8 @@ indicatif = "0.18.6"
 inquire = { version = "0.9.5", default-features = false, features = ["crossterm"] }
 jsonwebtoken = "12.0.0"
 mime_guess = "2.0.5"
-notify = "8.2.2"
-notify-debouncer-full = "0.7.0"
+notify = "9.0.0"
+notify-debouncer-full = "0.8.0"
 num_cpus = "1.17.0"
 once_cell = "1.21.4"
 percent-encoding = "2.3.2"
@@ -76,8 +76,8 @@ raccoon-otel = "1.1.0"
 rand = "0.10.4"
 ratatui = "0.30.2"
 rayon = "1.12.0"
-redb = "4.6.0"
-regex = "1.13.1"
+redb = "5.0.0"
+regex = "1.13.2"
 # Workspace default reqwest (gitignore). netquality pins its
 # own 0.12 to match cfspeedtest; see crates/tools/tool-netquality/Cargo.toml.
 reqwest = { version = "0.13.5", features = ["json"] }
@@ -116,8 +116,8 @@ tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = "2.5.9"
-uuid = { version = "1.29.2", features = ["v4"] }
-walkdir = "2.5.0"
+uuid = { version = "1.29.3", features = ["v4"] }
+walkdir = "2.5.1"
 warp = { version = "0.4.4", features = ["server"] }
 # Windows' WinRT bindings (Microsoft's windows-rs); eh-gui reads the system appearance with
 # `UISettings`. Features are chosen per crate.
@@ -126,12 +126,12 @@ windows = { version = "0.62.2", default-features = false }
 # The zlib-rs flate2 backend is the pure-Rust one zip's own `deflate`
 # meta-feature selects; bare `deflate-flate2` leaves flate2 backend-less
 # and fails to compile.
-zip = { version = "9.6.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.8.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # Dev dependencies
 azure_core_amqp = "1.2.0-beta.3"
 http-body-util = "0.1.5"
-rstest = "0.28.0"
+rstest = "0.29.0"
 tempfile = "3.27.0"
 
 # Rune's vendored forks, copied from Rune's root Cargo.toml at anomalyco/rune's c4eda05: Cargo

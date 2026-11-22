@@ -314,7 +314,7 @@ pub(crate) fn open_database(path: &Path, label: &str) -> anyhow::Result<Database
     options.create(true).read(true).write(true).truncate(false);
     let file = open_owner_only(&mut options, path)
         .with_context(|| format!("Failed to open the {label} '{}'", path.display()))?;
-    let backend = FileBackend::new(file).map_err(|error| open_error(path, label, error))?;
+    let backend = FileBackend::new(file);
 
     Builder::new()
         .create_with_backend(backend)

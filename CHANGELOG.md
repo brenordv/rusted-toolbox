@@ -24,8 +24,8 @@
     `shared-eventhub` library. Data captured by `eh-read` 1.1.0 (sled) is not migrated; the last
     released 1.1.0 binaries still read it.
 - Workspace dependencies added: `azure_core` 1.2.0-beta.2, `azure_identity` 1.1.0-beta.2,
-  `azure_messaging_eventhubs` 0.16.0, `azure_security_keyvault_secrets` 1.1.0-beta.1,
-  `azure_core_amqp` 1.2.0-beta.3 (test fixtures only), `redb` 4.6.0, `async-trait` 0.1.92
+  `azure_messaging_eventhubs` 0.16.0, `azure_security_keyvault_secrets` 1.1.0-beta.2,
+  `azure_core_amqp` 1.2.0-beta.3 (test fixtures only), `redb` 5.0.0, `async-trait` 0.1.92
   (`shared-azure`), `inquire` 0.9.5 (`eh`'s menu, crossterm backend only), `rustls` 0.23.46
   (`shared-eventhub-core` sets the process crypto provider), `windows` 0.62.2 (eh-gui
   reads the Windows appearance through `UISettings`), and `rune` and `rune-kit` as git
@@ -34,7 +34,9 @@
   keys, blank lines in a field's accessible text, and `TextEdit::is_pristine` after an edit of a
   plain field. Removed: `azeventhubs`, `sled`, and `rand06-compat`.
 - Major dependency bumps: `rsa` 0.9.10 to 0.10.0 (`whisper`), `jsonwebtoken` 11.1.0 to 12.0.0
-  (`jwt`), `rusqlite` 0.41.1 to 0.43.0 (`netquality`), and `rfd` 0.17.2 to 0.18.0 (`seal-gui`).
+  (`jwt`), `rusqlite` 0.41.1 to 0.43.0 (`netquality`), `rfd` 0.17.2 to 0.18.0 (`seal-gui`),
+  `notify` 8.2.2 to 9.0.0 with `notify-debouncer-full` 0.7.0 to 0.8.0 (`seal`'s watch mode), and
+  `rstest` 0.28.0 to 0.29.0 (tests).
 - `url` 2.5.8 to 2.5.9 for RUSTSEC-2026-0592 (a stack overflow in `Url::origin()` on nested
   `blob:` URLs); `form_urlencoded` moves to 1.2.3 with it.
 - Rune's `[patch.crates-io]` block (forks of `winit`, `wgpu-hal`, `parley_engine`, and

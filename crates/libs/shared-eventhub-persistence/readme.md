@@ -2,7 +2,7 @@
 
 Everything the EventHub tools keep on disk: the message archive, search over
 it, the txt/csv/json exporters, the disk-write modes, and `config.json` with a
-local secrets store. Built on [redb](https://github.com/cberner/redb) 4.6.0
+local secrets store. Built on [redb](https://github.com/cberner/redb) 5.0.0
 and `shared-eventhub-core`'s message model; the GUI and CLI never open redb
 themselves.
 
