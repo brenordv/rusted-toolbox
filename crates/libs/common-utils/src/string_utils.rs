@@ -70,6 +70,15 @@ pub fn display_line(chars: impl Iterator<Item = char>) -> String {
         .collect()
 }
 
+/// `text` with each of its lines as [`display_line`] gives it and the line breaks kept, each
+/// as `\n`.
+pub fn display_lines(text: &str) -> String {
+    text.lines()
+        .map(|line| display_line(line.chars()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The most characters of a failure text a surface shows in place.
 pub const ERROR_PREVIEW_CHARS: usize = 140;
 
@@ -281,6 +290,20 @@ mod tests {
         #[case] expected: &str,
     ) {
         assert_eq!(display_line(input.chars()), expected);
+    }
+
+    #[rstest]
+    #[case::one_line("plain", "plain")]
+    #[case::line_breaks_kept("one\ntwo\nthree", "one\ntwo\nthree")]
+    #[case::windows_line_breaks("one\r\ntwo", "one\ntwo")]
+    #[case::unsafe_characters_in_each_line("a\u{1b}b\nc\u{202E}d", "a b\nc d")]
+    #[case::a_blank_line_between("one\n\ntwo", "one\n\ntwo")]
+    #[case::empty("", "")]
+    fn display_lines_cleans_each_line_and_keeps_the_breaks(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(display_lines(input), expected);
     }
 
     #[rstest]

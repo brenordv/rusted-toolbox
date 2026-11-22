@@ -61,6 +61,13 @@
   cannot.
 - `common-serialization-utils` 1.2.0 gains `save_object_to_json_file` (pretty JSON, written
   atomically).
+- New tool: `alert` 1.0.0 (`crates/tools/tool-alert`) shows a window above other windows with
+  a message, an optional title, and an optional sound, and returns when the user closes it.
+  `alert --gui` opens a tester for it. An agent skill ships beside it
+  (`crates/tools/tool-alert/skill/SKILL.md`). It plays sound through `common-audio`, so
+  `convenience-build-ubuntu.sh` leaves it out with `speak` when the ALSA files are missing.
+  `common-utils` 2.4.0 gains `string_utils::display_lines`, moved from `eh-gui` (now 1.0.2, no
+  behavior change), which cleans the alert's message.
 
 ## v6
 - Updated dependencies.

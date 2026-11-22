@@ -3,19 +3,10 @@
 
 use super::{AppState, Outcome};
 use crate::read::inspector::FEEDBACK_FOR;
-use crate::read::rows::display_line;
 use chrono::{DateTime, Utc};
+use common_utils::string_utils::display_lines;
 pub use common_utils::string_utils::{ERROR_PREVIEW_CHARS, ErrorPreview, error_preview};
 use tracing::debug;
-
-/// The whole text as the details modal shows and copies it: each line with its control and
-/// bidirectional characters as spaces, the line breaks kept.
-fn details_text(text: &str) -> String {
-    text.lines()
-        .map(|line| display_line(line.chars()))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 /// The error details modal's content while it is open.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,7 +38,7 @@ impl AppState {
         self.pill_open = false;
         self.details = Some(ErrorDetails {
             title,
-            text: details_text(text),
+            text: display_lines(text),
             copied_until: None,
             toast,
         });

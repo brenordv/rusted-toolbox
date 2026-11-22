@@ -17,7 +17,7 @@
 # Notes:
 # - Recommended (optional) packages for common Rust crates on Ubuntu:
 #     sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
-# - The tools that play sound (speak) need the ALSA development files (libasound2-dev). When
+# - The tools that play sound (speak, alert) need the ALSA development files (libasound2-dev). When
 #   they cannot be installed, the script warns, leaves those tools out, and installs the rest.
 # - rustup docs: https://rustup.rs/
 
@@ -38,7 +38,7 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 CLONE_BASE="${CLONE_BASE:-$HOME/projects}"
 # The tools that depend on common-audio (sound playback). They build only with the ALSA
 # development files installed.
-AUDIO_TOOLS=(speak)
+AUDIO_TOOLS=(speak alert)
 ALSA_PACKAGE="libasound2-dev"
 # Set by build_project when the audio tools were left out; repeated at the end of the run.
 SKIPPED_AUDIO_TOOLS=""

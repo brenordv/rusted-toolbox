@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2
+- No change in what the app does. The cleaning of the error details text (each line's control
+  and bidirectional characters as spaces, the line breaks kept) moved to
+  `common-utils::string_utils::display_lines`, which the `alert` tool uses too.
+
 ## 1.0.1
 - No change in what the app does. The tool-neutral part of the design system (the kits and
   surface ladder, the shared tokens and motion roles, the caption, label, hairline, detail row,

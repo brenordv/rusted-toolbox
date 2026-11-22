@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.4.0
+- Added `string_utils::display_lines`: text of several lines with each line cleaned as `display_line` does and the line breaks kept. Moved from eh-gui.
+
 ## 2.3.1
 - Documentation: `get_app_folder` and `get_app_sub_folder` take a fixed name from the code (a package name, or a shared folder name such as the one `speak` keeps its settings under), never text from outside the program.
 

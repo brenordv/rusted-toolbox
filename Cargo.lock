@@ -246,6 +246,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "alert"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "common-audio",
+ "common-cli",
+ "common-gui-rune",
+ "common-utils",
+ "rstest",
+ "rune",
+ "rune-kit",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "aligned"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1580,7 +1597,7 @@ dependencies = [
 
 [[package]]
 name = "common-utils"
-version = "2.3.1"
+version = "2.4.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2588,7 +2605,7 @@ dependencies = [
 
 [[package]]
 name = "eh-gui"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "chrono",
