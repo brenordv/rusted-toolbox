@@ -146,6 +146,18 @@ fn the_profile_group_is_a_named_group_with_a_named_picker() {
 }
 
 #[test]
+fn the_sheet_shows_the_caption_for_folders_the_launch_config_named_outside_it() {
+    let caption = "config.json names a data folder outside this folder; it was not used.";
+    let mut s = orders_form();
+    s.folders_caption = Some(caption.to_owned());
+    let mut h = Harness::new(s, WINDOW_SIZE);
+
+    open_listed_sheet(&mut h);
+
+    assert!(h.has_text(caption));
+}
+
+#[test]
 fn the_picker_lists_the_launch_folder_and_the_profiles_that_load() {
     let h = picker_open(WINDOW_SIZE);
 

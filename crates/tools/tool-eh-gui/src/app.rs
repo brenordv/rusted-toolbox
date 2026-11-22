@@ -17,8 +17,9 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, error};
 
 /// What the window starts with: what the launch folder's `config.json` gave (the form, the
-/// capture rules, the export settings, and the caption saying what happened to the file), the
-/// launch folder, the workspace or why there is none, and the log file's state.
+/// capture rules, the export settings, and the captions saying what happened to the file and
+/// which of its folders were not used), the launch folder, the workspace or why there is none,
+/// and the log file's state.
 pub struct Preload {
     pub recalled: Recalled,
     pub launch_folder: PathBuf,
@@ -40,8 +41,10 @@ impl Preload {
             rules,
             export,
             caption,
+            folders_caption,
         } = self.recalled;
         let mut state = AppState::new(Some(services), form, caption, self.file_logging);
+        state.folders_caption = folders_caption;
         state
             .read
             .reseed(&rules, export.format, export.include_metadata);

@@ -17,7 +17,7 @@ use shared_eventhub_core::filters::TextFilter;
 use shared_eventhub_core::models::MessageKey;
 use shared_eventhub_core::producer::Pacing;
 use shared_eventhub_persistence::config::ToolConfig;
-use shared_eventhub_persistence::export::{ExportFormat, ExportOutcome};
+use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat, ExportOutcome};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -679,6 +679,172 @@ fn the_launch_workspace_is_the_one_set() {
 
     assert_eq!(s.workspace(), Ok(&test_workspace()));
     assert_eq!(s.launch_folder(), launch_folder());
+}
+
+const OUTSIDE: &str = "/elsewhere/data";
+
+fn outside_data_folder(storage: &mut StorageConfig) {
+    storage.base_data_folder = OUTSIDE.to_owned();
+}
+
+fn outside_export_folder(storage: &mut StorageConfig) {
+    storage.export.export_folder = OUTSIDE.to_owned();
+}
+
+fn outside_received_path(storage: &mut StorageConfig) {
+    storage.disk_write.received_msg_path = OUTSIDE.to_owned();
+    storage.disk_write.mode = DiskWriteMode::Immediate;
+}
+
+fn every_folder_outside(storage: &mut StorageConfig) {
+    outside_data_folder(storage);
+    outside_export_folder(storage);
+    outside_received_path(storage);
+}
+
+/// [`orders_config`] with its storage changed by `change`.
+fn orders_config_with(change: fn(&mut StorageConfig)) -> ToolConfig {
+    let mut config = orders_config();
+    change(&mut config.storage);
+    config
+}
+
+#[rstest::rstest]
+#[case::data_folder(
+    outside_data_folder,
+    "config.json names a data folder outside this folder; it was not used."
+)]
+#[case::export_folder(
+    outside_export_folder,
+    "config.json names an export folder outside this folder; it was not used."
+)]
+#[case::received_message_path(
+    outside_received_path,
+    "config.json names a received message path outside this folder; it was not used. Writing \
+     message files is off."
+)]
+#[case::all_three(
+    every_folder_outside,
+    "config.json names a data folder, an export folder, and a received message path outside \
+     this folder; they were not used. Writing message files is off."
+)]
+fn a_launch_folder_config_gives_the_default_for_each_folder_it_names_outside(
+    #[case] change: fn(&mut StorageConfig),
+    #[case] caption: &str,
+) {
+    let given = recalled(&launch_home(), loaded(orders_config_with(change)));
+
+    let inside = orders_config().storage;
+    assert_eq!(given.form.data_folder, inside.base_data_folder);
+    assert_eq!(
+        given.form.received_msg_path.text,
+        inside.disk_write.received_msg_path
+    );
+    assert_eq!(given.form.disk_write, DiskWriteMode::Off);
+    assert_eq!(given.form.to_config().0.storage, inside);
+    assert_eq!(given.export, inside.export);
+    assert_eq!(given.folders_caption.as_deref(), Some(caption));
+}
+
+#[test]
+fn two_folders_outside_the_launch_folder_are_both_named() {
+    let given = recalled(
+        &launch_home(),
+        loaded(orders_config_with(|storage| {
+            outside_data_folder(storage);
+            outside_export_folder(storage);
+        })),
+    );
+
+    assert_eq!(
+        given.folders_caption.as_deref(),
+        Some(
+            "config.json names a data folder and an export folder outside this folder; they \
+             were not used."
+        )
+    );
+}
+
+#[test]
+fn a_received_message_path_inside_the_launch_folder_keeps_its_disk_write_mode() {
+    let given = recalled(
+        &launch_home(),
+        loaded(orders_config_with(|storage| {
+            storage.disk_write.received_msg_path = "dumps".to_owned();
+            storage.disk_write.mode = DiskWriteMode::AtEnd;
+        })),
+    );
+
+    assert_eq!(given.form.disk_write, DiskWriteMode::AtEnd);
+    assert_eq!(given.form.received_msg_path.text, "dumps");
+    assert_eq!(given.folders_caption, None);
+}
+
+#[test]
+fn a_profile_keeps_the_folders_it_names_outside_its_folder() {
+    let config = orders_config_with(every_folder_outside);
+
+    let given = recalled(&profile_home(ORDERS_DEV), loaded(config.clone()));
+
+    assert_eq!(given.form.to_config().0.storage, config.storage);
+    assert_eq!(given.export, config.storage.export);
+    assert_eq!(given.folders_caption, None);
+}
+
+#[test]
+fn a_return_to_a_launch_folder_whose_config_names_folders_outside_it_uses_the_defaults() {
+    let mut s = listed();
+    switch(&mut s, profile_home(BILLING), loaded(billing_config()));
+
+    let out = switch(
+        &mut s,
+        launch_home(),
+        loaded(orders_config_with(every_folder_outside)),
+    );
+
+    assert_eq!(s.home(), &launch_home());
+    assert_eq!(switched_to(&out), Some(&DataPaths::new(".eh-data")));
+    assert_eq!(s.form.to_config().0.storage, orders_config().storage);
+    assert_eq!(s.archive.options.export_folder, "exports");
+    assert!(
+        s.folders_caption
+            .as_deref()
+            .is_some_and(|caption| caption.starts_with("config.json names a data folder, ")),
+        "{:?}",
+        s.folders_caption
+    );
+}
+
+/// [`listed`] back on a launch folder whose `config.json` names every folder outside it.
+fn with_the_folders_caption() -> AppState {
+    let mut s = listed();
+    switch(&mut s, profile_home(BILLING), loaded(billing_config()));
+    switch(
+        &mut s,
+        launch_home(),
+        loaded(orders_config_with(every_folder_outside)),
+    );
+    assert!(s.folders_caption.is_some());
+    s
+}
+
+#[test]
+fn the_next_load_replaces_the_folders_caption() {
+    let mut s = with_the_folders_caption();
+
+    switch(&mut s, profile_home(BILLING), loaded(billing_config()));
+
+    assert_eq!(s.folders_caption, None);
+}
+
+#[test]
+fn picking_a_data_folder_clears_the_folders_caption() {
+    let mut s = with_the_folders_caption();
+
+    s.apply(Input::DataFolderPicked(PathBuf::from("picked")));
+
+    assert_eq!(s.folders_caption, None);
+    assert_eq!(s.form.data_folder, "picked");
 }
 
 #[test]

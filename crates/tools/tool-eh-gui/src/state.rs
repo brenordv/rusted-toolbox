@@ -356,6 +356,9 @@ pub struct AppState {
     pub save_status: SaveStatus,
     /// What happened to the home's `config.json` when it was last read, as caption text.
     pub config_caption: Option<String>,
+    /// The folder settings the home's `config.json` named outside the home when it was last
+    /// read, which were not used, as caption text; gone once the user picks a data folder.
+    pub folders_caption: Option<String>,
     pub file_logging: FileLogging,
     toasts: toasts::Toasts,
     /// The error details modal; `None` while it is closed.
@@ -422,6 +425,7 @@ impl AppState {
             show_issues: false,
             save_status: SaveStatus::Idle,
             config_caption,
+            folders_caption: None,
             file_logging,
             toasts: toasts::Toasts::default(),
             details: None,
@@ -751,6 +755,7 @@ impl AppState {
             return;
         }
         self.form.data_folder = folder.display().to_string();
+        self.folders_caption = None;
         self.form.forget_stored_secrets();
         let paths = self.data_paths();
         self.change_data_folder(paths, out);

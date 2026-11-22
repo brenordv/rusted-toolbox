@@ -504,6 +504,73 @@ fn a_recalled_target_is_refused_until_it_is_named_or_confirmed() {
 }
 
 #[test]
+fn an_environment_string_without_a_hub_does_not_send_to_the_recalled_hub() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("config.json"),
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"event_hub":"{HUB}","auth":{{"method":"connection-string","stored":"local-db"}}}}}}"#
+        ),
+    )
+    .unwrap();
+    let namespace_level =
+        format!("Endpoint=sb://{NAMESPACE}/;SharedAccessKeyName=send;SharedAccessKey={SECRET_KEY}");
+
+    let output = Command::new(EXE)
+        .args(["send", "--body", "x"])
+        .current_dir(root.path())
+        .env("EH_WORKSPACE", root.path().join("profiles"))
+        .env("EH_CONNECTION_STRING", namespace_level)
+        .env_remove("EH_CLIENT_SECRET")
+        .env_remove("RUST_LOG")
+        .output()
+        .expect("failed to run eh");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("This run would send to namespace (from the connection string), event hub orders, taken from this folder's config.json (the connection string in EH_CONNECTION_STRING does not name an event hub by itself). Name the event hub with -e, or pass --yes."),
+        "{stderr}"
+    );
+    assert!(!stderr.contains(SECRET_KEY), "{stderr}");
+    assert!(!root.path().join(".eh-data").exists());
+}
+
+#[test]
+fn a_config_json_naming_a_data_folder_outside_its_folder_is_refused_and_the_folder_stays_empty() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_folder = outside.path().display().to_string().replace('\\', "/");
+    let config = root.path().join("config.json");
+    std::fs::write(
+        &config,
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"namespace":"{NAMESPACE}","event_hub":"{HUB}","auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}},"storage":{{"base_data_folder":"{outside_folder}"}}}}"#
+        ),
+    )
+    .unwrap();
+
+    let export = eh(root.path(), &["export"]);
+    let read = eh(root.path(), &["read"]);
+
+    for output in [&export, &read] {
+        assert_eq!(output.status.code(), Some(1), "{}", stderr_of(output));
+        assert!(
+            stderr_of(output).contains("config.json names a data folder outside this folder"),
+            "{}",
+            stderr_of(output)
+        );
+        assert!(
+            stderr_of(output).contains("Pass -b FOLDER to choose one for this run, or keep the setup in a profile (--profile NAME)."),
+            "{}",
+            stderr_of(output)
+        );
+    }
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    assert_eq!(files_under(root.path()), [config]);
+}
+
+#[test]
 fn read_without_a_target_fails_before_touching_anything() {
     let root = tempfile::tempdir().unwrap();
 

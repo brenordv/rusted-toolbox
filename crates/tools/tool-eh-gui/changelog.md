@@ -1,6 +1,11 @@
 # Changelog
 
 ## 1.0.0
+- A launch folder's `config.json` that names a data folder, an export folder, or a received
+  message path outside the launch folder (absolute, climbing with `..`, or a network share) no
+  longer gets that folder used: the default takes its place before the form is filled, an
+  outside received message path also turns Message files off, and the connect sheet's Profile
+  group says which settings were not used. A profile's `config.json` keeps an absolute folder.
 - Save as profile… at the end of the connect sheet's Saves to row saves the form as a new
   profile in the workspace and opens it: a name field with `eh`'s name rules, a stored secret
   copied into the new profile's secrets file (the row says from which local store), names

@@ -148,6 +148,21 @@ fn recalled_row() -> AppState {
 }
 
 #[test]
+fn a_profile_saved_after_a_launch_folder_config_named_folders_outside_it_holds_none_of_them() {
+    let mut config = orders_config();
+    config.storage.base_data_folder = "/elsewhere/data".to_owned();
+    config.storage.export.export_folder = "/elsewhere/exports".to_owned();
+    config.storage.disk_write.received_msg_path = "/elsewhere/inbound".to_owned();
+    let mut s = open_row();
+    s.form = recalled(&ConfigHome::CurrentFolder(launch_folder()), loaded(config)).form;
+    let mut s = typed(s, NEW);
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert_eq!(create_request(&out).config.storage, orders_config().storage);
+}
+
+#[test]
 fn opening_the_row_empties_the_name_and_asks_for_focus_in_it() {
     let mut s = listed();
     s.new_profile_name = TextEdit::new("left over");

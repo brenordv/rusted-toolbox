@@ -284,6 +284,18 @@ is left alone, and the sheet says so. Save config writes `config.json` with the 
 one `config.json` per data folder. Saves go to the active profile, or to the launch folder when
 no profile is picked.
 
+A launch folder's `config.json` can come with a cloned repository, so eh-gui uses only the
+folders it names inside the launch folder. A data folder, export folder, or received message
+path that is absolute, climbs with `..`, or names a network share is replaced by its default
+(`.eh-data`, `exports`, `inbound`) before the sheet is filled, and the folder is never touched.
+A replaced received message path also sets Message files to Off. The Profile group then shows
+which settings were not used ("config.json names a data folder outside this folder; it was not
+used."), until the next load or until you pick a data folder with Change. A folder you pick
+with Change, or type in the sheet, is used as given for this session. A data folder you pick
+outside the launch folder and save there with Save config is not used at the next launch.
+To keep one, pick a profile first and save there: a profile's `config.json` may name an
+absolute folder.
+
 ## Data folder and the archive
 
 - One data folder holds the archive of one event hub. Connecting to another event hub with the

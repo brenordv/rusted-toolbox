@@ -51,6 +51,15 @@
   that action's main options. It prints the equivalent command and asks before running; Esc
   cancels (exit 0) and Ctrl-C exits 130. In a pipe or a script, a bare `eh` prints the help and
   exits 2.
+- `eh send` with the connection string in `EH_CONNECTION_STRING` and an event hub recalled from
+  `config.json` is refused unless `-e` names the event hub, the string carries an `EntityPath`,
+  or `--yes` confirms: a namespace-level string no longer sends to a hub the folder chose.
+- A `config.json` in the current folder may name only plain relative folders for the data
+  folder, the export folder, and the received message path. A run that would use an absolute,
+  climbing (`..`), or network folder from it is refused before anything is touched, naming the
+  flag that sets the folder for one run (`-b`, `--export-folder`, `--received-msg-path`), and
+  `--save-config` refuses to save such a folder there. To keep an absolute data folder, pass
+  `-b` on each run or keep the setup in a profile, whose `config.json` may name one.
 - Breaking, from 1.1.0 (the readme has the full table):
   - `eh-read` -> `eh read`, `eh-export` -> `eh export`; shared flags go before the
     subcommand.

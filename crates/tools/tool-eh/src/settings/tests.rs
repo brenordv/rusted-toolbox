@@ -5,6 +5,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use common_utils::string_utils::SecretString;
 use rstest::rstest;
 use shared_eventhub_core::filters::TimeWindow;
+use shared_eventhub_persistence::config::resolve_target_with;
 use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat};
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::workspace::{ProfileName, Workspace};
@@ -13,6 +14,8 @@ use std::path::{Path, PathBuf};
 const CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=listen;SharedAccessKey=c2VjcmV0";
 const ENV_CONNECTION_STRING: &str =
     "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=env;SharedAccessKey=ZW52";
+const ENV_CONNECTION_STRING_FOR_RECALLED_HUB: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=env;SharedAccessKey=ZW52;EntityPath=recalled-hub";
+const ENV_CONNECTION_STRING_FOR_ANOTHER_HUB: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=env;SharedAccessKey=ZW52;EntityPath=another-hub";
 
 fn secret(value: &str) -> Option<SecretString> {
     Some(value.to_owned().into())
@@ -589,22 +592,315 @@ async fn under_a_profile_the_recalled_data_folder_sits_inside_the_profile_folder
     assert_eq!(send.config.storage.base_data_folder, "recalled-data");
 }
 
+/// The recalled config with `folder` as its data folder, export folder, and received message
+/// path.
+fn recalled_with_folders(folder: &str) -> ToolConfig {
+    let mut recalled = recalled_developer_config();
+    recalled.storage.base_data_folder = folder.to_owned();
+    recalled.storage.export.export_folder = folder.to_owned();
+    recalled.storage.disk_write.received_msg_path = folder.to_owned();
+    recalled
+}
+
 #[tokio::test]
-async fn an_absolute_recalled_data_folder_is_kept_with_or_without_a_profile() {
+async fn a_profiles_absolute_folders_are_kept() {
     let root = tempfile::tempdir().unwrap();
     let absolute = tempfile::tempdir().unwrap();
-    let mut recalled = recalled_developer_config();
-    recalled.storage.base_data_folder = absolute.path().to_str().unwrap().to_owned();
+    let recalled = recalled_with_folders(absolute.path().to_str().unwrap());
+    let home = profile_home(root.path(), "orders").await;
 
-    let in_profile = job_at(
-        ReadArgs::default(),
+    let read = job_at(ReadArgs::default(), &recalled, home.clone());
+    let export = export_job(
+        ExportArgs::default(),
+        Some(&recalled),
+        home.clone(),
+        ConfigSource::Loaded,
+    )
+    .unwrap();
+    let send = send_at(
+        send_args(TargetArgs::default()),
         &recalled,
-        profile_home(root.path(), "orders").await,
-    );
-    let here = job_at(ReadArgs::default(), &recalled, here());
+        home,
+        &Environment::default(),
+    )
+    .unwrap();
 
-    assert_eq!(in_profile.paths.base(), absolute.path());
-    assert_eq!(here.paths.base(), absolute.path());
+    assert_eq!(read.paths.base(), absolute.path());
+    assert_eq!(
+        read.config.storage.disk_write.received_msg_path,
+        recalled.storage.disk_write.received_msg_path
+    );
+    assert_eq!(export.paths.base(), absolute.path());
+    assert_eq!(
+        export.export.export_folder,
+        recalled.storage.export.export_folder
+    );
+    assert_eq!(send.paths.base(), absolute.path());
+}
+
+const OUTSIDE_DATA_FOLDER: &str = "config.json names a data folder outside this folder";
+const OUTSIDE_EXPORT_FOLDER: &str = "config.json names an export folder outside this folder";
+const OUTSIDE_RECEIVED_PATH: &str = "config.json names a received message path outside this folder";
+
+/// `recalled_developer_config` named on the command line, so the send guard passes.
+fn named_send_args() -> SendArgs {
+    send_args(TargetArgs {
+        namespace: Some("recalled.servicebus.windows.net".to_owned()),
+        event_hub: Some("recalled-hub".to_owned()),
+        ..TargetArgs::default()
+    })
+}
+
+#[rstest]
+#[case::rooted("/elsewhere/data")]
+#[case::climbing("../elsewhere")]
+fn a_recalled_data_folder_outside_the_current_folder_is_refused_for_every_command(
+    #[case] folder: &str,
+) {
+    let mut recalled = recalled_developer_config();
+    recalled.storage.base_data_folder = folder.to_owned();
+
+    let read = error_of(
+        ReadArgs::default(),
+        Some(&recalled),
+        &Environment::default(),
+    );
+    let export = export_job(
+        ExportArgs::default(),
+        Some(&recalled),
+        here(),
+        ConfigSource::Loaded,
+    )
+    .unwrap_err();
+    let send = send(named_send_args(), Some(&recalled), &Environment::default()).unwrap_err();
+
+    assert_eq!(
+        read,
+        format!(
+            "{OUTSIDE_DATA_FOLDER} ('{folder}'). Pass -b FOLDER to choose one for this run, or \
+             keep the setup in a profile (--profile NAME)."
+        )
+    );
+    assert_eq!(export.to_string(), read);
+    assert_eq!(send.to_string(), read);
+}
+
+#[cfg(windows)]
+#[test]
+fn a_recalled_network_share_is_refused_as_a_data_folder() {
+    let mut recalled = recalled_developer_config();
+    recalled.storage.base_data_folder = "\\\\host\\share\\data".to_owned();
+
+    let error = error_of(
+        ReadArgs::default(),
+        Some(&recalled),
+        &Environment::default(),
+    );
+
+    assert!(error.contains(OUTSIDE_DATA_FOLDER), "{error}");
+}
+
+#[test]
+fn a_recalled_data_folder_outside_the_current_folder_is_replaced_by_the_typed_one() {
+    let recalled = recalled_with_folders("/elsewhere/data");
+    let data = || DataArgs {
+        base_data_folder: Some("typed-data".to_owned()),
+        ..DataArgs::default()
+    };
+    let mut send_flags = named_send_args();
+    send_flags.data = data();
+
+    let read = job(
+        ReadArgs {
+            data: data(),
+            received_msg_path: Some("typed-inbound".to_owned()),
+            ..ReadArgs::default()
+        },
+        Some(&recalled),
+        &Environment::default(),
+    )
+    .unwrap();
+    let export = export_job(
+        ExportArgs {
+            data: data(),
+            export_folder: Some("typed-exports".to_owned()),
+            ..ExportArgs::default()
+        },
+        Some(&recalled),
+        here(),
+        ConfigSource::Loaded,
+    )
+    .unwrap();
+    let send = send(send_flags, Some(&recalled), &Environment::default()).unwrap();
+
+    assert_eq!(read.paths, DataPaths::new("typed-data"));
+    assert_eq!(
+        read.config.storage.disk_write.received_msg_path,
+        "typed-inbound"
+    );
+    assert_eq!(export.paths, DataPaths::new("typed-data"));
+    assert_eq!(export.export.export_folder, "typed-exports");
+    assert_eq!(send.paths, DataPaths::new("typed-data"));
+}
+
+#[test]
+fn a_recalled_export_folder_outside_the_current_folder_is_refused_for_export() {
+    let mut recalled = recalled_developer_config();
+    recalled.storage.export.export_folder = "/elsewhere/exports".to_owned();
+
+    let error = export_job(
+        ExportArgs::default(),
+        Some(&recalled),
+        here(),
+        ConfigSource::Loaded,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "{OUTSIDE_EXPORT_FOLDER} ('/elsewhere/exports'). Pass --export-folder FOLDER to \
+             choose one for this run, or keep the setup in a profile (--profile NAME)."
+        )
+    );
+}
+
+#[test]
+fn a_recalled_received_message_path_outside_the_current_folder_is_refused_for_read() {
+    let mut recalled = recalled_developer_config();
+    recalled.storage.disk_write.received_msg_path = "/elsewhere/inbound".to_owned();
+
+    let error = error_of(
+        ReadArgs::default(),
+        Some(&recalled),
+        &Environment::default(),
+    );
+
+    assert_eq!(
+        error,
+        format!(
+            "{OUTSIDE_RECEIVED_PATH} ('/elsewhere/inbound'). Pass --received-msg-path FOLDER to \
+             choose one for this run, or keep the setup in a profile (--profile NAME)."
+        )
+    );
+}
+
+#[test]
+fn a_typed_folder_outside_the_current_folder_is_used_as_given() {
+    let outside = tempfile::tempdir().unwrap();
+    let folder = outside.path().to_str().unwrap();
+    let recalled = recalled_developer_config();
+
+    let read = job(
+        ReadArgs {
+            data: DataArgs {
+                base_data_folder: Some(folder.to_owned()),
+                ..DataArgs::default()
+            },
+            received_msg_path: Some(folder.to_owned()),
+            ..ReadArgs::default()
+        },
+        Some(&recalled),
+        &Environment::default(),
+    )
+    .unwrap();
+
+    assert_eq!(read.paths.base(), outside.path());
+    assert_eq!(read.config.storage.disk_write.received_msg_path, folder);
+}
+
+#[test]
+fn the_refusal_escapes_a_hostile_recalled_folder() {
+    let mut recalled = recalled_developer_config();
+    recalled.storage.base_data_folder = "../evil\u{1b}]52;c;x\u{7}".to_owned();
+
+    let error = error_of(
+        ReadArgs::default(),
+        Some(&recalled),
+        &Environment::default(),
+    );
+
+    assert!(error.contains(OUTSIDE_DATA_FOLDER), "{error}");
+    assert!(!error.contains('\u{1b}'), "{error:?}");
+}
+
+const SAVE_OUTSIDE_DATA_FOLDER: &str = "--save-config cannot save a data folder outside this \
+     folder ('/elsewhere/data'): a config.json here is recalled only with folders inside it. \
+     Keep the setup in a profile (--profile NAME).";
+
+fn saving(target: TargetArgs) -> TargetArgs {
+    TargetArgs {
+        save_config: true,
+        ..target
+    }
+}
+
+#[test]
+fn save_config_into_the_current_folder_refuses_a_typed_data_folder_outside_it() {
+    let data = || DataArgs {
+        base_data_folder: Some("/elsewhere/data".to_owned()),
+        ..DataArgs::default()
+    };
+    let mut send_flags = send_args(saving(developer()));
+    send_flags.data = data();
+
+    let read = error_of(
+        ReadArgs {
+            target: saving(developer()),
+            data: data(),
+            ..ReadArgs::default()
+        },
+        None,
+        &Environment::default(),
+    );
+    let send = send(send_flags, None, &Environment::default()).unwrap_err();
+
+    assert_eq!(read, SAVE_OUTSIDE_DATA_FOLDER);
+    assert_eq!(send.to_string(), SAVE_OUTSIDE_DATA_FOLDER);
+}
+
+#[test]
+fn save_config_into_the_current_folder_refuses_a_typed_received_message_path_outside_it() {
+    let error = error_of(
+        ReadArgs {
+            target: saving(developer()),
+            received_msg_path: Some("../inbound".to_owned()),
+            ..ReadArgs::default()
+        },
+        None,
+        &Environment::default(),
+    );
+
+    assert_eq!(
+        error,
+        "--save-config cannot save a received message path outside this folder ('../inbound'): \
+         a config.json here is recalled only with folders inside it. Keep the setup in a profile \
+         (--profile NAME)."
+    );
+}
+
+#[tokio::test]
+async fn save_config_into_a_profile_keeps_a_typed_received_message_path_outside_it() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let folder = outside.path().to_str().unwrap();
+
+    let job = read_job(
+        ReadArgs {
+            target: saving(developer()),
+            received_msg_path: Some(folder.to_owned()),
+            ..ReadArgs::default()
+        },
+        None,
+        &Environment::default(),
+        false,
+        profile_home(root.path(), "orders").await,
+        ConfigSource::Missing,
+    )
+    .unwrap();
+
+    assert!(job.save_config);
+    assert_eq!(job.config.storage.disk_write.received_msg_path, folder);
 }
 
 fn job_at(args: ReadArgs, recalled: &ToolConfig, home: ConfigHome) -> ReadJob {
@@ -1088,12 +1384,22 @@ fn a_named_confirmed_or_flag_target_passes_the_guard(
     assert!(send(args, Some(&recalled), &Environment::default()).is_ok());
 }
 
+fn environment_with(connection_string: &str) -> Environment {
+    Environment {
+        connection_string: secret(connection_string),
+        client_secret: None,
+    }
+}
+
+/// The namespace and event hub the job's target and given secrets resolve to.
+fn resolved_names(job: &SendJob) -> Result<(String, String)> {
+    let target = resolve_target_with(&job.config, job.secrets.clone(), None)?;
+    target_names(&target).unwrap()
+}
+
 #[test]
 fn a_connection_string_from_the_environment_names_the_destination() {
-    let environment = Environment {
-        connection_string: secret(ENV_CONNECTION_STRING),
-        client_secret: None,
-    };
+    let environment = environment_with(ENV_CONNECTION_STRING_FOR_RECALLED_HUB);
 
     let job = send(
         send_args(TargetArgs::default()),
@@ -1103,9 +1409,161 @@ fn a_connection_string_from_the_environment_names_the_destination() {
     .unwrap();
 
     assert_eq!(
-        job.secrets.connection_string.unwrap().expose(),
-        ENV_CONNECTION_STRING
+        job.secrets.connection_string.as_ref().unwrap().expose(),
+        ENV_CONNECTION_STRING_FOR_RECALLED_HUB
     );
+    assert_eq!(
+        resolved_names(&job).unwrap(),
+        (
+            "orders.servicebus.windows.net".to_owned(),
+            "recalled-hub".to_owned()
+        )
+    );
+}
+
+#[test]
+fn an_environment_string_naming_another_hub_passes_the_guard_and_cannot_reach_the_recalled_hub() {
+    let environment = environment_with(ENV_CONNECTION_STRING_FOR_ANOTHER_HUB);
+
+    let job = send(
+        send_args(TargetArgs::default()),
+        Some(&recalled_connection_string_config()),
+        &environment,
+    )
+    .unwrap();
+
+    let error = resolved_names(&job).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("does not match the connection string EntityPath"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn an_environment_string_without_a_hub_does_not_name_a_recalled_hub() {
+    let error = send(
+        send_args(TargetArgs::default()),
+        Some(&recalled_connection_string_config()),
+        &environment_with(ENV_CONNECTION_STRING),
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "This run would send to namespace (from the connection string), event hub recalled-hub, \
+         taken from this folder's config.json (the connection string in EH_CONNECTION_STRING \
+         does not name an event hub by itself). Name the event hub with -e, or pass --yes."
+    );
+}
+
+#[test]
+fn an_environment_string_without_a_hub_sends_to_the_hub_typed_with_e() {
+    let args = send_args(TargetArgs {
+        event_hub: Some("typed-hub".to_owned()),
+        ..TargetArgs::default()
+    });
+
+    let job = send(
+        args,
+        Some(&recalled_connection_string_config()),
+        &environment_with(ENV_CONNECTION_STRING),
+    )
+    .unwrap();
+
+    assert_eq!(job.config.target.event_hub.as_deref(), Some("typed-hub"));
+}
+
+#[rstest]
+#[case::not_a_connection_string("marker-7731-not-a-connection-string")]
+#[case::foreign_endpoint(
+    "Endpoint=sb://marker-7731.example.com/;SharedAccessKeyName=k;SharedAccessKey=eA==;EntityPath=orders"
+)]
+fn an_environment_string_that_cannot_be_resolved_is_refused_without_quoting_it(
+    #[case] connection_string: &str,
+) {
+    let error = send(
+        send_args(TargetArgs::default()),
+        Some(&recalled_connection_string_config()),
+        &environment_with(connection_string),
+    )
+    .unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("does not name an event hub by itself"),
+        "{message}"
+    );
+    assert!(!message.contains("marker-7731"), "{message}");
+}
+
+#[test]
+fn an_environment_string_without_a_hub_sends_once_confirmed() {
+    let mut args = send_args(TargetArgs::default());
+    args.yes = true;
+
+    let sent = send(
+        args,
+        Some(&recalled_connection_string_config()),
+        &environment_with(ENV_CONNECTION_STRING),
+    );
+
+    assert!(sent.is_ok(), "{sent:?}");
+}
+
+#[test]
+fn an_auth_flag_with_an_environment_string_passes_the_guard_with_no_recalled_name() {
+    let args = send_args(TargetArgs {
+        auth: Some(AuthArg::ConnectionString),
+        ..TargetArgs::default()
+    });
+
+    let job = send(
+        args,
+        Some(&recalled_connection_string_config()),
+        &environment_with(ENV_CONNECTION_STRING),
+    )
+    .unwrap();
+
+    assert_eq!(job.config.target.namespace, None);
+    assert_eq!(job.config.target.event_hub, None);
+}
+
+#[tokio::test]
+async fn a_profile_that_names_only_its_hub_is_refused_under_an_environment_string_without_a_hub() {
+    let root = tempfile::tempdir().unwrap();
+
+    let error = send_at(
+        send_args(TargetArgs::default()),
+        &recalled_connection_string_config(),
+        profile_home(root.path(), "orders").await,
+        &environment_with(ENV_CONNECTION_STRING),
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "This run would send to namespace (from the connection string), event hub recalled-hub, \
+         taken from profile orders (the connection string in EH_CONNECTION_STRING does not name \
+         an event hub by itself). Name the event hub with -e, or pass --yes."
+    );
+}
+
+#[tokio::test]
+async fn a_profile_that_names_both_still_sends_under_an_environment_string_without_a_hub() {
+    let root = tempfile::tempdir().unwrap();
+    let mut recalled = recalled_connection_string_config();
+    recalled.target.namespace = Some("orders.servicebus.windows.net".to_owned());
+
+    let sent = send_at(
+        send_args(TargetArgs::default()),
+        &recalled,
+        profile_home(root.path(), "orders").await,
+        &environment_with(ENV_CONNECTION_STRING),
+    );
+
+    assert!(sent.is_ok(), "{sent:?}");
 }
 
 #[test]

@@ -44,7 +44,8 @@ const EVENT_HUB: &str = "Event hub";
 const NO_DESTINATION: &str = "None yet; eh asks for one when sending";
 
 /// The group: its label, the picker (when there is more than the launch folder to pick) with
-/// the lock's reason under it, the note, the folder Save config writes to with Save as
+/// the lock's reason under it, the note, the caption naming the folder settings the home's
+/// `config.json` named outside it, the folder Save config writes to with Save as
 /// profile… at its end (the lock's reason under it when no picker shows), the Save as profile
 /// row while it is open, the listing's caption, and a hairline. `overlays` receives the
 /// picker's open list, which must be painted after the scrim of any modal the group sits in.
@@ -67,6 +68,9 @@ pub(super) fn group(s: &AppState, k: &Kit, overlays: &mut Vec<El>) -> El {
     }
     if let Some(note) = s.profile_note() {
         group = group.child(note_line(k, note));
+    }
+    if let Some(caption) = &s.folders_caption {
+        group = group.child(parts::caption(k, caption));
     }
     group = group.child(saves_to(s, k, lock));
     if let (false, Ok(_), Some(reason)) = (picker_shown, s.workspace(), lock) {

@@ -99,6 +99,10 @@ Copy the `Same as:` line to run it again without the menu.
   folder; that deletes its archive and exports too.
 - To keep profiles somewhere else, set `EH_WORKSPACE` to an absolute folder only you can write
   to (not a repository, a synced folder, or a network share).
+- An absolute data folder, export folder, or received message path belongs in a profile. A
+  `config.json` in a working folder may name only folders inside that folder, and `eh` refuses
+  to run with one that names another. To keep a profile's archive on another disk, set
+  `storage.base_data_folder` in the profile's `config.json` to the absolute path.
 
 ## After rotating a key
 

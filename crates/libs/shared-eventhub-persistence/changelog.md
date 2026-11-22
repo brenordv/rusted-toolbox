@@ -28,4 +28,6 @@
   or uses `<home>/.eh/profiles`), `ProfileName` (a name safe as a folder on every platform),
   finding a profile ignoring case, listing profiles without a log line per profile, and
   `ConfigHome`, whose `data_paths` places a relative data folder inside a profile folder.
+- `ConfigHome::uses_recalled_folder` says whether a home uses a folder its `config.json` names:
+  any folder under a profile, only a plain relative one under the current folder.
 - Dependency: `redb` 4.6.0.

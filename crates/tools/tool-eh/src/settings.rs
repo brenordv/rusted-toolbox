@@ -3,13 +3,16 @@
 //! timestamp and filter values. Everything here is pure.
 
 use crate::cli_utils::{AuthArg, ExportArgs, ReadArgs, TargetArgs, TextFilterArgs, TimeFilterArgs};
-use crate::models::{BodySource, ConfigSource, Environment, ExportJob, ReadJob, SendJob};
+use crate::models::{
+    BodySource, CONNECTION_STRING_ENV, ConfigSource, Environment, ExportJob, ReadJob, SendJob,
+};
 use crate::progress::{display, target_label};
 use crate::send_cli::{ArgText, SendArgs};
 use anyhow::{Context, Result, bail};
-use common_utils::string_utils::non_blank;
+use common_utils::string_utils::{SecretString, non_blank};
 use mock_data_utils::template::Template;
-use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
+use shared_azure::auth::AuthMethod;
+use shared_eventhub_core::connection::{DEFAULT_CONSUMER_GROUP, EventHubTarget, target_names};
 use shared_eventhub_core::filters::{CaptureFilters, TextFilter, TimeFilter};
 use shared_eventhub_core::producer::{
     OutgoingEvent, Pacing, Routing, SendPlan, insert_property, parse_property,
@@ -30,13 +33,72 @@ const CLIENT_IDS_NEED_CLIENT_SECRET: &str =
 const NO_KEYWORD: &str =
     "--dump-filter needs at least one keyword, as in --dump-filter error,timeout";
 
+/// A folder setting of `config.json`: what messages call it, and the flag
+/// that sets it for one run.
+struct FolderSetting {
+    name: &'static str,
+    flag: &'static str,
+}
+
+const DATA_FOLDER: FolderSetting = FolderSetting {
+    name: "a data folder",
+    flag: "-b",
+};
+const EXPORT_FOLDER: FolderSetting = FolderSetting {
+    name: "an export folder",
+    flag: "--export-folder",
+};
+const RECEIVED_MSG_PATH: FolderSetting = FolderSetting {
+    name: "a received message path",
+    flag: "--received-msg-path",
+};
+
+/// Checks one folder setting from its text alone, so no folder is touched.
+/// A folder `typed` on this run is used as given. Without one, the `recalled`
+/// folder must be one `home` uses
+/// ([`ConfigHome::uses_recalled_folder`]): a `config.json` in the current
+/// folder can come with a cloned repository, and may only name folders
+/// inside that folder.
+///
+/// # Errors
+/// Fails for a recalled folder `home` does not use, and for a typed one that
+/// `save_config` would write into a `config.json` whose home would not use
+/// it on the next run.
+fn check_folder(
+    setting: &FolderSetting,
+    typed: Option<&str>,
+    recalled: Option<&str>,
+    home: &ConfigHome,
+    save_config: bool,
+) -> Result<()> {
+    match (typed, recalled) {
+        (Some(folder), _) if save_config && !home.uses_recalled_folder(folder) => bail!(
+            "--save-config cannot save {} outside this folder ('{}'): a config.json here is \
+             recalled only with folders inside it. Keep the setup in a profile (--profile NAME).",
+            setting.name,
+            display(folder)
+        ),
+        (None, Some(folder)) if !home.uses_recalled_folder(folder) => bail!(
+            "config.json names {} outside this folder ('{}'). Pass {} FOLDER to choose one for \
+             this run, or keep the setup in a profile (--profile NAME).",
+            setting.name,
+            display(folder),
+            setting.flag
+        ),
+        (Some(_), _) | (None, Some(_) | None) => Ok(()),
+    }
+}
+
 /// Builds a capture run from the arguments, the recalled `config.json`, and
 /// the environment.
 ///
 /// # Errors
-/// Fails when no target can be found, when the auth flags are inconsistent,
-/// when credential auth lacks a namespace or event hub, when the consumer
-/// group is empty, or when `--dump-filter` holds no keyword.
+/// Fails when the current folder's `config.json` names a data folder or a
+/// received message path outside that folder and no flag replaces it, when
+/// `--save-config` would save such a folder there, when no target can be
+/// found, when the auth flags are inconsistent, when credential auth lacks a
+/// namespace or event hub, when the consumer group is empty, or when
+/// `--dump-filter` holds no keyword.
 pub(crate) fn read_job(
     args: ReadArgs,
     recalled: Option<&ToolConfig>,
@@ -45,6 +107,21 @@ pub(crate) fn read_job(
     home: ConfigHome,
     config_source: ConfigSource,
 ) -> Result<ReadJob> {
+    let storage = recalled.map(|recalled| &recalled.storage);
+    check_folder(
+        &DATA_FOLDER,
+        args.data.base_data_folder.as_deref(),
+        storage.map(|storage| storage.base_data_folder.as_str()),
+        &home,
+        args.target.save_config,
+    )?;
+    check_folder(
+        &RECEIVED_MSG_PATH,
+        args.received_msg_path.as_deref(),
+        storage.map(|storage| storage.disk_write.received_msg_path.as_str()),
+        &home,
+        args.target.save_config,
+    )?;
     let target = merge_target(
         &args.target,
         args.consumer_group.as_deref(),
@@ -72,13 +149,30 @@ pub(crate) fn read_job(
 /// capture filters describe what a capture shows, not what to export.
 ///
 /// # Errors
-/// Fails when `--dump-filter` holds no keyword.
+/// Fails when the current folder's `config.json` names a data folder or an
+/// export folder outside that folder and no flag replaces it, or when
+/// `--dump-filter` holds no keyword.
 pub(crate) fn export_job(
     args: ExportArgs,
     recalled: Option<&ToolConfig>,
     home: ConfigHome,
     config_source: ConfigSource,
 ) -> Result<ExportJob> {
+    let recalled_storage = recalled.map(|recalled| &recalled.storage);
+    check_folder(
+        &DATA_FOLDER,
+        args.data.base_data_folder.as_deref(),
+        recalled_storage.map(|storage| storage.base_data_folder.as_str()),
+        &home,
+        false,
+    )?;
+    check_folder(
+        &EXPORT_FOLDER,
+        args.export_folder.as_deref(),
+        recalled_storage.map(|storage| storage.export.export_folder.as_str()),
+        &home,
+        false,
+    )?;
     let storage = recalled
         .map(|recalled| recalled.storage.clone())
         .unwrap_or_default();
@@ -118,8 +212,11 @@ pub(crate) fn export_job(
 ///
 /// # Errors
 /// Fails when a `--property` is malformed or repeats a key (checked before
-/// anything else), as [`read_job`] does, when the recalled target is neither
-/// named nor confirmed, and when the partition key is blank.
+/// anything else), when the current folder's `config.json` names a data
+/// folder outside that folder and `-b` does not replace it, when
+/// `--save-config` would save such a folder there, as [`read_job`] does for
+/// the target, when the recalled target is neither named nor confirmed, and
+/// when the partition key is blank.
 pub(crate) fn send_job(
     args: SendArgs,
     (body, body_source): (Vec<u8>, BodySource),
@@ -130,6 +227,13 @@ pub(crate) fn send_job(
     config_source: ConfigSource,
 ) -> Result<SendJob> {
     let properties = send_properties(&args.properties)?;
+    check_folder(
+        &DATA_FOLDER,
+        args.data.base_data_folder.as_deref(),
+        recalled.map(|recalled| recalled.storage.base_data_folder.as_str()),
+        &home,
+        args.target.save_config,
+    )?;
     let target = merge_target(&args.target, None, recalled, environment)?;
     check_recalled_destination(&args, &target, recalled, environment, &home)?;
     let mut config = match recalled {
@@ -191,9 +295,12 @@ fn send_properties(values: &[ArgText]) -> Result<BTreeMap<String, String>> {
 /// when `--namespace` and `-e` are both on the command line (a saved
 /// connection string must then match both: a string without `EntityPath`
 /// would otherwise keep its own namespace under any `-e`), when
-/// connection-string auth uses a string given by `-s` or
-/// `EH_CONNECTION_STRING` rather than one stored in the data folder, or when
-/// Key Vault auth names its vault with `--keyvault-url`. A profile's
+/// connection-string auth uses a string given by `-s`, or when Key Vault
+/// auth names its vault with `--keyvault-url`. A string from
+/// `EH_CONNECTION_STRING` names the destination with an auth flag (which
+/// drops the recalled names), with `-e`, or when it resolves an event hub by
+/// itself; otherwise the event hub would be the recalled one, in whatever
+/// namespace the environment's string opens. A profile's
 /// `config.json` that names both the namespace and the event hub counts as
 /// named while the merged `target` still carries both names: the profile
 /// lives in the user's own workspace, and those names pin any stored
@@ -219,12 +326,25 @@ fn check_recalled_destination(
         return Ok(());
     }
     let flags = &args.target;
-    let given = match target.auth {
-        AuthMethodConfig::ConnectionString { .. } => {
+    // The environment's string, while it is the run's string and the recalled names are still
+    // in the merged target.
+    let environment_string = match target.auth {
+        AuthMethodConfig::ConnectionString { .. } if !flags.has_auth_flags() => {
+            environment.connection_string.as_ref()
+        }
+        AuthMethodConfig::ConnectionString { .. }
+        | AuthMethodConfig::KeyVaultConnectionString { .. }
+        | AuthMethodConfig::Credential { .. } => None,
+    };
+    let given = match (&target.auth, environment_string) {
+        (AuthMethodConfig::ConnectionString { .. }, Some(connection_string)) => {
+            flags.event_hub.is_some() || names_an_event_hub(connection_string)
+        }
+        (AuthMethodConfig::ConnectionString { .. }, None) => {
             flags.connection_string.is_some() || environment.connection_string.is_some()
         }
-        AuthMethodConfig::KeyVaultConnectionString { .. } => flags.keyvault_url.is_some(),
-        AuthMethodConfig::Credential { .. } => false,
+        (AuthMethodConfig::KeyVaultConnectionString { .. }, _) => flags.keyvault_url.is_some(),
+        (AuthMethodConfig::Credential { .. }, _) => false,
     };
     if given || (flags.namespace.is_some() && flags.event_hub.is_some()) {
         return Ok(());
@@ -234,11 +354,35 @@ fn check_recalled_destination(
         (false, Some(name)) => format!("profile {}", display(name)),
         (false, None) => "this folder's config.json".to_owned(),
     };
-    bail!(
-        "This run would send to {}, taken from {source}. Name it with --namespace and -e, or \
-         pass --yes.",
-        target_label(target)
-    )
+    match environment_string {
+        Some(_) => bail!(
+            "This run would send to {}, taken from {source} (the connection string in \
+             {CONNECTION_STRING_ENV} does not name an event hub by itself). Name the event hub \
+             with -e, or pass --yes.",
+            target_label(target)
+        ),
+        None => bail!(
+            "This run would send to {}, taken from {source}. Name it with --namespace and -e, \
+             or pass --yes.",
+            target_label(target)
+        ),
+    }
+}
+
+/// Whether `connection_string` resolves an event hub with no namespace or event hub given
+/// beside it: it parses, its endpoint is an Event Hubs host, and it carries an `EntityPath`.
+/// Nothing is fetched or opened.
+fn names_an_event_hub(connection_string: &SecretString) -> bool {
+    let target = EventHubTarget {
+        auth: AuthMethod::ConnectionString {
+            connection_string: connection_string.clone(),
+        },
+        client_secret: None,
+        fully_qualified_namespace: None,
+        event_hub_name: None,
+        consumer_group: DEFAULT_CONSUMER_GROUP.to_owned(),
+    };
+    matches!(target_names(&target), Some(Ok(_)))
 }
 
 fn merge_target(

@@ -76,6 +76,36 @@ async fn a_broken_eh_config_shows_why_without_echoing_its_values() {
 }
 
 #[tokio::test]
+async fn a_launch_config_naming_a_data_folder_outside_the_launch_folder_starts_on_the_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_folder = outside.path().display().to_string().replace('\\', "/");
+    std::fs::write(
+        dir.path().join(CONFIG_FILE_NAME),
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}},"storage":{{"base_data_folder":"{outside_folder}"}}}}"#
+        ),
+    )
+    .unwrap();
+    let preload = preload(dir.path()).await;
+    let paths = preload.data_paths();
+
+    let state = preload.into_state(Box::new(
+        crate::test_harness::services::RecordingServices::new(
+            crate::test_harness::services::CallLog::default(),
+        ),
+    ));
+
+    assert_eq!(paths, DataPaths::new(".eh-data"));
+    assert_eq!(state.data_paths(), paths);
+    assert_eq!(
+        state.folders_caption.as_deref(),
+        Some("config.json names a data folder outside this folder; it was not used.")
+    );
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+}
+
+#[tokio::test]
 async fn the_first_state_starts_on_the_launch_folder_with_the_recalled_settings() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(

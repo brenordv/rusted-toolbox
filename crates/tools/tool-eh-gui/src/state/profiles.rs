@@ -10,7 +10,7 @@ use super::{AppState, ConnectionState, Effect, Outcome, SaveStatus, ToastKind};
 use crate::form::{ConnectForm, SecretKind};
 use crate::read::rows::display_line;
 use shared_eventhub_core::filters::CaptureFilters;
-use shared_eventhub_persistence::config::{ConfigLoad, ExportSettings};
+use shared_eventhub_persistence::config::{ConfigLoad, ExportSettings, StorageConfig, ToolConfig};
 use shared_eventhub_persistence::paths::DataPaths;
 use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry, Workspace};
 use std::path::{Path, PathBuf};
@@ -134,14 +134,18 @@ impl ProfileNote {
     }
 }
 
-/// What a `config.json` gives a home: the form, the capture rules, the export settings, and
-/// the caption saying what happened to the file (never a value from it).
+/// What a `config.json` gives a home: the form, the capture rules, the export settings, the
+/// caption saying what happened to the file, and the caption naming the folder settings that
+/// were not used. Neither caption holds a value from the file.
 #[derive(Debug)]
 pub struct Recalled {
     pub form: ConnectForm,
     pub rules: CaptureFilters,
     pub export: ExportSettings,
     pub caption: Option<String>,
+    /// Set when the config named a folder its home does not use; the form and the export
+    /// settings hold the default in its place.
+    pub folders_caption: Option<String>,
 }
 
 impl Recalled {
@@ -151,18 +155,22 @@ impl Recalled {
             rules: CaptureFilters::default(),
             export: ExportSettings::default(),
             caption,
+            folders_caption: None,
         }
     }
 }
 
-/// The form, rules, export settings, and caption `load` (the reading of `home`'s
-/// `config.json`) gives. A launch folder's config marks the form's names as recalled from it.
-/// A failed read logs once and leaves the defaults.
+/// The form, rules, export settings, and captions `load` (the reading of `home`'s
+/// `config.json`) gives. A launch folder's config marks the form's names as recalled from it,
+/// and a folder it names outside the launch folder is replaced by its default before anything
+/// reads the config (see [`keep_folders_inside`]). A failed read logs once and leaves the
+/// defaults.
 pub fn recalled(home: &ConfigHome, load: Result<ConfigLoad, String>) -> Recalled {
     match load {
         Ok(ConfigLoad::Missing) => Recalled::defaults(None),
         Ok(ConfigLoad::Foreign) => Recalled::defaults(Some(FOREIGN_CAPTION.to_owned())),
-        Ok(ConfigLoad::Loaded(config)) => {
+        Ok(ConfigLoad::Loaded(mut config)) => {
+            let folders_caption = keep_folders_inside(home, &mut config);
             let (mut form, loaded) = ConnectForm::from_config(&config);
             let source = match home {
                 ConfigHome::CurrentFolder(_) => {
@@ -178,6 +186,7 @@ pub fn recalled(home: &ConfigHome, load: Result<ConfigLoad, String>) -> Recalled
                 rules: config.capture.filters.clone(),
                 export: config.storage.export.clone(),
                 caption: Some(format!("Loaded from {source}: {}", loaded.join(", "))),
+                folders_caption,
             }
         }
         Err(error) => {
@@ -185,6 +194,59 @@ pub fn recalled(home: &ConfigHome, load: Result<ConfigLoad, String>) -> Recalled
             Recalled::defaults(Some(format!("config.json was not loaded: {error}")))
         }
     }
+}
+
+/// Replaces each folder `config` names that `home` does not use
+/// ([`ConfigHome::uses_recalled_folder`]: under the launch folder, any folder that is not plain
+/// relative) with its default, and returns the caption naming those settings; `None` when every
+/// folder is used. A replaced received message path also turns the disk-write mode back to its
+/// default, so a folder the user never chose does not start receiving files. The check reads
+/// the text only, so no folder is touched. Logs the replaced settings by name once, never a
+/// value.
+fn keep_folders_inside(home: &ConfigHome, config: &mut ToolConfig) -> Option<String> {
+    let defaults = StorageConfig::default();
+    let storage = &mut config.storage;
+    let mut named = Vec::new();
+    let mut not_used = Vec::new();
+    if !home.uses_recalled_folder(&storage.base_data_folder) {
+        storage.base_data_folder = defaults.base_data_folder;
+        named.push("a data folder");
+        not_used.push("storage.base_data_folder");
+    }
+    if !home.uses_recalled_folder(&storage.export.export_folder) {
+        storage.export.export_folder = defaults.export.export_folder;
+        named.push("an export folder");
+        not_used.push("storage.export.export_folder");
+    }
+    let message_files_off = !home.uses_recalled_folder(&storage.disk_write.received_msg_path);
+    if message_files_off {
+        storage.disk_write.received_msg_path = defaults.disk_write.received_msg_path;
+        named.push("a received message path");
+        not_used.push("storage.disk_write.received_msg_path");
+        if storage.disk_write.mode != defaults.disk_write.mode {
+            storage.disk_write.mode = defaults.disk_write.mode;
+            not_used.push("storage.disk_write.mode");
+        }
+    }
+    let mut caption = match named.as_slice() {
+        [] => return None,
+        [one] => format!("config.json names {one} outside this folder; it was not used."),
+        [first, second] => format!(
+            "config.json names {first} and {second} outside this folder; they were not used."
+        ),
+        [first, second, third, ..] => format!(
+            "config.json names {first}, {second}, and {third} outside this folder; they were not \
+             used."
+        ),
+    };
+    if message_files_off {
+        caption.push_str(" Writing message files is off.");
+    }
+    info!(
+        not_used = %not_used.join(", "),
+        "the launch folder's config names folders outside it; using the defaults"
+    );
+    Some(caption)
 }
 
 /// The picker's label for `home`: [`LAUNCH_FOLDER`] or the profile's name as shown.
@@ -458,6 +520,7 @@ impl AppState {
             rules,
             export,
             caption,
+            folders_caption,
         } = recalled(&to, result);
         self.form = form;
         self.read
@@ -476,6 +539,7 @@ impl AppState {
         self.show_issues = false;
         self.clear_new_profile_issues();
         self.config_caption = caption;
+        self.folders_caption = folders_caption;
         let paths = self.data_paths();
         self.change_data_folder(paths, out);
         if let Some(kind) = typed {

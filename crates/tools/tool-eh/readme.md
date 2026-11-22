@@ -190,8 +190,21 @@ ignores the file.
 - Switches (`-i`, `--dump-content-only`, and export's `--condense-output`,
   `--use-local-time`, `-i`) only turn a setting on; to turn a recalled one off, use
   `--no-config` or save again.
+- A `config.json` in the current folder may name only folders inside that folder. Its data
+  folder (`storage.base_data_folder`), export folder (`storage.export.export_folder`), and
+  received message path (`storage.disk_write.received_msg_path`) must be plain relative
+  paths: no drive, no leading separator, no `..`, no network share. A run that would use one
+  that is not stops before touching anything: "config.json names a data folder outside this
+  folder ('...'). Pass -b FOLDER to choose one for this run, or keep the setup in a profile
+  (--profile NAME)." The export folder and the received message path are refused the same
+  way, naming `--export-folder` and `--received-msg-path`. A folder you type on the command
+  line is used as given, but `--save-config` refuses to save one outside the current folder
+  into its `config.json`. A profile's `config.json` may name an absolute folder.
 - Treat `config.json` like a script: a cloned repository could ship one that points `eh` at
-  another event hub or folder. The notice shows what it recalled.
+  another event hub, or at folders inside the clone. The notice shows what it recalled.
+- A data folder that arrived with a clone is not yours: delete it or pass `-b`. `eh` checks a
+  recalled folder's path, not what the folder holds, so a shipped `.eh-data` could be a link
+  to somewhere else or carry a `secrets.redb` that git tracks.
 - A `config.json` without `"tool": "eh"` belongs to another tool: `eh` ignores it (with a
   notice) and never overwrites it.
 
@@ -363,10 +376,14 @@ them.
 **A recalled target must be named.** A cloned repository can ship a `config.json` that points
 at someone else's event hub, and with Entra ID auth your own identity would write there. So in
 a folder with a `config.json`, `send` refuses to run until the destination comes from you or
-`--yes` confirms it: a connection string you give (`-s` or `EH_CONNECTION_STRING`), a vault you
-name (`--keyvault-url`), or `--namespace` and `-e` together. A saved connection string or Key
+`--yes` confirms it: a connection string you give with `-s`, a vault you name
+(`--keyvault-url`), or `--namespace` and `-e` together. A saved connection string or Key
 Vault secret must then match both, so a string without an `EntityPath` can't keep its own
-namespace under an `-e` you typed. A profile whose `config.json` names the namespace and the
+namespace under an `-e` you typed. A string in `EH_CONNECTION_STRING` counts when it names
+the event hub itself (it carries an `EntityPath`) or when you add `-e`. A namespace-level
+string alone does not: the event hub would be the one `config.json` names, and the refusal
+says so ("... does not name an event hub by itself. Name the event hub with -e, or pass
+--yes."). A profile whose `config.json` names the namespace and the
 event hub counts as named: it lives in your own workspace, and a stored string must match both
 names. An auth flag (`--auth`, `-s`, `--keyvault-url`) replaces those names, so with one the
 usual rule applies again.

@@ -222,6 +222,13 @@ folder). `Workspace::locate` uses the absolute folder in `EH_WORKSPACE`, or
 - `ConfigHome` is where a run's `config.json` lives: the current folder or a
   profile. `data_paths` places a relative data folder inside the profile
   folder; under the current folder it stays relative, as it always was.
+  `uses_recalled_folder` says whether a home uses a folder its `config.json`
+  names (the data folder, the export folder, the received message path): a
+  profile uses any folder, the current folder only a `plain_relative` one,
+  because its `config.json` can come with a cloned repository. The check
+  reads the text and never touches the folder. `data_paths`, `inbound_dir`,
+  and `export_dir` do not apply it: a caller checks a recalled folder first
+  and passes a folder the user typed as given.
 
 Links inside the workspace are followed: only its owner writes there.
 

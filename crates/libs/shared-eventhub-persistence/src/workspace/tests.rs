@@ -414,3 +414,25 @@ fn under_a_profile_a_relative_data_folder_sits_inside_the_profile_folder() {
     );
     assert_eq!(home.profile_name(), Some("orders"));
 }
+
+#[test]
+fn the_current_folder_uses_a_recalled_folder_only_when_it_stays_inside() {
+    let outside = tempfile::tempdir().unwrap();
+    let home = ConfigHome::CurrentFolder(PathBuf::from("work"));
+
+    assert!(home.uses_recalled_folder(".eh-data"));
+    assert!(!home.uses_recalled_folder(outside.path().to_str().unwrap()));
+    assert!(!home.uses_recalled_folder("../elsewhere"));
+}
+
+#[test]
+fn a_profile_uses_any_recalled_folder() {
+    let outside = tempfile::tempdir().unwrap();
+    let home = ConfigHome::Profile(Profile {
+        name: "orders".to_owned(),
+        dir: PathBuf::from("profiles").join("orders"),
+    });
+
+    assert!(home.uses_recalled_folder(".eh-data"));
+    assert!(home.uses_recalled_folder(outside.path().to_str().unwrap()));
+}

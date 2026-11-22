@@ -3,7 +3,7 @@
 //! `config.json` and, beside it, the data folder that config names.
 
 use crate::config::{CONFIG_FILE_NAME, ConfigLoad, ToolConfig, read_config};
-use crate::paths::DataPaths;
+use crate::paths::{DataPaths, plain_relative};
 use anyhow::{Context, bail};
 use common_file_utils::permissions::create_dir_all_owner_only;
 use common_utils::file_system::get_user_home_folder;
@@ -376,6 +376,19 @@ impl ConfigHome {
         match self {
             Self::CurrentFolder(_) => DataPaths::new(base_data_folder),
             Self::Profile(profile) => DataPaths::new(profile.dir().join(base_data_folder)),
+        }
+    }
+
+    /// Whether this home uses `folder`, a folder its `config.json` names (the data folder, the
+    /// export folder, or the received message path). A profile uses any folder: it sits in the
+    /// user's own workspace. The current folder uses only a [`plain_relative`] one, which stays
+    /// inside it: its `config.json` can come with a cloned repository, and an absolute, climbing,
+    /// or network folder there would send the archive, the secrets file, or exported messages
+    /// somewhere the user never chose. The check reads the text only; the folder is not touched.
+    pub fn uses_recalled_folder(&self, folder: &str) -> bool {
+        match self {
+            Self::CurrentFolder(_) => plain_relative(folder),
+            Self::Profile(_) => true,
         }
     }
 }

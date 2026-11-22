@@ -13,6 +13,7 @@ cli-signal-monitor = { workspace = true }
 common-cli = { workspace = true }
 common-utils = { workspace = true }
 mock-data-utils = { workspace = true }
+shared-azure = { workspace = true }
 shared-eventhub-core = { workspace = true }
 shared-eventhub-persistence = { workspace = true }
 
@@ -26,8 +27,6 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-shared-azure = { workspace = true }
-
 rstest = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
