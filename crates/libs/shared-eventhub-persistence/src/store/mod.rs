@@ -128,6 +128,19 @@ impl MessageStore {
             })?
     }
 
+    /// Why the archive takes no more writes through this handle and its
+    /// clones: the cause of the batch that failed, or of the writer thread's
+    /// death. `None` while writes still work. Reads work either way.
+    pub fn write_failure(&self) -> Option<String> {
+        self.inner.writer.write_failure()
+    }
+
+    /// Whether no clone of this handle is alive, so [`close`](Self::close)
+    /// on it would release the archive.
+    pub fn is_last_handle(&self) -> bool {
+        Arc::strong_count(&self.inner) == 1
+    }
+
     /// The event hub the archive is bound to, or `None` before the first
     /// bind.
     pub(crate) fn binding(&self) -> anyhow::Result<Option<EventHubIdentity>> {
@@ -387,7 +400,10 @@ fn create_schema(database: &Database, path: &Path) -> anyhow::Result<()> {
         .with_context(|| format!("Failed to initialize '{}'", path.display()))
 }
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
+
 #[cfg(test)]
-pub(crate) mod failure_tests;
+mod failure_tests;
 #[cfg(test)]
 mod tests;

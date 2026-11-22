@@ -688,7 +688,8 @@ impl UiPort for AppPort {
 }
 
 /// Opens the store, resolves the target, and starts a session whose output goes to `port`.
-/// Always runs to completion in its own task (`StoreSlot::acquire` is not cancel-safe).
+/// Always runs to completion in its own task (`StoreSlot::acquire_for_session` is not
+/// cancel-safe).
 pub async fn prepare_session(
     rt: &Handle,
     attempt: u64,
@@ -697,7 +698,7 @@ pub async fn prepare_session(
     port: Arc<dyn UiPort>,
     start: oneshot::Receiver<()>,
 ) -> anyhow::Result<EngineSession> {
-    let store = slot.acquire(&request.paths).await?;
+    let store = slot.acquire_for_session(&request.paths).await?;
     let target = resolve_target(&request).await?;
     let sink = WritingSink::new(
         store,

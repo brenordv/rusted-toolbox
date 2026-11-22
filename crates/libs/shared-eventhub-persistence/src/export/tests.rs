@@ -240,7 +240,7 @@ async fn export_one_writes_a_copy_and_leaves_the_log_alone() {
 
 #[tokio::test]
 async fn an_export_log_that_cannot_be_written_fails_the_export() {
-    let (store, failing) = crate::store::failure_tests::failing_store().await;
+    let (store, failing) = crate::store::test_support::failing_store().await.unwrap();
     let stored = message("0", 1, "x");
     store
         .store(&stored, &checkpoint_for(&stored), true)

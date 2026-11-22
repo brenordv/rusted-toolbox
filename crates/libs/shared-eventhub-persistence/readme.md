@@ -91,6 +91,15 @@ Storing an event at a key that already holds one:
 A failed commit fails every store in that batch with the archive path and
 cause, and every later write fails with the same cause until the archive is
 reopened. A writer thread that dies fails stores with its cause.
+`write_failure()` returns that cause (`None` while writes work), set before
+the failed batch is answered, and `is_last_handle()` says whether a `close`
+on this handle would release the file, so a long-lived holder can close and
+reopen a failed archive. Reads keep working on a handle whose writes failed.
+
+The `test-support` feature (dev-only) makes `store::test_support` public:
+`failing_store`, an in-memory archive whose writes fail on a flag, and
+`store_with_dead_writer`, an archive whose writer thread dies on its first
+batch.
 
 ### Opening and closing
 
@@ -114,14 +123,24 @@ cursor.
 
 ## Export
 
-`export` writes every match as txt (the details block or the body), csv
-(`entity_path,partition_id,event_id,timestamp,message_content`, or
-`message_content` alone), or json (the same fields as an object), one file per
-message under `<folder>/<YYYY-MM>/<DD>/` or one condensed file per month.
-Condensed json is always a complete pretty-printed array, and a csv file is
-never mixed between the metadata and content-only layouts. A file that fails
-is counted (`first_error` names one) and the export continues; a cancelled
-export leaves every written file complete.
+`export` writes every match as txt, csv, or json, one file per message under
+`<folder>/<YYYY-MM>/<DD>/` or one condensed file per month. With metadata:
+
+| Format | Layout |
+|---|---|
+| txt | the details block, then the body. After the broker metadata the block has `content type` and `correlation id` (`[unavailable]` when absent) and `properties:` with one indented `key: value` line per property in key order, or `properties: none`. A line break in any of them is written as `\n` or `\r`, so it cannot start a line of the block |
+| csv | `entity_path,partition_id,event_id,timestamp,content_type,correlation_id,properties,message_content`; an absent content type or correlation id is an empty cell, and `properties` is the JSON object as text (`{}` for none) |
+| json | the same fields as an object; an absent content type or correlation id is `null`, and `properties` is an object |
+
+Without metadata, txt is the body, csv the single column `message_content`,
+and json an object with `message_content` alone. The message id is not
+exported.
+
+Condensed json is always a complete pretty-printed array. A csv file is never
+appended to under another header: the metadata and content-only layouts do
+not mix, and a condensed csv written with the earlier five-column metadata
+header is refused. A file that fails is counted (`first_error` names one) and
+the export continues; a cancelled export leaves every written file complete.
 
 The export log is global, not per destination (as in the old tool): with
 skipping on, exporting a range to csv and then to json exports nothing the
@@ -131,7 +150,8 @@ messages twice, duplicating entries in condensed files.
 
 CSV injection: `message_content` comes from whoever produced the event. A
 cell starting with `=`, `+`, `-`, or `@` runs as a formula when the file is
-opened in spreadsheet software.
+opened in spreadsheet software. The content type, the correlation id, and
+every property value come from the same producer and are written as they are.
 
 `export_one` writes a single message to a chosen file (a copy; the export log
 is not touched).

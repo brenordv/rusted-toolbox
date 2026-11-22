@@ -1,6 +1,47 @@
 use super::*;
+use crate::read::test_support::captured;
+use shared_eventhub_core::connection::EventHubIdentity;
+use shared_eventhub_core::engine::{Checkpoint, MessageSink};
+use shared_eventhub_persistence::store::test_support::{failing_store, store_with_dead_writer};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tempfile::TempDir;
+
+const REFUSAL_TAIL: &str =
+    "It reopens once the running session, export, or search ends; then Connect again.";
+
+async fn store_one(store: &MessageStore, sequence: i64) -> anyhow::Result<()> {
+    let message = captured("0", sequence, "body");
+    let checkpoint = Checkpoint {
+        partition_id: message.key.partition_id.clone(),
+        sequence_number: sequence,
+        offset: message.offset.clone(),
+        enqueued_time: message.enqueued_time,
+        updated_at: message.processed_at,
+    };
+    store.store(&message, &checkpoint, true).await.map(drop)
+}
+
+async fn bind_and_store_one(store: &MessageStore) -> anyhow::Result<()> {
+    store
+        .bind(&EventHubIdentity {
+            fully_qualified_namespace: "orders.servicebus.windows.net".to_owned(),
+            event_hub_name: "orders".to_owned(),
+            created_on: None,
+        })
+        .await?;
+    store_one(store, 2).await
+}
+
+/// A slot on `folder` holding an archive whose first batch failed.
+async fn slot_after_a_failed_batch(folder: &DataPaths) -> StoreSlot {
+    let (failed, failing) = failing_store().await.unwrap();
+    failing.store(true, Ordering::SeqCst);
+    store_one(&failed, 1).await.unwrap_err();
+    let slot = StoreSlot::new(folder.clone());
+    slot.seat(failed).await;
+    slot
+}
 
 struct Folders {
     _root: TempDir,
@@ -181,4 +222,105 @@ async fn a_request_queued_before_a_folder_change_is_refused() {
             .contains("The data folder changed")
     );
     assert!(!f.a.base().exists());
+}
+
+#[tokio::test]
+async fn a_session_after_a_failed_batch_gets_an_archive_that_takes_writes() {
+    let f = folders();
+    let slot = slot_after_a_failed_batch(&f.a).await;
+
+    let store = slot.acquire_for_session(&f.a).await.unwrap();
+
+    assert_eq!(store.write_failure(), None);
+    bind_and_store_one(&store).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_session_after_a_writer_panic_gets_an_archive_that_takes_writes() {
+    let f = folders();
+    let dead = store_with_dead_writer(&f.a).unwrap();
+    store_one(&dead, 1).await.unwrap_err();
+    let slot = StoreSlot::new(f.a.clone());
+    slot.seat(dead).await;
+
+    let store = slot.acquire_for_session(&f.a).await.unwrap();
+
+    assert_eq!(store.write_failure(), None);
+    bind_and_store_one(&store).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_session_is_refused_while_another_handle_to_the_failed_archive_is_alive() {
+    let f = folders();
+    let slot = slot_after_a_failed_batch(&f.a).await;
+    let kept = slot.acquire(&f.a).await.unwrap();
+
+    let error = slot.acquire_for_session(&f.a).await.err().unwrap();
+    let still_seated = slot.acquire(&f.a).await.unwrap();
+
+    let text = error.to_string();
+    assert!(
+        text.starts_with("Writing to the archive failed earlier ("),
+        "{text}"
+    );
+    assert!(text.contains("simulated disk failure"), "{text}");
+    assert!(text.ends_with(REFUSAL_TAIL), "{text}");
+    assert!(still_seated.write_failure().is_some());
+    drop(kept);
+}
+
+#[tokio::test]
+async fn a_refused_session_gets_a_working_archive_once_the_other_handle_drops() {
+    let f = folders();
+    let slot = slot_after_a_failed_batch(&f.a).await;
+    let kept = slot.acquire(&f.a).await.unwrap();
+    slot.acquire_for_session(&f.a).await.err().unwrap();
+    drop(kept);
+
+    let store = slot.acquire_for_session(&f.a).await.unwrap();
+
+    bind_and_store_one(&store).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_reader_still_gets_the_archive_whose_writer_failed() {
+    let f = folders();
+    let slot = slot_after_a_failed_batch(&f.a).await;
+
+    let store = slot.acquire(&f.a).await.unwrap();
+
+    assert!(
+        store
+            .write_failure()
+            .unwrap()
+            .contains("simulated disk failure")
+    );
+    assert!(!f.a.base().exists());
+}
+
+#[tokio::test]
+async fn a_session_on_a_healthy_archive_shares_the_open_handle() {
+    let f = folders();
+    let slot = StoreSlot::new(f.a.clone());
+    let reader = slot.acquire(&f.a).await.unwrap();
+
+    let store = slot.acquire_for_session(&f.a).await.unwrap();
+
+    bind_and_store_one(&store).await.unwrap();
+    assert!(!reader.is_last_handle());
+}
+
+#[tokio::test]
+async fn a_session_for_a_previous_folder_is_refused() {
+    let f = folders();
+    let slot = StoreSlot::new(f.a.clone());
+    slot.set_folder(f.b.clone());
+
+    let error = slot.acquire_for_session(&f.a).await.err().unwrap();
+
+    assert!(
+        error.to_string().contains("The data folder changed"),
+        "{error:#}"
+    );
+    assert!(is_unopened(&slot));
 }

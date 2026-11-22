@@ -646,7 +646,7 @@ fn a_session_still_finishing_after_thirty_seconds_reopens_the_window() {
 
     assert!(!has_reopen(&early));
     assert!(has_reopen(&late));
-    assert!(f.state.still_finishing);
+    assert_eq!(f.state.waited(), Some(&[Job::Session][..]));
     assert!(!f.state.window_is_closed());
 }
 
@@ -681,17 +681,254 @@ fn force_quit_quits_once_the_reopened_window_offers_it() {
 }
 
 #[test]
-fn force_quit_is_ignored_when_no_session_is_still_finishing() {
+fn force_quit_is_ignored_when_nothing_is_still_finishing() {
     let mut f = fixture();
     f.connected();
 
     let out = f.apply(Input::ForceQuit);
 
     assert!(!has_quit(&out));
+    assert!(!out.changed);
     assert!(matches!(
         f.state.connection,
         ConnectionState::Connected { .. }
     ));
+}
+
+/// A job a closed window waits for, other than a session.
+#[derive(Clone, Copy, Debug)]
+enum Waiting {
+    Save,
+    ReadExport,
+    ArchiveExport,
+    Bulk,
+}
+
+impl Fixture {
+    /// Starts `job`; returns the input that ends it cleanly.
+    fn start(&mut self, job: Waiting) -> Input {
+        match job {
+            Waiting::Save => {
+                self.apply(Input::SavePressed);
+                Input::ConfigSaved(Ok(()))
+            }
+            Waiting::ReadExport => {
+                let (owner, key) = self.message_export_running(ListSection::Read);
+                message_export_done(ListSection::Read, owner, key, Ok(()))
+            }
+            Waiting::ArchiveExport => {
+                let (owner, key) = self.message_export_running(ListSection::Export);
+                message_export_done(ListSection::Export, owner, key, Ok(()))
+            }
+            Waiting::Bulk => {
+                let export = self.bulk_running();
+                bulk_done(export, clean_finish())
+            }
+        }
+    }
+
+    /// Closes the window at `closed` and ticks just past the bound; returns the tick's outcome.
+    fn close_and_wait_past_the_bound(&mut self, closed: DateTime<Utc>) -> Outcome {
+        self.apply(Input::WindowClosed(closed));
+        self.apply(Input::Tick(
+            closed + STILL_FINISHING_AFTER + TimeDelta::seconds(1),
+        ))
+    }
+
+    /// The window reopened for `job`, which still runs; returns the input that ends it.
+    fn reopened_for(&mut self, job: Waiting) -> Input {
+        let end = self.start(job);
+        self.close_and_wait_past_the_bound(base_time());
+        end
+    }
+}
+
+#[rstest::rstest]
+#[case::save(Waiting::Save, Job::Save, "saving the config")]
+#[case::read_export(
+    Waiting::ReadExport,
+    Job::ReadMessageExport,
+    "exporting a message from Read"
+)]
+#[case::archive_export(
+    Waiting::ArchiveExport,
+    Job::ArchiveMessageExport,
+    "exporting a message from Export"
+)]
+#[case::bulk(Waiting::Bulk, Job::BulkExport, "writing the export")]
+fn a_job_still_running_after_thirty_seconds_reopens_the_window_on_read_with_its_notice(
+    #[case] job: Waiting,
+    #[case] waited: Job,
+    #[case] named: &str,
+) {
+    let mut f = fixture();
+    f.start(job);
+    f.apply(Input::SectionPicked(Section::Export));
+    let closed = base_time();
+    let closing = f.apply(Input::WindowClosed(closed));
+
+    let early = f.apply(Input::Tick(closed + TimeDelta::seconds(29)));
+    let late = f.apply(Input::Tick(closed + TimeDelta::seconds(31)));
+
+    assert!(!has_quit(&closing));
+    assert!(!has_reopen(&early));
+    assert!(has_reopen(&late));
+    assert_eq!(f.state.waited(), Some(&[waited][..]));
+    assert_eq!(f.state.section, Section::Read);
+    let notice = still_finishing_text(&[waited]);
+    assert!(notice.contains(named), "{notice}");
+}
+
+#[rstest::rstest]
+#[case::save(Waiting::Save)]
+#[case::read_export(Waiting::ReadExport)]
+#[case::archive_export(Waiting::ArchiveExport)]
+#[case::bulk(Waiting::Bulk)]
+fn force_quit_quits_a_window_reopened_for_a_job_still_running(#[case] job: Waiting) {
+    let mut f = fixture();
+    f.reopened_for(job);
+
+    let out = f.apply(Input::ForceQuit);
+
+    assert!(has_quit(&out));
+}
+
+#[rstest::rstest]
+#[case::save(Waiting::Save)]
+#[case::read_export(Waiting::ReadExport)]
+#[case::archive_export(Waiting::ArchiveExport)]
+#[case::bulk(Waiting::Bulk)]
+fn the_waited_job_ending_takes_the_notice_and_force_quit_away_without_quitting(
+    #[case] job: Waiting,
+) {
+    let mut f = fixture();
+    let end = f.reopened_for(job);
+
+    let ended = f.apply(end);
+    let forced = f.apply(Input::ForceQuit);
+
+    assert!(!has_quit(&ended));
+    assert!(ended.changed);
+    assert_eq!(f.state.waited(), None);
+    assert!(!has_quit(&forced));
+    assert!(!f.state.window_is_closed());
+}
+
+#[test]
+fn a_waited_session_that_ends_takes_the_notice_away_without_quitting() {
+    let mut f = fixture();
+    let (id, _) = f.connected();
+    f.close_and_wait_past_the_bound(base_time());
+
+    let ended = f.apply(done(id, Ok(summary(RunEnd::Stopped, &[])), clean_finish()));
+
+    assert!(!has_quit(&ended));
+    assert_eq!(f.state.waited(), None);
+    assert!(matches!(f.state.connection, ConnectionState::Disconnected));
+}
+
+#[test]
+fn a_session_started_after_the_reopen_is_not_waited_for_once_the_overdue_save_ends() {
+    let mut f = fixture();
+    let end = f.reopened_for(Waiting::Save);
+    f.with_session();
+
+    f.apply(end);
+    let forced = f.apply(Input::ForceQuit);
+
+    assert_eq!(f.state.waited(), None);
+    assert!(!has_quit(&forced));
+    assert!(f.state.connection.session().is_some());
+}
+
+#[test]
+fn force_quit_while_the_overdue_save_is_stuck_quits_with_the_later_session_running() {
+    let mut f = fixture();
+    f.reopened_for(Waiting::Save);
+    f.with_session();
+    let running = f.state.running_jobs();
+
+    let out = f.apply(Input::ForceQuit);
+
+    assert_eq!(running, vec![Job::Session, Job::Save]);
+    assert_eq!(f.state.waited(), Some(&[Job::Save][..]));
+    assert!(has_quit(&out));
+}
+
+#[test]
+fn a_read_failure_that_lands_under_the_notice_is_toasted() {
+    let mut f = fixture();
+    f.reopened_for(Waiting::Save);
+    let attempt = f.preparing();
+
+    f.apply(Input::SessionReady {
+        attempt,
+        result: Err("The archive is in use by another eh or eh-gui".to_owned()),
+    });
+
+    assert_eq!(f.state.section, Section::Read);
+    assert_eq!(f.state.toasts().entries().len(), 1);
+    assert!(
+        f.state.toasts().entries()[0]
+            .options
+            .text
+            .contains("Could not connect")
+    );
+}
+
+#[test]
+fn a_waited_session_that_fails_shows_in_read_without_a_toast() {
+    let mut f = fixture();
+    let (id, _) = f.connected();
+    f.close_and_wait_past_the_bound(base_time());
+
+    f.apply(done(
+        id,
+        Ok(summary(RunEnd::Stopped, &["0"])),
+        clean_finish(),
+    ));
+
+    assert_eq!(f.failure().stage, FailureStage::Run);
+    assert_eq!(f.state.waited(), None);
+    assert!(f.state.toasts().entries().is_empty());
+}
+
+#[test]
+fn when_one_of_two_waited_jobs_ends_the_notice_names_the_other() {
+    let mut f = fixture();
+    let end_save = f.start(Waiting::Save);
+    f.start(Waiting::Bulk);
+    f.close_and_wait_past_the_bound(base_time());
+    let both = f.state.waited().map(<[Job]>::to_vec);
+
+    let ended = f.apply(end_save);
+
+    assert_eq!(both, Some(vec![Job::Save, Job::BulkExport]));
+    assert!(ended.changed);
+    assert_eq!(f.state.waited(), Some(&[Job::BulkExport][..]));
+    let notice = still_finishing_text(f.state.waited().unwrap());
+    assert!(notice.contains("writing the export"), "{notice}");
+    assert!(!notice.contains("saving"), "{notice}");
+}
+
+#[test]
+fn a_second_close_takes_force_quit_away_until_another_thirty_seconds_pass() {
+    let mut f = fixture();
+    f.start(Waiting::Save);
+    let first = base_time();
+    f.close_and_wait_past_the_bound(first);
+    let second = first + TimeDelta::seconds(40);
+    f.apply(Input::WindowClosed(second));
+
+    let refused = f.apply(Input::ForceQuit);
+    let early = f.apply(Input::Tick(second + TimeDelta::seconds(29)));
+    let late = f.apply(Input::Tick(second + TimeDelta::seconds(31)));
+    let forced = f.apply(Input::ForceQuit);
+
+    assert!(!has_quit(&refused));
+    assert!(!has_reopen(&early));
+    assert!(has_reopen(&late));
+    assert!(has_quit(&forced));
 }
 
 #[test]

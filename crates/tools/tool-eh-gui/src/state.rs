@@ -9,6 +9,7 @@ mod ending;
 mod new_profile;
 mod panes;
 mod profiles;
+mod quit;
 mod send;
 mod toasts;
 
@@ -22,6 +23,7 @@ pub use profiles::{
     LAUNCH_FOLDER, NO_PROFILES, NO_WORKSPACE, ProfileList, ProfileNote, ProfileSwitch, Recalled,
     home_label, recalled,
 };
+pub use quit::{Job, still_finishing_text};
 pub use toasts::{INFO_TOAST_SECS, MAX_TOASTS, ToastBody, ToastInput};
 
 use crate::archive::bulk::CancelReason;
@@ -51,7 +53,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
-/// How long a closed window waits for a session's at-end pass before it reopens with a
+/// How long a closed window waits for the jobs still running before it reopens with a
 /// "Still finishing" notice.
 pub const STILL_FINISHING_AFTER: TimeDelta = TimeDelta::seconds(30);
 /// How long a send may take to stop after a cancel, and to close its producer.
@@ -363,9 +365,9 @@ pub struct AppState {
     toasts: toasts::Toasts,
     /// The error details modal; `None` while it is closed.
     details: Option<ErrorDetails>,
-    /// Shown after the window reopened because the at-end pass ran past
-    /// [`STILL_FINISHING_AFTER`]; offers Force quit.
-    pub still_finishing: bool,
+    /// The jobs the window reopened for after a close waited past [`STILL_FINISHING_AFTER`],
+    /// less the ones that ended since; `None` in every other case. Never empty.
+    waited: Option<Vec<Job>>,
     pub read: ReadState,
     pub archive: ArchiveState,
     pub send: SendState,
@@ -429,7 +431,7 @@ impl AppState {
             file_logging,
             toasts: toasts::Toasts::default(),
             details: None,
-            still_finishing: false,
+            waited: None,
             read: ReadState::default(),
             archive: ArchiveState::default(),
             send,
@@ -491,6 +493,7 @@ impl AppState {
         }
         self.settle_toasts(toasts_before, &mut out);
         self.quit_rule(&mut out);
+        self.settle_waited(&mut out);
         out
     }
 
@@ -803,6 +806,7 @@ impl AppState {
     fn window_closed(&mut self, at: DateTime<Utc>, out: &mut Outcome) {
         self.window_closed = true;
         self.closed_at = Some(at);
+        self.waited = None;
         self.close_sheet();
         self.details = None;
         self.fold_toasts();
@@ -853,19 +857,7 @@ impl AppState {
             out.motion = Motion::Animated;
         }
 
-        let overdue = matches!(self.connection, ConnectionState::Stopping { .. })
-            && self.window_closed
-            && self
-                .closed_at
-                .is_some_and(|closed| now - closed > STILL_FINISHING_AFTER);
-        if overdue {
-            info!("the session is still finishing; reopening the window");
-            self.reopen(out);
-            self.still_finishing = true;
-            // The notice and its Force quit live in the Read section.
-            self.section = Section::Read;
-            out.changed = true;
-        }
+        self.reopen_when_overdue(now, out);
     }
 
     fn appearance_changed(&mut self, dark: bool, out: &mut Outcome) {
@@ -875,25 +867,6 @@ impl AppState {
         }
         info!(dark, "using the system appearance");
         self.system_dark = Some(dark);
-    }
-
-    /// Quits without waiting for the at-end pass; only offered while a closed window's session
-    /// is still finishing.
-    fn force_quit(&mut self, out: &mut Outcome) {
-        let finishing =
-            matches!(self.connection, ConnectionState::Stopping { .. }) && self.still_finishing;
-        if !finishing {
-            debug!("Force quit ignored: no session is still finishing");
-            out.changed = false;
-            return;
-        }
-        let send_running = self.send.is_running();
-        self.send.request_cancel(CancelReason::WindowClosed);
-        warn!(
-            send_running,
-            "force quit: the session's at-end pass was abandoned, and a running send is not awaited"
-        );
-        self.request_quit(out);
     }
 
     fn session_ready(
@@ -1048,22 +1021,30 @@ impl AppState {
             }
             Some(text) => {
                 warn!(session = done.session, error = %text, "the session failed");
-                self.failure_toast(Section::Read, text.clone());
-                self.connection = ConnectionState::Failed(Failure { stage, text });
+                self.connection = ConnectionState::Failed(Failure {
+                    stage,
+                    text: text.clone(),
+                });
+                self.failure_toast(Section::Read, text);
                 if self.window_closed {
                     self.reopen(out);
                 }
             }
         }
-        self.still_finishing = false;
     }
 
     /// Toasts a failure unless `shown_by`, the section whose content shows it in place (the
     /// Read empty state, the bulk export bar), is the one in the window: a toast there would
     /// repeat it and cover that section's controls in a small window. A failure that lands
     /// with the window closed reopens it on the same section, so the section decides then too.
+    /// The Read section shows no failure in place while the still-finishing notice takes its
+    /// content, so a Read failure is toasted then.
     fn failure_toast(&mut self, shown_by: Section, text: String) {
-        if self.section != shown_by {
+        let in_place = match shown_by {
+            Section::Read => !self.still_finishing_shows(),
+            Section::Export | Section::Send => true,
+        };
+        if self.section != shown_by || !in_place {
             self.toast(ToastKind::Danger, text);
         }
     }
@@ -1072,28 +1053,6 @@ impl AppState {
         self.window_closed = false;
         self.closed_at = None;
         out.effects.push(Effect::ReopenWindow);
-    }
-
-    /// Quits once the window is closed and neither a session, a save, an export, nor a send is
-    /// left running. Asks for the quit once; the quit path then runs to the end on its own.
-    fn quit_rule(&mut self, out: &mut Outcome) {
-        if self.quit_requested
-            || !self.window_closed
-            || self.connection.session().is_some()
-            || self.save_status.is_saving()
-            || self.read.export_running()
-            || self.archive.busy()
-            || self.send.is_running()
-        {
-            return;
-        }
-        info!("window closed and nothing runs; quitting");
-        self.request_quit(out);
-    }
-
-    fn request_quit(&mut self, out: &mut Outcome) {
-        self.quit_requested = true;
-        out.effects.push(Effect::Quit);
     }
 
     /// Whether the window is closed (the app keeps running for a session's at-end pass).

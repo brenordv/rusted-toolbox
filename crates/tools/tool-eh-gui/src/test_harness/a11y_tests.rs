@@ -2,14 +2,55 @@ use super::sweep_tests::{
     export_not_searched, orders_form, read_disconnected, read_selected, send_idle,
     send_sending_run, sheet, sheet_send_target,
 };
-use super::{Harness, a11y_node, has_key, lists, text_runs};
-use crate::design::tokens::WINDOW_SIZE;
+use super::{Harness, a11y_node, a11y_nodes, has_key, lists, rect, text_runs};
+use crate::design::tokens::{WINDOW_MIN, WINDOW_SIZE};
 use crate::form::AuthChoice;
 use crate::send::SendInput;
-use crate::state::{Input, SheetPurpose};
+use crate::state::{ConnectionState, Input, Job, STILL_FINISHING_AFTER, SheetPurpose};
 use crate::views::{BODY_KEY, SEND_BUTTON_KEY};
+use chrono::TimeDelta;
 
 const MARKER: &str = "marker-55219";
+
+#[test]
+fn the_still_finishing_notice_with_no_session_is_in_the_tree_and_inside_the_smallest_window() {
+    let mut h = Harness::new(orders_form(), WINDOW_MIN);
+    h.deliver(Input::SavePressed);
+    let closed = h.now();
+    h.deliver(Input::WindowClosed(closed));
+    h.deliver(Input::Tick(
+        closed + STILL_FINISHING_AFTER + TimeDelta::seconds(1),
+    ));
+
+    let tree = h.a11y();
+
+    assert!(matches!(
+        h.state().connection,
+        ConnectionState::Disconnected
+    ));
+    assert_eq!(h.state().waited(), Some(&[Job::Save][..]));
+    assert!(
+        a11y_nodes(&tree).iter().any(|node| node["name"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("Still saving the config."))),
+        "{tree}"
+    );
+    assert_eq!(
+        a11y_node(&tree, "force-quit").map(|node| node["name"].clone()),
+        Some("Force quit".into())
+    );
+    for key in ["still-finishing", "force-quit"] {
+        let [x, y, w, height] = rect(&h.rt, key);
+        assert!(
+            x >= -0.5
+                && y >= -0.5
+                && x + w <= WINDOW_MIN.0 + 0.5
+                && y + height <= WINDOW_MIN.1 + 0.5,
+            "{key} at {:?} outside the window",
+            [x, y, w, height]
+        );
+    }
+}
 
 #[test]
 fn a_message_row_is_named_by_its_partition_sequence_and_time() {

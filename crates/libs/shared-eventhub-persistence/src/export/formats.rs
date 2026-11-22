@@ -116,8 +116,10 @@ fn write_csv(
             .context("Failed to write the CSV header")?;
     }
     if layout.include_metadata {
+        let row = MetadataRow::new(message, layout.entity_path);
+        let properties = row.properties_cell()?;
         writer
-            .write_record(MetadataRow::new(message, layout.entity_path).fields())
+            .write_record(row.fields(&properties))
             .context("Failed to write the CSV record")?;
     } else {
         writer
@@ -128,8 +130,8 @@ fn write_csv(
     writer.flush().context("Failed to flush the CSV file")
 }
 
-/// Refuses to append to a csv file whose header is the other layout's, so a
-/// metadata export and a content-only export never mix rows in one file.
+/// Refuses to append to a csv file whose header is not this layout's, so
+/// rows with different columns never mix in one file.
 fn check_csv_header(path: &Path, header: &[&str]) -> anyhow::Result<()> {
     let mut first_line = String::new();
     BufReader::new(File::open(path).context("Failed to open the file")?)
@@ -247,6 +249,7 @@ mod tests {
     use super::*;
     use crate::store::schema::test_messages::message;
     use rstest::rstest;
+    use std::collections::BTreeMap;
 
     fn layout(format: ExportFormat, include_metadata: bool, condense: bool) -> Layout<'static> {
         Layout {
@@ -347,10 +350,112 @@ mod tests {
 
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            "entity_path,partition_id,event_id,timestamp,message_content\n\
-             orders,0,1,2026-07-02T12:30:01.000000000Z,\"first, \"\"quoted\"\"\"\n\
-             orders,1,2,2026-07-02T12:30:02.000000000Z,second\n"
+            "entity_path,partition_id,event_id,timestamp,content_type,correlation_id,properties,\
+             message_content\n\
+             orders,0,1,2026-07-02T12:30:01.000000000Z,,,{},\"first, \"\"quoted\"\"\"\n\
+             orders,1,2,2026-07-02T12:30:02.000000000Z,,,{},second\n"
         );
+    }
+
+    fn with_event_metadata(mut message: CapturedMessage) -> CapturedMessage {
+        message.content_type = Some("application/json".to_owned());
+        message.correlation_id = Some("run-17".to_owned());
+        message.properties = BTreeMap::from([
+            ("source".to_owned(), "checkout".to_owned()),
+            (
+                "note".to_owned(),
+                "a comma, a \"quote\"\nand a second line".to_owned(),
+            ),
+        ]);
+        message
+    }
+
+    #[test]
+    fn csv_with_metadata_round_trips_the_event_metadata_through_a_csv_parser() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("messages.csv");
+        let source = with_event_metadata(message("0", 1, "body"));
+
+        write_message(&path, &source, layout(ExportFormat::Csv, true, true)).unwrap();
+
+        let mut reader = csv::Reader::from_path(&path).unwrap();
+        let header = reader.headers().unwrap().clone();
+        let record = reader.records().next().unwrap().unwrap();
+        let cell = |name: &str| {
+            let index = header.iter().position(|column| column == name).unwrap();
+            record.get(index).unwrap().to_owned()
+        };
+        let properties: BTreeMap<String, String> =
+            serde_json::from_str(&cell("properties")).unwrap();
+        assert_eq!(header.iter().collect::<Vec<_>>(), METADATA_HEADER);
+        assert_eq!(cell("content_type"), "application/json");
+        assert_eq!(cell("correlation_id"), "run-17");
+        assert_eq!(properties, source.properties);
+        assert_eq!(cell("message_content"), "body");
+    }
+
+    #[test]
+    fn json_with_metadata_round_trips_the_event_metadata_through_a_json_parser() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("one.json");
+        let source = with_event_metadata(message("0", 1, "body"));
+
+        write_message(&path, &source, layout(ExportFormat::Json, true, false)).unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let properties: BTreeMap<String, String> =
+            serde_json::from_value(parsed["properties"].clone()).unwrap();
+        assert_eq!(parsed["content_type"], "application/json");
+        assert_eq!(parsed["correlation_id"], "run-17");
+        assert_eq!(properties, source.properties);
+        assert!(
+            text.find("\"properties\"").unwrap() < text.find("\"message_content\"").unwrap(),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_condensed_csv_with_the_five_column_header_is_refused_and_left_alone() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("messages.csv");
+        std::fs::write(
+            &path,
+            "entity_path,partition_id,event_id,timestamp,message_content\n\
+             orders,0,1,2026-07-02T12:30:01.000000000Z,first\n",
+        )
+        .unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        let error = write_message(
+            &path,
+            &message("0", 2, "y"),
+            layout(ExportFormat::Csv, true, true),
+        )
+        .unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("different CSV header"),
+            "{error:#}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[rstest]
+    #[case::csv(ExportFormat::Csv, "message_content\nbody\n")]
+    #[case::json(ExportFormat::Json, "{\n  \"message_content\": \"body\"\n}")]
+    #[case::txt(ExportFormat::Txt, "body")]
+    fn an_export_without_metadata_holds_only_the_body(
+        #[case] format: ExportFormat,
+        #[case] expected: &str,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("one");
+        let source = with_event_metadata(message("0", 1, "body"));
+
+        write_message(&path, &source, layout(format, false, false)).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
     }
 
     #[test]
@@ -412,7 +517,8 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             "{\n  \"entity_path\": \"orders\",\n  \"partition_id\": \"0\",\n  \"event_id\": \"7\",\n  \
-             \"timestamp\": \"2026-07-02T12:30:07.000000000Z\",\n  \"message_content\": \"body\"\n}"
+             \"timestamp\": \"2026-07-02T12:30:07.000000000Z\",\n  \"content_type\": null,\n  \
+             \"correlation_id\": null,\n  \"properties\": {},\n  \"message_content\": \"body\"\n}"
         );
     }
 

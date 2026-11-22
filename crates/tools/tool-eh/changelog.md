@@ -63,6 +63,14 @@
 - `eh read -i` moves the checkpoint forward only when it read everything after it. A run whose
   filter starts past the checkpoint stores its events, leaves the checkpoint where it was, and
   logs one warning per partition; the next run without `-i` reads the events in between.
+- `eh export` with metadata writes each event's content type, correlation id, and application
+  properties: in the txt details, and as `content_type`, `correlation_id`, and
+  `properties` (a JSON object) before `message_content` in csv and json. The csv header is now
+  `entity_path,partition_id,event_id,timestamp,content_type,correlation_id,properties,message_content`,
+  so a condensed csv with the earlier five-column header is refused on append (export to
+  another folder or move the file). The message files `eh read` writes with `--disk-mode` are
+  the same txt details block, so they gain the three entries too. Exports without metadata are
+  unchanged.
 - Breaking, from 1.1.0 (the readme has the full table):
   - `eh-read` -> `eh read`, `eh-export` -> `eh export`; shared flags go before the
     subcommand.

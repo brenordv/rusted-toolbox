@@ -1,70 +1,16 @@
 use super::schema::test_messages::message;
-use super::tests::{orders_hub, store_one};
-use super::writer::test_writers::spawn_panicking;
+use super::test_support::{failing_store, store_with_dead_writer};
+use super::tests::store_one;
 use super::*;
-use redb::StorageBackend;
-use redb::backends::InMemoryBackend;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
-/// An in-memory backend whose writes can be switched to fail.
-#[derive(Debug)]
-struct FailingBackend {
-    inner: InMemoryBackend,
-    failing: Arc<AtomicBool>,
-}
-
-impl FailingBackend {
-    fn check(&self) -> Result<(), std::io::Error> {
-        if self.failing.load(Ordering::SeqCst) {
-            Err(std::io::Error::other("simulated disk failure"))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl StorageBackend for FailingBackend {
-    fn len(&self) -> Result<u64, std::io::Error> {
-        self.inner.len()
-    }
-
-    fn read(&self, offset: u64, out: &mut [u8]) -> Result<(), std::io::Error> {
-        self.inner.read(offset, out)
-    }
-
-    fn set_len(&self, len: u64) -> Result<(), std::io::Error> {
-        self.check()?;
-        self.inner.set_len(len)
-    }
-
-    fn sync_data(&self) -> Result<(), std::io::Error> {
-        self.check()?;
-        self.inner.sync_data()
-    }
-
-    fn write(&self, offset: u64, data: &[u8]) -> Result<(), std::io::Error> {
-        self.check()?;
-        self.inner.write(offset, data)
-    }
-}
-
-/// A bound in-memory archive named `memory-archive` whose writes fail once
-/// the returned flag is set.
-pub(crate) async fn failing_store() -> (MessageStore, Arc<AtomicBool>) {
-    let failing = Arc::new(AtomicBool::new(false));
-    let backend = FailingBackend {
-        inner: InMemoryBackend::new(),
-        failing: Arc::clone(&failing),
-    };
-    let database = Builder::new().create_with_backend(backend).unwrap();
-    let store = MessageStore::from_database(database, PathBuf::from("memory-archive")).unwrap();
-    store.bind(&orders_hub()).await.unwrap();
-    (store, failing)
+fn dead_writer_store(root: &tempfile::TempDir) -> MessageStore {
+    store_with_dead_writer(&DataPaths::new(root.path().join("data"))).unwrap()
 }
 
 #[tokio::test]
 async fn a_failed_commit_fails_the_store_with_the_archive_path() {
-    let (store, failing) = failing_store().await;
+    let (store, failing) = failing_store().await.unwrap();
     failing.store(true, Ordering::SeqCst);
 
     let error = store_one(&store, &message("0", 1, "x"), true)
@@ -81,7 +27,7 @@ async fn a_failed_commit_fails_the_store_with_the_archive_path() {
 
 #[tokio::test]
 async fn after_a_failed_commit_later_writes_fail_with_the_first_cause() {
-    let (store, failing) = failing_store().await;
+    let (store, failing) = failing_store().await.unwrap();
     failing.store(true, Ordering::SeqCst);
     store_one(&store, &message("0", 1, "x"), true)
         .await
@@ -97,23 +43,61 @@ async fn after_a_failed_commit_later_writes_fail_with_the_first_cause() {
     assert!(rendered.contains("simulated disk failure"), "{rendered}");
 }
 
-fn store_with_dead_writer(root: &tempfile::TempDir) -> MessageStore {
-    let path = root.path().join("archive.redb");
-    let database = Arc::new(open_database(&path, "archive").unwrap());
-    let writer = spawn_panicking(Arc::clone(&database), path.clone()).unwrap();
-    MessageStore {
-        inner: Arc::new(StoreInner {
-            writer,
-            database,
-            path,
-        }),
-    }
+#[tokio::test]
+async fn a_healthy_store_reports_no_write_failure() {
+    let (store, _failing) = failing_store().await.unwrap();
+    store_one(&store, &message("0", 1, "x"), true)
+        .await
+        .unwrap();
+
+    assert_eq!(store.write_failure(), None);
+}
+
+#[tokio::test]
+async fn a_failed_commit_is_reported_as_the_write_failure() {
+    let (store, failing) = failing_store().await.unwrap();
+    failing.store(true, Ordering::SeqCst);
+
+    store_one(&store, &message("0", 1, "x"), true)
+        .await
+        .unwrap_err();
+
+    let cause = store.write_failure().unwrap();
+    assert!(cause.contains("simulated disk failure"), "{cause}");
+}
+
+#[tokio::test]
+async fn a_writer_panic_is_reported_as_the_write_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let store = dead_writer_store(&root);
+
+    store_one(&store, &message("0", 1, "x"), true)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        store.write_failure().as_deref(),
+        Some("simulated writer bug")
+    );
+}
+
+#[tokio::test]
+async fn a_handle_is_the_last_one_only_while_no_clone_is_alive() {
+    let (store, _failing) = failing_store().await.unwrap();
+    let alone = store.is_last_handle();
+    let clone = store.clone();
+    let shared = store.is_last_handle();
+    drop(clone);
+
+    assert!(alone);
+    assert!(!shared);
+    assert!(store.is_last_handle());
 }
 
 #[tokio::test]
 async fn a_writer_that_panics_answers_its_batch_with_the_cause() {
     let root = tempfile::tempdir().unwrap();
-    let store = store_with_dead_writer(&root);
+    let store = dead_writer_store(&root);
 
     let error = store_one(&store, &message("0", 1, "x"), true)
         .await
@@ -127,7 +111,7 @@ async fn a_writer_that_panics_answers_its_batch_with_the_cause() {
 #[tokio::test]
 async fn after_the_writer_dies_later_stores_fail_with_its_cause() {
     let root = tempfile::tempdir().unwrap();
-    let store = store_with_dead_writer(&root);
+    let store = dead_writer_store(&root);
     store_one(&store, &message("0", 1, "x"), true)
         .await
         .unwrap_err();
@@ -145,7 +129,7 @@ async fn after_the_writer_dies_later_stores_fail_with_its_cause() {
 #[tokio::test]
 async fn closing_a_store_whose_writer_died_reports_the_cause() {
     let root = tempfile::tempdir().unwrap();
-    let store = store_with_dead_writer(&root);
+    let store = dead_writer_store(&root);
     store_one(&store, &message("0", 1, "x"), true)
         .await
         .unwrap_err();

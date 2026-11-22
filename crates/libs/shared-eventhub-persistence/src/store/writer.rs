@@ -122,7 +122,11 @@ enum WriterMessage {
 pub(crate) struct WriterHandle {
     sender: Sender<WriterMessage>,
     thread: Option<JoinHandle<()>>,
+    /// Why the writer thread died, once it has.
     stopped: Arc<OnceLock<String>>,
+    /// Why a batch failed, once one has. Only the writer thread sets it, before it answers the
+    /// failed batch.
+    failed: Arc<OnceLock<String>>,
     path: PathBuf,
 }
 
@@ -143,6 +147,8 @@ impl WriterHandle {
         let (sender, receiver) = channel();
         let stopped = Arc::new(OnceLock::new());
         let thread_stopped = Arc::clone(&stopped);
+        let failed = Arc::new(OnceLock::new());
+        let thread_failed = Arc::clone(&failed);
         let thread_path = path.clone();
         let dispatch = tracing::dispatcher::get_default(Clone::clone);
         let thread = std::thread::Builder::new()
@@ -152,7 +158,11 @@ impl WriterHandle {
                     // The database is never touched again after a panic: the
                     // thread records the cause and exits.
                     let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                        run_writer(&database, &receiver, &thread_path, &thread_stopped, apply);
+                        let causes = FailureCauses {
+                            stopped: &thread_stopped,
+                            failed: &thread_failed,
+                        };
+                        run_writer(&database, &receiver, &thread_path, causes, apply);
                     }));
                     if let Err(panic) = result {
                         record_panic(&thread_stopped, &thread_path, panic.as_ref());
@@ -170,8 +180,15 @@ impl WriterHandle {
             sender,
             thread: Some(thread),
             stopped,
+            failed,
             path,
         })
+    }
+
+    /// Why this writer applies no more requests: the cause of its failed batch, or of its
+    /// death. `None` while it still writes.
+    pub(crate) fn write_failure(&self) -> Option<String> {
+        self.failed.get().or_else(|| self.stopped.get()).cloned()
     }
 
     /// Queues `request`. Fails when the writer has stopped.
@@ -314,18 +331,26 @@ pub(super) struct BatchTiming {
     write: Duration,
 }
 
+/// The cells the writer thread records its failures in.
+#[derive(Clone, Copy)]
+struct FailureCauses<'a> {
+    stopped: &'a OnceLock<String>,
+    failed: &'a OnceLock<String>,
+}
+
 /// The writer loop: block for one request, take whatever else is queued,
 /// apply them together, answer, repeat until shut down. A panic while
-/// applying a batch answers that batch with its cause and ends the loop.
+/// applying a batch answers that batch with its cause and ends the loop. A
+/// batch that fails is answered with its cause, and so is every later one;
+/// each cause is recorded before the batch is answered.
 fn run_writer(
     database: &Database,
     receiver: &Receiver<WriterMessage>,
     path: &Path,
-    stopped: &OnceLock<String>,
+    causes: FailureCauses<'_>,
     apply: ApplyBatch,
 ) {
     let mut counters = WriterCounters::default();
-    let mut failed: Option<String> = None;
     let mut shutting_down = false;
 
     while !shutting_down {
@@ -349,7 +374,7 @@ fn run_writer(
             continue;
         }
 
-        if let Some(cause) = &failed {
+        if let Some(cause) = causes.failed.get() {
             let message = format!(
                 "Writing to the archive '{}' failed earlier: {cause}",
                 path.display()
@@ -366,7 +391,7 @@ fn run_writer(
                 settle_all(batch, None);
             }
             Err(panic) => {
-                let cause = record_panic(stopped, path, panic.as_ref());
+                let cause = record_panic(causes.stopped, path, panic.as_ref());
                 let message = format!(
                     "The archive writer for '{}' stopped: {cause}",
                     path.display()
@@ -381,7 +406,7 @@ fn run_writer(
                     "Writing to the archive '{}' failed: {cause}",
                     path.display()
                 );
-                failed = Some(cause);
+                causes.failed.get_or_init(|| cause);
                 settle_all(batch, Some(&message));
             }
         }
@@ -707,7 +732,7 @@ fn same_event_hub(left: &EventHubIdentity, right: &EventHubIdentity) -> bool {
             .eq_ignore_ascii_case(&right.event_hub_name)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) mod test_writers {
     //! Writer replacements that make the writer-death path reachable.
 

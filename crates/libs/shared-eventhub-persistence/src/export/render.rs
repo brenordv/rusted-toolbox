@@ -1,17 +1,24 @@
 //! How a captured message is written out: the full details block, the
 //! csv/json rows, and the file-safe timestamps used in export paths.
 
+use anyhow::Context;
 use chrono::{DateTime, Local, Utc};
 use serde::Serialize;
 use shared_eventhub_core::models::{BodyKind, CapturedMessage};
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 /// Timestamp format of the details block and the csv/json `timestamp` field.
 pub(crate) const TIMESTAMP_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.9fZ";
 const UNAVAILABLE: &str = "[unavailable]";
 
-/// Renders `message` as the details block: broker metadata, then the body.
-/// A body that is not the exact payload carries a `body note` line saying
-/// why.
+/// Renders `message` as the details block: broker metadata, the content
+/// type, the correlation id, the application properties (one indented
+/// `key: value` line each, in key order, or `properties: none`), then the
+/// body. A body that is not the exact payload carries a `body note` line
+/// saying why. A line break in the content type, the correlation id, or a
+/// property's key or value is written as `\n` or `\r`, so each stays on its
+/// own line of the block.
 pub fn format_full_message(message: &CapturedMessage) -> String {
     let enqueued = message.enqueued_time.map_or_else(
         || UNAVAILABLE.to_owned(),
@@ -37,6 +44,9 @@ pub fn format_full_message(message: &CapturedMessage) -> String {
          event sequence number: {sequence}\n\
          event offset: {offset}\n\
          Message processed at: {processed}\n\
+         content type: {content_type}\n\
+         correlation id: {correlation_id}\n\
+         {properties}\
          {body_note}\
          \n\
          ---| MESSAGE BODY |----------------------------------------------------------\n\
@@ -47,18 +57,53 @@ pub fn format_full_message(message: &CapturedMessage) -> String {
         partition = message.key.partition_id,
         offset = message.offset.as_deref().unwrap_or(UNAVAILABLE),
         processed = message.processed_at.format(TIMESTAMP_FORMAT),
+        content_type = one_line_or_unavailable(message.content_type.as_deref()),
+        correlation_id = one_line_or_unavailable(message.correlation_id.as_deref()),
+        properties = properties_lines(&message.properties),
         body = message.body,
     )
 }
 
+/// `value` on one line, or `[unavailable]` when there is none.
+fn one_line_or_unavailable(value: Option<&str>) -> Cow<'_, str> {
+    value.map_or(Cow::Borrowed(UNAVAILABLE), one_line)
+}
+
+/// `text` with each line feed written as `\n` and each carriage return as
+/// `\r`.
+fn one_line(text: &str) -> Cow<'_, str> {
+    if text.contains(['\n', '\r']) {
+        Cow::Owned(text.replace('\n', "\\n").replace('\r', "\\r"))
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
+/// The details block's properties lines: `properties:` and one indented
+/// `key: value` line per property, or `properties: none`.
+fn properties_lines(properties: &BTreeMap<String, String>) -> String {
+    if properties.is_empty() {
+        return "properties: none\n".to_owned();
+    }
+    let mut lines = "properties:\n".to_owned();
+    for (key, value) in properties {
+        lines.push_str(&format!("  {}: {}\n", one_line(key), one_line(value)));
+    }
+    lines
+}
+
 /// The csv/json row of a message with metadata. Field order is the csv
-/// column order and the json key order.
+/// column order and the json key order; in json an absent content type or
+/// correlation id is `null` and `properties` is an object.
 #[derive(Serialize)]
 pub(crate) struct MetadataRow<'a> {
     pub(crate) entity_path: &'a str,
     pub(crate) partition_id: &'a str,
     pub(crate) event_id: String,
     pub(crate) timestamp: String,
+    pub(crate) content_type: Option<&'a str>,
+    pub(crate) correlation_id: Option<&'a str>,
+    pub(crate) properties: &'a BTreeMap<String, String>,
     pub(crate) message_content: &'a str,
 }
 
@@ -69,26 +114,46 @@ impl<'a> MetadataRow<'a> {
             partition_id: &message.key.partition_id,
             event_id: message.key.sequence_number.to_string(),
             timestamp: message.processed_at.format(TIMESTAMP_FORMAT).to_string(),
+            content_type: message.content_type.as_deref(),
+            correlation_id: message.correlation_id.as_deref(),
+            properties: &message.properties,
             message_content: &message.body,
         }
     }
 
-    pub(crate) fn fields(&self) -> [&str; 5] {
+    /// The properties as the text of a JSON object, the csv `properties`
+    /// cell.
+    ///
+    /// # Errors
+    /// Fails when the properties cannot be serialized.
+    pub(crate) fn properties_cell(&self) -> anyhow::Result<String> {
+        serde_json::to_string(self.properties).context("Failed to serialize the properties")
+    }
+
+    /// The csv record, with `properties_cell` in the `properties` column. An
+    /// absent content type or correlation id is an empty cell.
+    pub(crate) fn fields<'b>(&'b self, properties_cell: &'b str) -> [&'b str; 8] {
         [
             self.entity_path,
             self.partition_id,
             &self.event_id,
             &self.timestamp,
+            self.content_type.unwrap_or_default(),
+            self.correlation_id.unwrap_or_default(),
+            properties_cell,
             self.message_content,
         ]
     }
 }
 
-pub(crate) const METADATA_HEADER: [&str; 5] = [
+pub(crate) const METADATA_HEADER: [&str; 8] = [
     "entity_path",
     "partition_id",
     "event_id",
     "timestamp",
+    "content_type",
+    "correlation_id",
+    "properties",
     "message_content",
 ];
 pub(crate) const CONTENT_HEADER: [&str; 1] = ["message_content"];
@@ -128,9 +193,15 @@ mod tests {
     use rstest::rstest;
 
     #[test]
-    fn the_details_block_keeps_the_old_layout() {
+    fn the_details_block_lists_the_metadata_then_the_body() {
         let mut rendered = message("3", 42, "{\"id\":1}");
         rendered.partition_key = Some("customer-7".to_owned());
+        rendered.content_type = Some("application/json".to_owned());
+        rendered.correlation_id = Some("run-17".to_owned());
+        rendered.properties = BTreeMap::from([
+            ("source".to_owned(), "checkout".to_owned()),
+            ("attempt".to_owned(), "2".to_owned()),
+        ]);
 
         let block = format_full_message(&rendered);
 
@@ -144,11 +215,57 @@ mod tests {
              event sequence number: 42\n\
              event offset: offset-42\n\
              Message processed at: 2026-07-02T12:30:42.000000000Z\n\
+             content type: application/json\n\
+             correlation id: run-17\n\
+             properties:\n\
+             \x20 attempt: 2\n\
+             \x20 source: checkout\n\
              \n\
              ---| MESSAGE BODY |----------------------------------------------------------\n\
              {\"id\":1}\n\
              ---|          EOF |----------------------------------------------------------\n"
         );
+    }
+
+    #[test]
+    fn a_message_without_event_metadata_says_so_in_the_details_block() {
+        let block = format_full_message(&message("0", 1, "x"));
+
+        assert!(
+            block.contains(
+                "content type: [unavailable]\n\
+                 correlation id: [unavailable]\n\
+                 properties: none\n\
+                 \n\
+                 ---| MESSAGE BODY |"
+            ),
+            "{block}"
+        );
+    }
+
+    #[test]
+    fn line_breaks_in_event_metadata_stay_on_their_own_line_of_the_block() {
+        let mut rendered = message("0", 1, "x");
+        rendered.content_type = Some("text/plain\nevent offset: forged".to_owned());
+        rendered.correlation_id = Some("run\r\nid: forged".to_owned());
+        rendered.properties = BTreeMap::from([(
+            "note\npartition id".to_owned(),
+            "first\r\nevent sequence number: 999".to_owned(),
+        )]);
+
+        let block = format_full_message(&rendered);
+
+        assert!(
+            block.contains(
+                "content type: text/plain\\nevent offset: forged\n\
+                 correlation id: run\\r\\nid: forged\n\
+                 properties:\n\
+                 \x20 note\\npartition id: first\\r\\nevent sequence number: 999\n\
+                 \n"
+            ),
+            "{block}"
+        );
+        assert_eq!(block.matches("\nevent sequence number: ").count(), 1);
     }
 
     #[test]
@@ -190,14 +307,39 @@ mod tests {
         let source = message("2", 9, "payload");
 
         let row = MetadataRow::new(&source, "orders");
+        let properties = row.properties_cell().unwrap();
 
         assert_eq!(
-            row.fields(),
+            row.fields(&properties),
             [
                 "orders",
                 "2",
                 "9",
                 "2026-07-02T12:30:09.000000000Z",
+                "",
+                "",
+                "{}",
+                "payload"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_metadata_row_carries_the_event_metadata_before_the_body() {
+        let mut source = message("2", 9, "payload");
+        source.content_type = Some("application/json".to_owned());
+        source.correlation_id = Some("run-17".to_owned());
+        source.properties = BTreeMap::from([("source".to_owned(), "checkout".to_owned())]);
+
+        let row = MetadataRow::new(&source, "orders");
+        let properties = row.properties_cell().unwrap();
+
+        assert_eq!(
+            row.fields(&properties)[4..],
+            [
+                "application/json",
+                "run-17",
+                "{\"source\":\"checkout\"}",
                 "payload"
             ]
         );

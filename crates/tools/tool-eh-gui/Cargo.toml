@@ -25,6 +25,11 @@ name = "secret_hygiene"
 path = "tests/secret_hygiene.rs"
 required-features = ["test-harness"]
 
+[[test]]
+name = "quit_logging"
+path = "tests/quit_logging.rs"
+required-features = ["test-harness"]
+
 [dependencies]
 # Internal
 common-cli = { workspace = true }
@@ -50,6 +55,7 @@ windows = { workspace = true, features = ["UI_ViewManagement"] }
 
 [dev-dependencies]
 shared-azure = { workspace = true }
+shared-eventhub-persistence = { workspace = true, features = ["test-support"] }
 
 rand = { workspace = true }
 rstest = { workspace = true }

@@ -303,6 +303,10 @@ absolute folder.
 - The archive is locked while eh-gui uses it: from the first Connect until the app quits (or the
   data folder changes), `eh read` and `eh export` on the same folder report it as in use. One
   process at a time per data folder.
+- After an archive write fails (a full disk, say), the archive takes no more writes until it
+  is opened again. The next Connect does that when nothing else holds the archive; while a
+  running session, export, or search still does, Connect says so and to try again once it ends.
+  Search and export keep working meanwhile.
 - The data folder can change only while no session, bulk export, or send runs, and not until a
   connect cancelled while preparing has stopped. A new data folder (a Change pick or a profile
   switch) clears the Export section's results.
@@ -315,8 +319,7 @@ absolute folder.
 
 Closing the window during a session stops the session and lets it finish writing message files
 in the background; the app quits when it is done. If that fails, the window comes back with the
-error (captured messages are safe in the archive, and `eh export` can write what was missed). If
-it is still running after 30 seconds, the window comes back with a Force quit button.
+error (captured messages are safe in the archive, and `eh export` can write what was missed).
 
 Closing the window during a bulk export cancels it; the app quits once the files being written
 are complete. If the export failed (some files could not be written, or the archive could not
@@ -324,6 +327,19 @@ be read), the window comes back to show it.
 
 Closing the window during a send cancels it; the app quits once the batch in flight and the
 connection close end, within about 30 seconds. A send that failed brings the window back.
+
+Every wait has the same bound. A close waits for a session, a save, a message export from
+either inspector, a bulk export, and a send. If any of them still runs 30 seconds after the
+close, the window comes back on the Read section with a notice that names what still runs
+("Still writing the export. ...") and a Force quit button. Force quit ends eh-gui at once with
+everything it is running, a session started after the window came back included: the archive
+keeps every stored message, and a file being written may be incomplete. When everything the
+window came back for ends, the notice and Force quit go away and the window stays open; work
+started after it came back does not bring them back. Closing the window again starts a new 30
+seconds. While the notice shows, a connection failure shows as a toast.
+
+Once eh-gui quits, by Force quit or not, the process ends without waiting for background work
+that has not stopped (an archive search page still scanning, an at-end pass Force quit left).
 
 ## GPU
 

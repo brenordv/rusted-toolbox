@@ -7,6 +7,11 @@ authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[features]
+# Dev-only: makes `store::test_support` public, so another crate's tests can get an archive whose
+# writes fail or whose writer thread dies. Release builds leave it out.
+test-support = []
+
 [dependencies]
 # Internal
 common-file-utils = { workspace = true }

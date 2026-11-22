@@ -1,6 +1,20 @@
 # Changelog
 
 ## 1.0.0
+- An archive write that failed no longer stays failed until restart. The next Connect closes
+  the archive and opens it again when nothing else holds it; while a session, an export, or a
+  search still does, Connect fails with "Writing to the archive failed earlier (cause). It
+  reopens once the running session, export, or search ends; then Connect again." Search and
+  export keep reading the open archive either way.
+- Quit and Force quit end the process without waiting for background work that has not stopped
+  (an archive search page, an at-end pass Force quit left behind).
+- The 30 s wait at window close covers everything the close waits for (a session, a save, a
+  message export, a bulk export, a send), where it covered only a session. The window comes
+  back on Read with a notice naming what still runs and Force quit; both go away when that work
+  ends, and a second close waits another 30 s. A connection failure under the notice toasts.
+- Exports with metadata (the inspectors' Export and Export all matches) carry the event's
+  content type, correlation id, and properties; the csv header gained three columns, so a
+  one-file-per-month csv with the earlier header is not appended to.
 - Disconnect while a session is still connecting ends it at once instead of waiting out the
   SDK's connect retries (about a minute), so the data folder and the profile picker unlock right
   away.

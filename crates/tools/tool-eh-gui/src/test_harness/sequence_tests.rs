@@ -244,7 +244,7 @@ impl Sequence {
         for step in 0..steps {
             self.step = step;
             let locked = self.h.state().data_folder_lock().is_some();
-            let finishing = self.h.state().still_finishing;
+            let finishing = self.h.state().waited().is_some();
             let home = self.h.state().home().clone();
             self.fresh_window = false;
             let action = self.act();
@@ -820,8 +820,8 @@ impl Sequence {
         }
     }
 
-    /// Checks a step's `quits` (`finishing`: a closed window's session was still finishing, so
-    /// Force quit may end the app with jobs running) and opens a fresh window.
+    /// Checks a step's `quits` (`finishing`: the window had reopened for jobs still finishing,
+    /// so Force quit may end the app with jobs running) and opens a fresh window.
     fn quit(&mut self, quits: usize, finishing: bool) {
         assert_eq!(
             quits, 1,

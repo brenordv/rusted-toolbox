@@ -1,11 +1,13 @@
 //! The Read and Export content areas and the sidebar. While a session captures, the Read area
 //! is the live list; otherwise each area shows the empty state its connection state calls for.
+//! The still-finishing notice takes the Read area's place whatever the connection state.
 
 use super::{details, export, read, send};
 use crate::app::dispatch;
 use crate::design::{icons, parts};
 use crate::state::{
-    AppState, ConnectionState, Failure, FailureStage, Input, Section, SheetPurpose, error_preview,
+    AppState, ConnectionState, Failure, FailureStage, Input, Job, Section, SheetPurpose,
+    error_preview, still_finishing_text,
 };
 use rune::{El, Tx};
 use rune_kit::{Button, ButtonVariant, Kit};
@@ -20,7 +22,29 @@ fn connect_button(s: &AppState, k: &Kit) -> El {
         .key("empty-connect")
 }
 
+/// The notice of a window that reopened because `waited` ran past the close's bound, with
+/// Force quit.
+fn still_finishing(k: &Kit, waited: &[Job]) -> El {
+    parts::empty_state(
+        k,
+        "still-finishing",
+        &icons::ARCHIVE,
+        "Still finishing",
+        &still_finishing_text(waited),
+        Some(
+            Button::new("Force quit")
+                .variant(ButtonVariant::Danger)
+                .on_press(|s: &mut AppState| dispatch(s, Input::ForceQuit))
+                .build(k)
+                .key("force-quit"),
+        ),
+    )
+}
+
 pub fn read(s: &AppState, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
+    if let Some(waited) = s.waited() {
+        return still_finishing(k, waited);
+    }
     match &s.connection {
         ConnectionState::Disconnected => parts::empty_state(
             k,
@@ -41,21 +65,6 @@ pub fn read(s: &AppState, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
         ConnectionState::Connected { partitions, .. } => {
             read::content(s, k, dark, partitions.len(), layer)
         }
-        ConnectionState::Stopping { .. } if s.still_finishing => parts::empty_state(
-            k,
-            "still-finishing",
-            &icons::ARCHIVE,
-            "Still finishing the session",
-            "Captured messages are safe in the archive. The message files are still being \
-             written; quitting now leaves the rest for eh export or the Export section.",
-            Some(
-                Button::new("Force quit")
-                    .variant(ButtonVariant::Danger)
-                    .on_press(|s: &mut AppState| dispatch(s, Input::ForceQuit))
-                    .build(k)
-                    .key("force-quit"),
-            ),
-        ),
         ConnectionState::Stopping { .. } => parts::empty_state(
             k,
             "finishing",

@@ -30,4 +30,16 @@
   `ConfigHome`, whose `data_paths` places a relative data folder inside a profile folder.
 - `ConfigHome::uses_recalled_folder` says whether a home uses a folder its `config.json` names:
   any folder under a profile, only a plain relative one under the current folder.
+- `MessageStore::write_failure` returns why a handle's writes fail (the failed batch's cause or
+  the writer thread's), set before the failed batch is answered, and
+  `MessageStore::is_last_handle` says whether a close on the handle would release the archive.
+  The dev-only `test-support` feature makes `store::test_support` public (`failing_store`,
+  `store_with_dead_writer`) for other crates' tests.
+- Exports with metadata carry the event's content type, correlation id, and application
+  properties: after the capture time in the txt details block (line breaks written as `\n` and
+  `\r`), and the columns `content_type`, `correlation_id`, and `properties` (a JSON object)
+  before `message_content` in csv and json. The csv header changed with it, so a condensed csv
+  that has the earlier five-column header is refused on append by the header check; a condensed
+  json file takes the new rows. `WritingSink`'s message files use the same details block and
+  gain the three entries. Exports without metadata are unchanged.
 - Dependency: `redb` 4.6.0.

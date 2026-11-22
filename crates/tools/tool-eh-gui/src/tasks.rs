@@ -16,8 +16,9 @@ use tracing::{debug, info, warn};
 /// the folder its request was made for, and a request for any folder but the current one is
 /// refused, so a stale request can neither reopen an old folder nor read the new one.
 ///
-/// `acquire` and `close_for_quit` are not cancel-safe: a dropped `acquire` still finishes its
-/// open in the background and keeps the file locked. Run them to completion in their own task.
+/// `acquire`, `acquire_for_session`, and `close_for_quit` are not cancel-safe: a dropped
+/// `acquire` still finishes its open in the background and keeps the file locked. Run them to
+/// completion in their own task.
 pub struct StoreSlot {
     current: Mutex<DataPaths>,
     state: tokio::sync::Mutex<SlotState>,
@@ -65,6 +66,39 @@ impl StoreSlot {
     /// data folder); the open error's own text is user-facing.
     pub async fn acquire(&self, folder: &DataPaths) -> anyhow::Result<MessageStore> {
         let mut state = self.state.lock().await;
+        let current = self.checked_current(folder)?;
+        open_or_share(&mut state, current).await
+    }
+
+    /// Returns a handle to the archive of `folder` that takes writes. An open archive whose
+    /// writer failed is closed and opened again when the slot holds its only handle.
+    ///
+    /// # Errors
+    /// Fails as [`acquire`](Self::acquire) does, and when the open archive's writer failed
+    /// while another handle to it is still alive: nothing is closed then, and the text says
+    /// when to try again.
+    pub async fn acquire_for_session(&self, folder: &DataPaths) -> anyhow::Result<MessageStore> {
+        let mut state = self.state.lock().await;
+        let current = self.checked_current(folder)?;
+        let failure = match &*state {
+            SlotState::Open { base, store } if *base == current => store
+                .write_failure()
+                .map(|cause| (cause, store.is_last_handle())),
+            SlotState::Open { .. } | SlotState::Unopened | SlotState::Closed => None,
+        };
+        match failure {
+            Some((cause, true)) => close_failed(&mut state, &cause).await,
+            Some((cause, false)) => anyhow::bail!(
+                "Writing to the archive failed earlier ({cause}). It reopens once the running \
+                 session, export, or search ends; then Connect again."
+            ),
+            None => {}
+        }
+        open_or_share(&mut state, current).await
+    }
+
+    /// The current data folder, when `folder` is it.
+    fn checked_current(&self, folder: &DataPaths) -> anyhow::Result<DataPaths> {
         let current = self.current();
         if *folder != current {
             debug!(
@@ -77,23 +111,16 @@ impl StoreSlot {
                 folder.base().display()
             );
         }
+        Ok(current)
+    }
 
-        match &*state {
-            SlotState::Closed => anyhow::bail!("eh-gui is quitting"),
-            SlotState::Open { base, store } if *base == current => return Ok(store.clone()),
-            SlotState::Open { .. } => close_stale(&mut state, &current).await,
-            SlotState::Unopened => {}
-        }
-
-        let opening = current.clone();
-        let store = tokio::task::spawn_blocking(move || MessageStore::open(&opening))
-            .await
-            .context("Opening the archive stopped unexpectedly")??;
-        *state = SlotState::Open {
-            base: current,
-            store: store.clone(),
+    /// Makes `store` the open handle of the current data folder.
+    #[cfg(test)]
+    async fn seat(&self, store: MessageStore) {
+        *self.state.lock().await = SlotState::Open {
+            base: self.current(),
+            store,
         };
-        Ok(store)
     }
 
     /// Closes the handle when it belongs to a data folder that is no longer current.
@@ -125,6 +152,49 @@ impl StoreSlot {
             }
             SlotState::Unopened | SlotState::Closed => {}
         }
+    }
+}
+
+/// A handle to the archive of `current`: the open one, or a new open after closing a handle
+/// that belongs to another folder.
+async fn open_or_share(state: &mut SlotState, current: DataPaths) -> anyhow::Result<MessageStore> {
+    match &*state {
+        SlotState::Closed => anyhow::bail!("eh-gui is quitting"),
+        SlotState::Open { base, store } if *base == current => return Ok(store.clone()),
+        SlotState::Open { .. } => close_stale(state, &current).await,
+        SlotState::Unopened => {}
+    }
+
+    let opening = current.clone();
+    let store = tokio::task::spawn_blocking(move || MessageStore::open(&opening))
+        .await
+        .context("Opening the archive stopped unexpectedly")??;
+    *state = SlotState::Open {
+        base: current,
+        store: store.clone(),
+    };
+    Ok(store)
+}
+
+/// Takes the open handle, whose writer failed with `cause`, out of `state` (leaving it
+/// `Unopened`) and closes it, so the next open starts a new writer.
+async fn close_failed(state: &mut SlotState, cause: &str) {
+    let SlotState::Open { base, store } = std::mem::replace(state, SlotState::Unopened) else {
+        return;
+    };
+    info!(
+        folder = %base.base().display(),
+        cause,
+        "reopening the archive after a write failure"
+    );
+    if let Err(error) = store.close().await {
+        // Best-effort: a writer that died always reports its cause here, with the file
+        // lock released all the same, so the reopen goes on.
+        warn!(
+            folder = %base.base().display(),
+            error = %format!("{error:#}"),
+            "closing the archive that failed reported an error; reopening it anyway"
+        );
     }
 }
 

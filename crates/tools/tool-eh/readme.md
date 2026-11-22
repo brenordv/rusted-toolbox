@@ -327,10 +327,21 @@ eh export -f json --between 2026-07-02T00:00:00Z..2026-07-02T23:59:59Z --filter-
 when there is none. Files go to `--export-folder` (default `exports`, relative to the data
 folder unless absolute; a path with `..` can leave the git-ignored folder):
 
-- txt: the details and the body (`--include-metadata false`: the body only).
-- csv: `entity_path,partition_id,event_id,timestamp,message_content`, or `message_content`
-  alone without metadata. `entity_path` is the archive's event hub.
-- json: the same fields as an object.
+- txt: the details and the body (`--include-metadata false`: the body only). After the broker
+  metadata the details have `content type` and `correlation id` (`[unavailable]` when the event has none) and the
+  application properties: `properties:` and one indented `key: value` line each, in key order,
+  or `properties: none`. A line break in any of them is written as `\n` or `\r`.
+- csv: `entity_path,partition_id,event_id,timestamp,content_type,correlation_id,properties,message_content`,
+  or `message_content` alone without metadata. `entity_path` is the archive's event hub;
+  `content_type` and `correlation_id` are empty when the event has none; `properties` holds
+  the properties as a JSON object in one cell (`{}` for none).
+- json: the same fields as an object; `content_type` and `correlation_id` are `null` when the
+  event has none, and `properties` is an object.
+
+A property value is written as it is, so in a spreadsheet it can read as a formula, as a
+message body can. An export without metadata holds the body only, as before. A condensed csv
+written with the earlier five-column header is not appended to (the header differs); export to
+another folder or move the file.
 
 One file per message under `<YYYY-MM>/<DD>/`, or one file per month with
 `--condense-output`; dates in UTC unless `--use-local-time`.

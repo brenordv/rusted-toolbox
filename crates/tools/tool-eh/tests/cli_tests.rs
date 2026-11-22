@@ -713,7 +713,10 @@ async fn csv_and_json_carry_the_bound_hub_and_metadata_can_be_left_out() {
     let data = root.path().join(".eh-data");
     let csv_text = read_all(&files_under(&data.join("csv")));
     assert!(
-        csv_text.starts_with("entity_path,partition_id,event_id,timestamp,message_content"),
+        csv_text.starts_with(
+            "entity_path,partition_id,event_id,timestamp,content_type,correlation_id,properties,\
+             message_content"
+        ),
         "{csv_text}"
     );
     assert!(csv_text.contains("orders,0,2,"), "{csv_text}");
