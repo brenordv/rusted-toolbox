@@ -19,7 +19,7 @@ use crate::read::search::RebuildRequest;
 use crate::read::test_support::captured;
 use crate::send::SendInput;
 use crate::send::run::SendRun;
-use crate::state::{AppState, Input, ListSection, MAX_TOASTS, Section};
+use crate::state::{AppState, Input, ListSection, MAX_TOASTS, NO_WORKSPACE, Section};
 use rand::rngs::Xoshiro256PlusPlus;
 use rand::{Rng, SeedableRng};
 use rune::{Key, KeyEvent, Mods};
@@ -32,13 +32,17 @@ use shared_eventhub_persistence::search::SearchCursor;
 use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry};
 use std::path::PathBuf;
 use std::time::Duration;
-use tempfile::TempDir;
 
 /// Frames after each step: enough for the view to mount what the step changed.
 const STEP_FRAMES: usize = 3;
 const STEPS: usize = 300;
 const REPLAY_STEPS: usize = 100;
 const BODIES: [&str; 4] = ["order 7", "{\"refund\": 3}", "ping", "order shipped"];
+/// The folder a [`Mix::Base`] window launches in, and the path every dialog answer picks. The
+/// view shows both, so they are relative paths that read the same on every machine: a
+/// machine's own folders wrap differently and send a seed down another walk.
+const BASE_LAUNCH: &str = "eh-gui-sequence";
+const PICKED: &str = "picked";
 /// A failed prepare's text: long enough that its surfaces offer the details modal.
 const LONG_FAILURE: &str = "the archive is in use by another eh or eh-gui; close the other \
     process that holds the data folder's archive.redb, or pick another data folder in the \
@@ -83,7 +87,7 @@ enum Answer {
 /// What a sequence's windows and generator hold.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mix {
-    /// No workspace, and the base actions only.
+    /// No workspace, launched in [`BASE_LAUNCH`], and the base actions only.
     Base,
     /// The test workspace, and the base actions plus profile picks and connects cancelled
     /// while preparing.
@@ -101,7 +105,6 @@ struct Sequence {
     unfinished_sends: Vec<u64>,
     next_sequence: i64,
     cursor: SearchCursor,
-    dialogs: TempDir,
     /// Steps that ended with a card's details holding toasts.
     held_steps: usize,
     /// Steps that ended with a message export as the only job running.
@@ -135,7 +138,11 @@ impl Drop for Sequence {
 
 fn window(mix: Mix) -> Harness {
     let mut s = match mix {
-        Mix::Base => state(),
+        Mix::Base => {
+            let mut s = state();
+            s.set_launch(PathBuf::from(BASE_LAUNCH), Err(NO_WORKSPACE.to_owned()));
+            s
+        }
         Mix::Profiles => with_profiles(state()),
     };
     s.form.connection_string.edit_mut().replace_text(ORDERS);
@@ -196,7 +203,6 @@ impl Sequence {
             unfinished_sends: Vec::new(),
             next_sequence: 0,
             cursor: cursor(),
-            dialogs: tempfile::tempdir().unwrap(),
             held_steps: 0,
             lone_export_steps: 0,
             entries: listing(),
@@ -420,10 +426,10 @@ impl Sequence {
         if self.h.rt.file_dialog().is_none() {
             return "no dialog to answer".to_owned();
         }
-        let path = self.dialogs.path().join("picked");
+        let path = PathBuf::from(PICKED);
         if self.below(2) == 0 {
             self.h.answer_dialog(Some(&path));
-            "dialog: temp path".to_owned()
+            "dialog: picked".to_owned()
         } else {
             self.h.answer_dialog(None);
             "dialog: none".to_owned()
