@@ -635,7 +635,11 @@ impl AppState {
             self.show_issues = true;
             return;
         }
-        let (config, given) = self.config_with_rules();
+        let (mut config, given) = self.config_with_rules();
+        if let Err(text) = profiles::recallable_folders(self.home(), &mut config.storage) {
+            self.config_save_failed(text);
+            return;
+        }
         let filled = match self.home() {
             ConfigHome::Profile(_) => match new_profile::filled_names(&config, &given) {
                 Ok(filled) => filled,
@@ -762,8 +766,13 @@ impl AppState {
             out.changed = false;
             return;
         }
-        self.form.data_folder = folder.display().to_string();
+        self.form.data_folder = profiles::data_folder_text(self.home(), &folder);
         self.folders_caption = None;
+        match &self.save_status {
+            SaveStatus::Failed(_) => self.save_status = SaveStatus::Idle,
+            // A running save holds the data folder lock, which returned above.
+            SaveStatus::Idle | SaveStatus::Saving(_) | SaveStatus::Saved => {}
+        }
         self.form.forget_stored_secrets();
         let paths = self.data_paths();
         self.change_data_folder(paths, out);

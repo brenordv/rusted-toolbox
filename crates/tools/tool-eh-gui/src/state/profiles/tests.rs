@@ -871,6 +871,224 @@ fn a_save_config_that_fails_keeps_the_folders_caption() {
     assert_eq!(s.folders_caption, caption);
 }
 
+fn not_saved(setting: &str) -> SaveStatus {
+    SaveStatus::Failed(format!(
+        "config.json in this folder keeps only folders inside it, and the {setting} is outside. \
+         Pick one inside this folder, or switch to a profile: a profile keeps any folder."
+    ))
+}
+
+/// An absolute launch folder that nothing creates.
+fn absolute_launch_folder() -> PathBuf {
+    std::env::temp_dir().join("eh-gui-test-launch")
+}
+
+/// An absolute folder outside [`absolute_launch_folder`] that nothing creates.
+fn outside_folder() -> PathBuf {
+    std::env::temp_dir().join("eh-gui-test-outside")
+}
+
+/// [`listed`] launched in [`absolute_launch_folder`].
+fn launched() -> AppState {
+    let mut s = listed();
+    s.set_launch(absolute_launch_folder(), Ok(test_workspace()));
+    s
+}
+
+/// The config the one save `out` asks for writes.
+fn saved_config(out: &Outcome) -> &ToolConfig {
+    match out.effects.as_slice() {
+        [Effect::SaveConfig(request)] => &request.config,
+        other => panic!("expected SaveConfig, got {other:?}"),
+    }
+}
+
+#[test]
+fn save_config_into_the_launch_folder_refuses_a_data_folder_picked_outside_it() {
+    let mut s = launched();
+    s.apply(Input::DataFolderPicked(outside_folder()));
+
+    let out = s.apply(Input::SavePressed);
+
+    assert!(out.effects.is_empty(), "{:?}", out.effects);
+    assert_eq!(s.save_status, not_saved("data folder"));
+    let toasts = s.toasts().entries();
+    assert_eq!(toasts.len(), 1, "{toasts:?}");
+    assert_eq!(toasts[0].options.kind, ToastKind::Danger);
+    assert!(
+        toasts[0]
+            .options
+            .text
+            .starts_with("Could not save config.json: config.json in this folder keeps only"),
+        "{}",
+        toasts[0].options.text
+    );
+}
+
+#[test]
+fn a_data_folder_picked_inside_the_launch_folder_is_held_and_saved_as_the_relative_remainder() {
+    let mut s = launched();
+    let remainder = PathBuf::from("captures").join("today");
+
+    let picked = s.apply(Input::DataFolderPicked(
+        absolute_launch_folder().join(&remainder),
+    ));
+    let saved = s.apply(Input::SavePressed);
+
+    let remainder = remainder.display().to_string();
+    assert_eq!(s.form.data_folder, remainder);
+    assert_eq!(switched_to(&picked), Some(&DataPaths::new(&remainder)));
+    assert_eq!(saved_config(&saved).storage.base_data_folder, remainder);
+}
+
+#[rstest::rstest]
+#[case::immediate(DiskWriteMode::Immediate)]
+#[case::at_end(DiskWriteMode::AtEnd)]
+fn save_config_into_the_launch_folder_refuses_an_absolute_received_message_path_with_message_files_on(
+    #[case] mode: DiskWriteMode,
+) {
+    let mut s = launched();
+    s.form.disk_write = mode;
+    s.form
+        .received_msg_path
+        .replace_text(outside_folder().display().to_string());
+
+    let out = s.apply(Input::SavePressed);
+
+    assert!(out.effects.is_empty(), "{:?}", out.effects);
+    assert_eq!(s.save_status, not_saved("received message path"));
+}
+
+#[rstest::rstest]
+#[case::absolute(outside_folder().display().to_string())]
+#[case::emptied(String::new())]
+fn save_config_into_the_launch_folder_with_message_files_off_saves_the_default_received_message_path(
+    #[case] left_behind: String,
+) {
+    let mut s = launched();
+    s.form.disk_write = DiskWriteMode::Off;
+    s.form.received_msg_path.replace_text(left_behind);
+
+    let out = s.apply(Input::SavePressed);
+
+    let saved = &saved_config(&out).storage.disk_write;
+    assert_eq!(saved.mode, DiskWriteMode::Off);
+    assert_eq!(
+        saved.received_msg_path,
+        StorageConfig::default().disk_write.received_msg_path
+    );
+    assert!(s.save_status.is_saving());
+}
+
+#[test]
+fn save_config_into_a_profile_with_message_files_off_keeps_an_absolute_received_message_path() {
+    let mut s = launched();
+    switch(&mut s, profile_home(BILLING), loaded(billing_config()));
+    let outside = outside_folder().display().to_string();
+    s.form.disk_write = DiskWriteMode::Off;
+    s.form.received_msg_path.replace_text(outside.clone());
+
+    let out = s.apply(Input::SavePressed);
+
+    assert_eq!(
+        saved_config(&out).storage.disk_write.received_msg_path,
+        outside
+    );
+}
+
+#[test]
+fn save_config_into_the_launch_folder_refuses_an_export_folder_outside_it() {
+    let mut s = launched();
+    s.form = ConnectForm::from_config(&orders_config_with(outside_export_folder)).0;
+
+    let out = s.apply(Input::SavePressed);
+
+    assert!(out.effects.is_empty(), "{:?}", out.effects);
+    assert_eq!(s.save_status, not_saved("export folder"));
+}
+
+#[test]
+fn a_pick_inside_the_launch_folder_clears_a_refused_save_and_the_next_save_runs() {
+    let mut s = launched();
+    s.apply(Input::DataFolderPicked(outside_folder()));
+    s.apply(Input::SavePressed);
+
+    s.apply(Input::DataFolderPicked(
+        absolute_launch_folder().join("captures"),
+    ));
+    let cleared = s.save_status.clone();
+    let out = s.apply(Input::SavePressed);
+
+    assert_eq!(cleared, SaveStatus::Idle);
+    assert_eq!(saved_config(&out).storage.base_data_folder, "captures");
+    assert!(s.save_status.is_saving());
+}
+
+#[test]
+fn a_data_folder_pick_keeps_a_saved_status() {
+    let mut s = launched();
+    s.apply(Input::SavePressed);
+    s.apply(Input::ConfigSaved(Ok(())));
+
+    s.apply(Input::DataFolderPicked(
+        absolute_launch_folder().join("captures"),
+    ));
+
+    assert_eq!(s.save_status, SaveStatus::Saved);
+}
+
+#[test]
+fn under_a_profile_a_data_folder_picked_outside_is_kept_as_given_and_saved() {
+    let mut s = launched();
+    switch(&mut s, profile_home(BILLING), loaded(billing_config()));
+    let outside = outside_folder().display().to_string();
+
+    s.apply(Input::DataFolderPicked(outside_folder()));
+    let out = s.apply(Input::SavePressed);
+
+    assert_eq!(s.form.data_folder, outside);
+    assert_eq!(saved_config(&out).storage.base_data_folder, outside);
+}
+
+#[test]
+fn under_a_profile_a_data_folder_picked_inside_the_launch_folder_is_kept_as_given() {
+    let mut s = launched();
+    switch(&mut s, profile_home(BILLING), loaded(billing_config()));
+    let picked = absolute_launch_folder().join("captures");
+
+    s.apply(Input::DataFolderPicked(picked.clone()));
+
+    assert_eq!(s.form.data_folder, picked.display().to_string());
+}
+
+#[test]
+fn the_launch_folder_itself_picked_as_the_data_folder_is_kept_as_given_and_not_saved() {
+    let mut s = launched();
+
+    s.apply(Input::DataFolderPicked(absolute_launch_folder()));
+    let out = s.apply(Input::SavePressed);
+
+    assert_eq!(
+        s.form.data_folder,
+        absolute_launch_folder().display().to_string()
+    );
+    assert!(out.effects.is_empty(), "{:?}", out.effects);
+    assert_eq!(s.save_status, not_saved("data folder"));
+}
+
+#[test]
+fn connect_after_a_data_folder_picked_outside_the_launch_folder_prepares_a_session() {
+    let mut s = launched();
+    s.apply(Input::DataFolderPicked(outside_folder()));
+
+    let out = s.apply(Input::ConnectPressed);
+
+    let [Effect::PrepareSession { request, .. }] = out.effects.as_slice() else {
+        panic!("expected PrepareSession, got {:?}", out.effects);
+    };
+    assert_eq!(request.paths, DataPaths::new(outside_folder()));
+}
+
 #[test]
 fn a_profile_s_relative_data_folder_sits_in_the_profile_folder() {
     let mut s = listed();

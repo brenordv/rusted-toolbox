@@ -1,6 +1,10 @@
 # Changelog
 
 ## 1.0.0
+- Save config into the launch folder refuses a data folder or export folder outside it, or a
+  received message path outside it while Message files is on, which the next launch would not
+  use, and says which one. With Message files Off such a path is saved as the default. A data
+  folder picked with Change inside the launch folder is held as a relative path, so it saves.
 - An archive write that failed no longer stays failed until restart. The next Connect closes
   the archive and opens it again when nothing else holds it; while a session, an export, or a
   search still does, Connect fails with "Writing to the archive failed earlier (cause). It

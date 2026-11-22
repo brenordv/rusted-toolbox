@@ -11,7 +11,8 @@ use crate::form::{ConnectForm, SecretKind};
 use crate::read::rows::display_line;
 use shared_eventhub_core::filters::CaptureFilters;
 use shared_eventhub_persistence::config::{ConfigLoad, ExportSettings, StorageConfig, ToolConfig};
-use shared_eventhub_persistence::paths::DataPaths;
+use shared_eventhub_persistence::export::DiskWriteMode;
+use shared_eventhub_persistence::paths::{DataPaths, plain_relative};
 use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry, Workspace};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
@@ -23,6 +24,10 @@ pub const NO_WORKSPACE: &str = "Profiles are not set up in this window";
 /// The caption a workspace with no profile folders shows.
 pub const NO_PROFILES: &str = "No saved profiles yet.";
 const FOREIGN_CAPTION: &str = "A config.json here belongs to another tool; it was not loaded";
+// The names the sheet's sentences use for the three folder settings of a `config.json`.
+const DATA_FOLDER: &str = "data folder";
+const EXPORT_FOLDER: &str = "export folder";
+const RECEIVED_PATH: &str = "received message path";
 
 /// The workspace's profiles as last listed. No state is final: a new listing starts from any
 /// of them.
@@ -210,18 +215,17 @@ fn keep_folders_inside(home: &ConfigHome, config: &mut ToolConfig) -> Option<Str
     let mut not_used = Vec::new();
     if !home.uses_recalled_folder(&storage.base_data_folder) {
         storage.base_data_folder = defaults.base_data_folder;
-        named.push("a data folder");
+        named.push(format!("a {DATA_FOLDER}"));
         not_used.push("storage.base_data_folder");
     }
     if !home.uses_recalled_folder(&storage.export.export_folder) {
         storage.export.export_folder = defaults.export.export_folder;
-        named.push("an export folder");
+        named.push(format!("an {EXPORT_FOLDER}"));
         not_used.push("storage.export.export_folder");
     }
-    let message_files_off = !home.uses_recalled_folder(&storage.disk_write.received_msg_path);
+    let message_files_off = default_unused_received_path(home, storage);
     if message_files_off {
-        storage.disk_write.received_msg_path = defaults.disk_write.received_msg_path;
-        named.push("a received message path");
+        named.push(format!("a {RECEIVED_PATH}"));
         not_used.push("storage.disk_write.received_msg_path");
         if storage.disk_write.mode != defaults.disk_write.mode {
             storage.disk_write.mode = defaults.disk_write.mode;
@@ -247,6 +251,63 @@ fn keep_folders_inside(home: &ConfigHome, config: &mut ToolConfig) -> Option<Str
         "the launch folder's config names folders outside it; using the defaults"
     );
     Some(caption)
+}
+
+/// Replaces the received message path of `storage` with its default when `home` does not use
+/// it ([`ConfigHome::uses_recalled_folder`]); true when it did.
+fn default_unused_received_path(home: &ConfigHome, storage: &mut StorageConfig) -> bool {
+    let unused = !home.uses_recalled_folder(&storage.disk_write.received_msg_path);
+    if unused {
+        storage.disk_write.received_msg_path =
+            StorageConfig::default().disk_write.received_msg_path;
+    }
+    unused
+}
+
+/// Makes `storage` one that `home` recalls whole from its `config.json`, or says why it cannot.
+/// With message files off, a received message path `home` does not use
+/// ([`ConfigHome::uses_recalled_folder`]) is replaced by its default, which is what
+/// [`keep_folders_inside`] gives for it. A profile uses any folder, so nothing changes there.
+///
+/// # Errors
+/// A sentence naming the first folder setting `home` does not use, never its value: the data
+/// folder, the export folder, or, with message files on, the received message path.
+pub(super) fn recallable_folders(
+    home: &ConfigHome,
+    storage: &mut StorageConfig,
+) -> Result<(), String> {
+    if storage.disk_write.mode == DiskWriteMode::Off {
+        default_unused_received_path(home, storage);
+    }
+    let setting = if !home.uses_recalled_folder(&storage.base_data_folder) {
+        DATA_FOLDER
+    } else if !home.uses_recalled_folder(&storage.export.export_folder) {
+        EXPORT_FOLDER
+    } else if !home.uses_recalled_folder(&storage.disk_write.received_msg_path) {
+        RECEIVED_PATH
+    } else {
+        return Ok(());
+    };
+    Err(format!(
+        "config.json in this folder keeps only folders inside it, and the {setting} is outside. \
+         Pick one inside this folder, or switch to a profile: a profile keeps any folder."
+    ))
+}
+
+/// The data folder text a form under `home` holds for `picked`. Under the launch folder, a
+/// folder that is the launch folder plus a plain relative remainder gives the remainder: both
+/// name the same folder, and the launch folder's `config.json` is recalled only with the
+/// relative one. Any other folder, and every folder under a profile, is kept as given. The
+/// comparison reads the text only, so another spelling of the launch folder is not matched.
+pub(super) fn data_folder_text(home: &ConfigHome, picked: &Path) -> String {
+    let launch_folder = match home {
+        ConfigHome::CurrentFolder(dir) => dir,
+        ConfigHome::Profile(_) => return picked.display().to_string(),
+    };
+    match picked.strip_prefix(launch_folder) {
+        Ok(rest) if plain_relative(&rest.display().to_string()) => rest.display().to_string(),
+        Ok(_) | Err(_) => picked.display().to_string(),
+    }
 }
 
 /// The picker's label for `home`: [`LAUNCH_FOLDER`] or the profile's name as shown.

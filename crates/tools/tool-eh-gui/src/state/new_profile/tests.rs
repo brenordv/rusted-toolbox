@@ -230,6 +230,22 @@ fn after_change_picked_an_absolute_data_folder_the_profile_uses_the_default() {
     );
 }
 
+#[test]
+fn after_change_picked_a_data_folder_inside_the_launch_folder_the_profile_names_the_remainder() {
+    let mut s = open_row();
+    s.apply(Input::DataFolderPicked(launch_folder().join("captures")));
+    s.form.connection_string.edit_mut().replace_text(ORDERS);
+    let mut s = typed(s, NEW);
+
+    let out = s.apply(Input::CreateProfilePressed);
+
+    assert_eq!(s.new_profile_data_folder(), "captures");
+    assert_eq!(
+        create_request(&out).config.storage.base_data_folder,
+        "captures"
+    );
+}
+
 #[rstest::rstest]
 #[case::empty("", "Type a name for the new profile.")]
 #[case::blank("   ", "Type a name for the new profile.")]

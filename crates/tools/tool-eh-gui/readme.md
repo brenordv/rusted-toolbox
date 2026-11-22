@@ -88,9 +88,10 @@ through the common tasks in both tools with examples.
   config into a profile does the same and writes the names into the fields. A stored or copied
   string fills nothing.
 - The profile gets what Save config would write, its data folder inside the profile folder: the
-  form's when it is a plain relative folder, `.eh-data` otherwise (after Change it is always
-  `.eh-data`). Once it is saved the typed secrets leave the form, and the sheet opens the new
-  profile the way a pick does. A workspace folder with that name and no `config.json` is reused.
+  form's when it is a plain relative folder, `.eh-data` otherwise (after Change picked a folder
+  outside the launch folder it is `.eh-data`). Once it is saved the typed secrets leave the
+  form, and the sheet opens the new profile the way a pick does. A workspace folder with that
+  name and no `config.json` is reused.
   Escape in the name field closes the row, a second Escape the sheet. Save as profile… is
   disabled with the picker while something uses the data folder, and missing without a
   workspace.
@@ -291,10 +292,20 @@ path that is absolute, climbs with `..`, or names a network share is replaced by
 A replaced received message path also sets Message files to Off. The Profile group then shows
 which settings were not used ("config.json names a data folder outside this folder; it was not
 used."), until the next load, a Save config, or a data folder picked with Change. A folder you
-pick with Change, or type in the sheet, is used as given for this session. A data folder you
-pick outside the launch folder and save there with Save config is not used at the next launch.
-To keep one, pick a profile first and save there: a profile's `config.json` may name an
-absolute folder.
+pick with Change, or type in the sheet, is used as given for this session.
+
+Save config into the launch folder writes only folders the next launch would use. A data folder
+picked with Change inside the launch folder is held as the relative path from it (`captures`
+for `<launch folder>/captures`). With a data folder or export folder outside the launch folder,
+or a received message path outside it while Message files is on, Save config writes nothing and
+says which one: "config.json in this folder keeps only folders inside it, and the data folder
+is outside. Pick one inside this folder, or switch to a profile: a profile keeps any folder."
+While Message files is Off its folder field is hidden, and a path left in it that the launch
+folder would not use (outside it, or empty) is saved as the default, `inbound`. A pick is
+compared as text, so when the picker returns the launch folder spelled another way (another
+letter case, an extended-length path) a pick inside it is still refused; use a profile then. To
+keep an outside folder, pick a profile first and save there: a profile's `config.json` may name
+an absolute folder.
 
 ## Data folder and the archive
 
@@ -581,7 +592,7 @@ hub.
   focus goes to Save anyway), then press Save anyway (it saves); with a stored connection string
   (the row says it is copied, and `eh send --profile NAME` signs in with it); with a taken name;
   Escape in the name field (the row closes, the sheet stays); after Change picked a data folder
-  (the row shows `.eh-data`).
+  outside the launch folder (the row shows `.eh-data`).
 - Save config into a profile with a typed connection string and blank names: the names fill in
   and `config.json` holds them.
 - Template: turn it on with an order template, Regenerate a few samples, send 5 and see five
