@@ -43,6 +43,12 @@
   `accesskit_windows` at anomalyco/rune's rev `c4eda05`) is copied into the root `Cargo.toml`
   and applies to the whole workspace, `seal-gui`'s eframe stack included. `wgpu-hal` stays at
   Rune's 30.0.1.
+- New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system
+  (kits and surface ladder, tokens, motion roles, parts, the system appearance, a window watch
+  for small apps, and headless test helpers behind its `test-harness` feature), moved out of
+  `eh-gui` (now 1.0.1, no behavior change) so other Rune tools share one copy.
+  `common-utils` 2.3.0 gains `string_utils::display_line` and `error_preview`, also moved from
+  eh-gui.
 
 ## v6
 - Updated dependencies.

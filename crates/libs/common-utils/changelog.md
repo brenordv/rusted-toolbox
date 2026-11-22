@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.3.0
+- Added `string_utils::display_line`: text on one line, with control characters, line and paragraph separators, and bidirectional controls each turned into a space. Moved from eh-gui.
+- Added `string_utils::error_preview`, `ErrorPreview`, and `ERROR_PREVIEW_CHARS`: a failure text on one line, cut at 140 characters with "…". Moved from eh-gui.
 - Added `string_utils::non_blank`: the text with the whitespace around it removed, or `None` when nothing is left.
 
 ## 2.2.0

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+- No change in what the app does. The tool-neutral part of the design system (the kits and
+  surface ladder, the shared tokens and motion roles, the caption, label, hairline, detail row,
+  and editor parts, the system appearance, the window-failure check, and the headless test
+  helpers) moved to the new `common-gui-rune` library, and `display_line` and `error_preview`
+  moved to `common-utils::string_utils`. eh-gui re-exports them from the paths they had.
+
 ## 1.0.0
 - Save config into the launch folder refuses a data folder or export folder outside it, or a
   received message path outside it while Message files is on, which the next launch would not

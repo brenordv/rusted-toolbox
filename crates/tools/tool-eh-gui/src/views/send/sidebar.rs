@@ -3,7 +3,9 @@
 use super::{send_keys, type_newline};
 use crate::app::dispatch;
 use crate::design::parts::{self, EditorHeight, EditorSpec};
-use crate::design::tokens::{PROPERTY_LINES, SIDEBAR_FIELD_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM};
+use crate::design::tokens::{
+    PROPERTY_LINES, SIDEBAR_FIELD_WIDTH, SPACE_LG, SPACE_MD, SPACE_SM, TYPE_MONO,
+};
 use crate::send::Destination;
 use crate::send::compose::{PacingChoice, RoutingChoice};
 use crate::send::run::SendRun;
@@ -245,6 +247,7 @@ fn properties(k: &Kit, edit: &TextEdit, issue: &Option<String>) -> El {
         height: EditorHeight::Fixed {
             lines: PROPERTY_LINES,
         },
+        font: TYPE_MONO,
     };
     let mut group = col()
         .key(format!("{PROPERTIES_KEY}-group"))

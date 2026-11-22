@@ -5,33 +5,8 @@ use super::{AppState, Outcome};
 use crate::read::inspector::FEEDBACK_FOR;
 use crate::read::rows::display_line;
 use chrono::{DateTime, Utc};
+pub use common_utils::string_utils::{ERROR_PREVIEW_CHARS, ErrorPreview, error_preview};
 use tracing::debug;
-
-/// The most characters of a failure text a surface shows in place.
-pub const ERROR_PREVIEW_CHARS: usize = 140;
-
-/// A failure text as a surface shows it in place.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ErrorPreview {
-    /// At most [`ERROR_PREVIEW_CHARS`] characters on one line, ending in "…" when cut.
-    pub shown: String,
-    /// Whether characters were left out, so the surface offers the whole text.
-    pub cut: bool,
-}
-
-/// `text` on one line (control and bidirectional characters as spaces), cut after
-/// [`ERROR_PREVIEW_CHARS`] characters with "…". The cut drops trailing spaces and never splits
-/// a character.
-pub fn error_preview(text: &str) -> ErrorPreview {
-    let mut shown = display_line(text.chars().take(ERROR_PREVIEW_CHARS + 1));
-    let cut = shown.chars().count() > ERROR_PREVIEW_CHARS;
-    if cut {
-        shown = shown.chars().take(ERROR_PREVIEW_CHARS).collect();
-        shown.truncate(shown.trim_end().len());
-        shown.push('…');
-    }
-    ErrorPreview { shown, cut }
-}
 
 /// The whole text as the details modal shows and copies it: each line with its control and
 /// bidirectional characters as spaces, the line breaks kept.

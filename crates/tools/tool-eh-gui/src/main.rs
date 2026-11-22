@@ -4,7 +4,7 @@ use anyhow::Context;
 use common_cli::app_logger::FileLogging;
 use common_cli::tool_exit_helpers::{exit_error, exit_success};
 use eh_gui::app::{build_app, preload_config};
-use eh_gui::services::{GPU_HINT, ProdServices};
+use eh_gui::services::{ProdServices, gpu_hint};
 use eh_gui::tasks::StoreSlot;
 use shared_eventhub_core::tls::install_crypto_provider;
 use shared_eventhub_persistence::workspace::Workspace;
@@ -65,10 +65,10 @@ fn run(file_logging: FileLogging) -> anyhow::Result<()> {
     // every stored batch is committed.
     runtime.shutdown_background();
     ran.map_err(|reason| anyhow::anyhow!(reason))
-        .with_context(|| format!("Could not start the window; {GPU_HINT}"))?;
+        .with_context(|| format!("Could not start the window; {}", gpu_hint()))?;
 
     if window_failed.load(Ordering::Acquire) {
-        anyhow::bail!("The window could not be created; {GPU_HINT}");
+        anyhow::bail!("The window could not be created; {}", gpu_hint());
     }
     Ok(())
 }

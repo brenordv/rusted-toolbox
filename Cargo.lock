@@ -1522,6 +1522,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-gui-rune"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "common-utils",
+ "rstest",
+ "rune",
+ "rune-kit",
+ "serde_json",
+ "tracing",
+ "windows",
+]
+
+[[package]]
 name = "common-serialization-utils"
 version = "1.1.1"
 dependencies = [
@@ -1534,7 +1548,7 @@ dependencies = [
 
 [[package]]
 name = "common-utils"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2492,12 +2506,13 @@ dependencies = [
 
 [[package]]
 name = "eh-gui"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
  "common-cli",
+ "common-gui-rune",
  "common-utils",
  "mock-data-utils",
  "rand 0.10.4",
@@ -2513,7 +2528,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "windows",
 ]
 
 [[package]]

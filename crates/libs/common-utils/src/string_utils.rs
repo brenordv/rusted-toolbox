@@ -55,6 +55,47 @@ fn is_bidi_control(c: char) -> bool {
     )
 }
 
+/// Whether `c` must not reach a one-line display: control characters, line and paragraph
+/// separators, and the bidirectional controls that can make shown text read differently from
+/// what copy and search see.
+fn is_unsafe_in_a_line(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') || is_bidi_control(c)
+}
+
+/// `chars` on one line, with control characters, line and paragraph separators, and
+/// bidirectional controls each turned into a space.
+pub fn display_line(chars: impl Iterator<Item = char>) -> String {
+    chars
+        .map(|c| if is_unsafe_in_a_line(c) { ' ' } else { c })
+        .collect()
+}
+
+/// The most characters of a failure text a surface shows in place.
+pub const ERROR_PREVIEW_CHARS: usize = 140;
+
+/// A failure text as a surface shows it in place.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ErrorPreview {
+    /// At most [`ERROR_PREVIEW_CHARS`] characters on one line, ending in "…" when cut.
+    pub shown: String,
+    /// Whether characters were left out, so the surface offers the whole text.
+    pub cut: bool,
+}
+
+/// `text` on one line (control and bidirectional characters as spaces), cut after
+/// [`ERROR_PREVIEW_CHARS`] characters with "…". The cut drops trailing spaces and never splits
+/// a character.
+pub fn error_preview(text: &str) -> ErrorPreview {
+    let mut shown = display_line(text.chars().take(ERROR_PREVIEW_CHARS + 1));
+    let cut = shown.chars().count() > ERROR_PREVIEW_CHARS;
+    if cut {
+        shown = shown.chars().take(ERROR_PREVIEW_CHARS).collect();
+        shown.truncate(shown.trim_end().len());
+        shown.push('…');
+    }
+    ErrorPreview { shown, cut }
+}
+
 /// Converts a `Duration` object into a formatted time string representation in the format `HH:MM:SS.mmm`.
 ///
 /// This function processes an ` Duration ` and formats its total time components into a human-readable string.
@@ -219,6 +260,90 @@ mod tests {
     #[case::empty_stays_empty("", "")]
     fn escape_for_terminal_display_cases(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(escape_for_terminal_display(input), expected);
+    }
+
+    #[test]
+    fn display_line_keeps_ordinary_text() {
+        assert_eq!(display_line("café ✓".chars()), "café ✓");
+    }
+
+    #[rstest]
+    #[case::line_break("a\nb", "a b")]
+    #[case::carriage_return_and_tab("a\r\tb", "a  b")]
+    #[case::escape("a\u{1b}b", "a b")]
+    #[case::line_separator("a\u{2028}b", "a b")]
+    #[case::paragraph_separator("a\u{2029}b", "a b")]
+    #[case::bidi_override("a\u{202E}b", "a b")]
+    #[case::bidi_isolate("a\u{2066}b", "a b")]
+    #[case::implicit_marks("a\u{200E}\u{200F}\u{061C}b", "a   b")]
+    fn display_line_turns_unsafe_characters_into_spaces(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(display_line(input.chars()), expected);
+    }
+
+    #[rstest]
+    #[case::empty(0)]
+    #[case::one_short(139)]
+    #[case::at_the_cap(140)]
+    fn error_preview_shows_a_text_up_to_the_cap_whole(#[case] chars: usize) {
+        let text = "a".repeat(chars);
+
+        let preview = error_preview(&text);
+
+        assert_eq!(
+            preview,
+            ErrorPreview {
+                shown: text,
+                cut: false
+            }
+        );
+    }
+
+    #[test]
+    fn error_preview_cuts_a_text_past_the_cap_with_an_ellipsis() {
+        let text = format!("{}b", "a".repeat(ERROR_PREVIEW_CHARS));
+
+        let preview = error_preview(&text);
+
+        assert!(preview.cut);
+        assert_eq!(
+            preview.shown,
+            format!("{}…", "a".repeat(ERROR_PREVIEW_CHARS))
+        );
+    }
+
+    #[test]
+    fn error_preview_never_splits_a_character() {
+        let text = "é".repeat(200);
+
+        let preview = error_preview(&text);
+
+        assert_eq!(
+            preview.shown,
+            format!("{}…", "é".repeat(ERROR_PREVIEW_CHARS))
+        );
+    }
+
+    #[test]
+    fn error_preview_turns_line_breaks_and_unsafe_characters_into_spaces() {
+        let preview = error_preview("one\ntwo\tthree\u{2028}four\u{202E}five");
+
+        assert_eq!(preview.shown, "one two three four five");
+        assert!(!preview.cut);
+    }
+
+    #[test]
+    fn error_preview_drops_the_spaces_before_the_ellipsis() {
+        let text = format!("{}   tail", "a".repeat(ERROR_PREVIEW_CHARS - 2));
+
+        let preview = error_preview(&text);
+
+        assert_eq!(
+            preview.shown,
+            format!("{}…", "a".repeat(ERROR_PREVIEW_CHARS - 2))
+        );
     }
 
     #[rstest]

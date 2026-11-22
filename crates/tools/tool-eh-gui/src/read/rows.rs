@@ -1,6 +1,7 @@
 //! The Read list's rows: messages that arrived since the last flush, the rows on screen, and
 //! the caps that bound both.
 
+pub use common_utils::string_utils::display_line;
 use shared_eventhub_core::models::{CapturedMessage, MessageKey};
 use std::collections::VecDeque;
 use std::path::Path;
@@ -49,30 +50,6 @@ pub trait RowSource {
 /// The list key of a message: `p{partition}-s{sequence}`. The only message identifier logs use.
 pub fn key_string(key: &MessageKey) -> String {
     format!("p{}-s{}", key.partition_id, key.sequence_number)
-}
-
-/// Whether `c` must not reach a one-line display: control characters, line and paragraph
-/// separators, and the bidirectional controls that can make shown text read differently from
-/// what copy and search see.
-fn is_unsafe_in_a_line(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{2028}'
-                | '\u{2029}'
-                | '\u{202A}'..='\u{202E}'
-                | '\u{2066}'..='\u{2069}'
-                | '\u{200E}'
-                | '\u{200F}'
-                | '\u{061C}'
-        )
-}
-
-/// `chars` on one line, with every character [`is_unsafe_in_a_line`] turned into a space.
-pub fn display_line(chars: impl Iterator<Item = char>) -> String {
-    chars
-        .map(|c| if is_unsafe_in_a_line(c) { ' ' } else { c })
-        .collect()
 }
 
 /// `path` as [`display_line`] shows it.

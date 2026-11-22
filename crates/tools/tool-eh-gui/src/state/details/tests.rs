@@ -16,69 +16,6 @@ fn open(s: &mut AppState, text: &str) {
     });
 }
 
-#[rstest::rstest]
-#[case::empty(0)]
-#[case::one_short(139)]
-#[case::at_the_cap(140)]
-fn a_text_up_to_the_cap_shows_whole(#[case] chars: usize) {
-    let text = "a".repeat(chars);
-
-    let preview = error_preview(&text);
-
-    assert_eq!(
-        preview,
-        ErrorPreview {
-            shown: text,
-            cut: false
-        }
-    );
-}
-
-#[test]
-fn a_text_past_the_cap_shows_its_first_characters_and_an_ellipsis() {
-    let text = format!("{}b", "a".repeat(ERROR_PREVIEW_CHARS));
-
-    let preview = error_preview(&text);
-
-    assert!(preview.cut);
-    assert_eq!(
-        preview.shown,
-        format!("{}…", "a".repeat(ERROR_PREVIEW_CHARS))
-    );
-}
-
-#[test]
-fn a_cut_never_splits_a_character() {
-    let text = "é".repeat(200);
-
-    let preview = error_preview(&text);
-
-    assert_eq!(
-        preview.shown,
-        format!("{}…", "é".repeat(ERROR_PREVIEW_CHARS))
-    );
-}
-
-#[test]
-fn line_breaks_and_unsafe_characters_become_spaces() {
-    let preview = error_preview("one\ntwo\tthree\u{2028}four\u{202E}five");
-
-    assert_eq!(preview.shown, "one two three four five");
-    assert!(!preview.cut);
-}
-
-#[test]
-fn a_cut_drops_the_spaces_before_the_ellipsis() {
-    let text = format!("{}   tail", "a".repeat(ERROR_PREVIEW_CHARS - 2));
-
-    let preview = error_preview(&text);
-
-    assert_eq!(
-        preview.shown,
-        format!("{}…", "a".repeat(ERROR_PREVIEW_CHARS - 2))
-    );
-}
-
 #[test]
 fn opening_keeps_line_breaks_maps_each_line_and_closes_the_pill_popover() {
     let mut s = state();
