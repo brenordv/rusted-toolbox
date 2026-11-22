@@ -26,7 +26,7 @@ ignore = [
 
 # Every crate comes from crates.io except Rune (eh-gui's UI framework), which is
 # not published there. Rune's own crates come from a fork (brenordv/rune) pinned to
-# one reviewed rev: anomalyco/rune's c4eda05 plus two fixes. The forks in the root
+# one reviewed rev: anomalyco/rune's c4eda05 plus three fixes. The forks in the root
 # Cargo.toml's [patch.crates-io] come from anomalyco/rune at c4eda05. Advisory data
 # does not cover git or patched crates, so each Rune bump repeats a manual review of
 # those forks instead; this check stops any other git source from arriving

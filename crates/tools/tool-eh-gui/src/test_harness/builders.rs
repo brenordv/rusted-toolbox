@@ -192,14 +192,16 @@ pub const SCRATCH: &str = "scratch";
 /// The keyword `orders-dev`'s capture rules look for.
 pub const ORDERS_KEYWORD: &str = "refund";
 
-/// A launch folder under the temp folder that nothing creates or writes.
+/// A launch folder that nothing creates or writes. The view shows it, so it is a relative path
+/// that reads the same on every machine.
 pub fn launch_folder() -> PathBuf {
-    std::env::temp_dir().join("eh-gui-test-launch")
+    PathBuf::from("eh-gui-test-launch")
 }
 
-/// A workspace under the temp folder that nothing creates, so listing it finds no profiles.
+/// A workspace that nothing creates, so listing it finds no profiles. The view shows its
+/// profile folders, so its root is a relative path that reads the same on every machine.
 pub fn test_workspace() -> Workspace {
-    Workspace::at(std::env::temp_dir().join("eh-gui-test-workspace"))
+    Workspace::at(PathBuf::from("eh-gui-test-workspace"))
 }
 
 /// `s` launched in [`launch_folder`] over [`test_workspace`].

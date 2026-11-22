@@ -1,7 +1,7 @@
 [package]
 name = "eh"
 version = "1.0.0"
-description = "Azure Event Hubs CLI: captures events into a local archive and exports them to txt, csv, or json"
+description = "Azure Event Hubs CLI: captures events into a local archive, exports them to txt, csv, or json, and sends events, with saved connection profiles"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true

@@ -202,7 +202,7 @@ fn a_valid_press_saves_the_form_with_its_rules_into_the_named_profile(
 #[test]
 fn after_change_picked_an_absolute_data_folder_the_profile_uses_the_default() {
     let mut s = open_row();
-    s.apply(Input::DataFolderPicked(launch_folder().join("picked")));
+    s.apply(Input::DataFolderPicked(std::env::temp_dir().join("picked")));
     s.form.connection_string.edit_mut().replace_text(ORDERS);
     let mut s = typed(s, NEW);
 
