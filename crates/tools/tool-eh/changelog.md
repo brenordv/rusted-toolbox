@@ -45,7 +45,8 @@
   given on that run records its namespace and event hub. `eh profile list` shows each profile's
   target and auth. `send` trusts a profile that names its namespace and event hub without
   `--namespace`/`-e`/`--yes`. `--profile` can't be combined with `-b`, `--no-config`, or
-  `--dry-run`. Runs without `--profile` are unchanged.
+  `--dry-run`. Runs without `--profile` are unchanged. `profiles-guide.md` walks through the
+  common tasks with examples, in `eh` and eh-gui.
 - `eh` with no arguments in a terminal opens a menu: a profile, then read, send, or export with
   that action's main options. It prints the equivalent command and asks before running; Esc
   cancels (exit 0) and Ctrl-C exits 130. In a pipe or a script, a bare `eh` prints the help and

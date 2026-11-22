@@ -199,6 +199,7 @@ ignores the file.
 
 A profile is a saved connection you can use from any folder. Each one is a folder in the
 workspace that looks like a working folder: a `config.json` and, beside it, its data folder.
+The [profiles quick guide](profiles-guide.md) walks through the common tasks with examples.
 
 ```
 <workspace>/

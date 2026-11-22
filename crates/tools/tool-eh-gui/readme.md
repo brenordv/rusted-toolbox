@@ -45,7 +45,8 @@ does moving a folder holding an eh `config.json` into the workspace. Starting eh
 folder inside the workspace works too: Save config
 writes that folder's `config.json`, and from then on it is a profile named after the folder
 (the name follows `eh`'s profile name rules). The picker then lists that folder twice, as
-Launch folder and by its name.
+Launch folder and by its name. The [profiles quick guide](../tool-eh/profiles-guide.md) walks
+through the common tasks in both tools with examples.
 
 - The Profile picker at the top of the connection sheet lists **Launch folder** (the folder
   eh-gui started in, where it read `config.json` at launch) and every profile whose `config.json`
