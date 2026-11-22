@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+- Settings has two fields where it had one URL field: Server (scheme, host, and port, such as
+  `http://my-server.local:10157`; `http://` is assumed when there is no scheme) and Endpoint
+  (the path on the server, `/v1/audio/speech` on a first run). Save joins them into the
+  settings file's one `url`, and opening the window cuts that `url` back into the two fields.
+  The file's shape and the command line are unchanged.
+- A server that cannot be used (no host, another scheme, a user name or password, a `?` or a
+  `#`) says why under Server. A first run with `--gui` puts the caret in Server.
+
 ## 1.1.0
 - `-g`/`--gui` opens a window instead of speaking. The text argument, stdin, `--model`, and
   `--voice` are ignored with it.

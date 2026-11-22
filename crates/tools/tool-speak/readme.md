@@ -71,7 +71,7 @@ not exist:
   it once in a terminal, or to run `speak --gui` and save the server in Settings. It never
   guesses a server.
 
-- with `--gui`, the window opens on Settings with the caret in the URL field.
+- with `--gui`, the window opens on Settings with the caret in the Server field.
 
 No command-line flag sets, saves, or selects the server address. That is on purpose: an
 agent allowed to run `speak` cannot be talked into sending your text to another host.
@@ -92,10 +92,21 @@ Compose is for trying a text:
 - The line beside the buttons says what is going on: generating, ready, or why it failed. A
   long failure is cut at 140 characters; the log file has the whole text.
 
-Settings is the settings file as a form: the URL, the request method, the model, the voice,
-and the reactions, one tag in square brackets per line. Save writes the file and says so.
-A field that cannot be saved says why under it. Payload fields the form does not show
-(`speed`, `seed`) stay in the file as they are.
+Settings is the settings file as a form: the server, the endpoint, the request method, the
+model, the voice, and the reactions, one tag in square brackets per line. Save writes the
+file and says so. A field that cannot be saved says why under it. Payload fields the form
+does not show (`speed`, `seed`) stay in the file as they are.
+
+The file's one `url` shows as two fields:
+
+- Server is the scheme, the host, and the port: `http://my-server.local:10157`. With no
+  scheme, `http://` is assumed. It can end in a path your server sits under
+  (`http://my-server.local/api`), and it cannot hold a user name, a password, a `?`, or a `#`.
+- Endpoint is the path on that server, `/v1/audio/speech` on a first run. A query goes here
+  too.
+
+Save writes the server followed by the endpoint as `url`. A `url` that starts with `http://`
+or `https://` and is saved without a change to either field is written back as it was.
 
 A settings file that speak cannot read stops `speak --gui` before the window opens, with an
 error that names the file, so the form never overwrites something it could not load.

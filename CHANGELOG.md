@@ -76,6 +76,9 @@
   `window::gpu_hint`, and `keys::{is_chord, is_newline}`; `alert` 1.0.1 and `eh-gui` 1.0.3 use
   them in place of their own copies. The one visible change: Shift+Return types a line break
   in the alert tester's Body.
+- `speak` 1.2.0: the window's Settings area has a Server field and an Endpoint field where it
+  had one URL field. Save joins them into the settings file's one `url`, so the file and the
+  command line are unchanged.
 
 ## v6
 - Updated dependencies.

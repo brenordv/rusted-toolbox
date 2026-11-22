@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub const SERVER_URL: &str = "http://my-host:10157/v1/audio/speech";
+/// The server part of [`SERVER_URL`].
+pub const SERVER: &str = "http://my-host:10157";
 
 /// One call a window made to its services.
 #[derive(Debug, Clone, PartialEq)]

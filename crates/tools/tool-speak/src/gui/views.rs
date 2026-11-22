@@ -3,6 +3,7 @@
 
 use super::services::dispatch;
 use super::state::{Area, Field, Input, Method, SpeakState, reaction_word};
+use crate::config::SPEECH_PATH;
 use crate::design::{
     FORM_MAX_WIDTH, REACTION_LABEL_MAX, REACTION_LABEL_MAX_CHARS, REACTION_LINES,
     REACTION_ROWS_MAX, TEXT_MIN_LINES,
@@ -47,8 +48,10 @@ pub const PLAY_KEY: &str = "speak-play";
 pub const GENERATE_KEY: &str = "speak-generate";
 /// The Settings form's scroll viewport.
 pub const SETTINGS_SCROLL_KEY: &str = "speak-settings-scroll";
-/// The URL field.
-pub const URL_KEY: &str = "speak-url";
+/// The Server field.
+pub const SERVER_KEY: &str = "speak-server";
+/// The Endpoint field.
+pub const ENDPOINT_KEY: &str = "speak-endpoint";
 /// The request method picker, as the kit keys its parts.
 const METHOD_PICKER: &str = "speak-method";
 /// The request method picker's field: the kit keys it after the picker.
@@ -68,8 +71,8 @@ pub const SAVE_STATUS_KEY: &str = "speak-save-status";
 /// The Save button.
 pub const SAVE_KEY: &str = "speak-save";
 
-/// The URL field's placeholder: the shape of a speech endpoint.
-pub const URL_PLACEHOLDER: &str = "http://host:10157/v1/audio/speech";
+/// The Server field's placeholder: the shape of a server's address.
+pub const SERVER_PLACEHOLDER: &str = "http://host:10157";
 /// The hint under the reactions box.
 pub const REACTIONS_HINT: &str = "One per line, in square brackets";
 
@@ -81,7 +84,8 @@ pub fn reaction_key(index: usize) -> String {
 /// The key of `field`'s control, where focus goes when the field has an issue.
 pub fn field_key(field: Field) -> &'static str {
     match field {
-        Field::Url => URL_KEY,
+        Field::Server => SERVER_KEY,
+        Field::Endpoint => ENDPOINT_KEY,
         Field::Method => METHOD_KEY,
         Field::Model => MODEL_KEY,
         Field::Voice => VOICE_KEY,
@@ -89,12 +93,12 @@ pub fn field_key(field: Field) -> &'static str {
     }
 }
 
-/// Runs when the window is first on screen: a first run puts focus in the URL field. True
+/// Runs when the window is first on screen: a first run puts focus in the Server field. True
 /// when it moved focus.
 pub fn shown(s: &mut SpeakState, tx: &mut Tx) -> bool {
     let first_run = s.config().is_none();
     if first_run {
-        tx.focus(URL_KEY, true);
+        tx.focus(SERVER_KEY, true);
     }
     info!(area = s.area().as_str(), first_run, "speak: window shown");
     first_run
@@ -365,10 +369,17 @@ fn settings(s: &SpeakState, k: &Kit, layer: &mut Vec<El>) -> El {
         .gap(SPACE_MD)
         .child(settings_field(
             k,
-            (Field::Url, "URL", URL_PLACEHOLDER),
-            &s.form.url,
-            issues.url.as_deref(),
-            |s| &mut s.form.url,
+            (Field::Server, "Server", SERVER_PLACEHOLDER),
+            &s.form.server,
+            issues.server.as_deref(),
+            |s| &mut s.form.server,
+        ))
+        .child(settings_field(
+            k,
+            (Field::Endpoint, "Endpoint", SPEECH_PATH),
+            &s.form.endpoint,
+            None,
+            |s| &mut s.form.endpoint,
         ))
         .child(method_picker(s, k, layer))
         .child(settings_field(

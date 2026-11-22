@@ -97,6 +97,114 @@ fn is_not_found(error: &anyhow::Error) -> bool {
         .is_some_and(|io| io.kind() == ErrorKind::NotFound)
 }
 
+/// `text` as a URL a request can go to.
+///
+/// # Errors
+/// When `text` is blank or malformed (an `http` or `https` URL with no host is malformed), is
+/// not `http` or `https`, or holds a user name or password. No error text repeats `text`.
+fn checked_url(text: &str) -> Result<Url> {
+    let text = text.trim();
+    if text.is_empty() {
+        bail!("The speech server URL is not set");
+    }
+    // The parse error is dropped on purpose: only its kind is public, and the message
+    // must not grow a copy of a URL that may hold a password.
+    let Ok(url) = Url::parse(text) else {
+        bail!("The speech server URL is not a valid URL");
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        bail!("The speech server URL must start with http:// or https://");
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        bail!("The speech server URL cannot hold a user name or password");
+    }
+    Ok(url)
+}
+
+/// What separates a URL's scheme from the rest.
+const SCHEME_SEPARATOR: &str = "://";
+
+/// A speech URL as two texts: the server, and the endpoint on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UrlParts {
+    /// The scheme, the host, and the port when there is one: `http://my-host:10157`.
+    pub server: String,
+    /// The path on the server, with any query and fragment: `/v1/audio/speech`.
+    pub endpoint: String,
+}
+
+/// Cuts `url` into its server and its endpoint. The cut is on the text alone, so
+/// [`join_url`] of the two parts of a valid URL gives that URL back character for character.
+///
+/// A blank `url` gives an empty server and [`SPEECH_PATH`]. Text with a scheme is cut at the
+/// first `/`, `?`, or `#` after the scheme separator, and the endpoint is empty when there is
+/// none. Text with no scheme is all server.
+pub fn split_url(url: &str) -> UrlParts {
+    let url = url.trim();
+    if url.is_empty() {
+        return UrlParts {
+            server: String::new(),
+            endpoint: SPEECH_PATH.to_owned(),
+        };
+    }
+    let cut = url.find(SCHEME_SEPARATOR).and_then(|scheme_end| {
+        let authority = scheme_end + SCHEME_SEPARATOR.len();
+        url[authority..]
+            .find(['/', '?', '#'])
+            .map(|offset| authority + offset)
+    });
+    let (server, endpoint) = url.split_at(cut.unwrap_or(url.len()));
+    UrlParts {
+        server: server.to_owned(),
+        endpoint: endpoint.to_owned(),
+    }
+}
+
+/// The speech URL for `server` and `endpoint`: the server followed by the endpoint.
+///
+/// A server with no scheme gets `http://`. A non-blank endpoint that starts with neither `/`
+/// nor `?` gets a `/` in front, and the server then loses its trailing slashes. A blank
+/// endpoint is allowed.
+///
+/// # Errors
+/// When the server is blank, holds a `?` or a `#` after its scheme, or is not by itself an
+/// `http` or `https` URL with a host and no user name or password. No error text repeats
+/// `server` or `endpoint`.
+pub fn join_url(server: &str, endpoint: &str) -> Result<String> {
+    let server = server.trim();
+    let endpoint = endpoint.trim();
+    if server.is_empty() {
+        bail!("The speech server is not set");
+    }
+    let server = if server.contains(SCHEME_SEPARATOR) {
+        server.to_owned()
+    } else {
+        format!("http://{server}")
+    };
+    let after_scheme = server
+        .split_once(SCHEME_SEPARATOR)
+        .map_or("", |(_, rest)| rest);
+    if after_scheme.contains(['?', '#']) {
+        bail!("The speech server cannot hold a ? or a #; put the query in Endpoint");
+    }
+    let endpoint = if endpoint.is_empty() || endpoint.starts_with(['/', '?']) {
+        endpoint.to_owned()
+    } else {
+        format!("/{endpoint}")
+    };
+    let server = if endpoint.is_empty() {
+        server.as_str()
+    } else {
+        server.trim_end_matches('/')
+    };
+    // The server is checked before the endpoint follows it: the parser skips every slash
+    // after `http:` before it reads a host, so a server with no host would take the
+    // endpoint's first segment as its host. A server that parses alone has a host, and what
+    // follows a host cannot change it or fail to parse.
+    checked_url(server)?;
+    Ok(format!("{server}{endpoint}"))
+}
+
 impl SpeakConfig {
     /// The default settings pointed at the server at `address`, listening on `port`.
     ///
@@ -197,21 +305,7 @@ impl SpeakConfig {
     /// malformed), is not `http` or `https`, or holds a user name or password. No error text
     /// repeats the URL.
     pub fn endpoint(&self) -> Result<Url> {
-        if self.url.trim().is_empty() {
-            bail!("The speech server URL is not set");
-        }
-        // The parse error is dropped on purpose: only its kind is public, and the message
-        // must not grow a copy of a URL that may hold a password.
-        let Ok(url) = Url::parse(self.url.trim()) else {
-            bail!("The speech server URL is not a valid URL");
-        };
-        if !matches!(url.scheme(), "http" | "https") {
-            bail!("The speech server URL must start with http:// or https://");
-        }
-        if !url.username().is_empty() || url.password().is_some() {
-            bail!("The speech server URL cannot hold a user name or password");
-        }
-        Ok(url)
+        checked_url(&self.url)
     }
 
     /// The request method.

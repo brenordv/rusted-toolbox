@@ -2,7 +2,7 @@ use super::*;
 use crate::config::SpeakConfig;
 use crate::design::{WINDOW_MIN, WINDOW_SIZE};
 use crate::gui::state::FIRST_RUN_STATUS;
-use crate::gui::test_support::{Call, Recording, SERVER_URL, clip, config, config_path, recording};
+use crate::gui::test_support::{Call, Recording, SERVER, clip, config, config_path, recording};
 use common_gui_rune::test_harness::{
     FRAME, a11y_node, command, command_mods, element, has_key, has_text, press, press_key, rect,
     runtime_at, settle,
@@ -13,9 +13,11 @@ use serde_json::Value;
 use std::rc::Rc;
 
 const SPOKEN: &str = "Hello from the tests";
-const SETTINGS_ORDER: [&str; 7] = [
+const SERVER_ISSUE_KEY: &str = "speak-server-issue";
+const SETTINGS_ORDER: [&str; 8] = [
     AREAS_KEY,
-    URL_KEY,
+    SERVER_KEY,
+    ENDPOINT_KEY,
     METHOD_KEY,
     MODEL_KEY,
     VOICE_KEY,
@@ -23,7 +25,7 @@ const SETTINGS_ORDER: [&str; 7] = [
     SAVE_KEY,
 ];
 const ISSUE_KEYS: [&str; 4] = [
-    "speak-url-issue",
+    SERVER_ISSUE_KEY,
     "speak-model-issue",
     "speak-voice-issue",
     REACTIONS_ISSUE_KEY,
@@ -123,7 +125,7 @@ fn a_reaction_at_the_end_of_a_sentence_follows_one_space() {
 }
 
 #[test]
-fn a_first_run_shows_settings_with_focus_in_an_empty_url_and_the_defaults() {
+fn a_first_run_shows_settings_with_focus_in_an_empty_server_and_the_defaults() {
     let (mut rt, _) = window(None);
 
     rt.update_if(shown);
@@ -131,8 +133,10 @@ fn a_first_run_shows_settings_with_focus_in_an_empty_url_and_the_defaults() {
 
     assert!(has_key(&rt, SETTINGS_KEY));
     assert!(!has_key(&rt, COMPOSE_KEY));
-    assert!(focus_is_inside(&rt, URL_KEY));
-    assert_eq!(rt.state.form.url.text, "");
+    assert!(focus_is_inside(&rt, SERVER_KEY));
+    assert_eq!(rt.state.form.server.text, "");
+    assert_eq!(rt.state.form.endpoint.text, SPEECH_PATH);
+    assert!(has_text(&rt, SPEECH_PATH));
     assert!(has_text(&rt, "chatterbox-turbo"));
     assert!(has_text(&rt, "sj-clip-001.wav"));
     assert!(has_text(&rt, "[clear throat]"));
@@ -333,7 +337,8 @@ fn an_empty_reaction_list_mounts_no_group() {
 #[rstest]
 #[case::with_nothing_focused(None, None)]
 #[case::from_the_text(Some(TEXT_KEY), None)]
-#[case::from_the_url_field(None, Some(URL_KEY))]
+#[case::from_the_server_field(None, Some(SERVER_KEY))]
+#[case::from_the_endpoint_field(None, Some(ENDPOINT_KEY))]
 #[case::from_the_reactions_box(None, Some(REACTIONS_BOX_KEY))]
 fn mod_2_and_mod_1_switch_areas_whatever_has_focus(
     #[case] focus_on_compose: Option<&str>,
@@ -407,7 +412,7 @@ fn mod_enter_on_settings_generates_nothing() {
     let (mut rt, services) = window(Some(config()));
     type_into(&mut rt, TEXT_KEY, SPOKEN);
     command(&mut rt, Key::Command('2'));
-    press(&mut rt, URL_KEY);
+    press(&mut rt, SERVER_KEY);
 
     command(&mut rt, Key::Enter);
 
@@ -484,11 +489,46 @@ fn save_of_an_invalid_form_announces_each_issue_and_focuses_the_first_field() {
         ISSUE_KEYS.map(|_| (Value::from("status"), serde_json::json!(["live-polite"])))
     );
     assert_eq!(
-        node(&rt, "speak-url-issue")["name"],
-        "The speech server URL is not set"
+        node(&rt, SERVER_ISSUE_KEY)["name"],
+        "The speech server is not set"
     );
-    assert!(focus_is_inside(&rt, URL_KEY));
+    assert!(focus_is_inside(&rt, SERVER_KEY));
     assert!(services.calls().is_empty());
+}
+
+#[test]
+fn a_failed_save_with_a_bad_server_moves_focus_to_server_and_announces_its_issue() {
+    let (mut rt, services) = window(Some(config()));
+    command(&mut rt, Key::Command('2'));
+    press(&mut rt, SERVER_KEY);
+    command(&mut rt, Key::Command('a'));
+    rt.paste("ftp://my-host");
+    settle(&mut rt);
+    press(&mut rt, MODEL_KEY);
+
+    press(&mut rt, SAVE_KEY);
+
+    let issue = node(&rt, SERVER_ISSUE_KEY);
+    assert_eq!(
+        issue["name"],
+        "The speech server URL must start with http:// or https://"
+    );
+    assert_eq!(issue["role"], "status");
+    assert!(focus_is_inside(&rt, SERVER_KEY));
+    assert!(!has_key(&rt, "speak-endpoint-issue"));
+    assert!(services.calls().is_empty());
+}
+
+#[test]
+fn typing_in_endpoint_clears_the_server_issue() {
+    let (mut rt, _) = window(None);
+    press(&mut rt, SAVE_KEY);
+    let had_issue = has_key(&rt, SERVER_ISSUE_KEY);
+
+    type_into(&mut rt, ENDPOINT_KEY, "x");
+
+    assert!(had_issue);
+    assert!(!has_key(&rt, SERVER_ISSUE_KEY));
 }
 
 #[test]
@@ -501,16 +541,16 @@ fn typing_in_a_field_with_an_issue_clears_that_issue_only() {
     settle(&mut rt);
     press(&mut rt, SAVE_KEY);
 
-    type_into(&mut rt, URL_KEY, SERVER_URL);
+    type_into(&mut rt, SERVER_KEY, SERVER);
 
-    assert!(!has_key(&rt, "speak-url-issue"));
+    assert!(!has_key(&rt, SERVER_ISSUE_KEY));
     assert!(has_key(&rt, "speak-model-issue"));
 }
 
 #[test]
 fn a_valid_save_asks_for_one_save_and_says_saved_when_it_lands() {
     let (mut rt, services) = window(None);
-    type_into(&mut rt, URL_KEY, SERVER_URL);
+    type_into(&mut rt, SERVER_KEY, SERVER);
 
     press(&mut rt, SAVE_KEY);
     let while_saving = (rt.state.is_saving(), has_key(&rt, SAVE_STATUS_KEY));
@@ -621,7 +661,7 @@ fn the_reaction_block_scrolls_to_the_buttons_past_its_rows() {
 fn at_the_smallest_window_settings_keeps_save_inside_and_scrolls_the_form() {
     let (state, _) = recording(None);
     let mut rt = runtime_at_size(state, WINDOW_MIN);
-    let before = rect(&rt, URL_KEY)[1];
+    let before = rect(&rt, SERVER_KEY)[1];
     let [x, y, width, height] = rect(&rt, SETTINGS_SCROLL_KEY);
 
     rt.wheel(x + width / 2.0, y + 8.0, -120.0);
@@ -630,7 +670,7 @@ fn at_the_smallest_window_settings_keeps_save_inside_and_scrolls_the_form() {
     assert_eq!(bottom(&rt, SETTINGS_FOOTER_KEY), WINDOW_MIN.1);
     assert!(bottom(&rt, SAVE_KEY) <= WINDOW_MIN.1);
     assert!(y + height <= rect(&rt, SETTINGS_FOOTER_KEY)[1]);
-    assert!(rect(&rt, URL_KEY)[1] < before);
+    assert!(rect(&rt, SERVER_KEY)[1] < before);
 }
 
 #[test]
@@ -641,7 +681,8 @@ fn a_loaded_config_opens_on_compose_with_settings_filled_from_it() {
     command(&mut rt, Key::Command('2'));
 
     assert!(opened_on_compose);
-    assert!(has_text(&rt, SERVER_URL));
+    assert!(has_text(&rt, SERVER));
+    assert!(has_text(&rt, SPEECH_PATH));
     assert!(has_text(&rt, "chatterbox-turbo"));
 }
 
@@ -657,7 +698,8 @@ fn the_window_draws_in_the_appearance_it_is_told() {
 }
 
 #[rstest]
-#[case::url(Field::Url, URL_KEY)]
+#[case::server(Field::Server, SERVER_KEY)]
+#[case::endpoint(Field::Endpoint, ENDPOINT_KEY)]
 #[case::method(Field::Method, METHOD_KEY)]
 #[case::model(Field::Model, MODEL_KEY)]
 #[case::voice(Field::Voice, VOICE_KEY)]

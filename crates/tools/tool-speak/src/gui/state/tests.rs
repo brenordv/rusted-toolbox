@@ -1,5 +1,6 @@
 use super::*;
-use crate::gui::test_support::{SERVER_URL, clip, config, config_path};
+use crate::config::SPEECH_PATH;
+use crate::gui::test_support::{SERVER, clip, config, config_path};
 use common_audio::test_support::tone_wav;
 use rstest::rstest;
 use serde_json::json;
@@ -332,7 +333,7 @@ fn save_of_a_valid_form_starts_one_save_carrying_the_form(#[case] from: SaveStat
 #[case::from_failed(SaveStatus::Failed(WHY.to_owned()))]
 fn save_of_an_invalid_form_shows_each_fields_issue_and_saves_nothing(#[case] from: SaveStatus) {
     let mut s = saving(from);
-    s.form.url = TextEdit::new("ftp://my-host/speech");
+    s.form.server = TextEdit::new("ftp://my-host");
     s.form.model = TextEdit::new("  ");
     s.form.voice = TextEdit::new("");
     s.form.reactions = TextEdit::new("[laugh]\nchuckle");
@@ -344,13 +345,77 @@ fn save_of_an_invalid_form_shows_each_fields_issue_and_saves_nothing(#[case] fro
     assert_eq!(
         s.issues(),
         &FieldIssues {
-            url: Some("The speech server URL must start with http:// or https://".to_owned()),
+            server: Some("The speech server URL must start with http:// or https://".to_owned()),
             model: Some("The payload's model must be a text that is not blank".to_owned()),
             voice: Some("The payload's voice must be a text that is not blank".to_owned()),
             reactions: Some("Line 2 is not a tag in square brackets, like [laugh]".to_owned()),
         }
     );
-    assert_eq!(s.issues().first(), Some(Field::Url));
+    assert_eq!(s.issues().first(), Some(Field::Server));
+}
+
+#[rstest]
+#[case::as_the_file_has_it(SERVER, SPEECH_PATH, "http://my-host:10157/v1/audio/speech")]
+#[case::no_scheme_no_leading_slash("my-host:10157", "speak", "http://my-host:10157/speak")]
+#[case::https_with_a_query("https://my-host", "/v1/tts?lang=en", "https://my-host/v1/tts?lang=en")]
+fn save_joins_the_server_and_the_endpoint_into_the_url(
+    #[case] server: &str,
+    #[case] endpoint: &str,
+    #[case] url: &str,
+) {
+    let mut s = saving(SaveStatus::Idle);
+    s.form.server = TextEdit::new(server);
+    s.form.endpoint = TextEdit::new(endpoint);
+
+    let outcome = s.apply(Input::SavePressed);
+
+    let expected = SpeakConfig {
+        url: url.to_owned(),
+        ..config()
+    };
+    assert!(
+        matches!(
+            outcome.effects.as_slice(),
+            [Effect::Save { config: sent, .. }] if *sent == expected
+        ),
+        "{:?}",
+        outcome.effects
+    );
+}
+
+#[test]
+fn save_with_a_bad_server_shows_its_issue_alone_and_saves_nothing() {
+    let mut s = saving(SaveStatus::Saved);
+    s.form.server = TextEdit::new("http://");
+
+    let outcome = s.apply(Input::SavePressed);
+
+    assert_eq!(s.save_status(), &SaveStatus::Idle);
+    assert!(outcome.effects.is_empty());
+    assert_eq!(
+        s.issues(),
+        &FieldIssues {
+            server: Some("The speech server URL is not a valid URL".to_owned()),
+            ..FieldIssues::default()
+        }
+    );
+}
+
+#[test]
+fn a_loaded_url_that_is_not_http_shows_cut_and_save_reports_it_on_the_server() {
+    let loaded = SpeakConfig {
+        url: "ftp://my-host/speech".to_owned(),
+        ..config()
+    };
+    let mut s = SpeakState::new(Some(loaded), config_path(), None);
+    let shown = (s.form.server.text.clone(), s.form.endpoint.text.clone());
+
+    let outcome = s.apply(Input::SavePressed);
+
+    assert_eq!(shown, ("ftp://my-host".to_owned(), "/speech".to_owned()));
+    assert!(outcome.effects.is_empty());
+    assert_eq!(s.issues().first(), Some(Field::Server));
+    assert!(s.issues().server.is_some());
 }
 
 #[test]
@@ -463,12 +528,16 @@ fn a_save_answer_with_no_save_on_its_way_changes_nothing(
 }
 
 #[rstest]
-#[case::url(Field::Url, FieldIssues { url: None, ..all_issues() })]
+#[case::server(Field::Server, FieldIssues { server: None, ..all_issues() })]
+#[case::endpoint(Field::Endpoint, FieldIssues { server: None, ..all_issues() })]
 #[case::model(Field::Model, FieldIssues { model: None, ..all_issues() })]
 #[case::voice(Field::Voice, FieldIssues { voice: None, ..all_issues() })]
 #[case::reactions(Field::Reactions, FieldIssues { reactions: None, ..all_issues() })]
 #[case::method(Field::Method, all_issues())]
-fn editing_a_field_clears_that_fields_issue_only(#[case] field: Field, #[case] left: FieldIssues) {
+fn editing_a_field_clears_only_the_issue_it_answers(
+    #[case] field: Field,
+    #[case] left: FieldIssues,
+) {
     let mut s = configured();
     s.issues = all_issues();
 
@@ -479,7 +548,7 @@ fn editing_a_field_clears_that_fields_issue_only(#[case] field: Field, #[case] l
 
 fn all_issues() -> FieldIssues {
     FieldIssues {
-        url: Some("url issue".to_owned()),
+        server: Some("server issue".to_owned()),
         model: Some("model issue".to_owned()),
         voice: Some("voice issue".to_owned()),
         reactions: Some("reactions issue".to_owned()),
@@ -567,11 +636,12 @@ fn reaction_word_is_the_tag_without_its_brackets(#[case] tag: &str, #[case] word
 }
 
 #[test]
-fn a_first_run_opens_on_settings_with_the_defaults_and_an_empty_url() {
+fn a_first_run_opens_on_settings_with_the_defaults_and_an_empty_server() {
     let s = first_run();
 
     assert_eq!(s.area(), Area::Settings);
-    assert_eq!(s.form.url.text, "");
+    assert_eq!(s.form.server.text, "");
+    assert_eq!(s.form.endpoint.text, SPEECH_PATH);
     assert_eq!(s.form.model.text, "chatterbox-turbo");
     assert_eq!(s.form.voice.text, "sj-clip-001.wav");
     assert_eq!(s.form.method, Method::Post);
@@ -587,7 +657,7 @@ fn a_first_run_opens_on_settings_with_the_defaults_and_an_empty_url() {
 #[test]
 fn the_first_save_of_a_first_run_ends_the_first_run_status_and_enables_generate() {
     let mut s = first_run();
-    s.form.url = TextEdit::new(SERVER_URL);
+    s.form.server = TextEdit::new(SERVER);
     let outcome = s.apply(Input::SavePressed);
     let Some(Effect::Save { config: sent, .. }) = outcome.effects.into_iter().next() else {
         panic!("the first save started no save");
@@ -610,7 +680,8 @@ fn a_loaded_config_opens_on_compose_with_settings_filled_from_it() {
     let s = SpeakState::new(Some(loaded), config_path(), None);
 
     assert_eq!(s.area(), Area::Compose);
-    assert_eq!(s.form.url.text, SERVER_URL);
+    assert_eq!(s.form.server.text, SERVER);
+    assert_eq!(s.form.endpoint.text, SPEECH_PATH);
     assert_eq!(s.form.method, Method::Put);
     assert_eq!(s.form.model.text, "another-model");
     assert_eq!(s.form.reactions.text, "[hum]");

@@ -1,7 +1,7 @@
 //! What the speak window holds, and how its inputs change it.
 
 use super::services::Services;
-use crate::config::{DEFAULT_REACTIONS, SpeakConfig};
+use crate::config::{DEFAULT_REACTIONS, SpeakConfig, UrlParts, join_url, split_url};
 use common_audio::Clip;
 use common_gui_rune::Ds;
 use common_gui_rune::parts::Tone;
@@ -104,7 +104,10 @@ impl Method {
 /// A field of the Settings form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
-    Url,
+    /// The server: scheme, host, and port.
+    Server,
+    /// The endpoint on the server.
+    Endpoint,
     Method,
     Model,
     Voice,
@@ -114,7 +117,9 @@ pub enum Field {
 /// What is wrong with each Settings field that can be wrong, as of the last Save.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FieldIssues {
-    pub url: Option<String>,
+    /// What is wrong with the URL that Server and Endpoint spell together. Nothing typed in
+    /// Endpoint can make that URL unusable, so the issue shows under Server.
+    pub server: Option<String>,
     pub model: Option<String>,
     pub voice: Option<String>,
     pub reactions: Option<String>,
@@ -129,7 +134,7 @@ impl FieldIssues {
     /// The first field with an issue, in the form's order.
     pub fn first(&self) -> Option<Field> {
         [
-            (Field::Url, &self.url),
+            (Field::Server, &self.server),
             (Field::Model, &self.model),
             (Field::Voice, &self.voice),
             (Field::Reactions, &self.reactions),
@@ -138,10 +143,11 @@ impl FieldIssues {
         .find_map(|(field, issue)| issue.as_ref().map(|_| field))
     }
 
-    /// Drops `field`'s issue; true when it had one.
+    /// Drops the issue an edit of `field` answers; true when there was one. Server and
+    /// Endpoint spell one URL, so an edit of either drops the server issue.
     fn clear(&mut self, field: Field) -> bool {
         match field {
-            Field::Url => self.url.take().is_some(),
+            Field::Server | Field::Endpoint => self.server.take().is_some(),
             Field::Model => self.model.take().is_some(),
             Field::Voice => self.voice.take().is_some(),
             Field::Reactions => self.reactions.take().is_some(),
@@ -152,7 +158,10 @@ impl FieldIssues {
 
 /// The Settings form as typed, saved or not.
 pub struct SettingsForm {
-    pub url: TextEdit,
+    /// The server: scheme, host, and port.
+    pub server: TextEdit,
+    /// The endpoint on the server; Save joins the two into the settings' URL.
+    pub endpoint: TextEdit,
     pub method: Method,
     /// Whether the method picker's list is open.
     pub method_open: bool,
@@ -163,11 +172,13 @@ pub struct SettingsForm {
 }
 
 impl SettingsForm {
-    /// The form showing `config`. A method the file spells some other way shows as `POST`,
-    /// which the next Save writes.
+    /// The form showing `config`, its URL cut into the server and the endpoint. A method the
+    /// file spells some other way shows as `POST`, which the next Save writes.
     fn from_config(config: &SpeakConfig) -> Self {
+        let UrlParts { server, endpoint } = split_url(&config.url);
         Self {
-            url: TextEdit::new(config.url.as_str()),
+            server: TextEdit::new(server),
+            endpoint: TextEdit::new(endpoint),
             method: Method::from_label(&config.request_method).unwrap_or(Method::Post),
             method_open: false,
             model: TextEdit::new(config.model().unwrap_or_default()),
@@ -256,7 +267,7 @@ pub struct SpeakState {
 
 impl SpeakState {
     /// The window over the settings loaded from `config_path` (`None` on a first run, which
-    /// opens on Settings with the defaults and an empty URL).
+    /// opens on Settings with the defaults, an empty server, and the default endpoint).
     pub fn new(
         config: Option<SpeakConfig>,
         config_path: PathBuf,
@@ -547,13 +558,19 @@ impl SpeakState {
     /// are kept) with the form's values over them, or each field's issue.
     fn form_config(&self) -> Result<SpeakConfig, FieldIssues> {
         let mut config = self.config.clone().unwrap_or_default();
-        config.url = self.form.url.text.trim().to_owned();
         config.request_method = self.form.method.label().to_owned();
         config.set_model(self.form.model.text.trim());
         config.set_voice(self.form.voice.text.trim());
         let why = |error: anyhow::Error| format!("{error:#}");
+        let server = match join_url(&self.form.server.text, &self.form.endpoint.text) {
+            Ok(url) => {
+                config.url = url;
+                None
+            }
+            Err(error) => Some(why(error)),
+        };
         let mut issues = FieldIssues {
-            url: config.endpoint().err().map(why),
+            server,
             model: config.check_model().err().map(why),
             voice: config.check_voice().err().map(why),
             reactions: None,

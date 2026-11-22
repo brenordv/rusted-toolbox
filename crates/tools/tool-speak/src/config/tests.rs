@@ -208,6 +208,170 @@ fn the_request_body_is_the_payload_with_the_text_as_input() {
     );
 }
 
+fn parts(server: &str, endpoint: &str) -> UrlParts {
+    UrlParts {
+        server: server.to_owned(),
+        endpoint: endpoint.to_owned(),
+    }
+}
+
+#[rstest]
+#[case::as_the_first_run_builds_it(
+    "http://my-host:10157/v1/audio/speech",
+    "http://my-host:10157",
+    "/v1/audio/speech"
+)]
+#[case::https("https://my-host:8443/speak", "https://my-host:8443", "/speak")]
+#[case::no_port("http://my-host/v1/audio/speech", "http://my-host", "/v1/audio/speech")]
+#[case::default_port("http://my-host:80/x", "http://my-host:80", "/x")]
+#[case::ipv6("http://[::1]:10157/x", "http://[::1]:10157", "/x")]
+#[case::idn_host("http://bücher.example/x", "http://bücher.example", "/x")]
+#[case::query("http://my-host/x?lang=en", "http://my-host", "/x?lang=en")]
+#[case::query_and_no_path("http://my-host?lang=en", "http://my-host", "?lang=en")]
+#[case::fragment("http://my-host/x#top", "http://my-host", "/x#top")]
+#[case::no_path("http://my-host", "http://my-host", "")]
+#[case::root_path("http://my-host/", "http://my-host", "/")]
+#[case::surrounding_spaces("  http://my-host/x \n", "http://my-host", "/x")]
+fn split_url_cuts_a_url_after_its_host_and_port(
+    #[case] url: &str,
+    #[case] server: &str,
+    #[case] endpoint: &str,
+) {
+    assert_eq!(split_url(url), parts(server, endpoint));
+}
+
+#[rstest]
+#[case::blank("")]
+#[case::only_spaces("   ")]
+fn split_url_of_a_blank_url_is_an_empty_server_and_the_speech_path(#[case] url: &str) {
+    assert_eq!(split_url(url), parts("", SPEECH_PATH));
+}
+
+#[rstest]
+#[case::a_host("my-host")]
+#[case::a_host_port_and_path("my-host:10157/x")]
+fn split_url_of_text_with_no_scheme_is_all_server(#[case] text: &str) {
+    assert_eq!(split_url(text), parts(text, ""));
+}
+
+#[rstest]
+#[case::scheme_and_port(
+    "http://my-host:10157",
+    "/v1/audio/speech",
+    "http://my-host:10157/v1/audio/speech"
+)]
+#[case::no_scheme(
+    "my-host:10157",
+    "/v1/audio/speech",
+    "http://my-host:10157/v1/audio/speech"
+)]
+#[case::trailing_slash(
+    "http://my-host:10157/",
+    "/v1/audio/speech",
+    "http://my-host:10157/v1/audio/speech"
+)]
+#[case::https("https://my-host", "/speak", "https://my-host/speak")]
+#[case::path_prefix(
+    "http://my-host/api",
+    "/v1/audio/speech",
+    "http://my-host/api/v1/audio/speech"
+)]
+#[case::no_leading_slash("http://my-host", "v1/audio/speech", "http://my-host/v1/audio/speech")]
+#[case::endpoint_is_a_query("http://my-host", "?lang=en", "http://my-host?lang=en")]
+#[case::blank_endpoint("http://my-host:10157", "", "http://my-host:10157")]
+#[case::blank_endpoint_keeps_the_slash("http://my-host/", "  ", "http://my-host/")]
+#[case::surrounding_spaces("  http://my-host \n", " /speak ", "http://my-host/speak")]
+fn join_url_puts_the_endpoint_after_the_server(
+    #[case] server: &str,
+    #[case] endpoint: &str,
+    #[case] url: &str,
+) {
+    assert_eq!(join_url(server, endpoint).unwrap(), url);
+}
+
+#[rstest]
+#[case::blank_server("  ", "/v1/audio/speech", "is not set")]
+#[case::query_in_server("http://my-host?x=1", "/v1/audio/speech", "? or a #")]
+#[case::fragment_in_server("http://my-host#top", "/v1/audio/speech", "? or a #")]
+#[case::other_scheme("ftp://my-host", "/v1/audio/speech", "http:// or https://")]
+#[case::user_info(
+    "http://someone:hunter2@my-host",
+    "/v1/audio/speech",
+    "user name or password"
+)]
+#[case::space_in_the_host("http://my host", "/v1/audio/speech", "not a valid URL")]
+#[case::no_host("http://", "", "not a valid URL")]
+#[case::no_host_with_an_endpoint("http://", "/v1/audio/speech", "not a valid URL")]
+#[case::no_host_and_a_backslash("http://\\", "/v1/audio/speech", "not a valid URL")]
+#[case::ends_in_an_at_sign("http://my-host@", "/v1/audio/speech", "not a valid URL")]
+fn join_url_refuses_a_server_it_cannot_use(
+    #[case] server: &str,
+    #[case] endpoint: &str,
+    #[case] reason: &str,
+) {
+    let error = join_url(server, endpoint).unwrap_err();
+
+    assert!(error.to_string().contains(reason), "{error:#}");
+}
+
+#[rstest]
+#[case::as_the_first_run_builds_it("http://my-host:10157/v1/audio/speech")]
+#[case::https("https://my-host:8443/speak")]
+#[case::default_port("http://my-host:80/x")]
+#[case::ipv6("http://[::1]:10157/x")]
+#[case::idn_host("http://bücher.example/x")]
+#[case::query("http://my-host/x?lang=en")]
+#[case::query_and_no_path("http://my-host?lang=en")]
+#[case::fragment("http://my-host/x#top")]
+#[case::no_path("http://my-host")]
+#[case::root_path("http://my-host/")]
+#[case::doubled_slash("http://my-host//x")]
+fn a_url_split_then_joined_is_the_same_text(#[case] url: &str) {
+    let UrlParts { server, endpoint } = split_url(url);
+
+    assert_eq!(join_url(&server, &endpoint).unwrap(), url);
+}
+
+#[test]
+fn the_url_for_server_builds_survives_a_split_and_a_join() {
+    let url = SpeakConfig::for_server("my-host", 10157).unwrap().url;
+    let UrlParts { server, endpoint } = split_url(&url);
+
+    assert_eq!(join_url(&server, &endpoint).unwrap(), url);
+}
+
+#[rstest]
+#[case::password("http://someone:hunter2@my-host", "/private-path")]
+#[case::query("http://my-host?token=hunter2", "/private-path")]
+#[case::other_scheme("ftp://hunter2.example", "/private-path")]
+#[case::not_a_host("http://hunter2 host", "/private-path")]
+fn a_refused_server_and_its_endpoint_are_not_repeated_in_the_error(
+    #[case] server: &str,
+    #[case] endpoint: &str,
+) {
+    let error = join_url(server, endpoint).unwrap_err();
+
+    let text = format!("{error:#}");
+    assert!(!text.contains("hunter2"), "{text}");
+    assert!(!text.contains("private-path"), "{text}");
+}
+
+#[rstest]
+#[case::at_sign("@evil/x")]
+#[case::backslashes("\\\\evil")]
+#[case::dot_segments("/../x")]
+#[case::encoded_slashes("%2f%2fevil")]
+#[case::doubled_slash("//evil/x")]
+fn an_endpoint_cannot_change_the_scheme_host_or_port(#[case] endpoint: &str) {
+    let joined = join_url("https://my-host:8443", endpoint).unwrap();
+
+    let url = Url::parse(&joined).unwrap();
+    assert_eq!(
+        (url.scheme(), url.host_str(), url.port()),
+        ("https", Some("my-host"), Some(8443))
+    );
+}
+
 #[test]
 fn the_default_path_is_the_tools_folder_under_the_shared_root() {
     let path = default_config_path();
