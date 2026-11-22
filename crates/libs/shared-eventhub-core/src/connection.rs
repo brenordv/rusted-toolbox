@@ -5,6 +5,7 @@ use crate::models::system_time_to_utc;
 use anyhow::Context;
 use azure_core::credentials::TokenCredential;
 use azure_messaging_eventhubs::builders::ConsumerClientBuilder;
+use azure_messaging_eventhubs::models::EventHubProperties;
 use azure_messaging_eventhubs::{ConnectionString, ConsumerClient};
 use chrono::{DateTime, Utc};
 use common_utils::string_utils::SecretString;
@@ -193,6 +194,26 @@ pub(crate) fn auth_method_name(auth: &AuthMethod) -> &'static str {
 /// the connection or the credential. Errors name the namespace and event hub
 /// and never contain connection-string or secret material.
 pub async fn connect(target: &EventHubTarget) -> anyhow::Result<EventHubConnection> {
+    let opened = open_client(target).await?;
+    let properties = opened.client.get_eventhub_properties().await;
+    opened.into_connection(properties).await
+}
+
+/// A consumer client opened for a validated target. Its AMQP connection is
+/// up, and no service call has exercised the credential yet.
+pub(crate) struct OpenedClient {
+    pub(crate) client: ConsumerClient,
+    fully_qualified_namespace: String,
+    event_hub_name: String,
+}
+
+/// Validates `target` and opens a consumer client for it. The open spawns no
+/// task, so a caller may drop the returned future to abandon it.
+///
+/// # Errors
+/// Fails as [`connect`] does up to the open; errors never contain
+/// connection-string or secret material.
+pub(crate) async fn open_client(target: &EventHubTarget) -> anyhow::Result<OpenedClient> {
     let resolved = resolve_target(target).await?;
     info!(
         namespace = %resolved.fully_qualified_namespace,
@@ -202,37 +223,55 @@ pub async fn connect(target: &EventHubTarget) -> anyhow::Result<EventHubConnecti
 
     let builder = ConsumerClient::builder().with_consumer_group(target.consumer_group.clone());
     let client = resolved.open(builder, target.client_secret.clone()).await?;
-    let ResolvedTarget {
-        fully_qualified_namespace: namespace,
-        event_hub_name: hub,
-        ..
-    } = resolved;
-
-    let properties = match client.get_eventhub_properties().await {
-        Ok(properties) => properties,
-        Err(error) => {
-            close_client_quietly(client).await;
-            return Err(anyhow::Error::new(error).context(format!(
-                "Failed to read the event hub properties of '{namespace}/{hub}'"
-            )));
-        }
-    };
-    let created_on = properties.created_on.and_then(system_time_to_utc);
-    info!(
-        namespace = %namespace,
-        event_hub = %hub,
-        partitions = properties.partition_ids.len(),
-        created_on = %created_on.map_or_else(|| "not reported".to_owned(), |time| time.to_rfc3339()),
-        "Connected to Event Hubs"
-    );
-
-    Ok(EventHubConnection {
+    Ok(OpenedClient {
         client,
-        fully_qualified_namespace: namespace,
-        event_hub_name: hub,
-        created_on,
-        partition_ids: properties.partition_ids,
+        fully_qualified_namespace: resolved.fully_qualified_namespace,
+        event_hub_name: resolved.event_hub_name,
     })
+}
+
+impl OpenedClient {
+    /// Turns the client and the event hub properties read with it into a
+    /// connection.
+    ///
+    /// # Errors
+    /// Fails when the properties read failed, closing the client first and
+    /// naming the namespace and event hub.
+    pub(crate) async fn into_connection(
+        self,
+        properties: azure_messaging_eventhubs::Result<EventHubProperties>,
+    ) -> anyhow::Result<EventHubConnection> {
+        let Self {
+            client,
+            fully_qualified_namespace: namespace,
+            event_hub_name: hub,
+        } = self;
+        let properties = match properties {
+            Ok(properties) => properties,
+            Err(error) => {
+                close_client_quietly(client).await;
+                return Err(anyhow::Error::new(error).context(format!(
+                    "Failed to read the event hub properties of '{namespace}/{hub}'"
+                )));
+            }
+        };
+        let created_on = properties.created_on.and_then(system_time_to_utc);
+        info!(
+            namespace = %namespace,
+            event_hub = %hub,
+            partitions = properties.partition_ids.len(),
+            created_on = %created_on.map_or_else(|| "not reported".to_owned(), |time| time.to_rfc3339()),
+            "Connected to Event Hubs"
+        );
+
+        Ok(EventHubConnection {
+            client,
+            fully_qualified_namespace: namespace,
+            event_hub_name: hub,
+            created_on,
+            partition_ids: properties.partition_ids,
+        })
+    }
 }
 
 /// Closes `client`, logging rather than returning a failure. Dropping a

@@ -60,6 +60,9 @@
   flag that sets the folder for one run (`-b`, `--export-folder`, `--received-msg-path`), and
   `--save-config` refuses to save such a folder there. To keep an absolute data folder, pass
   `-b` on each run or keep the setup in a profile, whose `config.json` may name one.
+- `eh read -i` moves the checkpoint forward only when it read everything after it. A run whose
+  filter starts past the checkpoint stores its events, leaves the checkpoint where it was, and
+  logs one warning per partition; the next run without `-i` reads the events in between.
 - Breaking, from 1.1.0 (the readme has the full table):
   - `eh-read` -> `eh read`, `eh-export` -> `eh export`; shared flags go before the
     subcommand.

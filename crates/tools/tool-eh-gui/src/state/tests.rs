@@ -443,6 +443,19 @@ fn a_clean_stop_disconnects_without_a_toast() {
 }
 
 #[test]
+fn a_session_stopped_while_connecting_disconnects_and_frees_the_data_folder() {
+    let mut f = fixture();
+    let (id, _) = f.with_session();
+    f.apply(Input::DisconnectPressed);
+
+    f.apply(done(id, Ok(summary(RunEnd::Stopped, &[])), clean_finish()));
+
+    assert!(matches!(f.state.connection, ConnectionState::Disconnected));
+    assert_eq!(f.state.data_folder_lock(), None);
+    assert!(f.state.toasts().entries().is_empty());
+}
+
+#[test]
 fn a_clean_stop_after_the_window_closed_quits() {
     let mut f = fixture();
     let (id, _) = f.connected();

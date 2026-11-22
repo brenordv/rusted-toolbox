@@ -6,7 +6,7 @@ mod partition;
 mod start;
 
 use crate::connection::{
-    EventHubConnection, EventHubIdentity, EventHubTarget, close_client_quietly, connect,
+    EventHubConnection, EventHubIdentity, EventHubTarget, close_client_quietly, open_client,
 };
 use crate::filters::CaptureFilters;
 use crate::models::CapturedMessage;
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Display, Formatter};
 use std::future::Future;
+use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
@@ -37,10 +38,12 @@ const MIN_FEEDBACK_INTERVAL: Duration = Duration::from_millis(100);
 #[derive(Clone, Debug)]
 pub enum EngineCommand {
     /// Replaces the capture filters. Applies to events processed after the
-    /// update; already-emitted events stay as they are.
+    /// update; already-emitted events stay as they are. While the run is
+    /// still connecting, it replaces the filters the run starts with.
     UpdateFilters(CaptureFilters),
     /// Stops every partition gracefully; the run then ends with
-    /// [`RunEnd::Stopped`].
+    /// [`RunEnd::Stopped`]. While the run is still connecting, it ends the
+    /// run before any partition starts.
     Stop,
 }
 
@@ -239,7 +242,9 @@ impl CaptureEngine {
     /// happens until the future is polled; it resolves once a stop is
     /// requested or no partition task remains, and returns an error only
     /// when the run cannot start. Send [`EngineCommand::Stop`] for a graceful
-    /// end; dropping the future aborts the partition tasks mid-flight.
+    /// end; dropping the future aborts the partition tasks mid-flight. A
+    /// `Stop` that arrives while the run connects ends it with
+    /// [`RunEnd::Stopped`], no partitions, and no [`EngineEvent::Started`].
     pub fn build<S: MessageSink>(
         config: EngineConfig,
         sink: S,
@@ -270,15 +275,24 @@ impl CaptureEngine {
 }
 
 async fn run<S: MessageSink>(
-    config: EngineConfig,
+    mut config: EngineConfig,
     sink: Arc<S>,
-    commands: mpsc::Receiver<EngineCommand>,
+    mut commands: mpsc::Receiver<EngineCommand>,
     events: mpsc::Sender<EngineEvent>,
     stats: Arc<StatsTracker>,
     stats_tx: watch::Sender<StatsSnapshot>,
 ) -> anyhow::Result<RunSummary> {
-    let (connection, partitions) = match start_run(&config, sink.as_ref()).await {
-        Ok(started) => started,
+    let started = start_run(&mut config, sink.as_ref(), &mut commands).await;
+    let (connection, partitions) = match started {
+        Ok(Some(started)) => started,
+        Ok(None) => {
+            info!("stopped while connecting");
+            return Ok(RunSummary {
+                stats: stats.snapshot(),
+                partitions: BTreeMap::new(),
+                end: RunEnd::Stopped,
+            });
+        }
         Err(error) => {
             send_control(
                 &events,
@@ -315,7 +329,6 @@ async fn run<S: MessageSink>(
             shutdown: shutdown_tx.subscribe(),
             ignore_checkpoint: config.ignore_checkpoint,
             prefetch: config.prefetch,
-            checkpoint_floor: None,
         };
         let handle = tasks.spawn(run_partition(Arc::clone(&client), context));
         partition_by_task.insert(handle.id(), partition_id);
@@ -340,14 +353,54 @@ async fn run<S: MessageSink>(
     })
 }
 
+/// Runs `work` while reading `commands`: an `UpdateFilters` replaces
+/// `filters`, and a `Stop` ends the wait with `None`, dropping `work`. A
+/// closed channel sends no more commands, so `work` then runs to its end
+/// unwatched. The SDK retries a failing connect for about a minute, so
+/// connecting must not hold a stop request hostage.
+async fn until_stop_command<F: Future>(
+    commands: &mut mpsc::Receiver<EngineCommand>,
+    filters: &mut CaptureFilters,
+    work: F,
+) -> Option<F::Output> {
+    let mut work = pin!(work);
+    let mut commands_open = true;
+    loop {
+        tokio::select! {
+            biased;
+            command = commands.recv(), if commands_open => match command {
+                Some(EngineCommand::UpdateFilters(updated)) => *filters = updated,
+                Some(EngineCommand::Stop) => return None,
+                None => commands_open = false,
+            },
+            output = &mut work => return Some(output),
+        }
+    }
+}
+
 /// Connects, selects the partitions to read, and binds the sink to the event
-/// hub. When the selection or the bind is rejected, the client opened for it
-/// is closed before the error returns.
+/// hub. Returns `None` when a `Stop` arrived while connecting; a client that
+/// was already open is closed first. An `UpdateFilters` that arrives while
+/// connecting replaces `config.initial_filters`. When the selection or the
+/// bind is rejected, the client opened for it is closed before the error
+/// returns.
 async fn start_run<S: MessageSink>(
-    config: &EngineConfig,
+    config: &mut EngineConfig,
     sink: &S,
-) -> anyhow::Result<(EventHubConnection, Vec<String>)> {
-    let connection = connect(&config.target).await?;
+    commands: &mut mpsc::Receiver<EngineCommand>,
+) -> anyhow::Result<Option<(EventHubConnection, Vec<String>)>> {
+    let filters = &mut config.initial_filters;
+    let Some(opened) = until_stop_command(commands, filters, open_client(&config.target)).await
+    else {
+        return Ok(None);
+    };
+    let opened = opened?;
+    let read = until_stop_command(commands, filters, opened.client.get_eventhub_properties());
+    let Some(properties) = read.await else {
+        close_client_quietly(opened.client).await;
+        return Ok(None);
+    };
+    let connection = opened.into_connection(properties).await?;
     let partitions =
         match select_partitions(&connection.partition_ids, config.partitions.as_deref()) {
             Ok(partitions) => partitions,
@@ -371,7 +424,7 @@ async fn start_run<S: MessageSink>(
         return Err(error);
     }
 
-    Ok((connection, partitions))
+    Ok(Some((connection, partitions)))
 }
 
 /// Binds `sink` to `hub`, naming the hub in the error when the sink refuses.
@@ -996,15 +1049,14 @@ mod tests {
         assert!(sink.bound.lock().unwrap().is_empty());
     }
 
-    #[tokio::test]
-    async fn a_run_that_cannot_start_reports_a_fatal_error_and_fails() {
-        let config = EngineConfig {
+    fn config_for(namespace: &str) -> EngineConfig {
+        EngineConfig {
             target: EventHubTarget {
                 auth: shared_azure::auth::AuthMethod::Credential {
                     kind: shared_azure::auth::CredentialKind::DeveloperTools,
                 },
                 client_secret: None,
-                fully_qualified_namespace: Some("evil.example.com".to_owned()),
+                fully_qualified_namespace: Some(namespace.to_owned()),
                 event_hub_name: Some("orders".to_owned()),
                 consumer_group: crate::connection::DEFAULT_CONSUMER_GROUP.to_owned(),
             },
@@ -1013,7 +1065,78 @@ mod tests {
             ignore_checkpoint: false,
             prefetch: None,
             feedback_interval: Duration::from_secs(1),
-        };
+        }
+    }
+
+    fn keyword_filters(keyword: &str) -> CaptureFilters {
+        CaptureFilters {
+            time: None,
+            text: Some(TextFilter::Contains(vec![keyword.to_owned()])),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stop_ends_work_that_is_still_waiting() {
+        let (commands_tx, mut commands) = mpsc::channel(4);
+        let mut filters = CaptureFilters::default();
+        commands_tx.send(EngineCommand::Stop).await.unwrap();
+
+        let outcome =
+            until_stop_command(&mut commands, &mut filters, std::future::pending::<()>()).await;
+
+        assert!(outcome.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_filter_update_before_the_work_ends_replaces_the_filters() {
+        let (commands_tx, mut commands) = mpsc::channel(4);
+        let mut filters = CaptureFilters::default();
+        commands_tx
+            .send(EngineCommand::UpdateFilters(keyword_filters("x")))
+            .await
+            .unwrap();
+
+        let outcome = until_stop_command(&mut commands, &mut filters, async { 7 }).await;
+
+        assert_eq!(outcome, Some(7));
+        assert_eq!(filters, keyword_filters("x"));
+    }
+
+    #[tokio::test]
+    async fn a_closed_command_channel_keeps_waiting_for_the_work() {
+        let (commands_tx, mut commands) = mpsc::channel::<EngineCommand>(4);
+        let mut filters = CaptureFilters::default();
+        let (finish, finished) = tokio::sync::oneshot::channel::<i32>();
+        drop(commands_tx);
+
+        let (outcome, ()) = tokio::join!(
+            until_stop_command(&mut commands, &mut filters, finished),
+            async {
+                tokio::task::yield_now().await;
+                finish.send(7).unwrap();
+            }
+        );
+
+        assert_eq!(outcome, Some(Ok(7)));
+        assert_eq!(filters, CaptureFilters::default());
+    }
+
+    #[tokio::test]
+    async fn a_stop_while_connecting_ends_the_run_stopped_without_starting() {
+        let config = config_for("orders.servicebus.windows.net");
+        let (mut channels, run) = CaptureEngine::build(config, NeverUsedSink);
+        channels.commands.send(EngineCommand::Stop).await.unwrap();
+
+        let summary = run.await.unwrap();
+
+        assert_eq!(summary.end, RunEnd::Stopped);
+        assert!(summary.partitions.is_empty());
+        assert!(channels.events.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_run_that_cannot_start_reports_a_fatal_error_and_fails() {
+        let config = config_for("evil.example.com");
         let (mut channels, run) = CaptureEngine::build(config, NeverUsedSink);
 
         let error = run.await.unwrap_err();

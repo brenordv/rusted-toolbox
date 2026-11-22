@@ -113,7 +113,13 @@ partition failed, and `Completed` otherwise. `RunSummary::failed_partitions()`
 lists the failed partitions, including any that failed before a stop.
 
 `Stop` is the graceful end: it is honoured during each partition's setup too,
-and never interrupts a store. Dropping the run future instead aborts the
+and never interrupts a store. The engine also reads commands while it
+connects (the SDK retries a failing connect for about a minute). A `Stop`
+received then ends the run with `Ok` and `RunEnd::Stopped`, no partitions and
+no `Started` event, closing a client that was already open; an
+`UpdateFilters` received then replaces the filters the run starts with. A
+`Stop` that arrives after the connect and before the partitions start is
+applied once they run. Dropping the run future instead aborts the
 partition tasks mid-flight, so `MessageSink::store` must be cancel-safe.
 Consumers must read the event channel independently of sending commands;
 control events wait for channel space, so a consumer stuck on a full command
@@ -161,11 +167,16 @@ Events and statistics:
   suggesting the checkpoint be ignored; the archive may already hold those
   messages.
 - `ignore_checkpoint` starts from the filter bound or the earliest event and
-  stores every event again, but never moves the stored checkpoint backwards:
-  events at or below it are re-stored with the existing checkpoint, so the
-  next normal run still resumes where the last one left off. The exception is
-  a checkpoint ahead of the partition (a recreated event hub), which the
-  re-read replaces.
+  stores every event again, but never moves the stored checkpoint backwards
+  or over events it did not read. Events at or below the checkpoint are
+  re-stored with the existing checkpoint. Events above it advance the
+  checkpoint only when the run covers it: the start is the earliest event,
+  or the first event the partition processes has a sequence number at most
+  one past the checkpoint. A run that starts further on (a time bound past
+  the checkpoint) stores every event with the existing checkpoint and logs
+  one warning per partition, so the next normal run still reads what lies
+  between. The exception is a checkpoint ahead of the partition (a recreated
+  event hub), which the re-read replaces.
 
 ### Limits
 

@@ -88,6 +88,13 @@ entirely before the checkpoint, the run warns and reads nothing new. Use
 `-i/--ignore-checkpoint` to read from the filter's start (or the earliest retained event)
 and store everything again, or `eh export` to query what is already archived.
 
+An `-i` run never moves the checkpoint back, and it moves it forward only when it read
+everything after it. A run whose filter starts past the checkpoint stores its events and
+leaves the checkpoint alone, with one warning per partition in the log ("This run starts past
+the stored checkpoint, so the checkpoint stays where it was; the next normal run reads on
+from it."). The next run without `-i` then reads the events in between, and skips the ones
+already stored.
+
 Events older than the hub's retention are gone; a checkpoint behind them resumes at the
 earliest retained event. When a hub is deleted and recreated, sequence numbers start over,
 so its archive can't take the new hub's events. The archive records when the service created

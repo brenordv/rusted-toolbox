@@ -23,8 +23,10 @@ pub(crate) enum LoopEnd {
 /// statistics.
 ///
 /// When `shutdown` is set before the engine reported `Started`, the run is
-/// still connecting (the SDK can retry for about a minute, and the engine
-/// reads commands only once partitions run), so the run future is dropped.
+/// still starting (the SDK can retry a connect for about a minute), so the
+/// run future is dropped. A `Stop` would not end every such run at once: the
+/// engine applies one while it connects, but one that arrives between the
+/// connect and `Started` waits until partitions run.
 /// That is safe only while no partition task exists: the engine queues
 /// `Started` before it spawns any, and `run` is polled only here, so the
 /// queue is drained first and an empty one proves there is none. Once

@@ -1,6 +1,13 @@
 # Changelog
 
 ## 1.0.0
+- Disconnect while a session is still connecting ends it at once instead of waiting out the
+  SDK's connect retries (about a minute), so the data folder and the profile picker unlock right
+  away.
+- A session that ignores the checkpoint moves it forward only when it read everything after it.
+  One whose time window starts past the checkpoint stores its events and leaves the checkpoint
+  where it was, with one warning per partition in the log; the next session reads the events in
+  between.
 - A launch folder's `config.json` that names a data folder, an export folder, or a received
   message path outside the launch folder (absolute, climbing with `..`, or a network share) no
   longer gets that folder used: the default takes its place before the form is filled, an

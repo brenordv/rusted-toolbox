@@ -2,8 +2,8 @@
 //! per-event pipeline.
 
 use crate::engine::start::{
-    PartitionSnapshot, StartDecision, checkpoint_floor, choose_start, decide, ensure_resumable,
-    initial_high_water, to_start_position, window_before_checkpoint,
+    FloorCoverage, PartitionSnapshot, StartDecision, checkpoint_floor, choose_start, decide,
+    ensure_resumable, initial_high_water, to_start_position, window_before_checkpoint,
 };
 use crate::engine::{Checkpoint, EngineEvent, MessageSink, PartitionEnd, SkipReason, send_control};
 use crate::filters::CaptureFilters;
@@ -37,9 +37,6 @@ pub(crate) struct PartitionContext<S> {
     pub(crate) shutdown: watch::Receiver<bool>,
     pub(crate) ignore_checkpoint: bool,
     pub(crate) prefetch: Option<u32>,
-    /// The stored checkpoint an `ignore_checkpoint` run must not move
-    /// backwards; see [`checkpoint_floor`].
-    pub(crate) checkpoint_floor: Option<Checkpoint>,
 }
 
 impl<S> PartitionContext<S> {
@@ -95,11 +92,14 @@ async fn report_partition_end<S>(
     end
 }
 
-/// A partition ready to consume: its receiver and the replay-guard seed.
+/// A partition ready to consume: its receiver, the replay-guard seed, the
+/// sequence number a closed window ends at, and how the run stands to its
+/// checkpoint floor.
 struct ReadyPartition {
     receiver: EventReceiver,
     high_water: Option<i64>,
     tail: Option<i64>,
+    coverage: FloorCoverage,
 }
 
 async fn capture_partition<S: MessageSink>(
@@ -120,6 +120,7 @@ async fn capture_partition<S: MessageSink>(
         context,
         ready.high_water,
         ready.tail,
+        ready.coverage,
     )
     .await;
     if let Err(error) = ready.receiver.close().await {
@@ -137,10 +138,10 @@ async fn capture_partition<S: MessageSink>(
 
 /// Loads the checkpoint, snapshots the partition, picks the start, and opens
 /// the receiver. Returns `None` when a closed time window leaves nothing to
-/// read. Sets the context's checkpoint floor for `ignore_checkpoint` runs.
+/// read.
 async fn prepare_partition<S: MessageSink>(
     client: &ConsumerClient,
-    context: &mut PartitionContext<S>,
+    context: &PartitionContext<S>,
 ) -> anyhow::Result<Option<ReadyPartition>> {
     let partition_id = context.partition_id.clone();
     let checkpoint = context
@@ -167,10 +168,10 @@ async fn prepare_partition<S: MessageSink>(
         ensure_resumable(&partition_id, checkpoint, &snapshot)?;
         warn_if_window_before_checkpoint(&partition_id, checkpoint, &filters);
     }
-    context.checkpoint_floor =
-        checkpoint_floor(checkpoint.as_ref(), &snapshot, context.ignore_checkpoint);
     let choice = choose_start(checkpoint.as_ref(), &filters, context.ignore_checkpoint);
     debug!(partition_id = %partition_id, start = ?choice, "Chose the partition start position");
+    let floor = checkpoint_floor(checkpoint.as_ref(), &snapshot, context.ignore_checkpoint);
+    let coverage = FloorCoverage::at_start(floor, &choice);
 
     let tail = match decide(&choice, &snapshot, filters.upper_time_bound()) {
         StartDecision::NothingInWindow => return Ok(None),
@@ -191,6 +192,7 @@ async fn prepare_partition<S: MessageSink>(
         receiver,
         high_water: initial_high_water(&choice),
         tail,
+        coverage,
     }))
 }
 
@@ -231,11 +233,14 @@ fn warn_if_window_before_checkpoint(
 /// the original start position after a reconnect, so events at or below it
 /// are replays and are skipped before reaching the sink. With `tail` set, the
 /// partition ends after processing the event at or past that sequence number.
+/// `coverage` picks the checkpoint each event stores, and the first event
+/// processed decides it when it is still undecided.
 pub(crate) async fn consume_stream<S, St>(
     stream: St,
     context: &mut PartitionContext<S>,
     mut high_water: Option<i64>,
     tail: Option<i64>,
+    mut coverage: FloorCoverage,
 ) -> anyhow::Result<PartitionEnd>
 where
     S: MessageSink,
@@ -262,11 +267,41 @@ where
         if matches!(context.filters.has_changed(), Ok(true)) {
             filters = context.filters.borrow_and_update().clone();
         }
-        match process_event(context, &filters, &event, &mut high_water, tail).await? {
+        let step = process_event(
+            context,
+            &filters,
+            &event,
+            &mut high_water,
+            tail,
+            &mut coverage,
+        )
+        .await?;
+        match step {
             Step::Continue => {}
             Step::End(end) => return Ok(end),
         }
     }
+}
+
+/// Decides an undecided checkpoint floor with the partition's first processed
+/// event, warning when the run turns out to start past the floor.
+fn decide_floor_coverage(partition_id: &str, coverage: &mut FloorCoverage, sequence_number: i64) {
+    let Some(decided) = coverage.decided_by(sequence_number) else {
+        return;
+    };
+    match &decided {
+        FloorCoverage::PastFloor(floor) => warn!(
+            partition_id = %partition_id,
+            checkpoint = floor.sequence_number,
+            first_sequence_number = sequence_number,
+            "This run starts past the stored checkpoint, so the checkpoint stays where it was; \
+             the next normal run reads on from it."
+        ),
+        FloorCoverage::NoFloor
+        | FloorCoverage::FloorUndecided(_)
+        | FloorCoverage::CoversFloor(_) => {}
+    }
+    *coverage = decided;
 }
 
 /// Resolves once a stop is requested. A dropped sender means the engine is
@@ -281,6 +316,7 @@ async fn process_event<S: MessageSink>(
     event: &ReceivedEventData,
     high_water: &mut Option<i64>,
     tail: Option<i64>,
+    coverage: &mut FloorCoverage,
 ) -> anyhow::Result<Step> {
     let partition_id = &context.partition_id;
     let received_at = Utc::now();
@@ -305,16 +341,14 @@ async fn process_event<S: MessageSink>(
         return Ok(Step::Continue);
     }
 
-    let checkpoint = match &context.checkpoint_floor {
-        Some(floor) if sequence_number <= floor.sequence_number => floor.clone(),
-        _ => Checkpoint {
-            partition_id: partition_id.clone(),
-            sequence_number,
-            offset: message.offset.clone(),
-            enqueued_time: message.enqueued_time,
-            updated_at: received_at,
-        },
-    };
+    decide_floor_coverage(partition_id, coverage, sequence_number);
+    let checkpoint = coverage.checkpoint_for(Checkpoint {
+        partition_id: partition_id.clone(),
+        sequence_number,
+        offset: message.offset.clone(),
+        enqueued_time: message.enqueued_time,
+        updated_at: received_at,
+    });
     let outcome = context
         .sink
         .store(&message, &checkpoint, !context.ignore_checkpoint)
@@ -406,6 +440,7 @@ fn stream_error(error: EventHubsError, partition_id: &str) -> anyhow::Error {
 mod tests {
     use super::*;
     use crate::engine::StoreOutcome;
+    use crate::engine::start::StartChoice;
     use crate::filters::{TextFilter, TimeFilter};
     use crate::models::MessageKey;
     use crate::models::test_events::{annotations, event};
@@ -434,6 +469,13 @@ mod tests {
             self.stored()
                 .iter()
                 .map(|(message, _, _)| message.key.sequence_number)
+                .collect()
+        }
+
+        fn stored_checkpoints(&self) -> Vec<i64> {
+            self.stored()
+                .iter()
+                .map(|(_, checkpoint, _)| checkpoint.sequence_number)
                 .collect()
         }
     }
@@ -492,7 +534,6 @@ mod tests {
                 shutdown: shutdown_rx,
                 ignore_checkpoint: false,
                 prefetch: None,
-                checkpoint_floor: None,
             },
             sink,
             events,
@@ -543,9 +584,15 @@ mod tests {
         let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
         let events = stream::iter(vec![ok(1, "a"), ok(2, "b")]);
 
-        let end = consume_stream(events, &mut h.context, None, Some(2))
-            .await
-            .unwrap();
+        let end = consume_stream(
+            events,
+            &mut h.context,
+            None,
+            Some(2),
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(end, PartitionEnd::NothingLeftInWindow);
         let stored = h.sink.stored();
@@ -572,6 +619,7 @@ mod tests {
             &mut h.context,
             None,
             Some(1),
+            FloorCoverage::NoFloor,
         )
         .await
         .unwrap();
@@ -592,9 +640,15 @@ mod tests {
         let mut h = harness(FakeSink::default(), filters, 16);
         let events = stream::iter(vec![ok(1, "drop me"), ok(2, "keep me")]);
 
-        consume_stream(events, &mut h.context, None, Some(2))
-            .await
-            .unwrap();
+        consume_stream(
+            events,
+            &mut h.context,
+            None,
+            Some(2),
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(h.sink.stored_sequence_numbers(), vec![1, 2]);
         let events = drain(&mut h.events);
@@ -616,9 +670,15 @@ mod tests {
             .build();
         let events = stream::iter(vec![Ok(ReceivedEventData::from(message))]);
 
-        consume_stream(events, &mut h.context, None, Some(1))
-            .await
-            .unwrap();
+        consume_stream(
+            events,
+            &mut h.context,
+            None,
+            Some(1),
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             skip_reasons(&drain(&mut h.events)),
@@ -638,9 +698,15 @@ mod tests {
             ok(3, "c"),
         ]);
 
-        consume_stream(events, &mut h.context, None, Some(3))
-            .await
-            .unwrap();
+        consume_stream(
+            events,
+            &mut h.context,
+            None,
+            Some(3),
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(h.sink.stored_sequence_numbers(), vec![1, 2, 3]);
         assert_eq!(
@@ -656,9 +722,15 @@ mod tests {
         h.context.ignore_checkpoint = true;
         let events = stream::iter(vec![ok(1, "a"), ok(2, "b"), ok(1, "a"), ok(2, "b")]);
 
-        consume_stream(events, &mut h.context, None, Some(2))
-            .await
-            .unwrap();
+        consume_stream(
+            events,
+            &mut h.context,
+            None,
+            Some(2),
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         let stored = h.sink.stored();
         assert_eq!(h.sink.stored_sequence_numbers(), vec![1, 2]);
@@ -671,9 +743,15 @@ mod tests {
         let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
         let events = stream::iter(vec![ok(5, "old"), ok(6, "new")]);
 
-        consume_stream(events, &mut h.context, Some(5), Some(6))
-            .await
-            .unwrap();
+        consume_stream(
+            events,
+            &mut h.context,
+            Some(5),
+            Some(6),
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(h.sink.stored_sequence_numbers(), vec![6]);
     }
@@ -687,9 +765,15 @@ mod tests {
             .build();
         let events = stream::iter(vec![Ok(ReceivedEventData::from(message)), ok(1, "a")]);
 
-        consume_stream(events, &mut h.context, None, Some(1))
-            .await
-            .unwrap();
+        consume_stream(
+            events,
+            &mut h.context,
+            None,
+            Some(1),
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(h.sink.stored_sequence_numbers(), vec![1]);
         assert_eq!(h.stats.snapshot().unkeyable, 1);
@@ -710,7 +794,7 @@ mod tests {
             Ok(event(3, bound + Duration::minutes(2), "never read")),
         ]);
 
-        let end = consume_stream(events, &mut h.context, None, None)
+        let end = consume_stream(events, &mut h.context, None, None, FloorCoverage::NoFloor)
             .await
             .unwrap();
 
@@ -728,7 +812,8 @@ mod tests {
         });
         let mut context = h.context;
         let task = tokio::spawn(async move {
-            let end = consume_stream(events, &mut context, None, Some(2)).await;
+            let end =
+                consume_stream(events, &mut context, None, Some(2), FloorCoverage::NoFloor).await;
             (end, context)
         });
 
@@ -754,9 +839,15 @@ mod tests {
         let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
         h.shutdown.send_replace(true);
 
-        let end = consume_stream(stream::pending::<SdkResult>(), &mut h.context, None, None)
-            .await
-            .unwrap();
+        let end = consume_stream(
+            stream::pending::<SdkResult>(),
+            &mut h.context,
+            None,
+            None,
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(end, PartitionEnd::Stopped);
     }
@@ -766,9 +857,15 @@ mod tests {
         let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
         drop(h.shutdown);
 
-        let end = consume_stream(stream::pending::<SdkResult>(), &mut h.context, None, None)
-            .await
-            .unwrap();
+        let end = consume_stream(
+            stream::pending::<SdkResult>(),
+            &mut h.context,
+            None,
+            None,
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(end, PartitionEnd::Stopped);
     }
@@ -779,7 +876,7 @@ mod tests {
         let failure = EventHubsError::from(ErrorKind::ConsumerDisconnected(None));
         let events = stream::iter(vec![ok(1, "a"), Err(failure)]);
 
-        let error = consume_stream(events, &mut h.context, None, None)
+        let error = consume_stream(events, &mut h.context, None, None, FloorCoverage::NoFloor)
             .await
             .unwrap_err();
 
@@ -795,9 +892,15 @@ mod tests {
         let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
         let failure = EventHubsError::from(ErrorKind::SimpleMessage("link detached".into()));
 
-        let error = consume_stream(stream::iter(vec![Err(failure)]), &mut h.context, None, None)
-            .await
-            .unwrap_err();
+        let error = consume_stream(
+            stream::iter(vec![Err(failure)]),
+            &mut h.context,
+            None,
+            None,
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap_err();
 
         let rendered = format!("{error:#}");
         assert!(rendered.contains("partition 0 failed"), "{rendered}");
@@ -824,9 +927,15 @@ mod tests {
     async fn a_stream_that_ends_without_an_error_fails_the_partition() {
         let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
 
-        let error = consume_stream(stream::iter(vec![ok(1, "a")]), &mut h.context, None, None)
-            .await
-            .unwrap_err();
+        let error = consume_stream(
+            stream::iter(vec![ok(1, "a")]),
+            &mut h.context,
+            None,
+            None,
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap_err();
 
         assert!(
             format!("{error:#}").contains("ended without an error"),
@@ -847,6 +956,7 @@ mod tests {
             &mut h.context,
             None,
             Some(1),
+            FloorCoverage::NoFloor,
         )
         .await
         .unwrap_err();
@@ -861,40 +971,123 @@ mod tests {
         let mut h = harness(FakeSink::default(), CaptureFilters::default(), 1);
         let events = stream::iter(vec![ok(1, "a"), ok(2, "b"), ok(3, "c")]);
 
-        consume_stream(events, &mut h.context, None, Some(3))
-            .await
-            .unwrap();
+        consume_stream(
+            events,
+            &mut h.context,
+            None,
+            Some(3),
+            FloorCoverage::NoFloor,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(h.sink.stored_sequence_numbers(), vec![1, 2, 3]);
         assert_eq!(message_sequence_numbers(&drain(&mut h.events)), vec![1]);
         assert_eq!(h.stats.snapshot().ui_dropped, 2);
     }
 
-    #[tokio::test]
-    async fn an_ignored_checkpoint_run_never_moves_the_checkpoint_backwards() {
-        let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
-        h.context.ignore_checkpoint = true;
-        h.context.checkpoint_floor = Some(Checkpoint {
+    fn floor_at(sequence_number: i64) -> Checkpoint {
+        Checkpoint {
             partition_id: "0".to_owned(),
-            sequence_number: 5,
-            offset: Some("offset-5".to_owned()),
+            sequence_number,
+            offset: Some(format!("offset-{sequence_number}")),
             enqueued_time: None,
             updated_at: now(),
-        });
-        let events = stream::iter(vec![ok(3, "old"), ok(5, "at"), ok(6, "new")]);
+        }
+    }
 
-        consume_stream(events, &mut h.context, None, Some(6))
+    const TIME_BOUND_START: StartChoice = StartChoice::EnqueuedTime(DateTime::UNIX_EPOCH);
+
+    #[rstest::rstest]
+    #[case::starting_far_past_the_floor_keeps_it(
+        Some(100),
+        TIME_BOUND_START,
+        vec![5000, 5001],
+        vec![100, 100]
+    )]
+    #[case::skipping_one_event_after_the_floor_keeps_it(
+        Some(100),
+        TIME_BOUND_START,
+        vec![102, 103],
+        vec![100, 100]
+    )]
+    #[case::starting_right_after_the_floor_advances(
+        Some(100),
+        TIME_BOUND_START,
+        vec![101, 102],
+        vec![101, 102]
+    )]
+    #[case::starting_below_the_floor_advances_once_past_it(
+        Some(100),
+        TIME_BOUND_START,
+        vec![90, 100, 101, 120],
+        vec![100, 100, 101, 120]
+    )]
+    #[case::an_earliest_start_advances_whatever_it_reads_first(
+        Some(100),
+        StartChoice::Earliest,
+        vec![300, 301],
+        vec![300, 301]
+    )]
+    #[case::no_floor_stores_each_events_own_checkpoint(
+        None,
+        TIME_BOUND_START,
+        vec![5000, 5001],
+        vec![5000, 5001]
+    )]
+    #[tokio::test]
+    async fn an_ignored_checkpoint_run_advances_the_checkpoint_only_when_it_covers_the_floor(
+        #[case] floor: Option<i64>,
+        #[case] choice: StartChoice,
+        #[case] sequence_numbers: Vec<i64>,
+        #[case] expected_checkpoints: Vec<i64>,
+    ) {
+        let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
+        h.context.ignore_checkpoint = true;
+        let coverage = FloorCoverage::at_start(floor.map(floor_at), &choice);
+        let tail = sequence_numbers.last().copied();
+        let events = stream::iter(sequence_numbers.clone()).map(|number| ok(number, "x"));
+
+        consume_stream(events, &mut h.context, None, tail, coverage)
             .await
             .unwrap();
 
-        let checkpoints: Vec<i64> = h
-            .sink
-            .stored()
-            .iter()
-            .map(|(_, checkpoint, _)| checkpoint.sequence_number)
-            .collect();
-        assert_eq!(h.sink.stored_sequence_numbers(), vec![3, 5, 6]);
-        assert_eq!(checkpoints, vec![5, 5, 6]);
+        assert_eq!(h.sink.stored_sequence_numbers(), sequence_numbers);
+        assert_eq!(h.sink.stored_checkpoints(), expected_checkpoints);
+    }
+
+    #[tokio::test]
+    async fn a_run_past_the_floor_stores_the_floor_unchanged() {
+        let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
+        h.context.ignore_checkpoint = true;
+        let floor = floor_at(100);
+        let coverage = FloorCoverage::at_start(Some(floor.clone()), &TIME_BOUND_START);
+
+        consume_stream(
+            stream::iter(vec![ok(5000, "x")]),
+            &mut h.context,
+            None,
+            Some(5000),
+            coverage,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(h.sink.stored()[0].1, floor);
+    }
+
+    #[tokio::test]
+    async fn a_replay_after_the_floor_was_decided_does_not_decide_it_again() {
+        let mut h = harness(FakeSink::default(), CaptureFilters::default(), 16);
+        h.context.ignore_checkpoint = true;
+        let coverage = FloorCoverage::at_start(Some(floor_at(100)), &TIME_BOUND_START);
+        let events = stream::iter(vec![ok(101, "a"), ok(102, "b"), ok(101, "a"), ok(103, "c")]);
+
+        consume_stream(events, &mut h.context, None, Some(103), coverage)
+            .await
+            .unwrap();
+
+        assert_eq!(h.sink.stored_checkpoints(), vec![101, 102, 103]);
     }
 
     #[tokio::test]

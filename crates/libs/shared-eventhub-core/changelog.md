@@ -46,6 +46,13 @@
   says whether it was the call that set it). A binary built alongside crates that enable
   rustls's `ring` provider has no default otherwise, and the Event Hubs connection's
   `ClientConfig::builder()` panics. Adds the `rustls` 0.23.46 dependency.
+- An `ignore_checkpoint` run advances the stored checkpoint only when it covers it: it starts at
+  the earliest event, or the first event a partition processes is at most one sequence number
+  past the checkpoint. A run that starts further on stores every event with the existing
+  checkpoint and logs one warning per partition, so the next normal run reads what lies between.
+- The engine reads commands while it connects. `EngineCommand::Stop` then ends the run with
+  `RunEnd::Stopped`, no partitions, and no `Started` event (a client already open is closed);
+  `UpdateFilters` then replaces the filters the run starts with.
 - Azure SDK pins: `azure_messaging_eventhubs` 0.16.0 on `azure_core`
   1.2.0-beta.2 (one `azure_core` shared with `shared-azure`'s
   `azure_identity` 1.1.0-beta.2 and `azure_security_keyvault_secrets`

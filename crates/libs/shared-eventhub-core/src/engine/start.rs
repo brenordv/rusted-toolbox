@@ -148,12 +148,14 @@ pub(crate) fn initial_high_water(choice: &StartChoice) -> Option<i64> {
     }
 }
 
-/// The stored checkpoint an `ignore_checkpoint` run must not move backwards:
-/// re-reading events at or below it re-stores them with the same checkpoint,
-/// so the next normal run still resumes where it left off. There is no floor
-/// in a normal run (it starts past the checkpoint) or when the checkpoint is
-/// past the partition's last sequence number, empty partition included (a
-/// recreated event hub, where moving back is the point).
+/// The stored checkpoint an `ignore_checkpoint` run must not move backwards
+/// or across events it did not read: the next normal run resumes after the
+/// stored checkpoint, so it has to stay at or before the first event that run
+/// still needs. [`FloorCoverage`] decides what each stored event writes.
+/// There is no floor in a normal run (it starts past the checkpoint) or when
+/// the checkpoint is past the partition's last sequence number, empty
+/// partition included (a recreated event hub, where moving back is the
+/// point).
 pub(crate) fn checkpoint_floor(
     checkpoint: Option<&Checkpoint>,
     snapshot: &PartitionSnapshot,
@@ -164,6 +166,74 @@ pub(crate) fn checkpoint_floor(
             ignore_checkpoint && checkpoint.sequence_number <= snapshot.last_sequence_number
         })
         .cloned()
+}
+
+/// Whether a partition's run reads every event after its checkpoint floor,
+/// which is what lets it advance the stored checkpoint.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum FloorCoverage {
+    /// No floor: every event stores its own checkpoint.
+    NoFloor,
+    /// A floor, and no event has been processed yet to show where the run
+    /// starts.
+    FloorUndecided(Checkpoint),
+    /// The run reads everything retained after the floor. Events at or below
+    /// the floor keep it; later events store their own checkpoint.
+    CoversFloor(Checkpoint),
+    /// The run started past the event right after the floor, so unread events
+    /// lie between them and every event keeps the floor.
+    PastFloor(Checkpoint),
+}
+
+impl FloorCoverage {
+    /// The state a partition starts in. An `Earliest` start reads everything
+    /// retained, so it covers the floor; any other start is decided by the
+    /// first event.
+    pub(crate) fn at_start(floor: Option<Checkpoint>, choice: &StartChoice) -> Self {
+        let Some(floor) = floor else {
+            return Self::NoFloor;
+        };
+        match choice {
+            StartChoice::Earliest => Self::CoversFloor(floor),
+            StartChoice::EnqueuedTime(_) | StartChoice::Checkpoint(_) => {
+                Self::FloorUndecided(floor)
+            }
+        }
+    }
+
+    /// The state once the partition's first event is known, or `None` when
+    /// that event changes nothing. An undecided floor is covered when the
+    /// first event is at most one past it; a larger first sequence number
+    /// leaves unread events after the floor, a skipped number included.
+    pub(crate) fn decided_by(&self, first_sequence_number: i64) -> Option<Self> {
+        match self {
+            Self::FloorUndecided(floor) => {
+                let covers = first_sequence_number <= floor.sequence_number.saturating_add(1);
+                Some(if covers {
+                    Self::CoversFloor(floor.clone())
+                } else {
+                    Self::PastFloor(floor.clone())
+                })
+            }
+            Self::NoFloor | Self::CoversFloor(_) | Self::PastFloor(_) => None,
+        }
+    }
+
+    /// The checkpoint to store with an event whose own checkpoint is `own`.
+    /// An undecided floor has not been shown to be covered, so it is kept.
+    pub(crate) fn checkpoint_for(&self, own: Checkpoint) -> Checkpoint {
+        match self {
+            Self::NoFloor => own,
+            Self::CoversFloor(floor) => {
+                if own.sequence_number <= floor.sequence_number {
+                    floor.clone()
+                } else {
+                    own
+                }
+            }
+            Self::FloorUndecided(floor) | Self::PastFloor(floor) => floor.clone(),
+        }
+    }
 }
 
 /// Whether a checkpoint is beyond the partition's last sequence number: the
@@ -389,6 +459,102 @@ mod tests {
         let floor = checkpoint_floor(Some(&stored), &snapshot(is_empty, 50), ignore_checkpoint);
 
         assert_eq!(floor.map(|floor| floor.sequence_number), expected);
+    }
+
+    #[rstest]
+    #[case::earliest_reads_everything(StartChoice::Earliest, FloorCoverage::CoversFloor)]
+    #[case::a_time_bound_waits_for_the_first_event(
+        StartChoice::EnqueuedTime(at(10, 0)),
+        FloorCoverage::FloorUndecided
+    )]
+    #[case::a_checkpoint_start_waits_for_the_first_event(
+        StartChoice::Checkpoint(100),
+        FloorCoverage::FloorUndecided
+    )]
+    fn a_floor_is_covered_at_start_only_by_an_earliest_start(
+        #[case] choice: StartChoice,
+        #[case] expected: fn(Checkpoint) -> FloorCoverage,
+    ) {
+        let floor = checkpoint(100, None);
+
+        let coverage = FloorCoverage::at_start(Some(floor.clone()), &choice);
+
+        assert_eq!(coverage, expected(floor));
+    }
+
+    #[rstest]
+    #[case::earliest(StartChoice::Earliest)]
+    #[case::enqueued_time(StartChoice::EnqueuedTime(at(10, 0)))]
+    #[case::checkpoint(StartChoice::Checkpoint(100))]
+    fn no_floor_stays_no_floor_whatever_the_start(#[case] choice: StartChoice) {
+        assert_eq!(
+            FloorCoverage::at_start(None, &choice),
+            FloorCoverage::NoFloor
+        );
+    }
+
+    #[rstest]
+    #[case::below_the_floor(90, FloorCoverage::CoversFloor)]
+    #[case::at_the_floor(100, FloorCoverage::CoversFloor)]
+    #[case::right_after_the_floor(101, FloorCoverage::CoversFloor)]
+    #[case::one_event_skipped(102, FloorCoverage::PastFloor)]
+    #[case::far_past_the_floor(5000, FloorCoverage::PastFloor)]
+    fn the_first_event_decides_an_undecided_floor(
+        #[case] first: i64,
+        #[case] expected: fn(Checkpoint) -> FloorCoverage,
+    ) {
+        let floor = checkpoint(100, None);
+        let undecided = FloorCoverage::FloorUndecided(floor.clone());
+
+        let decided = undecided.decided_by(first);
+
+        assert_eq!(decided, Some(expected(floor)));
+    }
+
+    #[test]
+    fn a_floor_at_the_largest_sequence_number_is_covered_without_overflow() {
+        let undecided = FloorCoverage::FloorUndecided(checkpoint(i64::MAX, None));
+
+        let decided = undecided.decided_by(i64::MAX);
+
+        assert!(matches!(decided, Some(FloorCoverage::CoversFloor(_))));
+    }
+
+    #[rstest]
+    #[case::no_floor(FloorCoverage::NoFloor)]
+    #[case::covered(FloorCoverage::CoversFloor(checkpoint(100, None)))]
+    #[case::past(FloorCoverage::PastFloor(checkpoint(100, None)))]
+    fn a_decided_state_is_not_decided_again(#[case] coverage: FloorCoverage) {
+        assert_eq!(coverage.decided_by(5000), None);
+    }
+
+    #[rstest]
+    #[case::no_floor_stores_the_events_own(FloorCoverage::NoFloor, 90, 90)]
+    #[case::covered_keeps_the_floor_below_it(
+        FloorCoverage::CoversFloor(checkpoint(100, None)),
+        90,
+        100
+    )]
+    #[case::covered_keeps_the_floor_at_it(
+        FloorCoverage::CoversFloor(checkpoint(100, None)),
+        100,
+        100
+    )]
+    #[case::covered_advances_above_it(FloorCoverage::CoversFloor(checkpoint(100, None)), 101, 101)]
+    #[case::past_never_advances(FloorCoverage::PastFloor(checkpoint(100, None)), 5000, 100)]
+    #[case::undecided_never_advances(
+        FloorCoverage::FloorUndecided(checkpoint(100, None)),
+        101,
+        100
+    )]
+    fn the_stored_checkpoint_follows_the_coverage(
+        #[case] coverage: FloorCoverage,
+        #[case] event: i64,
+        #[case] expected: i64,
+    ) {
+        let stored = coverage.checkpoint_for(checkpoint(event, None));
+
+        assert_eq!(stored.sequence_number, expected);
     }
 
     #[test]
