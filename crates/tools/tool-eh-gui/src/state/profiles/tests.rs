@@ -873,8 +873,8 @@ fn a_save_config_that_fails_keeps_the_folders_caption() {
 
 fn not_saved(setting: &str) -> SaveStatus {
     SaveStatus::Failed(format!(
-        "config.json in this folder keeps only folders inside it, and the {setting} is outside. \
-         Pick one inside this folder, or switch to a profile: a profile keeps any folder."
+        "The {setting} is outside this folder; config.json here keeps only folders inside. Pick \
+         one inside or use a profile."
     ))
 }
 
@@ -919,7 +919,7 @@ fn save_config_into_the_launch_folder_refuses_a_data_folder_picked_outside_it() 
         toasts[0]
             .options
             .text
-            .starts_with("Could not save config.json: config.json in this folder keeps only"),
+            .starts_with("Could not save config.json: The data folder is outside this folder"),
         "{}",
         toasts[0].options.text
     );

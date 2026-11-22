@@ -289,8 +289,8 @@ pub(super) fn recallable_folders(
         return Ok(());
     };
     Err(format!(
-        "config.json in this folder keeps only folders inside it, and the {setting} is outside. \
-         Pick one inside this folder, or switch to a profile: a profile keeps any folder."
+        "The {setting} is outside this folder; config.json here keeps only folders inside. Pick \
+         one inside or use a profile."
     ))
 }
 

@@ -4,21 +4,23 @@ use super::builders::{
 };
 use super::journeys::{open_listed_sheet, pick_with_pointer};
 use super::services::ServiceCall;
-use super::{Harness, a11y_node, a11y_nodes, focused_key, lists};
-use crate::design::tokens::{WINDOW_MIN, WINDOW_SIZE};
+use super::{Harness, a11y_node, a11y_nodes, element, focused_key, lists};
+use crate::design::tokens::{TYPE_CAPTION, WINDOW_MIN, WINDOW_SIZE};
 use crate::services::CreateRequest;
 use crate::state::{AppState, Input, NO_PROFILES, NewProfileRow, RECALLED_FIELD, recalled};
 use crate::views::{
     NAME_ISSUE_KEY, NEW_PROFILE_CANCEL_KEY, NEW_PROFILE_KEY, NEW_PROFILE_NAME_KEY,
     NEW_PROFILE_ROW_KEY, NEW_PROFILE_SAVE_KEY, PICKER_KEY, PROFILE_GROUP_KEY, PROFILE_NOTE_KEY,
-    ROW_ISSUE_KEY,
+    ROW_ISSUE_KEY, SAVE_STATUS_KEY, SAVE_STATUS_LINES,
 };
 use rune::accesskit::Action;
+use rune::text::{RichLayoutOptions, measure_with};
 use rune::{Key, KeyEvent, Mods};
 use shared_eventhub_persistence::config::{
     AuthMethodConfig, CONFIG_FILE_NAME, ConfigLoad, CredentialKindConfig, StoredSecret,
     TargetConfig, ToolConfig,
 };
+use shared_eventhub_persistence::export::DiskWriteMode;
 use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry};
 
 const TRIGGER: &str = "profile-picker-trigger";
@@ -155,6 +157,45 @@ fn the_sheet_shows_the_caption_for_folders_the_launch_config_named_outside_it() 
     open_listed_sheet(&mut h);
 
     assert!(h.has_text(caption));
+}
+
+#[rstest::rstest]
+#[case::smallest(WINDOW_MIN)]
+#[case::default_size(WINDOW_SIZE)]
+fn the_footer_fits_the_whole_refusal_of_a_received_message_path_outside_the_launch_folder(
+    #[case] size: (f32, f32),
+) {
+    let mut s = orders_form();
+    s.form.disk_write = DiskWriteMode::Immediate;
+    s.form.received_msg_path.replace_text("../outside");
+    let mut h = Harness::new(s, size);
+    open_listed_sheet(&mut h);
+
+    h.deliver(Input::SavePressed);
+
+    let status = element(&h.rt, SAVE_STATUS_KEY);
+    let [_, _, width, height] = status.rect;
+    let text = status.text.unwrap_or_default();
+    let (_, needed) = measure_with(
+        &text,
+        &[],
+        TYPE_CAPTION,
+        Some(width),
+        RichLayoutOptions::new(),
+    );
+    assert_eq!(
+        text,
+        "Not saved: The received message path is outside this folder; config.json here keeps \
+         only folders inside. Pick one inside or use a profile."
+    );
+    assert!(
+        needed <= SAVE_STATUS_LINES as f32 * TYPE_CAPTION.line_px() + 0.5,
+        "the text needs {needed} pt at {width} pt wide"
+    );
+    assert!(
+        height >= needed - 0.5,
+        "the caption is {height} pt tall and its text needs {needed} pt"
+    );
 }
 
 #[test]

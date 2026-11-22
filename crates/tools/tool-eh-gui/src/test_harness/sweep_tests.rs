@@ -17,9 +17,9 @@ use crate::design::tokens::{
 use crate::form::{AuthChoice, CredentialChoice};
 use crate::read::test_support::captured;
 use crate::send::SendInput;
-use crate::state::{AppState, Input, SheetPurpose, ToastInput, ToastKind};
+use crate::state::{AppState, Input, SaveStatus, SheetPurpose, ToastInput, ToastKind};
 use crate::views::details::{COPY_KEY, DONE_KEY, FAILURE_KEY};
-use crate::views::{READ_METADATA_KEY, SEND_BUTTON_KEY};
+use crate::views::{READ_METADATA_KEY, SAVE_STATUS_KEY, SEND_BUTTON_KEY};
 use rune::Runtime;
 use rune::accesskit::Action;
 use serde_json::Value;
@@ -721,6 +721,60 @@ fn layout_problems(row: &Row, h: &mut Harness, size: (f32, f32)) -> Vec<String> 
             && viewport.rect[3] < LIST_ROW_HEIGHT - 0.5
         {
             problems.push(format!("{list} is {} tall", viewport.rect[3]));
+        }
+    }
+    problems.extend(footer_problems(&h.rt));
+    problems
+}
+
+/// The connect sheet's footer from left to right: Cancel, the save status, Save config, and
+/// Connect or Done.
+const FOOTER: [&str; 5] = [
+    "cancel",
+    SAVE_STATUS_KEY,
+    "save-config",
+    "sheet-connect",
+    "sheet-done",
+];
+
+/// What is wrong with the open connect sheet's footer: a part of it outside the sheet's panel,
+/// one that reaches into the part after it, or, while a save has a status to show, a save
+/// status that is missing or has no width.
+fn footer_problems(rt: &Runtime<AppState>) -> Vec<String> {
+    let Some(panel) = element(rt, "connect-dialog") else {
+        return Vec::new();
+    };
+    let [left, top, width, height] = panel.rect;
+    let shown: Vec<(&str, [f32; 4])> = FOOTER
+        .iter()
+        .filter_map(|key| element(rt, key).map(|part| (*key, part.rect)))
+        .collect();
+    let mut problems = Vec::new();
+    let status_due = match &rt.state.save_status {
+        SaveStatus::Idle => false,
+        SaveStatus::Saving(_) | SaveStatus::Saved | SaveStatus::Failed(_) => true,
+    };
+    if status_due {
+        match element(rt, SAVE_STATUS_KEY) {
+            Some(status) if status.rect[2] > 0.5 => {}
+            Some(status) => problems.push(format!("the save status is {} wide", status.rect[2])),
+            None => problems.push("the save status is not mounted".to_owned()),
+        }
+    }
+    for (key, [x, y, w, h]) in &shown {
+        let inside = *x >= left - 0.5
+            && *y >= top - 0.5
+            && x + w <= left + width + 0.5
+            && y + h <= top + height + 0.5;
+        if !inside {
+            problems.push(format!("{key} is not inside the sheet"));
+        }
+    }
+    for pair in shown.windows(2) {
+        let (key, [x, _, w, _]) = pair[0];
+        let (next, [next_x, ..]) = pair[1];
+        if x + w > next_x + 0.5 {
+            problems.push(format!("{key} reaches into {next}"));
         }
     }
     problems

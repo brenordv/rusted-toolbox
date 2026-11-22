@@ -22,13 +22,18 @@ use crate::read::rows::display_path;
 use crate::state::{
     AppState, Input, RECALLED_FIELD, SaveStatus, SaveTo, SheetPurpose, ToastKind, error_preview,
 };
-use rune::{El, FileDialogOptions, ScrollSpec, TextEdit, Tx, col, row, spacer};
+use rune::{Align, El, FileDialogOptions, ScrollSpec, TextEdit, Tx, col, row, spacer};
 use rune_kit::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
     TextField, TextInput,
 };
 use shared_eventhub_persistence::export::DiskWriteMode;
 use tracing::warn;
+
+/// The key of the footer's save status caption.
+pub const SAVE_STATUS_KEY: &str = "save-status";
+/// The most lines the footer's save status caption shows.
+pub const SAVE_STATUS_LINES: usize = 4;
 
 type EditAccess = fn(&mut AppState) -> &mut TextEdit;
 
@@ -315,7 +320,11 @@ fn footer(s: &AppState, k: &Kit, purpose: SheetPurpose) -> El {
         SaveStatus::Saved => Some("Saved config.json".to_owned()),
         SaveStatus::Failed(error) => Some(error_preview(&format!("Not saved: {error}")).shown),
     };
-    let mut bar = row()
+    let status = match caption {
+        Some(caption) => save_status(k, &caption),
+        None => spacer(),
+    };
+    row()
         .key("connect-footer")
         .gap(SPACE_SM)
         .w_full()
@@ -327,32 +336,40 @@ fn footer(s: &AppState, k: &Kit, purpose: SheetPurpose) -> El {
                 .build(k)
                 .key("cancel"),
         )
-        .child(spacer());
-    if let Some(caption) = caption {
-        bar = bar.child(parts::caption(k, &caption));
-    }
-    bar.child(
-        Button::new("Save config")
-            .variant(ButtonVariant::Outline)
-            .disabled(s.save_status.is_saving())
-            .on_press(|s: &mut AppState| dispatch(s, Input::SavePressed))
-            .build(k)
-            .key("save-config"),
-    )
-    .child(match purpose {
-        SheetPurpose::Connect => Button::new("Connect")
-            .variant(ButtonVariant::Submit)
-            .on_press(|s: &mut AppState| dispatch(s, Input::ConnectPressed))
-            .build(k)
-            .key("sheet-connect")
-            .default_button(),
-        SheetPurpose::SendTarget => Button::new("Done")
-            .variant(ButtonVariant::Submit)
-            .on_press(|s: &mut AppState| dispatch(s, Input::CloseSheet))
-            .build(k)
-            .key("sheet-done")
-            .default_button(),
-    })
+        .child(status)
+        .child(
+            Button::new("Save config")
+                .variant(ButtonVariant::Outline)
+                .disabled(s.save_status.is_saving())
+                .on_press(|s: &mut AppState| dispatch(s, Input::SavePressed))
+                .build(k)
+                .key("save-config"),
+        )
+        .child(match purpose {
+            SheetPurpose::Connect => Button::new("Connect")
+                .variant(ButtonVariant::Submit)
+                .on_press(|s: &mut AppState| dispatch(s, Input::ConnectPressed))
+                .build(k)
+                .key("sheet-connect")
+                .default_button(),
+            SheetPurpose::SendTarget => Button::new("Done")
+                .variant(ButtonVariant::Submit)
+                .on_press(|s: &mut AppState| dispatch(s, Input::CloseSheet))
+                .build(k)
+                .key("sheet-done")
+                .default_button(),
+        })
+}
+
+/// The footer's save status: a caption as wide as the space between Cancel and the buttons,
+/// its lines ending at the buttons, wrapped onto at most [`SAVE_STATUS_LINES`] lines.
+fn save_status(k: &Kit, line: &str) -> El {
+    parts::caption(k, line)
+        .key(SAVE_STATUS_KEY)
+        .align(Align::End)
+        .max_lines(SAVE_STATUS_LINES)
+        .grow(1.0)
+        .min_w(0.0)
 }
 
 fn field(k: &Kit, label: &str, edit: &TextEdit, issue: &Option<String>, access: EditAccess) -> El {

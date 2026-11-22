@@ -298,8 +298,8 @@ Save config into the launch folder writes only folders the next launch would use
 picked with Change inside the launch folder is held as the relative path from it (`captures`
 for `<launch folder>/captures`). With a data folder or export folder outside the launch folder,
 or a received message path outside it while Message files is on, Save config writes nothing and
-says which one: "config.json in this folder keeps only folders inside it, and the data folder
-is outside. Pick one inside this folder, or switch to a profile: a profile keeps any folder."
+says which one: "The data folder is outside this folder; config.json here keeps only folders
+inside. Pick one inside or use a profile."
 While Message files is Off its folder field is hidden, and a path left in it that the launch
 folder would not use (outside it, or empty) is saved as the default, `inbound`. A pick is
 compared as text, so when the picker returns the launch folder spelled another way (another

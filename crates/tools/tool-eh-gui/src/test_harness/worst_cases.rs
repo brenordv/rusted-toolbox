@@ -3,6 +3,7 @@
 use super::Harness;
 use super::builders::{export_state, send_state, state, test_workspace};
 use super::journeys::open_listed_sheet;
+use super::profile_tests::profiles_sheet;
 use super::services::ServiceCall;
 use super::sweep_tests::{
     Row, TOOLBAR, cut_dangers, export_bulk_running, export_selected, failed_with, orders_form,
@@ -130,6 +131,17 @@ fn sheet_in_a_deep_folder(size: (f32, f32)) -> Harness {
     h
 }
 
+/// The listed connect sheet after a Save config that failed with about 2,000 characters of
+/// error text, so the footer's save status is as long as a preview gets. The failure's toast is
+/// closed: at the smallest window it lies over the footer's buttons.
+fn long_save_failure(size: (f32, f32)) -> Harness {
+    let mut h = profiles_sheet(size);
+    h.deliver(Input::SavePressed);
+    h.deliver(Input::ConfigSaved(Err(long_text())));
+    h.press("toast-1-close");
+    h
+}
+
 /// Four cut danger toasts at once (three stay), fanned out.
 fn four_toasts_fanned(size: (f32, f32)) -> Harness {
     let mut h = cut_dangers(size, 4);
@@ -218,6 +230,13 @@ pub(super) const WORST: &[Row] = &[
             "save-config",
             "cancel",
         ],
+        disabled: &[],
+        covered: &["empty-connect", "connect"],
+    },
+    Row {
+        name: "the sheet after a long save failure",
+        build: long_save_failure,
+        reachable: &["sheet-connect", "save-config", "cancel"],
         disabled: &[],
         covered: &["empty-connect", "connect"],
     },
