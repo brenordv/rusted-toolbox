@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3
+- No change in what the app does. The chord check and the Return-types-a-line-break check its
+  key handlers used moved to `common-gui-rune::keys` (`is_chord`, `is_newline`), which `speak`
+  and `alert` use too.
+
 ## 1.0.2
 - No change in what the app does. The cleaning of the error details text (each line's control
   and bidirectional characters as spaces, the line breaks kept) moved to

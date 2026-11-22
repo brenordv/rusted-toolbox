@@ -280,6 +280,7 @@ async fn model_and_voice_overrides_reach_the_request_and_leave_the_file_alone() 
         text: Some(SPOKEN.to_owned()),
         model: Some("other-model".to_owned()),
         voice: Some("other.wav".to_owned()),
+        gui: false,
     })
     .await
     .unwrap();

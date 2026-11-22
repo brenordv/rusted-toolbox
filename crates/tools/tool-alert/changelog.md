@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+- The tester's single-line fields, its key checks, the appearance setter, and the GPU hint now
+  come from `common-gui-rune`.
+- In the tester's Body, Shift+Return types a line break, as Return does.
+
 ## 1.0.0
 - Initial release.
 - `alert <BODY>` shows a window above other windows with the message and one button, Close,

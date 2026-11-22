@@ -73,14 +73,7 @@ where
     }
     config.validate()?;
 
-    let speech = SpeechClient::new()?.synthesize(&config, &text).await?;
-    let size = speech.bytes.len();
-    let clip = Clip::from_bytes(speech.bytes).with_context(|| {
-        format!(
-            "The speech server's answer could not be played (content type {}, {size} bytes)",
-            speech.content_type.as_deref().unwrap_or("not given")
-        )
-    })?;
+    let clip = speech_clip(&SpeechClient::new()?, &config, &text).await?;
 
     let started = Instant::now();
     (deps.play)(clip)?;
@@ -89,6 +82,22 @@ where
         "playback ended"
     );
     Ok(())
+}
+
+/// Asks `config`'s server to say `text` and returns its answer as a sound.
+///
+/// # Errors
+/// When the request fails (see [`SpeechClient::synthesize`]), or the answer is not a playable
+/// sound; that error names the answer's content type and size.
+pub async fn speech_clip(client: &SpeechClient, config: &SpeakConfig, text: &str) -> Result<Clip> {
+    let speech = client.synthesize(config, text).await?;
+    let size = speech.bytes.len();
+    Clip::from_bytes(speech.bytes).with_context(|| {
+        format!(
+            "The speech server's answer could not be played (content type {}, {size} bytes)",
+            speech.content_type.as_deref().unwrap_or("not given")
+        )
+    })
 }
 
 /// The text to speak, without surrounding whitespace: `argument` when given; otherwise all

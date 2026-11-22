@@ -12,13 +12,16 @@ Modules:
 - `tokens`: `rgb`, the palette seeds, the spacing scale (`SPACE_XS` 4 through `SPACE_XXL` 32),
   the radii, the nine type roles, `CONTROL_HEIGHT`, `HAIRLINE`, `FOCUS_RING_WIDTH`.
 - `motion`: the roles `FEEDBACK`, `CONTROL`, and `CONTROL_EXIT`, all critically damped.
+- `keys`: `is_chord` (is this key the chord `mod+enter`?) and `is_newline` (Return, with or
+  without Shift) for key handlers.
 - `parts`: `field_label`, `caption`, `issue`, `warning`, `hairline`, `detail_row`, the
-  multi-line editors (`text_editor` in any type role, `lines_editor` for short lines), and
-  `status_line`.
+  multi-line editors (`text_editor` in any type role, `lines_editor` for short lines),
+  `line_field` (a labelled single-line field), and `status_line`.
 - `appearance`: `SystemAppearance` reads the system's dark or light setting on Windows, where
-  Rune's own theme event does not arrive on Windows 10.
-- `window`: `spawn_window_watch` for an app with one window, and the pure `window_failure`
-  decision behind it.
+  Rune's own theme event does not arrive on Windows 10; `set_appearance` stores what a window
+  draws in and says whether it changed.
+- `window`: `spawn_window_watch` for an app with one window, the pure `window_failure`
+  decision behind it, and `gpu_hint` for the log line that reports the failure.
 
 ## Rules for consumers
 
@@ -44,6 +47,14 @@ unit of `EditorHeight`. `Fill { min_lines }` grows to the space it is given; `Fi
 never grows, breaks long lines anywhere, and scrolls only once it holds text. The editor has no
 submit: `on_key` sees every key first, so the caller inserts the newline on Return and takes
 its own shortcuts.
+
+## Single-line fields
+
+`line_field(k, spec, edit, access, on_key, on_change)` is a label over a single-line field.
+`on_key` sees every key before the field does, so a window's shortcuts (`mod+enter`, `mod+1`)
+work while the field has focus; the kit's `TextField` has no key hook and swallows them.
+`on_change` runs after every edit the field makes. A `LineFieldSpec::issue` shows under the
+field as a danger `status_line` keyed `{key}-issue`, and marks the field invalid.
 
 ## The window watch
 

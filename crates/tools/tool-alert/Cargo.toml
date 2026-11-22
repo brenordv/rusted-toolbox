@@ -1,6 +1,6 @@
 [package]
 name = "alert"
-version = "1.0.0"
+version = "1.0.1"
 description = "Shows a window with a message, optionally plays a sound, and waits for the user to close it."
 edition.workspace = true
 authors.workspace = true

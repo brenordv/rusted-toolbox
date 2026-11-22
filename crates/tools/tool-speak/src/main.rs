@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use common_audio::{Clip, Speaker};
 use common_cli::tool_exit_helpers::{exit_error, exit_success};
+use common_gui_rune::window::gpu_hint;
 use speak::cli_utils::initialize;
 use speak::config::default_config_path;
+use speak::gui;
 use speak::models::SpeakArgs;
 use speak::speak_app::{Deps, run};
 use std::io::IsTerminal;
@@ -11,8 +13,22 @@ use tracing::error;
 fn main() {
     let args = initialize();
 
-    match speak(args) {
-        Ok(()) => exit_success(),
+    // `Ok(Some(reason))` is a window that could not be created; only `--gui` opens one.
+    let result = if args.gui {
+        gui::run(default_config_path())
+    } else {
+        speak(args).map(|()| None)
+    };
+    match result {
+        Ok(None) => exit_success(),
+        Ok(Some(reason)) => {
+            error!(
+                reason = %reason,
+                hint = %gpu_hint(env!("CARGO_PKG_NAME")),
+                "speak could not open a window"
+            );
+            exit_error();
+        }
         Err(error) => {
             error!(error = %format!("{error:#}"), "speak failed");
             exit_error();

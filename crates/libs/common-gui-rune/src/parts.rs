@@ -8,7 +8,7 @@ use common_utils::string_utils::{display_line, error_preview};
 use rune::{
     El, KeyEvent, LiveRegion, ScrollSpec, TextEdit, TextStyle, Tx, col, el, text, text_input,
 };
-use rune_kit::{Kit, ScrollBar};
+use rune_kit::{Kit, ScrollBar, TextInput};
 
 /// A caption label over a selectable monospace value, for paths and ids.
 pub fn detail_row(k: &Kit, label: &str, value: &str) -> El {
@@ -98,6 +98,61 @@ pub fn status_line(k: &Kit, key: &str, tone: Tone, lines: StatusLines, message: 
         status = status.description(display_line(message.chars()));
     }
     status
+}
+
+/// What a [`line_field`] shows beyond its text.
+#[derive(Clone, Copy, Debug)]
+pub struct LineFieldSpec<'a> {
+    /// The field's key; focus moves there. Its issue line is keyed `{key}-issue`.
+    pub key: &'a str,
+    /// The visible label and the accessible name.
+    pub label: &'a str,
+    /// The faint text an empty field shows; empty for none.
+    pub placeholder: &'a str,
+    /// What is wrong with the field's value; it shows under the field as a danger status.
+    pub issue: Option<&'a str>,
+}
+
+/// A label over a single-line field. `on_key` sees every key before the field does, so a
+/// window's shortcuts work while the field has focus; `on_change` runs after every edit the
+/// field makes. The field carries the name, so the visible label stays out of the
+/// accessibility tree.
+///
+/// The kit's `TextField` has no key hook: a focused one takes a shortcut such as `mod+enter`
+/// for itself and passes nothing on.
+pub fn line_field<S: 'static>(
+    k: &Kit,
+    spec: LineFieldSpec<'_>,
+    edit: &TextEdit,
+    access: fn(&mut S) -> &mut TextEdit,
+    on_key: impl Fn(&mut S, &KeyEvent, &mut Tx) -> bool + 'static,
+    on_change: impl Fn(&mut S, &mut Tx) + 'static,
+) -> El {
+    let mut input = TextInput::new(edit)
+        .label(spec.label)
+        .width(None)
+        .invalid(spec.issue.is_some())
+        .on_edit(access)
+        .on_key(on_key)
+        .on_change(on_change);
+    if !spec.placeholder.is_empty() {
+        input = input.placeholder(spec.placeholder);
+    }
+    let mut field = col()
+        .w_full()
+        .gap(SPACE_XS)
+        .child(field_label(k, spec.label).a11y_hidden())
+        .child(input.build(k).key(spec.key));
+    if let Some(issue) = spec.issue {
+        field = field.child(status_line(
+            k,
+            &format!("{}-issue", spec.key),
+            Tone::Danger,
+            StatusLines::Wrap,
+            issue,
+        ));
+    }
+    field
 }
 
 /// How tall a text editor is.

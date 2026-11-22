@@ -1,6 +1,7 @@
-use alert::alert_app::{exit_code, gpu_hint, run};
+use alert::alert_app::{exit_code, run};
 use alert::cli_utils::initialize;
 use common_cli::tool_exit_helpers::{exit_error, exit_with_code};
+use common_gui_rune::window::gpu_hint;
 use tracing::error;
 
 fn main() {
@@ -11,7 +12,7 @@ fn main() {
             if let Some(reason) = &window_failure {
                 error!(
                     reason = %reason,
-                    hint = %gpu_hint(),
+                    hint = %gpu_hint(env!("CARGO_PKG_NAME")),
                     "alert could not open a window"
                 );
             }

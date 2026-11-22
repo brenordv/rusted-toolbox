@@ -235,6 +235,53 @@ async fn a_server_that_does_not_answer_in_time_names_the_total_timeout() {
     );
 }
 
+#[rstest]
+#[case::timed_out_while_connecting(true, true, RequestFailure::ConnectTimeout)]
+#[case::timed_out_while_answering(true, false, RequestFailure::AnswerTimeout)]
+#[case::could_not_connect(false, true, RequestFailure::Connect)]
+#[case::anything_else(false, false, RequestFailure::Other)]
+fn a_request_failure_is_told_apart_by_its_timeout_and_connect_flags(
+    #[case] timed_out: bool,
+    #[case] connecting: bool,
+    #[case] failure: RequestFailure,
+) {
+    assert_eq!(RequestFailure::of(timed_out, connecting), failure);
+}
+
+#[rstest]
+#[case::connect_timeout(
+    RequestFailure::ConnectTimeout,
+    "Could not connect to the speech server at my-host:10157 within 7 s"
+)]
+#[case::answer_timeout(
+    RequestFailure::AnswerTimeout,
+    "The speech server at my-host:10157 did not finish answering within 90 s"
+)]
+#[case::connect(
+    RequestFailure::Connect,
+    "Could not connect to the speech server at my-host:10157"
+)]
+#[case::other(
+    RequestFailure::Other,
+    "The request to the speech server at my-host:10157 failed"
+)]
+fn a_failure_line_names_the_server_and_the_timeout_that_fired(
+    #[case] failure: RequestFailure,
+    #[case] line: &str,
+) {
+    let server = Server {
+        host: "my-host".to_owned(),
+        port: 10157,
+    };
+    let limits = Limits {
+        connect_timeout: Duration::from_secs(7),
+        total_timeout: Duration::from_secs(90),
+        ..Limits::default()
+    };
+
+    assert_eq!(failure_line(failure, &server, &limits), line);
+}
+
 #[tokio::test]
 async fn an_answer_cut_short_is_an_error_naming_the_server() {
     let config = SpeakConfig {

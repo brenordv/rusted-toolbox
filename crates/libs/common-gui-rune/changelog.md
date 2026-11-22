@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0
+- New part `parts::line_field` with `LineFieldSpec`: a label over a single-line field whose
+  `on_key` runs before the field's own keys (the kit's `TextField` has no key hook, so a
+  focused one swallows a window's shortcuts), with an `on_change` hook and the field's issue
+  under it as a danger status keyed `{key}-issue`.
+- `appearance::set_appearance(current, dark)`: stores the appearance a window draws in and
+  says whether it changed, for a window watch's `appearance` hook.
+- `window::gpu_hint(tool)`: the hint for the log line that reports a window that could not be
+  created.
+- New module `keys`: `is_chord(text, key, tx)` and `is_newline(key)` (Return, with or without
+  Shift), the two checks every tool's key handlers repeated.
+
 ## 1.0.0
 - Initial release, moved out of `eh-gui` so every Rune tool shares one copy.
 - The crate root: `Ds`, `Surface`, `surface`.

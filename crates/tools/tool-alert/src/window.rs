@@ -7,7 +7,7 @@ use common_gui_rune::parts::{StatusLines, Tone, caption, hairline, status_line};
 use common_gui_rune::tokens::{
     CONTROL_HEIGHT, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, TYPE_BODY, TYPE_TITLE,
 };
-use common_gui_rune::{Ds, Surface, surface};
+use common_gui_rune::{Ds, Surface, appearance, surface};
 use common_utils::string_utils::{display_line, display_lines, error_preview};
 use rune::{
     Cx, El, Key, KeyEvent, Mods, ScrollSpec, SpringPair, Transition, Tx, col, row, spacer, text,
@@ -207,11 +207,7 @@ pub fn shown(s: &mut AlertState, tx: &mut Tx) -> bool {
 
 /// Sets the appearance the window draws in (true: dark); true when it changed.
 pub fn set_appearance(s: &mut AlertState, dark: bool) -> bool {
-    if s.system_dark == Some(dark) {
-        return false;
-    }
-    s.system_dark = Some(dark);
-    true
+    appearance::set_appearance(&mut s.system_dark, dark)
 }
 
 /// Runs as the window closes: records the window's own close control when nothing else

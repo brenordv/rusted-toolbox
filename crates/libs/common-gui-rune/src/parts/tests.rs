@@ -1,8 +1,8 @@
 use super::*;
 use crate::Ds;
 use crate::test_harness::{
-    a11y_node, a11y_nodes, element, focused_key, has_text, label_of, press, press_key, rect,
-    runtime_at,
+    a11y_node, a11y_nodes, command, command_mods, element, focused_key, has_key, has_text,
+    label_of, press, press_key, rect, runtime_at, settle,
 };
 use crate::tokens::TYPE_BODY;
 use rstest::rstest;
@@ -11,6 +11,8 @@ use rune::{Cx, Key, Runtime};
 const SIZE: (f32, f32) = (480.0, 360.0);
 const EDITOR_KEY: &str = "notes";
 const STATUS_KEY: &str = "status";
+const LINE_KEY: &str = "server";
+const LINE_ISSUE_KEY: &str = "server-issue";
 const LINES: f32 = 4.0;
 
 struct Form {
@@ -19,6 +21,10 @@ struct Form {
     font: TextStyle,
     status: String,
     status_lines: StatusLines,
+    line: TextEdit,
+    line_issue: Option<String>,
+    shortcuts: usize,
+    changes: usize,
 }
 
 fn form(font: TextStyle, status: &str) -> Form {
@@ -28,7 +34,19 @@ fn form(font: TextStyle, status: &str) -> Form {
         font,
         status: status.to_owned(),
         status_lines: StatusLines::Wrap,
+        line: TextEdit::new(""),
+        line_issue: None,
+        shortcuts: 0,
+        changes: 0,
     }
+}
+
+fn count_mod_enter(form: &mut Form, event: &KeyEvent, _: &mut Tx) -> bool {
+    if event.key != Key::Enter || event.mods != command_mods() {
+        return false;
+    }
+    form.shortcuts += 1;
+    true
 }
 
 fn newline_on_return(form: &mut Form, event: &KeyEvent, _: &mut Tx) -> bool {
@@ -68,6 +86,19 @@ fn view(form: &Form, _: &mut Cx<Form>) -> El {
             Tone::Danger,
             form.status_lines,
             &form.status,
+        ))
+        .child(line_field(
+            k,
+            LineFieldSpec {
+                key: LINE_KEY,
+                label: "Server",
+                placeholder: "host name",
+                issue: form.line_issue.as_deref(),
+            },
+            &form.line,
+            |form: &mut Form| &mut form.line,
+            count_mod_enter,
+            |form: &mut Form, _: &mut Tx| form.changes += 1,
         ))
 }
 
@@ -162,6 +193,58 @@ fn a_one_line_status_stays_one_caption_line_tall() {
     let rt = runtime(long);
 
     assert_eq!(rect(&rt, STATUS_KEY)[3], TYPE_CAPTION.line_px());
+}
+
+#[test]
+fn a_line_field_is_named_by_its_label_and_shows_its_placeholder() {
+    let rt = runtime(form(TYPE_BODY, "ok"));
+
+    let tree = rt.accessibility_json();
+    let named: Vec<_> = a11y_nodes(&tree)
+        .into_iter()
+        .filter(|node| node["name"] == "Server")
+        .collect();
+
+    assert_eq!(named.len(), 1, "{named:?}");
+    assert_eq!(named[0]["placeholder"], "host name", "{}", named[0]);
+    assert!(!has_key(&rt, LINE_ISSUE_KEY));
+}
+
+#[test]
+fn a_line_field_with_an_issue_shows_it_as_a_status_under_the_field() {
+    let mut with_issue = form(TYPE_BODY, "ok");
+    with_issue.line_issue = Some("The server address is blank".to_owned());
+    let rt = runtime(with_issue);
+
+    let tree = rt.accessibility_json();
+    let issue = a11y_node(&tree, LINE_ISSUE_KEY).unwrap();
+
+    assert_eq!(issue["role"], "status", "{issue}");
+    assert_eq!(issue["name"], "The server address is blank", "{issue}");
+    assert!(rect(&rt, LINE_ISSUE_KEY)[1] > rect(&rt, LINE_KEY)[1]);
+}
+
+#[test]
+fn a_focused_line_field_hands_a_shortcut_to_its_key_handler() {
+    let mut rt = runtime(form(TYPE_BODY, "ok"));
+    press(&mut rt, LINE_KEY);
+
+    command(&mut rt, Key::Enter);
+
+    assert_eq!(rt.state.shortcuts, 1);
+    assert_eq!(rt.state.line.text, "");
+}
+
+#[test]
+fn typing_in_a_line_field_runs_its_change_handler() {
+    let mut rt = runtime(form(TYPE_BODY, "ok"));
+    press(&mut rt, LINE_KEY);
+
+    rt.paste("my-host");
+    settle(&mut rt);
+
+    assert_eq!(rt.state.line.text, "my-host");
+    assert_eq!(rt.state.changes, 1);
 }
 
 #[test]

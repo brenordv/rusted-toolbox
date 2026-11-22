@@ -7,4 +7,6 @@ pub struct SpeakArgs {
     pub model: Option<String>,
     /// The voice for this run, in place of the configured one.
     pub voice: Option<String>,
+    /// Open the window; the text and the two overrides are then ignored.
+    pub gui: bool,
 }

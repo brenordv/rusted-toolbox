@@ -169,9 +169,25 @@ impl SpeakConfig {
     pub fn validate(&self) -> Result<()> {
         self.endpoint()?;
         self.method()?;
-        self.payload_text(MODEL_KEY)?;
-        self.payload_text(VOICE_KEY)?;
+        self.check_model()?;
+        self.check_voice()?;
         Ok(())
+    }
+
+    /// Checks the payload's model.
+    ///
+    /// # Errors
+    /// When it is not a text, or is blank.
+    pub fn check_model(&self) -> Result<()> {
+        self.payload_text(MODEL_KEY).map(|_| ())
+    }
+
+    /// Checks the payload's voice.
+    ///
+    /// # Errors
+    /// When it is not a text, or is blank.
+    pub fn check_voice(&self) -> Result<()> {
+        self.payload_text(VOICE_KEY).map(|_| ())
     }
 
     /// The speech endpoint as a URL.

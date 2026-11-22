@@ -16,10 +16,10 @@ use crate::send::compose::{BODY_CAP, SendField};
 use crate::send::run::SendRun;
 use crate::state::{AppState, Input, Section, error_preview};
 use crate::views::read::short_duration;
+use common_gui_rune::keys::{is_chord, is_newline};
 use common_utils::string_utils::{format_bytes_to_string, format_thousands};
 use rune::{
-    Chord, El, Key, KeyEvent, LiveRegion, Mods, SpringPair, TextEdit, Transition, Tx, col, icon,
-    row, spacer, text,
+    El, KeyEvent, LiveRegion, SpringPair, TextEdit, Transition, Tx, col, icon, row, spacer, text,
 };
 use rune_kit::{Button, ButtonVariant, Kit, RollingText, Spinner};
 use shared_eventhub_core::producer::SendEnd;
@@ -73,8 +73,7 @@ pub fn send_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
     if s.sheet.is_some() || s.details().is_some() {
         return false;
     }
-    let chord = |text: &str| Chord::parse(text).is_ok_and(|chord| chord.matches_tx(key, tx));
-    if chord("mod+enter") {
+    if is_chord("mod+enter", key, tx) {
         if s.section != Section::Send {
             return false;
         }
@@ -82,7 +81,7 @@ pub fn send_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
         return true;
     }
     for (index, section) in Section::ALL.into_iter().enumerate() {
-        if chord(&format!("mod+{}", index + 1)) {
+        if is_chord(&format!("mod+{}", index + 1), key, tx) {
             dispatch(s, Input::SectionPicked(section));
             return true;
         }
@@ -94,11 +93,7 @@ pub fn send_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
 /// multi-line field without `on_submit` hands a plain Return to the window's default button, and
 /// the Send section has none, so its editors type the newline themselves.
 fn type_newline(key: &KeyEvent, edit: &mut TextEdit) -> bool {
-    let newline = key.key == Key::Enter
-        && Mods {
-            shift: key.mods.shift,
-            ..Mods::default()
-        } == key.mods;
+    let newline = is_newline(key);
     if newline {
         edit.insert("\n");
     }

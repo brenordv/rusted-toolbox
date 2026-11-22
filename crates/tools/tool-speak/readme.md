@@ -21,6 +21,7 @@ speak [OPTIONS] [TEXT]
   TEXT             the text to speak; read from stdin when absent and stdin is piped
       --model M    model for this run, in place of the configured one (nothing is saved)
       --voice V    voice for this run, in place of the configured one (nothing is saved)
+  -g, --gui        open the window (TEXT, stdin, --model, and --voice are ignored)
 ```
 
 plus the shared logging flags (`--log-level`, `--log-to-file`, `--log-to-console`,
@@ -67,10 +68,39 @@ not exist:
   address is refused: the port has its own question, and an empty answer means 10157.
 
 - anywhere else (an agent, a pipe, a redirected stderr), speak exits 1 and tells you to run
-  it once in a terminal. It never guesses a server.
+  it once in a terminal, or to run `speak --gui` and save the server in Settings. It never
+  guesses a server.
+
+- with `--gui`, the window opens on Settings with the caret in the URL field.
 
 No command-line flag sets, saves, or selects the server address. That is on purpose: an
 agent allowed to run `speak` cannot be talked into sending your text to another host.
+
+## The window
+
+`speak --gui` opens a window with two areas. `Ctrl+1` and `Ctrl+2` switch between them
+(`Cmd` on macOS), also while you type.
+
+Compose is for trying a text:
+
+- Type the text. Return starts a new line.
+- Each vocal reaction the settings list has a button. A press types the tag where the caret
+  is, with a space before it when it follows a word, and leaves the caret after the tag.
+- Generate (`Ctrl+Enter`) asks the server for the audio. Play is enabled once there is
+  audio; pressing it again restarts the sound. Editing the text afterwards keeps the audio,
+  and the next Generate replaces it.
+- The line beside the buttons says what is going on: generating, ready, or why it failed. A
+  long failure is cut at 140 characters; the log file has the whole text.
+
+Settings is the settings file as a form: the URL, the request method, the model, the voice,
+and the reactions, one tag in square brackets per line. Save writes the file and says so.
+A field that cannot be saved says why under it. Payload fields the form does not show
+(`speed`, `seed`) stay in the file as they are.
+
+A settings file that speak cannot read stops `speak --gui` before the window opens, with an
+error that names the file, so the form never overwrites something it could not load.
+
+With `--gui`, speak logs to a file at `info` by default, under `~/.speak/logs`.
 
 ## The settings file
 
@@ -94,8 +124,9 @@ agent allowed to run `speak` cannot be talked into sending your text to another 
 - `supported_vocal_reactions`: the tags the model understands inline in the text. speak
   sends them as part of the text; the list is for people and for the agent skill.
 
-Edit the file to change the server, the default model, or the default voice. A file speak
-cannot read is an error that names the file; speak never overwrites it.
+Edit the file, or use Settings in `speak --gui`, to change the server, the default model, or
+the default voice. A file speak cannot read is an error that names the file; speak never
+overwrites it.
 
 ## Vocal reactions
 
@@ -142,4 +173,5 @@ time.
 
 speak plays sound through ALSA, so building it needs the ALSA development files
 (`sudo apt-get install -y libasound2-dev` on Debian and Ubuntu). Windows and macOS need
-nothing extra.
+nothing extra. The window needs a GPU with Vulkan on Linux, DirectX 12 on Windows, or Metal
+on macOS.

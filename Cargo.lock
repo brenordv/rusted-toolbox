@@ -247,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "alert"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1571,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "common-gui-rune"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "common-utils",
@@ -2605,7 +2605,7 @@ dependencies = [
 
 [[package]]
 name = "eh-gui"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -8796,16 +8796,19 @@ dependencies = [
 
 [[package]]
 name = "speak"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "clap",
  "common-audio",
  "common-cli",
+ "common-gui-rune",
  "common-serialization-utils",
  "common-utils",
  "reqwest 0.13.5",
  "rstest",
+ "rune",
+ "rune-kit",
  "serde",
  "serde_json",
  "tempfile",

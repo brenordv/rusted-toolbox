@@ -53,6 +53,16 @@ impl AppearanceWatch {
     }
 }
 
+/// Stores `dark` (true: dark) in `current`, the appearance a window draws in once the system's
+/// was read; true when that changed it.
+pub fn set_appearance(current: &mut Option<bool>, dark: bool) -> bool {
+    if *current == Some(dark) {
+        return false;
+    }
+    *current = Some(dark);
+    true
+}
+
 /// Reads the system appearance on each poll.
 #[derive(Default)]
 pub struct SystemAppearance {

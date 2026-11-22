@@ -8,7 +8,8 @@ use common_cli::tool_log_level::ToolLogLevel;
 /// Sends the text to the server set on the first run and plays the audio it answers with.
 /// The text comes from TEXT, or from stdin when TEXT is absent and stdin is piped. speak
 /// returns when the audio ends. The server address is asked on the first run in a terminal
-/// and kept in ~/.rusted-toolbox/tool-speak/config.json; no flag sets it.
+/// and kept in ~/.rusted-toolbox/tool-speak/config.json; no flag sets it. With --gui, speak
+/// opens a window instead, to try a text and to change the settings.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about)]
 pub struct CliArgs {
@@ -23,27 +24,47 @@ pub struct CliArgs {
     #[arg(long, value_name = "VOICE")]
     pub voice: Option<String>,
 
+    /// Open the window (TEXT, stdin, --model, and --voice are ignored)
+    #[arg(short = 'g', long)]
+    pub gui: bool,
+
     #[command(flatten)]
     pub common: CommonToolArgsNoVerbose,
 }
 
-/// Parses the command line and boots logging at the house default: warnings and errors on
-/// stderr.
+impl CliArgs {
+    /// The parsed values without the logging flags.
+    pub fn into_speak_args(self) -> SpeakArgs {
+        SpeakArgs {
+            text: self.text,
+            model: self.model,
+            voice: self.voice,
+            gui: self.gui,
+        }
+    }
+}
+
+/// Parses the command line and boots logging. A plain run logs at the house default,
+/// warnings and errors on stderr, where the one error line must stand alone. With `--gui` the
+/// file sink is forced on and the default level is info: a window has no stderr anyone
+/// watches. `--log-level` still decides in both.
 pub fn initialize() -> SpeakArgs {
-    let args = CliArgs::parse();
+    let mut args = CliArgs::parse();
+    let default_level = if args.gui {
+        args.common.log_to_file = true;
+        ToolLogLevel::Info
+    } else {
+        ToolLogLevel::Warn
+    };
     args.common.app_boot_up_with_level(
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
-        ToolLogLevel::Warn,
+        default_level,
         "<unused>",
         false,
         None::<fn()>,
     );
-    SpeakArgs {
-        text: args.text,
-        model: args.model,
-        voice: args.voice,
-    }
+    args.into_speak_args()
 }
 
 #[cfg(test)]
@@ -73,6 +94,35 @@ mod tests {
         assert_eq!(args.text.as_deref(), Some("Hello there"));
         assert_eq!(args.model.as_deref(), Some("m"));
         assert_eq!(args.voice.as_deref(), Some("v.wav"));
+    }
+
+    #[rstest]
+    #[case::long(&["speak", "--gui"])]
+    #[case::short(&["speak", "-g"])]
+    #[case::with_text_and_an_override(&["speak", "--gui", "--voice", "v.wav", "Hello"])]
+    fn gui_parses_alone_and_beside_what_it_ignores(#[case] command_line: &[&str]) {
+        let args = CliArgs::try_parse_from(command_line)
+            .unwrap()
+            .into_speak_args();
+
+        assert!(args.gui);
+    }
+
+    #[test]
+    fn a_plain_run_does_not_ask_for_the_window() {
+        let args = CliArgs::try_parse_from(["speak", "Hello"])
+            .unwrap()
+            .into_speak_args();
+
+        assert_eq!(
+            args,
+            SpeakArgs {
+                text: Some("Hello".to_owned()),
+                model: None,
+                voice: None,
+                gui: false,
+            }
+        );
     }
 
     #[rstest]

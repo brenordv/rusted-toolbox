@@ -179,22 +179,52 @@ impl SpeechClient {
     /// `error` without its URL, under a line naming the server and, for a timeout, which one
     /// fired.
     fn request_error(&self, error: reqwest::Error, server: &Server) -> anyhow::Error {
-        let line = if error.is_timeout() && error.is_connect() {
-            format!(
-                "Could not connect to the speech server at {server} within {} s",
-                self.limits.connect_timeout.as_secs()
-            )
-        } else if error.is_timeout() {
-            format!(
-                "The speech server at {server} did not finish answering within {} s",
-                self.limits.total_timeout.as_secs()
-            )
-        } else if error.is_connect() {
-            format!("Could not connect to the speech server at {server}")
-        } else {
-            format!("The request to the speech server at {server} failed")
-        };
+        let failure = RequestFailure::of(error.is_timeout(), error.is_connect());
+        let line = failure_line(failure, server, &self.limits);
         anyhow!(error.without_url()).context(line)
+    }
+}
+
+/// How a request failed before an answer arrived whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RequestFailure {
+    /// Connecting took longer than the connect timeout.
+    ConnectTimeout,
+    /// The whole request took longer than the total timeout.
+    AnswerTimeout,
+    /// The connection could not be made.
+    Connect,
+    /// Anything else: a connection that broke, a body cut short.
+    Other,
+}
+
+impl RequestFailure {
+    /// The failure an HTTP error describes: whether a timeout fired (`timed_out`) and whether
+    /// it happened while connecting (`connecting`).
+    fn of(timed_out: bool, connecting: bool) -> Self {
+        match (timed_out, connecting) {
+            (true, true) => Self::ConnectTimeout,
+            (true, false) => Self::AnswerTimeout,
+            (false, true) => Self::Connect,
+            (false, false) => Self::Other,
+        }
+    }
+}
+
+/// The line that says how a request to `server` failed, naming the timeout that fired and its
+/// length when one did.
+fn failure_line(failure: RequestFailure, server: &Server, limits: &Limits) -> String {
+    match failure {
+        RequestFailure::ConnectTimeout => format!(
+            "Could not connect to the speech server at {server} within {} s",
+            limits.connect_timeout.as_secs()
+        ),
+        RequestFailure::AnswerTimeout => format!(
+            "The speech server at {server} did not finish answering within {} s",
+            limits.total_timeout.as_secs()
+        ),
+        RequestFailure::Connect => format!("Could not connect to the speech server at {server}"),
+        RequestFailure::Other => format!("The request to the speech server at {server} failed"),
     }
 }
 

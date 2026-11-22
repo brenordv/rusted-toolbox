@@ -68,6 +68,14 @@
   `convenience-build-ubuntu.sh` leaves it out with `speak` when the ALSA files are missing.
   `common-utils` 2.4.0 gains `string_utils::display_lines`, moved from `eh-gui` (now 1.0.2, no
   behavior change), which cleans the alert's message.
+- `speak` 1.1.0 adds `-g`/`--gui`: a window with a Compose area (the text, a button per vocal
+  reaction that types its tag at the caret, Generate, Play) and a Settings area that saves the
+  server address, method, model, voice, and reaction list. A first run with `--gui` opens on
+  Settings. `common-gui-rune` 1.1.0 gains `parts::line_field` (a labelled single-line field
+  whose key handler runs before the field's), `appearance::set_appearance`,
+  `window::gpu_hint`, and `keys::{is_chord, is_newline}`; `alert` 1.0.1 and `eh-gui` 1.0.3 use
+  them in place of their own copies. The one visible change: Shift+Return types a line break
+  in the alert tester's Body.
 
 ## v6
 - Updated dependencies.

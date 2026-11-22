@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.0
+- `-g`/`--gui` opens a window instead of speaking. The text argument, stdin, `--model`, and
+  `--voice` are ignored with it.
+- Compose: a text editor, one button per vocal reaction that types its tag at the caret (with
+  a space before it when it follows a word), Generate, and Play. Play is enabled once audio
+  was generated and restarts a sound that is still playing. Editing the text keeps the
+  generated audio. `mod+enter` generates; Return types a line break.
+- Settings: the URL, the request method, the model, the voice, and the reaction list (one tag
+  per line, in square brackets), with Save. Save keeps payload fields the form does not show.
+  Each field's issue shows under it and focus moves to the first one.
+- A first run with `--gui` opens on Settings with the caret in URL; Generate stays disabled
+  until a server is saved. A settings file that cannot be read exits 1 naming it, before any
+  window opens.
+- `mod+1` and `mod+2` switch between Compose and Settings, also while typing.
+- With `--gui`, speak logs to a file at `info` by default (`~/.speak/logs`).
+- A failure in the window is shown on one line, cut at 140 characters; the log holds the whole
+  text.
+
 ## 1.0.0
 - Initial release.
 - `speak [TEXT]` sends the text to a text-to-speech server (`POST` or `PUT` with a JSON body)

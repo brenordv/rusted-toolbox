@@ -4,13 +4,15 @@
 use crate::design::BODY_LINES;
 use crate::models::TesterSeed;
 use anyhow::{Context, Result};
+use common_gui_rune::keys::{is_chord, is_newline};
 use common_gui_rune::parts::{
-    EditorHeight, EditorSpec, StatusLines, Tone, field_label, status_line, text_editor,
+    EditorHeight, EditorSpec, LineFieldSpec, StatusLines, Tone, field_label, line_field,
+    status_line, text_editor,
 };
 use common_gui_rune::tokens::{SPACE_LG, SPACE_MD, SPACE_XS, TYPE_BODY};
-use common_gui_rune::{Ds, Surface, surface};
-use rune::{Chord, Cx, El, Key, KeyEvent, Mods, TextEdit, Tx, col, row, spacer};
-use rune_kit::{Button, ButtonVariant, Kit, TextInput};
+use common_gui_rune::{Ds, Surface, appearance, surface};
+use rune::{Cx, El, KeyEvent, TextEdit, Tx, col, row, spacer};
+use rune_kit::{Button, ButtonVariant, Kit};
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -146,34 +148,26 @@ pub fn shown(_: &mut TesterState, _: &mut Tx) -> bool {
 
 /// Sets the appearance the window draws in (true: dark); true when it changed.
 pub fn set_appearance(s: &mut TesterState, dark: bool) -> bool {
-    if s.system_dark == Some(dark) {
-        return false;
-    }
-    s.system_dark = Some(dark);
-    true
-}
-
-fn is_test_chord(key: &KeyEvent, tx: &Tx) -> bool {
-    Chord::parse("mod+enter").is_ok_and(|chord| chord.matches_tx(key, tx))
+    appearance::set_appearance(&mut s.system_dark, dark)
 }
 
 /// `mod+enter` presses Test; true when `key` was that chord. A focused text field takes
 /// `mod+enter` for itself and passes nothing on, so each field runs this before its own keys.
 pub fn window_key(s: &mut TesterState, key: &KeyEvent, tx: &mut Tx) -> bool {
-    if !is_test_chord(key, tx) {
+    if !is_chord("mod+enter", key, tx) {
         return false;
     }
     s.test();
     true
 }
 
-/// Keys in the Body editor, before the editor sees them: `mod+enter` presses Test and a plain
-/// Return types a line break.
+/// Keys in the Body editor, before the editor sees them: `mod+enter` presses Test, and Return,
+/// with or without Shift, types a line break.
 fn body_key(s: &mut TesterState, key: &KeyEvent, tx: &mut Tx) -> bool {
     if window_key(s, key, tx) {
         return true;
     }
-    if key.key == Key::Enter && key.mods == Mods::default() {
+    if is_newline(key) {
         s.body.insert("\n");
         return true;
     }
@@ -190,7 +184,7 @@ pub fn view(s: &TesterState, cx: &mut Cx<TesterState>) -> El {
         .gap(SPACE_MD)
         .padding(SPACE_LG)
         .fill(surface(k, Surface::Window))
-        .child(line_field(
+        .child(tester_field(
             k,
             TITLE_KEY,
             "Title (optional)",
@@ -198,7 +192,7 @@ pub fn view(s: &TesterState, cx: &mut Cx<TesterState>) -> El {
             |s| &mut s.title,
         ))
         .child(body_field(s, k))
-        .child(line_field(
+        .child(tester_field(
             k,
             SOUND_KEY,
             "Sound file (optional)",
@@ -225,31 +219,33 @@ pub fn view(s: &TesterState, cx: &mut Cx<TesterState>) -> El {
     )
 }
 
-/// A label over a single-line field keyed `key` that takes the tester's shortcut. The field
-/// carries the name, so the visible label stays out of the accessibility tree.
-fn line_field(
+/// A single-line field keyed `key` under its label, taking the tester's shortcut while it has
+/// focus.
+fn tester_field(
     k: &Kit,
     key: &str,
     label: &str,
     edit: &TextEdit,
     access: fn(&mut TesterState) -> &mut TextEdit,
 ) -> El {
-    col()
-        .w_full()
-        .gap(SPACE_XS)
-        .child(field_label(k, label).a11y_hidden())
-        .child(
-            TextInput::new(edit)
-                .label(label)
-                .width(None)
-                .on_edit(access)
-                .on_key(window_key)
-                .build(k)
-                .key(key),
-        )
+    let spec = LineFieldSpec {
+        key,
+        label,
+        placeholder: "",
+        issue: None,
+    };
+    line_field(
+        k,
+        spec,
+        edit,
+        access,
+        window_key,
+        |_: &mut TesterState, _: &mut Tx| {},
+    )
 }
 
-/// The Body label over its editor, hidden from the accessibility tree as in [`line_field`].
+/// The Body label over its editor. The editor carries the name, so the visible label stays
+/// out of the accessibility tree.
 fn body_field(s: &TesterState, k: &Kit) -> El {
     let spec = EditorSpec {
         key: BODY_KEY,

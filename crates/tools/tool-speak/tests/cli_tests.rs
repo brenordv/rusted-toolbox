@@ -30,6 +30,27 @@ fn help_prints_clap_usage_and_exits_zero() {
 }
 
 #[test]
+fn help_lists_the_gui_flag() {
+    let output = speak(&["--help"], "");
+
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("-g, --gui"),
+        "{output:?}"
+    );
+}
+
+#[test]
+fn a_rune_tooling_flag_beside_gui_is_a_usage_error_and_opens_no_window() {
+    let output = speak(&["--gui", "--tree", "tree.json"], "");
+
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("unexpected argument '--tree'"),
+        "{output:?}"
+    );
+}
+
+#[test]
 fn an_empty_piped_stdin_and_no_argument_exits_one_with_the_blank_text_message() {
     let output = speak(&[], "");
 

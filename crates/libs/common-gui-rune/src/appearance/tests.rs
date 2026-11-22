@@ -67,3 +67,15 @@ fn a_failure_before_any_read_applies_nothing() {
     assert_eq!(watch.observe(Err(anyhow!("unavailable"))), None);
     assert_eq!(watch.observe(Ok(false)), Some(false));
 }
+
+#[test]
+fn set_appearance_reports_a_change_once_and_again_when_it_flips() {
+    let mut current = None;
+
+    let first = set_appearance(&mut current, true);
+    let again = set_appearance(&mut current, true);
+    let flipped = set_appearance(&mut current, false);
+
+    assert_eq!((first, again, flipped), (true, false, true));
+    assert_eq!(current, Some(false));
+}

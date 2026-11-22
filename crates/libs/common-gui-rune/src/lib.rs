@@ -10,6 +10,7 @@ pub mod appearance;
 #[cfg(any(test, feature = "test-harness"))]
 pub mod contrast;
 mod ds;
+pub mod keys;
 pub mod motion;
 pub mod parts;
 #[cfg(any(test, feature = "test-harness"))]

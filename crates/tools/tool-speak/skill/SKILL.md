@@ -48,6 +48,9 @@ speak "That was the last failing test. [chuckle] It was a typo."
 `--voice <file>` and `--model <name>` change the voice or model for one run and save
 nothing. Use them only when the user names one.
 
+`speak --gui` opens a window for the user to try texts and change the settings. It is for
+the user to run, never you: it speaks nothing by itself and waits until someone closes it.
+
 ## What comes back
 
 - Exit 0: the audio played to its end. stdout is empty.

@@ -7,7 +7,7 @@ use crate::tester::{self, TesterState, start_alert};
 use crate::window::{self, AlertState};
 use anyhow::{Context, Result, bail};
 use common_audio::{Clip, Speaker};
-use common_gui_rune::window::{GPU_BACKENDS, WatchHooks, spawn_window_watch};
+use common_gui_rune::window::{WatchHooks, spawn_window_watch};
 use common_utils::string_utils::display_line;
 use rune::{App, AppSpec, WindowOptions};
 use std::ffi::OsString;
@@ -103,11 +103,6 @@ pub fn exit_code(window_failure: Option<&str>) -> i32 {
         Some(_) => 1,
         None => 0,
     }
-}
-
-/// What a window that could not be created needs, for the log.
-pub fn gpu_hint() -> String {
-    format!("alert needs a GPU that supports {GPU_BACKENDS}")
 }
 
 /// Runs alert: the tester with `--gui`, the alert otherwise. Returns when the window closes,

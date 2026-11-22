@@ -11,6 +11,11 @@ use std::time::{Duration, Instant};
 /// The graphics backend Rune draws with on each platform, for the text of a window failure.
 pub const GPU_BACKENDS: &str = "DirectX 12 on Windows, Vulkan on Linux, Metal on macOS";
 
+/// What `tool` needs when its window could not be created, for the log line that reports it.
+pub fn gpu_hint(tool: &str) -> String {
+    format!("{tool} needs a GPU that supports {GPU_BACKENDS}")
+}
+
 /// How long a window gets to appear before an error from Rune counts as a failure to create it.
 pub const WINDOW_GRACE: Duration = Duration::from_secs(2);
 /// How often the watch looks at the window.
@@ -124,5 +129,15 @@ mod tests {
         let failure = window_failure(waited, shown, error.map(str::to_owned));
 
         assert_eq!(failure.as_deref(), expected);
+    }
+
+    #[test]
+    fn the_gpu_hint_names_the_tool_and_the_backends() {
+        let hint = gpu_hint("alert");
+
+        assert_eq!(
+            hint,
+            format!("alert needs a GPU that supports {GPU_BACKENDS}")
+        );
     }
 }

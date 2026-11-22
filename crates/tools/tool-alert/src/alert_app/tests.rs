@@ -191,8 +191,3 @@ fn the_exit_code_is_zero_unless_the_window_could_not_be_created() {
     assert_eq!(exit_code(None), 0);
     assert_eq!(exit_code(Some("no adapter")), 1);
 }
-
-#[test]
-fn the_gpu_hint_names_the_backends() {
-    assert!(gpu_hint().contains(GPU_BACKENDS));
-}

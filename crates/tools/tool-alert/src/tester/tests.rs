@@ -6,7 +6,7 @@ use common_gui_rune::test_harness::{
     a11y_node, command, element, has_key, has_text, press, press_key, runtime_at, settle,
 };
 use rstest::rstest;
-use rune::Runtime;
+use rune::{Key, Runtime};
 use std::cell::RefCell;
 use std::rc::Rc;
 
