@@ -35,6 +35,8 @@
   plain field. Removed: `azeventhubs`, `sled`, and `rand06-compat`.
 - Major dependency bumps: `rsa` 0.9.10 to 0.10.0 (`whisper`), `jsonwebtoken` 11.1.0 to 12.0.0
   (`jwt`), `rusqlite` 0.41.1 to 0.43.0 (`netquality`), and `rfd` 0.17.2 to 0.18.0 (`seal-gui`).
+- `url` 2.5.8 to 2.5.9 for RUSTSEC-2026-0592 (a stack overflow in `Url::origin()` on nested
+  `blob:` URLs); `form_urlencoded` moves to 1.2.3 with it.
 - Rune's `[patch.crates-io]` block (forks of `winit`, `wgpu-hal`, `parley_engine`, and
   `accesskit_windows` at anomalyco/rune's rev `c4eda05`) is copied into the root `Cargo.toml`
   and applies to the whole workspace, `seal-gui`'s eframe stack included. `wgpu-hal` stays at
