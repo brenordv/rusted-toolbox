@@ -206,8 +206,12 @@ fn plan_send(
     let (namespace, hub) = match (&config.target.namespace, &config.target.event_hub) {
         (Some(namespace), Some(hub)) => (namespace.clone(), hub.clone()),
         (None, _) | (_, None) => (
-            ask(prompter.text("Namespace:", "", namespace_check))?,
-            ask(prompter.text("Event hub:", "", event_hub_check))?,
+            ask(prompter.text(
+                "Namespace (e.g. my-ns.servicebus.windows.net):",
+                "",
+                namespace_check,
+            ))?,
+            ask(prompter.text("Event hub (e.g. orders):", "", event_hub_check))?,
         ),
     };
     let mut options = vec![

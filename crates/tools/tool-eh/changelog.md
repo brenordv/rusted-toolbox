@@ -71,6 +71,12 @@
   another folder or move the file). The message files `eh read` writes with `--disk-mode` are
   the same txt details block, so they gain the three entries too. Exports without metadata are
   unchanged.
+- The connection flags' help (`read` and `send`) shows an example value: a connection string
+  with `EntityPath=orders` (after the process-list warning), `-e` orders, `--keyvault-url`
+  `https://my-vault.vault.azure.net`, `--keyvault-secret` eh-orders, `-g` eh-local.
+  `--tenant-id` and `--client-id` name the portal's Directory (tenant) ID and Application
+  (client) ID. The menu's two name prompts read "Namespace (e.g.
+  my-ns.servicebus.windows.net):" and "Event hub (e.g. orders):". Text only.
 - Breaking, from 1.1.0 (the readme has the full table):
   - `eh-read` -> `eh read`, `eh-export` -> `eh export`; shared flags go before the
     subcommand.

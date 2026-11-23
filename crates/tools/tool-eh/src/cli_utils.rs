@@ -89,7 +89,8 @@ pub(crate) enum Commands {
 pub(crate) struct TargetArgs {
     /// Event hub connection string. Visible in the process list and shell
     /// history: prefer the EH_CONNECTION_STRING environment variable, or pass
-    /// it once with --save-config
+    /// it once with --save-config. E.g.
+    /// 'Endpoint=sb://my-ns.servicebus.windows.net/;SharedAccessKeyName=my-policy;SharedAccessKey=...;EntityPath=orders'
     #[arg(short = 's', long = "connection-string", value_name = "STRING")]
     pub connection_string: Option<SecretString>,
 
@@ -97,7 +98,7 @@ pub(crate) struct TargetArgs {
     #[arg(long = "namespace", value_name = "FQNS")]
     pub namespace: Option<String>,
 
-    /// Event hub name
+    /// Event hub name, e.g. orders
     #[arg(short = 'e', long = "entity-path", value_name = "NAME")]
     pub event_hub: Option<String>,
 
@@ -106,20 +107,24 @@ pub(crate) struct TargetArgs {
     #[arg(long = "auth", value_enum, value_name = "METHOD")]
     pub auth: Option<AuthArg>,
 
-    /// Tenant of the service principal (--auth client-secret); the secret
-    /// comes from EH_CLIENT_SECRET or the saved secrets
+    /// Directory (tenant) ID of the service principal's app registration
+    /// (--auth client-secret); the secret comes from EH_CLIENT_SECRET or the
+    /// saved secrets
     #[arg(long = "tenant-id", value_name = "ID")]
     pub tenant_id: Option<String>,
 
-    /// Client id of the service principal (--auth client-secret)
+    /// Application (client) ID of the service principal's app registration
+    /// (--auth client-secret)
     #[arg(long = "client-id", value_name = "ID")]
     pub client_id: Option<String>,
 
-    /// Key Vault holding the connection string
+    /// Key Vault holding the connection string, e.g.
+    /// https://my-vault.vault.azure.net
     #[arg(long = "keyvault-url", value_name = "URL")]
     pub keyvault_url: Option<String>,
 
-    /// Name of the Key Vault secret holding the connection string
+    /// Name of the Key Vault secret holding the connection string, e.g.
+    /// eh-orders
     #[arg(long = "keyvault-secret", value_name = "NAME")]
     pub keyvault_secret: Option<String>,
 
@@ -248,7 +253,7 @@ pub(crate) struct ReadArgs {
     #[command(flatten)]
     pub data: DataArgs,
 
-    /// Consumer group [default: $Default]
+    /// Consumer group, e.g. eh-local [default: $Default]
     #[arg(short = 'g', long = "consumer-group", value_name = "NAME")]
     pub consumer_group: Option<String>,
 
