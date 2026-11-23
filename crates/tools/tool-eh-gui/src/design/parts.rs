@@ -582,3 +582,13 @@ pub fn body_text(k: &Kit, body: &str) -> El {
         .wrap_anywhere()
         .selectable(true)
 }
+
+/// An example value on its own line under a hint: muted monospace that breaks anywhere, since a
+/// value such as a connection string has no spaces to break at. Not selectable: it shows the
+/// shape of a value, not one to copy.
+pub fn example(k: &Kit, line: &str) -> El {
+    text(line)
+        .font(TYPE_MONO)
+        .color(k.c.text_muted)
+        .wrap_anywhere()
+}

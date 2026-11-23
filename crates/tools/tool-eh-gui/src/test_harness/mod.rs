@@ -14,6 +14,8 @@ mod a11y_tests;
 #[cfg(test)]
 mod details_tests;
 #[cfg(test)]
+mod hint_tests;
+#[cfg(test)]
 mod journey_tests;
 #[cfg(test)]
 mod metadata_tests;

@@ -4,6 +4,10 @@
 - No change in what the app does. The chord check and the Return-types-a-line-break check its
   key handlers used moved to `common-gui-rune::keys` (`is_chord`, `is_newline`), which `speak`
   and `alert` use too.
+- The connection sheet has a muted hint under each sign-in field saying what goes in it, ending
+  with an example value where one helps (the connection string's example on its own line, in
+  monospace), and a line under Sign-in method and Azure credential saying what the picked
+  option does. Text only: no field, check, or saved value changed.
 
 ## 1.0.2
 - No change in what the app does. The cleaning of the error details text (each line's control

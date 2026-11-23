@@ -1,6 +1,7 @@
 //! The connection sheet: the profile, auth method, the fields it needs, storage, and Save /
 //! Connect.
 
+pub mod hints;
 mod profile;
 
 pub(crate) use profile::move_profile_focus;
@@ -34,8 +35,39 @@ use tracing::warn;
 pub const SAVE_STATUS_KEY: &str = "save-status";
 /// The most lines the footer's save status caption shows.
 pub const SAVE_STATUS_LINES: usize = 4;
+/// The key of the connection string's example line.
+pub const CONNECTION_STRING_EXAMPLE_KEY: &str = "connection-string-example";
 
 type EditAccess = fn(&mut AppState) -> &mut TextEdit;
+
+/// A secret field's fixed words.
+#[derive(Clone, Copy)]
+struct SecretField {
+    /// The key of the typed input with its issue, or of the stored row.
+    key: &'static str,
+    label: &'static str,
+    /// The muted caption under the typed field.
+    hint: &'static str,
+    /// An example value on its own line under the hint: its key and the value.
+    example: Option<(&'static str, &'static str)>,
+}
+
+const CONNECTION_STRING_FIELD: SecretField = SecretField {
+    key: "connection-string",
+    label: "Connection string",
+    hint: hints::CONNECTION_STRING,
+    example: Some((
+        CONNECTION_STRING_EXAMPLE_KEY,
+        hints::CONNECTION_STRING_EXAMPLE,
+    )),
+};
+
+const CLIENT_SECRET_FIELD: SecretField = SecretField {
+    key: "client-secret",
+    label: "Client secret",
+    hint: hints::CLIENT_SECRET,
+    example: None,
+};
 
 /// The connection sheet while it is open. A closed sheet builds nothing, so its secret fields
 /// are never mounted, focusable, or exposed to assistive technology.
@@ -59,7 +91,8 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
         .pt(SPACE_SM)
         .pb(SPACE_XL)
         .child(profile::group(s, k, &mut overlays))
-        .child(
+        .child(with_hint(
+            k,
             SegmentedControl::new(&AuthChoice::LABELS, Some(s.form.auth.index()))
                 .label("Sign-in method")
                 .fit()
@@ -69,7 +102,8 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
                     }
                 })
                 .build(k),
-        );
+            hints::sign_in(s.form.auth),
+        ));
     if let Some(caption) = &s.config_caption {
         let preview = error_preview(caption);
         body = body.child(parts::caption(k, &preview.shown));
@@ -78,12 +112,16 @@ pub fn sheet(s: &AppState, k: &Kit, layer: &mut Vec<El>) {
         }
     }
     body = method_fields(s, k, &issues, body)
-        .child(field(
+        .child(with_hint(
             k,
-            "Consumer group",
-            &s.form.consumer_group,
-            &issues.consumer_group,
-            |s| &mut s.form.consumer_group,
+            field(
+                k,
+                "Consumer group",
+                &s.form.consumer_group,
+                &issues.consumer_group,
+                |s| &mut s.form.consumer_group,
+            ),
+            hints::CONSUMER_GROUP,
         ))
         .child(storage(s, k, &issues));
 
@@ -130,8 +168,7 @@ fn method_fields(s: &AppState, k: &Kit, issues: &FieldIssues, mut body: El) -> E
         AuthChoice::ConnectionString => {
             body = body.child(secret(
                 k,
-                "connection-string",
-                "Connection string",
+                &CONNECTION_STRING_FIELD,
                 &form.connection_string,
                 &issues.connection_string,
                 |s| s.form.connection_string.edit_mut(),
@@ -140,19 +177,23 @@ fn method_fields(s: &AppState, k: &Kit, issues: &FieldIssues, mut body: El) -> E
         AuthChoice::Credential => {}
         AuthChoice::KeyVault => {
             body = body
-                .child(field(
+                .child(with_hint(
                     k,
-                    "Vault URL",
-                    &form.vault_url,
-                    &issues.vault_url,
-                    |s| &mut s.form.vault_url,
+                    field(k, "Vault URL", &form.vault_url, &issues.vault_url, |s| {
+                        &mut s.form.vault_url
+                    }),
+                    hints::VAULT_URL,
                 ))
-                .child(field(
+                .child(with_hint(
                     k,
-                    "Secret name",
-                    &form.secret_name,
-                    &issues.secret_name,
-                    |s| &mut s.form.secret_name,
+                    field(
+                        k,
+                        "Secret name",
+                        &form.secret_name,
+                        &issues.secret_name,
+                        |s| &mut s.form.secret_name,
+                    ),
+                    hints::SECRET_NAME,
                 ));
         }
     }
@@ -172,11 +213,13 @@ fn method_fields(s: &AppState, k: &Kit, issues: &FieldIssues, mut body: El) -> E
             k,
             namespace,
             marks.namespace && issues.namespace.is_none(),
+            hints::namespace(form.auth),
         ))
         .child(recall_marked(
             k,
             event_hub,
             marks.event_hub && issues.event_hub.is_none(),
+            hints::event_hub(form.auth),
         ));
     if form.auth != AuthChoice::ConnectionString {
         body = body.child(credential(s, k, issues));
@@ -184,19 +227,30 @@ fn method_fields(s: &AppState, k: &Kit, issues: &FieldIssues, mut body: El) -> E
     body
 }
 
-/// A name field with [`RECALLED_FIELD`] as a muted caption under it while `marked`. The field
-/// always sits in the same column, so the mark coming or going never remounts it.
-fn recall_marked(k: &Kit, field: El, marked: bool) -> El {
+/// A name field, then [`RECALLED_FIELD`] as a muted caption while `marked`, then `hint`. The
+/// field always sits first in the same column, so the mark coming or going never remounts it.
+fn recall_marked(k: &Kit, field: El, marked: bool, hint: &str) -> El {
     let mut group = col().gap(SPACE_XS).w_full().child(field);
     if marked {
         group = group.child(parts::caption(k, RECALLED_FIELD));
     }
-    group
+    group.child(parts::caption(k, hint))
+}
+
+/// `control` with `hint` as a muted caption under it. The control always sits first in the
+/// column, so a hint that changes with a pick never remounts it.
+fn with_hint(k: &Kit, control: El, hint: &str) -> El {
+    col()
+        .gap(SPACE_XS)
+        .w_full()
+        .child(control)
+        .child(parts::caption(k, hint))
 }
 
 fn credential(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {
     let form = &s.form;
-    let mut group = col().gap(SPACE_MD).w_full().child(
+    let mut group = col().gap(SPACE_MD).w_full().child(with_hint(
+        k,
         SegmentedControl::new(&CredentialChoice::LABELS, Some(form.credential.index()))
             .label("Azure credential")
             .fit()
@@ -206,27 +260,27 @@ fn credential(s: &AppState, k: &Kit, issues: &FieldIssues) -> El {
                 }
             })
             .build(k),
-    );
+        hints::credential(form.credential),
+    ));
     if form.uses_client_secret() {
         group = group
-            .child(field(
+            .child(with_hint(
                 k,
-                "Tenant id",
-                &form.tenant_id,
-                &issues.tenant_id,
-                |s| &mut s.form.tenant_id,
+                field(k, "Tenant id", &form.tenant_id, &issues.tenant_id, |s| {
+                    &mut s.form.tenant_id
+                }),
+                hints::TENANT_ID,
             ))
-            .child(field(
+            .child(with_hint(
                 k,
-                "Client id",
-                &form.client_id,
-                &issues.client_id,
-                |s| &mut s.form.client_id,
+                field(k, "Client id", &form.client_id, &issues.client_id, |s| {
+                    &mut s.form.client_id
+                }),
+                hints::CLIENT_ID,
             ))
             .child(secret(
                 k,
-                "client-secret",
-                "Client secret",
+                &CLIENT_SECRET_FIELD,
                 &form.client_secret,
                 &issues.client_secret,
                 |s| s.form.client_secret.edit_mut(),
@@ -380,15 +434,21 @@ fn field(k: &Kit, label: &str, edit: &TextEdit, issue: &Option<String>, access: 
     field.build(k)
 }
 
-/// A secret field: typed (hidden, with a reveal toggle) or, when stored, a note with Replace.
+/// A secret field: typed (hidden, with a reveal toggle, then its issue, its hint, and its
+/// example) or, when stored, a note with Replace and nothing to type, so no hint.
 fn secret(
     k: &Kit,
-    key: &str,
-    label: &str,
+    words: &SecretField,
     source: &SecretSource,
     issue: &Option<String>,
     access: EditAccess,
 ) -> El {
+    let SecretField {
+        key,
+        label,
+        hint,
+        example,
+    } = *words;
     if source.is_stored() {
         return row()
             .key(key)
@@ -420,7 +480,7 @@ fn secret(
         edit.set_revealed(!shown);
     })
     .build(k);
-    let mut group = col().key(key).gap(SPACE_SM).w_full().child(
+    let mut field = col().key(key).gap(SPACE_SM).w_full().child(
         TextInput::new(source.edit())
             .secure()
             .revealed(revealed)
@@ -433,7 +493,15 @@ fn secret(
             .build(k),
     );
     if let Some(issue) = issue {
-        group = group.child(parts::caption(k, issue));
+        field = field.child(parts::caption(k, issue));
+    }
+    let mut group = col()
+        .gap(SPACE_SM)
+        .w_full()
+        .child(field)
+        .child(parts::caption(k, hint));
+    if let Some((example_key, line)) = example {
+        group = group.child(parts::example(k, line).key(example_key));
     }
     group
 }
