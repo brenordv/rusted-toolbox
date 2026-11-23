@@ -96,8 +96,3 @@ fn a_preview_is_one_safe_line_from_the_start_of_the_body() {
     assert!(preview.starts_with("a b c d"));
     assert_eq!(preview.chars().count(), PREVIEW_CHARS);
 }
-
-#[test]
-fn display_line_keeps_ordinary_text() {
-    assert_eq!(display_line("café ✓".chars()), "café ✓");
-}

@@ -1,0 +1,31 @@
+[package]
+name = "common-gui-rune"
+version = "1.1.0"
+description = "Shared Rune design system: the kits and surface ladder, tokens, motion roles, parts, the system appearance, and a window watch"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+# Dev-only headless test helpers and contrast-contract helpers. A consumer lists this crate
+# under [dev-dependencies] with the feature on; release builds leave it out.
+test-harness = ["dep:serde_json"]
+
+[dependencies]
+# Internal
+common-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+rune = { workspace = true }
+rune-kit = { workspace = true }
+serde_json = { workspace = true, optional = true }
+tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["UI_ViewManagement"] }
+
+[dev-dependencies]
+rstest = { workspace = true }
+serde_json = { workspace = true }

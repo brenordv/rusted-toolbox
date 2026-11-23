@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+- Added `save_object_to_json_file`: pretty JSON with a final newline, written
+  through `common-file-utils`' atomic write (a failed save leaves an existing
+  file as it was), creating a missing parent folder. Synchronous.
+- The crate now depends on `common-file-utils`.
+
 ## 1.1.1
 - Created the readme: async contract, BOM handling, error contexts.
 - Added a test pinning that a type mismatch (valid JSON, wrong target shape)

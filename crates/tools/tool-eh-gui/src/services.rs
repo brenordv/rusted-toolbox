@@ -19,6 +19,7 @@ use crate::tasks::StoreSlot;
 use crate::views::move_profile_focus;
 use crate::views::shell::{keep_toast_focus, return_toast_focus};
 use anyhow::Context;
+use common_gui_rune::window::{GPU_BACKENDS, window_failure};
 use rune::{AppHandle, Tx};
 use shared_eventhub_core::connection::EventHubTarget;
 use shared_eventhub_core::engine::CaptureEngine;
@@ -652,10 +653,10 @@ pub(crate) fn spawn_list_flush(rt: &Handle, handle: AppHandle<AppState>) {
 }
 
 /// Posts a tick once a second; ticks that change nothing do not redraw. Each tick also reads
-/// the system appearance (Windows) and posts it when it changed. From the second tick until
-/// the window has been seen on screen, it checks for a window failure: Rune keeps running
-/// windowless when it cannot create the window (no GPU adapter or device), so that failure is
-/// caught here, logged, flagged in `window_failed`, and ends the app.
+/// the system appearance (Windows) and posts it when it changed. Until the window has been
+/// seen on screen, it checks for a window failure, counting each tick as a second waited: Rune
+/// keeps running windowless when it cannot create the window (no GPU adapter or device), so
+/// that failure is caught here, logged, flagged in `window_failed`, and ends the app.
 pub(crate) fn spawn_tick(rt: &Handle, handle: AppHandle<AppState>, window_failed: Arc<AtomicBool>) {
     rt.spawn(async move {
         let mut ticker = tokio::time::interval(Duration::from_secs(1));
@@ -667,11 +668,9 @@ pub(crate) fn spawn_tick(rt: &Handle, handle: AppHandle<AppState>, window_failed
             ticker.tick().await;
             ticks += 1;
             shown = shown || handle.is_visible();
-            if ticks >= 2
-                && !shown
-                && let Some(reason) = handle.window_error()
-            {
-                error!(reason = %reason, "the window could not be created; {GPU_HINT}");
+            let error = if shown { None } else { handle.window_error() };
+            if let Some(reason) = window_failure(Duration::from_secs(ticks), shown, error) {
+                error!(reason = %reason, "the window could not be created; {}", gpu_hint());
                 window_failed.store(true, Ordering::Release);
                 handle.quit();
                 return;
@@ -685,8 +684,9 @@ pub(crate) fn spawn_tick(rt: &Handle, handle: AppHandle<AppState>, window_failed
 }
 
 /// What a window failure means for the user, on every platform.
-pub const GPU_HINT: &str = "eh-gui draws with the GPU (DirectX 12 on Windows, Vulkan on Linux, \
-                            Metal on macOS); on a machine without one, use the eh CLI";
+pub fn gpu_hint() -> String {
+    format!("eh-gui draws with the GPU ({GPU_BACKENDS}); on a machine without one, use the eh CLI")
+}
 
 /// Delivers a session's output to the app through its handle.
 pub(crate) struct AppPort(pub(crate) AppHandle<AppState>);

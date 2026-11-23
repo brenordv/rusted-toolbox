@@ -26,7 +26,8 @@ pub use send::{BODY_KEY, SEND_BUTTON_KEY};
 pub use shell::PILL_SCROLL_KEY;
 
 use crate::state::AppState;
-use rune::{Chord, Cx, El, KeyEvent, Tx};
+use common_gui_rune::keys::is_chord;
+use rune::{Cx, El, KeyEvent, Tx};
 
 /// What a destination line says for a typed connection string that names no usable hub.
 pub(crate) const INVALID_CONNECTION_STRING: &str = "Not a valid connection string";
@@ -51,12 +52,11 @@ pub fn window_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
     if send::send_keys(s, key, tx) {
         return true;
     }
-    let focus_search = Chord::parse("mod+f").is_ok_and(|chord| chord.matches_tx(key, tx));
-    if focus_search {
+    if is_chord("mod+f", key, tx) {
         tx.focus(read::SEARCH_KEY, true);
         return true;
     }
-    if Chord::parse("alt+t").is_ok_and(|chord| chord.matches_tx(key, tx)) {
+    if is_chord("alt+t", key, tx) {
         return shell::fan_out_toasts(s, tx);
     }
     shell::fold_toasts_on_escape(s, key, tx)

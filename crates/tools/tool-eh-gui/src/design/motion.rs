@@ -2,14 +2,9 @@
 //! are rune-motion's presets (`rune::Spring` re-exports the type but not the preset constants),
 //! all critically damped: nothing in this app bounces.
 
+pub use common_gui_rune::motion::{CONTROL, CONTROL_EXIT, FEEDBACK};
 use rune::{Beat, Easing, Spring, SpringPair};
 
-/// Press feedback, toggles (rune-motion `INSTANT`).
-pub const FEEDBACK: Spring = Spring::new(0.10, 0.0);
-/// Segmented indicator, field reveal, pill, panes, section swap (rune-motion `SNAP`).
-pub const CONTROL: Spring = Spring::new(0.25, 0.0);
-/// Exit of a [`CONTROL`] motion (rune-motion `SNAP_EXIT`).
-pub const CONTROL_EXIT: Spring = Spring::new(0.20, 0.0);
 /// Sheet height reflow (rune-motion `SETTLE`).
 pub const LAYOUT: Spring = Spring::new(0.30, 0.0);
 /// Sheets, empty-state entrance (rune-motion `REFLOW`).

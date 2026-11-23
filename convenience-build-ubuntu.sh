@@ -17,6 +17,8 @@
 # Notes:
 # - Recommended (optional) packages for common Rust crates on Ubuntu:
 #     sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
+# - The tools that play sound (speak, alert) need the ALSA development files (libasound2-dev). When
+#   they cannot be installed, the script warns, leaves those tools out, and installs the rest.
 # - rustup docs: https://rustup.rs/
 
 set -euo pipefail
@@ -34,6 +36,12 @@ REPO_URL="https://github.com/brenordv/rusted-toolbox.git"
 REPO_NAME="rusted-toolbox"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 CLONE_BASE="${CLONE_BASE:-$HOME/projects}"
+# The tools that depend on common-audio (sound playback). They build only with the ALSA
+# development files installed.
+AUDIO_TOOLS=(speak alert)
+ALSA_PACKAGE="libasound2-dev"
+# Set by build_project when the audio tools were left out; repeated at the end of the run.
+SKIPPED_AUDIO_TOOLS=""
 
 # ---------- Helpers ----------
 print_status()  { echo -e "${BLUE}[INFO]${NC}  $1"; }
@@ -160,13 +168,32 @@ install_prerequisites() {
   # on Linux; the same list lives in ci.yml and release.yml.
   sudo apt-get install -y build-essential pkg-config libssl-dev libcurl4-openssl-dev libxml2-dev libclang-dev \
     libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
+  # The ALSA development files are needed only by the tools that play sound, so they install
+  # in their own call: when it fails, build_project leaves those tools out and builds the rest.
+  if ! sudo apt-get install -y "$ALSA_PACKAGE"; then
+    print_warning "Could not install $ALSA_PACKAGE; the tools that play sound will be left out"
+  fi
   print_status "Installation completed"
 }
 
 # Build project for Linux
 build_project() {
   print_status "Building project (release)"
-  cargo build --release
+  # pkg-config is how the ALSA binding's build finds the library, so it gives the same answer.
+  if pkg-config --exists alsa; then
+    cargo build --release
+  else
+    local exclude=()
+    local names=""
+    local tool
+    for tool in "${AUDIO_TOOLS[@]}"; do
+      exclude+=(--exclude "$tool")
+      names+="${names:+, }$tool"
+    done
+    SKIPPED_AUDIO_TOOLS="Left out (they play sound and need the ALSA development files): $names. Install the files with 'sudo apt-get install -y $ALSA_PACKAGE' and rerun to get them."
+    print_warning "$SKIPPED_AUDIO_TOOLS"
+    cargo build --release --workspace "${exclude[@]}"
+  fi
   print_success "Build succeeded"
 }
 
@@ -209,6 +236,9 @@ main() {
   build_project
   install_tools
   update_path
+  if [ -n "$SKIPPED_AUDIO_TOOLS" ]; then
+    print_warning "$SKIPPED_AUDIO_TOOLS"
+  fi
   print_success "All done! Tools are in $INSTALL_DIR"
 }
 

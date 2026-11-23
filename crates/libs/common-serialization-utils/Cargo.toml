@@ -1,13 +1,16 @@
 [package]
 name = "common-serialization-utils"
-version = "1.1.1"
-description = "Loads serialized data (JSON) from files into typed objects."
+version = "1.2.0"
+description = "Loads serialized data (JSON) from files into typed objects, and saves them back."
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
+# Internal
+common-file-utils = { workspace = true }
+
 # External
 anyhow = { workspace = true }
 serde = { workspace = true }

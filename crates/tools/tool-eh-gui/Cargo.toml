@@ -1,6 +1,6 @@
 [package]
 name = "eh-gui"
-version = "1.0.0"
+version = "1.0.3"
 description = "Desktop GUI for Azure Event Hubs: live capture into a local archive, archive search, export, and send, with saved connection profiles"
 edition.workspace = true
 authors.workspace = true
@@ -13,7 +13,7 @@ license.workspace = true
 demo = ["dep:tempfile"]
 # Dev-only headless test harness: the test support modules and the drivers the integration
 # tests share with the unit tests. Release builds leave it out.
-test-harness = ["dep:tempfile"]
+test-harness = ["dep:tempfile", "common-gui-rune/test-harness"]
 
 [[bin]]
 name = "eh-gui-demo"
@@ -33,6 +33,7 @@ required-features = ["test-harness"]
 [dependencies]
 # Internal
 common-cli = { workspace = true }
+common-gui-rune = { workspace = true }
 common-utils = { workspace = true }
 mock-data-utils = { workspace = true }
 shared-eventhub-core = { workspace = true }
@@ -50,10 +51,8 @@ tempfile = { workspace = true, optional = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
-[target.'cfg(windows)'.dependencies]
-windows = { workspace = true, features = ["UI_ViewManagement"] }
-
 [dev-dependencies]
+common-gui-rune = { workspace = true, features = ["test-harness"] }
 shared-azure = { workspace = true }
 shared-eventhub-persistence = { workspace = true, features = ["test-support"] }
 

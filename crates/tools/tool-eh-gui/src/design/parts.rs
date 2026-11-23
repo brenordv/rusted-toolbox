@@ -4,16 +4,19 @@
 use super::tokens::{
     CONTROL_HEIGHT, COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT,
     FOCUS_RING_WIDTH, FORM_POPOVER_WIDTH, HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE,
-    POPOVER_WIDTH, PRESS_SCALE, RADIUS_BADGE, RADIUS_CONTROL, RADIUS_SELECTION, RADIUS_SHEET,
-    RADIUS_TILE, REVEAL_OFFSET, SAMPLE_LINES, SELECTION_INSET, SHEET_TOP, SPACE_LG, SPACE_MD,
-    SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY,
-    TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO,
-    TYPE_TITLE,
+    POPOVER_WIDTH, PRESS_SCALE, RADIUS_BADGE, RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE,
+    REVEAL_OFFSET, SAMPLE_LINES, SELECTION_INSET, SHEET_TOP, SPACE_LG, SPACE_MD, SPACE_SM,
+    SPACE_XL, SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM,
+    TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
 };
 use super::{Surface, floating_tint, motion, selected_secondary_text, selection_fill, surface};
+pub use common_gui_rune::parts::{
+    EditorHeight, EditorSpec, caption, detail_row, field_label, hairline, issue, lines_editor,
+    text_editor, warning,
+};
 use rune::{
     Color, El, Icon, KeyEvent, ScrollSpec, SpringPair, TextEdit, Transition, Tx, col, el, icon,
-    row, spacer, text, text_input,
+    row, spacer, text,
 };
 use rune_kit::{IconButton, IconButtonVariant, Kit, RollingText, ScrollBar, Switch, popover};
 
@@ -105,26 +108,6 @@ pub fn small_icon(k: &Kit, glyph: &'static Icon) -> El {
     icon(glyph, ICON_SIZE).color(k.c.icon_muted)
 }
 
-/// A caption label over a selectable monospace value, for paths and ids.
-pub fn detail_row(k: &Kit, label: &str, value: &str) -> El {
-    col()
-        .gap(SPACE_XS)
-        .w_full()
-        .child(text(label).font(TYPE_CAPTION).color(k.c.text_muted))
-        .child(
-            text(value)
-                .font(TYPE_MONO)
-                .color(k.c.text_base)
-                .wrap_anywhere()
-                .selectable(true),
-        )
-}
-
-/// A form label over a control that draws none of its own, such as a mode picker.
-pub fn field_label(k: &Kit, label: &str) -> El {
-    text(label).font(TYPE_LABEL).color(k.c.text_base)
-}
-
 /// Which side of a [`labeled_switch`] its label is drawn on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LabelSide {
@@ -188,11 +171,6 @@ pub fn popover_body(k: &Kit, key: &str, rows: Vec<El>) -> El {
         .padding(SPACE_MD)
         .children(rows);
     popover::fit_scroll(rows).key(key).scroll_bar(k)
-}
-
-/// A muted caption line, for form notes.
-pub fn caption(k: &Kit, line: &str) -> El {
-    text(line).font(TYPE_CAPTION).color(k.c.text_muted).wrap()
 }
 
 /// What a sheet is called and how wide it gets.
@@ -512,11 +490,6 @@ pub fn list_row(k: &Kit, cells: Vec<El>, selected: bool) -> El {
         .child(inner)
 }
 
-/// The hairline under a list's header or a strip.
-pub fn hairline(k: &Kit) -> El {
-    el().w_full().h(HAIRLINE).fill(k.c.border_weak)
-}
-
 /// A label over a selectable monospace value inside a card, for the inspector's metadata.
 pub fn metadata_card(k: &Kit, rows: Vec<El>) -> El {
     col()
@@ -532,37 +505,9 @@ pub fn metadata_card(k: &Kit, rows: Vec<El>) -> El {
 /// The fewest lines the body editor shows.
 const BODY_EDITOR_MIN_LINES: f32 = 8.0;
 
-/// How tall a mono editor is.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum EditorHeight {
-    /// At least `min_lines` mono lines tall, growing to the space it is given.
-    Fill { min_lines: f32 },
-    /// Exactly `lines` mono lines tall, never growing.
-    Fixed { lines: f32 },
-}
-
-/// What a mono editor shows beyond its text.
-#[derive(Clone, Copy, Debug)]
-pub struct EditorSpec<'a> {
-    /// The shell's key; focus moves there.
-    pub key: &'a str,
-    /// The accessible name.
-    pub label: &'a str,
-    /// The faint text an empty editor shows.
-    pub placeholder: &'a str,
-    /// The accessible description, when there is one.
-    pub description: Option<&'a str>,
-    pub invalid: bool,
-    pub height: EditorHeight,
-}
-
-/// A multi-line monospace editor for an event body: the kit field's look, at least
-/// [`BODY_EDITOR_MIN_LINES`] tall, growing to the space it is given and scrolling past it. The
-/// box never springs as lines are typed. There is no `on_submit`, and `on_key` sees every key
-/// first: a plain Return reaches it untyped, so `on_key` inserts the newline. `on_change` runs
-/// after every edit the field itself makes (typing, paste, undo), not after `on_key`'s.
-///
-/// The kit's `TextArea` sets its own UI type with no way to change it, so it cannot be mono.
+/// A multi-line monospace editor for an event body: [`text_editor`] in `mono`, at least
+/// [`BODY_EDITOR_MIN_LINES`] tall, growing to the space it is given and scrolling past it.
+/// `on_key` and `on_change` are [`text_editor`]'s.
 pub fn body_editor<S: 'static>(
     k: &Kit,
     key: &str,
@@ -581,102 +526,9 @@ pub fn body_editor<S: 'static>(
         height: EditorHeight::Fill {
             min_lines: BODY_EDITOR_MIN_LINES,
         },
+        font: TYPE_MONO,
     };
-    mono_editor(k, spec, edit, access, on_key, on_change)
-}
-
-/// A multi-line monospace editor for short `key=value` lines: the body editor's look, a fixed
-/// `spec.height` that never grows, long lines broken anywhere (values such as ids and URLs have
-/// no spaces), and a viewport that scrolls only once there is text, so an empty box never takes
-/// the wheel from a scrolling pane around it. `on_key` sees every key first, as in
-/// [`body_editor`].
-pub fn lines_editor<S: 'static>(
-    k: &Kit,
-    spec: EditorSpec<'_>,
-    edit: &TextEdit,
-    access: fn(&mut S) -> &mut TextEdit,
-    on_key: impl Fn(&mut S, &KeyEvent, &mut Tx) -> bool + 'static,
-) -> El {
-    mono_editor(k, spec, edit, access, on_key, |_: &mut S, _: &mut Tx| {})
-}
-
-/// The shared build of [`body_editor`] and [`lines_editor`].
-fn mono_editor<S: 'static>(
-    k: &Kit,
-    spec: EditorSpec<'_>,
-    edit: &TextEdit,
-    access: fn(&mut S) -> &mut TextEdit,
-    on_key: impl Fn(&mut S, &KeyEvent, &mut Tx) -> bool + 'static,
-    on_change: impl Fn(&mut S, &mut Tx) + 'static,
-) -> El {
-    let c = &k.c;
-    let mut field = text_input(edit, TYPE_MONO)
-        .key("input")
-        .w_full()
-        .color(c.text_base)
-        .placeholder(spec.placeholder, c.text_faint)
-        .caret(c.text_base, k.selection())
-        .label(spec.label)
-        .invalid(spec.invalid)
-        .on_edit(access)
-        .on_input_key(on_key)
-        .on_input_change(on_change);
-    if let Some(description) = spec.description {
-        field = field.description(description);
-    }
-    let line = TYPE_MONO.line_px();
-    // (viewport, whether it scrolls, whether the shell grows to the space it is given)
-    let (viewport, scrolls, fills) = match spec.height {
-        EditorHeight::Fill { min_lines } => (
-            col().grow(1.0).min_h(min_lines * line).child(field),
-            true,
-            true,
-        ),
-        EditorHeight::Fixed { lines } => (
-            col().h(lines * line).child(field.wrap_anywhere()),
-            !edit.text.is_empty(),
-            false,
-        ),
-    };
-    let mut viewport = viewport.key("scroll").w_full();
-    if scrolls {
-        viewport = viewport
-            .scroll(ScrollSpec {
-                stick_bottom: false,
-            })
-            .scroll_bar(k);
-    }
-    let mut shell = col()
-        .key(spec.key)
-        .role("textbox")
-        .w_full()
-        .padding(SPACE_SM)
-        .radius(RADIUS_CONTROL)
-        .fill(c.bg_base)
-        .child(viewport);
-    if fills {
-        shell = shell.grow(1.0).min_h(0.0);
-    }
-    if spec.invalid {
-        shell = shell.outline(HAIRLINE, -HAIRLINE, c.danger.fg);
-    } else if edit.focused {
-        shell = shell.outline(HAIRLINE, -HAIRLINE, c.border_focus);
-    } else {
-        for shadow in k.shadow_layers(k.elevation.input()) {
-            shell = shell.box_shadow(shadow);
-        }
-    }
-    shell
-}
-
-/// A field's issue under it, in the danger color.
-pub fn issue(k: &Kit, line: &str) -> El {
-    text(line).font(TYPE_CAPTION).color(k.c.danger.fg).wrap()
-}
-
-/// A caption asking the user to look before going on, in the warning color.
-pub fn warning(k: &Kit, line: &str) -> El {
-    text(line).font(TYPE_CAPTION).color(k.c.warning.fg).wrap()
+    text_editor(k, spec, edit, access, on_key, on_change)
 }
 
 /// `content` entering and leaving with the field-reveal treatment: a fade and a 6 pt rise on

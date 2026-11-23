@@ -1,0 +1,29 @@
+[package]
+name = "alert"
+version = "1.0.1"
+description = "Shows a window with a message, optionally plays a sound, and waits for the user to close it."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-audio = { workspace = true }
+common-cli = { workspace = true }
+common-gui-rune = { workspace = true }
+common-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+rune = { workspace = true }
+rune-kit = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+common-audio = { workspace = true, features = ["test-support"] }
+common-gui-rune = { workspace = true, features = ["test-harness"] }
+
+rstest = { workspace = true }
+tempfile = { workspace = true }
