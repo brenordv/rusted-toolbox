@@ -1,5 +1,43 @@
 # Workspace Changelog
 
+## v8
+- New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system
+  (kits and surface ladder, tokens, motion roles, parts, the system appearance, a window watch
+  for small apps, and headless test helpers behind its `test-harness` feature), moved out of
+  `eh-gui` (now 1.0.1, no behavior change) so other Rune tools share one copy.
+  `common-utils` 2.3.0 gains `string_utils::display_line` and `error_preview`, also moved from
+  eh-gui.
+- New tool: `speak` 1.0.0 (`crates/tools/tool-speak`) sends text, from its argument or a piped
+  stdin, to a text-to-speech server and plays the audio it answers with. The server address is
+  asked on the first run in a terminal and kept in `~/.rusted-toolbox/tool-speak/config.json`;
+  no flag sets it. An agent skill ships beside it (`crates/tools/tool-speak/skill/SKILL.md`).
+- New library: `common-audio` 1.0.0 decodes a sound (WAV, MP3, FLAC, Ogg Vorbis) and plays it
+  on the default output device. Workspace dependency added: `rodio` 0.23.0 (features
+  `playback`, `wav`, `mp3`, `flac`, `vorbis`). On Linux the build now needs the ALSA
+  development files (`libasound2-dev`): CI and the release workflow install them, and
+  `convenience-build-ubuntu.sh` leaves the tools that play sound out, with a warning, when it
+  cannot.
+- `common-serialization-utils` 1.2.0 gains `save_object_to_json_file` (pretty JSON, written
+  atomically).
+- New tool: `alert` 1.0.0 (`crates/tools/tool-alert`) shows a window above other windows with
+  a message, an optional title, and an optional sound, and returns when the user closes it.
+  `alert --gui` opens a tester for it. An agent skill ships beside it
+  (`crates/tools/tool-alert/skill/SKILL.md`). It plays sound through `common-audio`, so
+  `convenience-build-ubuntu.sh` leaves it out with `speak` when the ALSA files are missing.
+  `common-utils` 2.4.0 gains `string_utils::display_lines`, moved from `eh-gui` (now 1.0.2, no
+  behavior change), which cleans the alert's message.
+- `speak` 1.1.0 adds `-g`/`--gui`: a window with a Compose area (the text, a button per vocal
+  reaction that types its tag at the caret, Generate, Play) and a Settings area that saves the
+  server address, method, model, voice, and reaction list. A first run with `--gui` opens on
+  Settings. `common-gui-rune` 1.1.0 gains `parts::line_field` (a labelled single-line field
+  whose key handler runs before the field's), `appearance::set_appearance`,
+  `window::gpu_hint`, and `keys::{is_chord, is_newline}`; `alert` 1.0.1 and `eh-gui` 1.0.3 use
+  them in place of their own copies. The one visible change: Shift+Return types a line break
+  in the alert tester's Body.
+- `speak` 1.2.0: the window's Settings area has a Server field and an Endpoint field where it
+  had one URL field. Save joins them into the settings file's one `url`, so the file and the
+  command line are unchanged.
+
 ## v7
 - Rebuilt the Azure Event Hubs tooling on the official `azure_messaging_eventhubs` SDK and a redb
   archive:
@@ -43,42 +81,6 @@
   `accesskit_windows` at anomalyco/rune's rev `c4eda05`) is copied into the root `Cargo.toml`
   and applies to the whole workspace, `seal-gui`'s eframe stack included. `wgpu-hal` stays at
   Rune's 30.0.1.
-- New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system
-  (kits and surface ladder, tokens, motion roles, parts, the system appearance, a window watch
-  for small apps, and headless test helpers behind its `test-harness` feature), moved out of
-  `eh-gui` (now 1.0.1, no behavior change) so other Rune tools share one copy.
-  `common-utils` 2.3.0 gains `string_utils::display_line` and `error_preview`, also moved from
-  eh-gui.
-- New tool: `speak` 1.0.0 (`crates/tools/tool-speak`) sends text, from its argument or a piped
-  stdin, to a text-to-speech server and plays the audio it answers with. The server address is
-  asked on the first run in a terminal and kept in `~/.rusted-toolbox/tool-speak/config.json`;
-  no flag sets it. An agent skill ships beside it (`crates/tools/tool-speak/skill/SKILL.md`).
-- New library: `common-audio` 1.0.0 decodes a sound (WAV, MP3, FLAC, Ogg Vorbis) and plays it
-  on the default output device. Workspace dependency added: `rodio` 0.23.0 (features
-  `playback`, `wav`, `mp3`, `flac`, `vorbis`). On Linux the build now needs the ALSA
-  development files (`libasound2-dev`): CI and the release workflow install them, and
-  `convenience-build-ubuntu.sh` leaves the tools that play sound out, with a warning, when it
-  cannot.
-- `common-serialization-utils` 1.2.0 gains `save_object_to_json_file` (pretty JSON, written
-  atomically).
-- New tool: `alert` 1.0.0 (`crates/tools/tool-alert`) shows a window above other windows with
-  a message, an optional title, and an optional sound, and returns when the user closes it.
-  `alert --gui` opens a tester for it. An agent skill ships beside it
-  (`crates/tools/tool-alert/skill/SKILL.md`). It plays sound through `common-audio`, so
-  `convenience-build-ubuntu.sh` leaves it out with `speak` when the ALSA files are missing.
-  `common-utils` 2.4.0 gains `string_utils::display_lines`, moved from `eh-gui` (now 1.0.2, no
-  behavior change), which cleans the alert's message.
-- `speak` 1.1.0 adds `-g`/`--gui`: a window with a Compose area (the text, a button per vocal
-  reaction that types its tag at the caret, Generate, Play) and a Settings area that saves the
-  server address, method, model, voice, and reaction list. A first run with `--gui` opens on
-  Settings. `common-gui-rune` 1.1.0 gains `parts::line_field` (a labelled single-line field
-  whose key handler runs before the field's), `appearance::set_appearance`,
-  `window::gpu_hint`, and `keys::{is_chord, is_newline}`; `alert` 1.0.1 and `eh-gui` 1.0.3 use
-  them in place of their own copies. The one visible change: Shift+Return types a line break
-  in the alert tester's Body.
-- `speak` 1.2.0: the window's Settings area has a Server field and an Endpoint field where it
-  had one URL field. Save joins them into the settings file's one `url`, so the file and the
-  command line are unchanged.
 
 ## v6
 - Updated dependencies.
