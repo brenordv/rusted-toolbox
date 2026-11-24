@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.5
+- `mod+1`, `mod+2`, and `mod+3` pick a section on a fresh press only: holding the chord no
+  longer flips sections as the key repeats.
+- The window's theme (`common_gui_rune::Theme`), the section switch (`choice_switch`), the Send
+  action row (`action_row`), the section chords (`area_chord`), the Return-types-a-line-break
+  key (`type_newline`), the control spring pair (`CONTROL_PAIR`), and the logging boot
+  (`common-cli`'s `boot_gui`, which also logs a panic with its thread, location, and message)
+  come from the shared libraries. The test harness's `type_into`, focus check, and clipboard
+  come from `common-gui-rune`'s. The Send action row is 52 pt tall, the shared row's minimum
+  (a control plus 12 pt above and below), 4 pt more than before, so the body box is 4 pt
+  shorter. Nothing else the app does changed.
+
 ## 1.0.4
 - No change in what the app does. `design::parts::reveal`, `design::parts::section_header`,
   and `design::tokens::REVEAL_OFFSET` moved to `common-gui-rune` and are re-exported from the

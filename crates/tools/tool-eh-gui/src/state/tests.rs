@@ -1284,7 +1284,7 @@ fn an_appearance_change_redraws_only_when_it_differs() {
         (first.changed, same.changed, flipped.changed),
         (true, false, true)
     );
-    assert_eq!(f.state.system_dark, Some(true));
+    assert_eq!(f.state.theme.told(), Some(true));
 }
 
 fn bacon_rules() -> shared_eventhub_core::filters::CaptureFilters {

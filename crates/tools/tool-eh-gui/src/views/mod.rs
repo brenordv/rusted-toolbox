@@ -34,8 +34,8 @@ pub(crate) const INVALID_CONNECTION_STRING: &str = "Not a valid connection strin
 
 /// The window's root.
 pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
-    let dark = s.system_dark.unwrap_or(cx.system_dark());
-    let k = s.ds.kit(dark);
+    let dark = s.theme.dark(cx.system_dark());
+    let k = s.theme.kit(dark);
     let mut layer = Vec::new();
     let body = shell::shell(s, cx, k, dark, &mut layer);
     connect::sheet(s, k, &mut layer);

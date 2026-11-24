@@ -13,6 +13,10 @@
   `gui_boot::boot_gui`, the logging boot every window uses, which also logs a panic. `speak`
   1.2.1 and `alert` 1.0.2 use them in place of their own copies (speak's `mod+1`/`mod+2` now
   ignore a held key); `eh-gui` 1.0.4 re-exports the two parts and the token that moved.
+- `eh-gui` 1.0.5 takes its theme, section switch, Send action row, section chords, newline key,
+  control spring pair, and logging boot from the shared layer; its section chords now ignore a
+  held key, and the Send action row is 52 pt tall, the shared row's minimum. `common-gui-rune`
+  1.2.1 keeps a growing status centred in `action_row`.
 
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system

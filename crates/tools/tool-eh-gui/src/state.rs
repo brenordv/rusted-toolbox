@@ -29,7 +29,6 @@ pub use toasts::{INFO_TOAST_SECS, MAX_TOASTS, ToastBody, ToastInput};
 use crate::archive::bulk::CancelReason;
 use crate::archive::{ArchiveEffect, ArchiveInput, ArchiveState};
 use crate::bridge::{EngineDone, EngineSession, UiDelivery};
-use crate::design::Ds;
 use crate::design::tokens::{SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH};
 use crate::form::{ConnectForm, PendingSave};
 use crate::read::inspector::InspectorInput;
@@ -39,6 +38,7 @@ use crate::send::{SendEffect, SendInput, SendState};
 use crate::services::{ConnectRequest, CreateRequest, SaveRequest, Services};
 use chrono::{DateTime, TimeDelta, Utc};
 use common_cli::app_logger::FileLogging;
+use common_gui_rune::Theme;
 use common_utils::file_system::get_current_dir;
 use ending::{log_summary, session_failures};
 use rune::TextEdit;
@@ -327,8 +327,9 @@ pub enum Motion {
 /// The whole UI state.
 pub struct AppState {
     pub services: Option<Box<dyn Services>>,
-    /// The two kits, built once.
-    pub ds: Ds,
+    /// The two kits, built once, and the system appearance as the app read it (none yet leaves
+    /// Rune's).
+    pub theme: Theme,
     pub sidebar: PaneState,
     /// The window's width at its last layout report, in whole points; `None` before the first.
     /// Reports skip moves under half a point, so it can be a point off the window's width.
@@ -372,8 +373,6 @@ pub struct AppState {
     pub read: ReadState,
     pub archive: ArchiveState,
     pub send: SendState,
-    /// The system's appearance as the app read it; `None` leaves Rune's.
-    pub system_dark: Option<bool>,
     window_closed: bool,
     closed_at: Option<DateTime<Utc>>,
     next_attempt: u64,
@@ -411,7 +410,7 @@ impl AppState {
         send.refresh_destination(&form);
         Self {
             services,
-            ds: Ds::new(),
+            theme: Theme::new(),
             sidebar: PaneState::new(SIDEBAR_WIDTH).range(SIDEBAR_MIN, SIDEBAR_MAX),
             window_width: None,
             pill_open: false,
@@ -436,7 +435,6 @@ impl AppState {
             read: ReadState::default(),
             archive: ArchiveState::default(),
             send,
-            system_dark: None,
             window_closed: false,
             closed_at: None,
             next_attempt: 1,
@@ -875,12 +873,11 @@ impl AppState {
     }
 
     fn appearance_changed(&mut self, dark: bool, out: &mut Outcome) {
-        if self.system_dark == Some(dark) {
+        if !self.theme.set(dark) {
             out.changed = false;
             return;
         }
         info!(dark, "using the system appearance");
-        self.system_dark = Some(dark);
     }
 
     fn session_ready(

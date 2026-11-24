@@ -13,6 +13,7 @@ const NARROW: (f32, f32) = (420.0, 200.0);
 struct Form {
     ds: Ds,
     status: Option<String>,
+    growing_status: bool,
     enabled: bool,
     selected: usize,
     picks: Vec<usize>,
@@ -22,6 +23,7 @@ fn form(status: Option<&str>) -> Form {
     Form {
         ds: Ds::new(),
         status: status.map(str::to_owned),
+        growing_status: false,
         enabled: true,
         selected: 0,
         picks: Vec::new(),
@@ -30,10 +32,18 @@ fn form(status: Option<&str>) -> Form {
 
 fn view(form: &Form, _: &mut Cx<Form>) -> El {
     let k = form.ds.kit(true);
-    let status = form
-        .status
-        .as_deref()
-        .map(|words| status_line(k, STATUS_KEY, Tone::Muted, StatusLines::Wrap, words));
+    let status = form.status.as_deref().map(|words| {
+        if form.growing_status {
+            row()
+                .key(STATUS_KEY)
+                .grow(1.0)
+                .min_w(0.0)
+                .center_y()
+                .child(text(words).font(TYPE_CAPTION).color(k.c.text_muted))
+        } else {
+            status_line(k, STATUS_KEY, Tone::Muted, StatusLines::Wrap, words)
+        }
+    });
     let buttons = ["Play", "Generate"]
         .into_iter()
         .map(|label| {
@@ -106,6 +116,25 @@ fn a_long_status_takes_the_width_the_buttons_leave_and_both_buttons_stay_in_the_
         status_x + status_w
     );
     assert!(status_w > 0.0);
+}
+
+#[rstest::rstest]
+#[case::a_status_line(false)]
+#[case::a_status_that_grows(true)]
+fn the_status_is_centred_on_the_buttons(#[case] growing_status: bool) {
+    let rt = runtime(Form {
+        growing_status,
+        ..form(Some("Ready to send"))
+    });
+
+    let [_, status_y, _, status_h] = rect(&rt, STATUS_KEY);
+    let [_, button_y, _, button_h] = rect(&rt, "Play");
+
+    assert!(status_h > 0.0);
+    assert!(
+        ((status_y + status_h / 2.0) - (button_y + button_h / 2.0)).abs() < 1.0,
+        "status at {status_y}+{status_h}, Play at {button_y}+{button_h}"
+    );
 }
 
 #[test]

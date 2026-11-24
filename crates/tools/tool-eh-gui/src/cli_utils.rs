@@ -1,6 +1,7 @@
 use clap::Parser;
 use common_cli::app_logger::FileLogging;
 use common_cli::common_tool_args::CommonToolArgsNoVerbose;
+use common_cli::gui_boot::boot_gui;
 use common_cli::tool_log_level::ToolLogLevel;
 
 /// Desktop GUI for Azure Event Hubs: live capture into a local archive, archive search, and
@@ -15,20 +16,17 @@ struct CliArgs {
     common: CommonToolArgsNoVerbose,
 }
 
-/// Parses the CLI flags and boots logging before any window exists. The file sink is forced on
-/// and the default level is info, inverting the house defaults: the log file is the only place a
-/// windowed app's failures land. `--log-level disabled` still silences everything. Returns what
-/// the file sink is doing, for the connection details.
+/// Parses the CLI flags and boots logging before any window exists, with the window boot: the
+/// file sink forced on, info by default, and panics logged, inverting the house defaults. The log
+/// file is the only place a windowed app's failures land. `--log-level disabled` still silences
+/// everything. Returns what the file sink is doing, for the connection details.
 pub fn initialize() -> FileLogging {
-    let mut args = CliArgs::parse();
-    args.common.log_to_file = true;
-    args.common.app_boot_up_with_level(
+    let args = CliArgs::parse();
+    boot_gui(
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         ToolLogLevel::Info,
-        "<unused>",
-        false,
-        None::<fn()>,
+        args.common,
     )
 }
 

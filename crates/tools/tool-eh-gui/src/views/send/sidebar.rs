@@ -1,6 +1,6 @@
 //! The Send sidebar: where the events go, how they are routed, and the message settings.
 
-use super::{send_keys, type_newline};
+use super::send_keys;
 use crate::app::dispatch;
 use crate::design::parts::{self, EditorHeight, EditorSpec};
 use crate::design::tokens::{
@@ -11,6 +11,7 @@ use crate::send::compose::{PacingChoice, RoutingChoice};
 use crate::send::run::SendRun;
 use crate::state::{AppState, Input, SheetPurpose, error_preview};
 use crate::views::INVALID_CONNECTION_STRING;
+use common_gui_rune::keys::type_newline;
 use rune::{El, KeyEvent, ScrollSpec, TextEdit, Tx, col, row};
 use rune_kit::{Button, ButtonVariant, Kit, ScrollBar, Select, SelectAppearance, TextInput};
 
@@ -269,7 +270,7 @@ fn properties(k: &Kit, edit: &TextEdit, issue: &Option<String>) -> El {
 
 /// The Properties editor's keys: the Send shortcuts, and Return typing a newline.
 fn properties_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
-    send_keys(s, key, tx) || type_newline(key, &mut s.send.composer.properties)
+    send_keys(s, key, tx) || type_newline(&mut s.send.composer.properties, key)
 }
 
 /// A labelled single-line field whose key handler takes the Send shortcuts, with its issue

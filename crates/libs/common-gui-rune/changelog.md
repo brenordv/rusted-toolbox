@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+- `parts::action_row` holds the status in a row, so a status element that grows (eh-gui's Send
+  status) keeps its height and sits centred on the buttons; in a column it collapsed to no
+  height and hung below the row's centre.
+
 ## 1.2.0
 - `Theme`: the two kits and the appearance a window watch read, with `kit(system_dark)`,
   `dark(system_dark)` (the read value wins once there is one), and `set(dark)`, which says

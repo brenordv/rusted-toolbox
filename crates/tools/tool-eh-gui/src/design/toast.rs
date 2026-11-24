@@ -6,7 +6,7 @@
 use super::tokens::{HAIRLINE, RADIUS_TILE, SPACE_MD, SPACE_SM, SPACE_XS, SPACE_XXL};
 use super::{Surface, motion, surface};
 use rune::text::{RichLayoutOptions, measure_with};
-use rune::{El, MotionIntent, Sequence, SpringPair, TextStyle, Transition, Tx, col, el, row, text};
+use rune::{El, MotionIntent, Sequence, TextStyle, Transition, Tx, col, el, row, text};
 use rune_kit::toast_stack::ToastPlacement;
 use rune_kit::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Kit, toast_stack,
@@ -221,7 +221,7 @@ fn ring(k: &Kit, pulse: u64, face: ToastFace<'_>) -> El {
 pub fn toast_presence() -> Transition {
     Transition::offset(0.0, TOAST_TRAVEL)
         .combined(Transition::opacity())
-        .springs(SpringPair::new(motion::CONTROL, motion::CONTROL_EXIT))
+        .springs(motion::CONTROL_PAIR)
 }
 
 /// The stack's height for cards of `heights` (front first): fanned out, every card and a gap

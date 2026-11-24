@@ -76,8 +76,10 @@ pub fn reveal(content: El) -> El {
 /// [`SPACE_LG`] side insets. `status` leads and takes the width `buttons` leave; with none,
 /// nothing is mounted in its place. The status wraps or cuts as the caller built it.
 pub fn action_row(k: &Kit, key: &str, status: Option<El>, buttons: Vec<El>) -> El {
+    // A row, so a status that grows takes the width; in a column it would grow in height and
+    // leave the wrapper with none of its own.
     let status = match status {
-        Some(status) => col().grow(1.0).min_w(0.0).child(status),
+        Some(status) => row().grow(1.0).min_w(0.0).center_y().child(status),
         None => spacer(),
     };
     col().w_full().child(hairline(k)).child(

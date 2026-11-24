@@ -1571,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "common-gui-rune"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "common-utils",
@@ -2605,7 +2605,7 @@ dependencies = [
 
 [[package]]
 name = "eh-gui"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "chrono",

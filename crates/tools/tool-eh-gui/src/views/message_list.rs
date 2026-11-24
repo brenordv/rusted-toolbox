@@ -171,7 +171,7 @@ fn new_messages_pill(s: &AppState, k: &Kit) -> El {
 }
 
 fn list_row(s: &AppState, dark: bool, section: ListSection, summary: Option<&RowSummary>) -> El {
-    let k = s.ds.kit(dark);
+    let k = s.theme.kit(dark);
     let Some(summary) = summary else {
         return row().h(LIST_ROW_HEIGHT);
     };

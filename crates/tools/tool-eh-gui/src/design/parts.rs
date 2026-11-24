@@ -15,8 +15,8 @@ pub use common_gui_rune::parts::{
     reveal, section_header, text_editor, warning,
 };
 use rune::{
-    Color, El, Icon, KeyEvent, ScrollSpec, SpringPair, TextEdit, Transition, Tx, col, el, icon,
-    row, spacer, text,
+    Color, El, Icon, KeyEvent, ScrollSpec, TextEdit, Transition, Tx, col, el, icon, row, spacer,
+    text,
 };
 use rune_kit::{IconButton, IconButtonVariant, Kit, RollingText, ScrollBar, Switch, popover};
 
@@ -326,7 +326,7 @@ pub fn floating_pill(k: &Kit, key: &str, label: &str) -> El {
         .transition(
             Transition::opacity()
                 .combined(Transition::scale(0.96))
-                .springs(SpringPair::new(motion::CONTROL, motion::CONTROL_EXIT)),
+                .springs(motion::CONTROL_PAIR),
         )
         .child(text(label).font(TYPE_LABEL).color(k.c.text_base));
     for shadow in k.shadow_layers(&k.elevation.overlay) {

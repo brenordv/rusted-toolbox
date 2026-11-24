@@ -1,6 +1,6 @@
 [package]
 name = "eh-gui"
-version = "1.0.4"
+version = "1.0.5"
 description = "Desktop GUI for Azure Event Hubs: live capture into a local archive, archive search, export, and send, with saved connection profiles"
 edition.workspace = true
 authors.workspace = true
