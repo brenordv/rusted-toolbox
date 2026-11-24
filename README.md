@@ -28,7 +28,7 @@ We currently have the following tools:
 24. A tool that mimics the [tail](crates/tools/tool-tail/readme.md) command from Unix, including follow mode (also useful on Windows);
 25. A regex value extractor called [rxget](crates/tools/tool-rxget/readme.md) that pulls matched values out of text files, with per-file or per-run uniqueness and optional filename prefixes;
 26. A file encryption tool called [seal](crates/tools/tool-seal/readme.md) that seals files to `age1...` public keys and opens them with identity files (the age format, key-based only).
-27. A desktop companion to seal called [seal-gui](crates/tools/tool-seal-gui/readme.md): the same key-based age encryption in a window, with text sealing to ASCII armor, drag-and-drop file batches, key generation, and a saved recipient book.
+27. A desktop companion to seal called [seal-gui](crates/tools/tool-seal-gui/readme.md): the same key-based age encryption in a GPU-drawn window built on Rune, with text sealing to ASCII armor, drag-and-drop file batches, key generation, and a saved recipient book.
 28. A text-to-speech client called [speak](crates/tools/tool-speak/readme.md) that sends text (an argument, or stdin) to a speech server you run and plays the audio, so an agent can say an explanation aloud. `speak --gui` opens a window to try a text and change the settings. It ships with an agent skill.
 29. A desktop alert called [alert](crates/tools/tool-alert/readme.md) that shows a window above your other windows with a message, an optional title, and an optional sound, and waits until you close it, so an agent can ping you when it is done. It ships with an agent skill.
 

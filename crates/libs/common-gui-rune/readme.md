@@ -2,8 +2,7 @@
 
 The tool-neutral part of the workspace's Rune design system. A Rune tool in this repo builds
 its windows from this crate and rune-kit, and keeps only its own sizes and parts in its own
-design module. (`common-gui` is the egui counterpart; the two share nothing.) A windowed tool
-boots logging with `common-cli`'s `gui_boot::boot_gui`.
+design module. A windowed tool boots logging with `common-cli`'s `gui_boot::boot_gui`.
 
 Modules:
 

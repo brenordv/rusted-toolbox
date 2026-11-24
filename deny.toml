@@ -72,9 +72,6 @@ exceptions = [
     # CC0-1.0 is GPL-compatible, but the FSF doesn't recommend it for software
     # (it has no patent grant).
     { crate = "notify", allow = ["CC0-1.0"] },
-    # OFL-1.1 and the Ubuntu Font Licence cover the font files egui bundles; the
-    # crate's code is MIT OR Apache-2.0.
-    { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
     # CDLA-Permissive-2.0 is a data license covering the Mozilla CA root
     # certificates these crates ship for TLS.
     { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },

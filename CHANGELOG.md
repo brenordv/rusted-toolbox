@@ -30,6 +30,10 @@
   delete, key generation with an in-window confirm before an identity file is replaced, and the
   log folder. The settings file is saved on each change, with a caption on every tab while it
   cannot be.
+- egui leaves the workspace: with seal-gui on Rune, nothing uses `egui`, `eframe`, `rfd` (Rune
+  brings its own file dialogs), or the `common-gui` library, so the four are removed, along
+  with the `epaint_default_fonts` license exception in `deny.toml`. Every windowed tool
+  (eh-gui, seal-gui, speak, alert) now builds on Rune.
 
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system

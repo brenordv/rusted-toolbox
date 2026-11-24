@@ -18,7 +18,6 @@ cli-signal-monitor = { path = "crates/libs/cli-signal-monitor" }
 common-audio = { path = "crates/libs/common-audio" }
 common-cli = { path = "crates/libs/common-cli" }
 common-file-utils = { path = "crates/libs/common-file-utils" }
-common-gui = { path = "crates/libs/common-gui" }
 common-gui-rune = { path = "crates/libs/common-gui-rune" }
 common-serialization-utils = { path = "crates/libs/common-serialization-utils" }
 common-utils = { path = "crates/libs/common-utils" }
@@ -51,9 +50,7 @@ crossterm = "0.29.0"
 csv = "1.4.0"
 ctrlc = "3.5.3"
 dns-lookup = "4.0.2"
-eframe = { version = "0.37.0" }
-egui = { version = "0.37.0" }
-fake = { version = "5.1.0", features = ["derive", "chrono"] }
+fake ={ version = "5.1.0", features = ["derive", "chrono"] }
 filetime = "0.2.30"
 futures-util = "0.3.34"
 gif = "0.14.2"
@@ -83,7 +80,6 @@ regex = "1.13.2"
 # Workspace default reqwest (gitignore). netquality pins its
 # own 0.12 to match cfspeedtest; see crates/tools/tool-netquality/Cargo.toml.
 reqwest = { version = "0.13.5", features = ["json"] }
-rfd = { version = "0.18.0" }
 # Sound playback behind `common-audio`. Only the output device and the decoders for the formats
 # the tools accept; on Linux the build needs the ALSA development files (`libasound2-dev`).
 rodio = { version = "0.23.0", default-features = false, features = ["playback", "wav", "mp3", "flac", "vorbis"] }
@@ -143,15 +139,13 @@ tempfile = "3.27.0"
 # applies a dependency's [patch] only inside that dependency's own workspace, so an app building
 # Rune repeats it. The Rune fork above changes no vendored crate, so these stay on anomalyco's
 # c4eda05; a fork commit that touches `vendor/` moves them to the fork's rev. [patch] applies
-# to this whole workspace, so seal-gui's eframe stack builds on these forks too. Each fork is the
-# crates.io crate plus Rune's committed vendor/<name>.patch:
+# to this whole workspace; the windowed tools (eh-gui, seal-gui, speak, alert) all build on
+# Rune. Each fork is the crates.io crate plus Rune's committed vendor/<name>.patch:
 # - winit: Windows window creation without the TaskbarList call and at the requested position;
-#   a macOS IME reconversion API; Wayland touchpad scroll deltas scaled by 12, which every winit
-#   app here (seal-gui included) gets on Wayland.
-# - wgpu-hal (30.0.1, below the 30.0.2 eframe alone would lock): DX12 adapter exposure, FXC
-#   loaded on first compile, partial presents on a FLIP_SEQUENTIAL swap chain; eframe renders
-#   with wgpu, so seal-gui on DX12 gets that swap chain.
-# - parley_engine: bidi rule L1, shaping caches, segmenter hooks (only Rune uses parley).
+#   a macOS IME reconversion API; Wayland touchpad scroll deltas scaled by 12.
+# - wgpu-hal (30.0.1): DX12 adapter exposure, FXC loaded on first compile, partial presents on
+#   a FLIP_SEQUENTIAL swap chain.
+# - parley_engine: bidi rule L1, shaping caches, segmenter hooks.
 # - accesskit_windows: heading and landmark properties for UI Automation.
 # Every Rune bump re-diffs this table and repeats the fork review.
 [patch.crates-io]
