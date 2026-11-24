@@ -21,6 +21,7 @@ impl AppState {
             }
             FilesInput::OverwriteToggled => {
                 self.files.overwrite = !self.files.overwrite;
+                self.save_config(out);
                 out.changed = true;
             }
             FilesInput::OutputPicked(choice) => {

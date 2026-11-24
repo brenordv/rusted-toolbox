@@ -6,7 +6,7 @@ use common_gui_rune::test_harness::{
     a11y_nodes, deliver, press, runtime_with_keys, settle, type_into,
 };
 use rune::{FileDialogError, Runtime, TextEdit};
-use seal_gui::config::{RecipientEntry, SealConfig};
+use seal_gui::config::{ConfigStore, RecipientEntry, SaveOutcome, SealConfig};
 use seal_gui::design::WINDOW_SIZE;
 use seal_gui::services::{ProdServices, Services, dialog_answered, dispatch};
 use seal_gui::state::files::PathKind;
@@ -70,6 +70,10 @@ impl Services for Recorded {
     fn probe(&self, pairs: Vec<(PathBuf, PathBuf)>) -> Vec<(PathBuf, bool)> {
         self.prod.probe(pairs)
     }
+
+    fn save_config(&self, snapshot: &SealConfig) -> SaveOutcome {
+        self.prod.save_config(snapshot)
+    }
 }
 
 struct Window {
@@ -82,18 +86,20 @@ struct Window {
 }
 
 impl Window {
+    /// A window over `config` whose settings are saved nowhere.
     fn open(config: SealConfig) -> Self {
+        let nowhere = ConfigStore::boot(|_| None);
         let (post, posted) = mpsc::channel::<WorkerMsg>();
         let (submit, join) = worker::spawn(move |message| {
             let _sent = post.send(message);
         })
         .unwrap();
         let services = Rc::new(Recorded {
-            prod: ProdServices::new(submit),
+            prod: ProdServices::new(submit, nowhere.store),
             seen: RefCell::new(Vec::new()),
         });
         let state = AppState::new(
-            config,
+            (config, nowhere.status),
             common_cli::app_logger::FileLogging::Off,
             Some(services.clone() as Rc<dyn Services>),
             None,
@@ -252,7 +258,23 @@ fn the_log_holds_the_worker_lines_and_no_text_or_key() {
     let dialog_note = dialog.rt.state.note(Tab::Files).cloned();
     dialog.close();
 
+    // (e) S1: a config folder that is a file, so the save fails.
+    let base = dir.path().join("profile");
+    std::fs::create_dir_all(&base).unwrap();
+    std::fs::write(base.join("seal"), b"in the way").unwrap();
+    let boot = ConfigStore::boot(move |name: &str| {
+        matches!(name, "APPDATA" | "XDG_CONFIG_HOME").then(|| base.clone().into_os_string())
+    });
+    let saved = boot.store.flush(&SealConfig::default());
+
     let log = logs.text();
+    assert!(matches!(saved, SaveOutcome::Failed(_)), "{saved:?}");
+    assert!(
+        log.lines().any(|line| line.contains("config save failed")
+            && line.contains("WARN")
+            && line.contains("config.json")),
+        "{log}"
+    );
     assert_eq!(dialog_note, Some(Note::DialogError("no portal".to_owned())));
     assert!(
         log.contains("a file dialog failed")

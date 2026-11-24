@@ -2,6 +2,7 @@
 //! functions of the state; handlers dispatch inputs.
 
 mod files_tab;
+mod keys_tab;
 mod parts;
 mod picker;
 mod text_tab;
@@ -12,6 +13,12 @@ pub use files_tab::{
     FILES_RECIPIENTS_KEY, FILES_SCROLL_KEY, FILES_STATUS_KEY, FILES_SUBMIT_KEY, MODE_KEY,
     MSG_OUTPUT_EXISTS, OUTPUT_CHOICE_KEY, OUTPUT_FOLDER_KEY, OVERWRITE_KEY, file_row_key,
     remove_key,
+};
+pub use keys_tab::{
+    ADD_GENERATED_KEY, ADD_RECIPIENT_KEY, BOOK_KEY, CANCEL_KEY, CONFIRM_KEY, COPY_GENERATED_KEY,
+    GENERATE_KEY, GENERATED_KEY, KEYS_ACTIONS_KEY, KEYS_FORM_KEY, KEYS_SCROLL_KEY, KEYS_STATUS_KEY,
+    LABEL_KEY, LOG_FOLDER_KEY, PUBLIC_KEY_KEY, REPLACE_KEY, book_row_key, copy_entry_key,
+    delete_key,
 };
 pub use parts::BadgeTone;
 pub use picker::{picker_keys, recipient_key};
@@ -28,8 +35,8 @@ use crate::state::text::TextInput;
 use crate::state::{AppState, Focus, Input, Tab, Work};
 use common_gui_rune::keys::{area_chord, is_chord};
 use common_gui_rune::motion::CONTROL_PAIR;
-use common_gui_rune::parts::{StatusLines, Tone, caption, choice_switch, hairline, status_line};
-use common_gui_rune::tokens::{SPACE_LG, SPACE_SM};
+use common_gui_rune::parts::{StatusLines, Tone, choice_switch, hairline, status_line};
+use common_gui_rune::tokens::{SPACE_LG, SPACE_SM, SPACE_XS};
 use common_gui_rune::{Surface, surface};
 use rune::{Cx, El, KeyEvent, Transition, Tx, col, row};
 use rune_kit::Kit;
@@ -46,12 +53,12 @@ pub const FILES_TAB_KEY: &str = "seal-files";
 pub const KEYS_TAB_KEY: &str = "seal-keys";
 /// The standing caption shown once the worker stopped.
 pub const STOPPED_KEY: &str = "seal-worker-stopped";
+/// The standing caption shown while the settings cannot be saved.
+pub const CONFIG_CAPTION_KEY: &str = "seal-config-caption";
 
 /// What the standing caption says once the worker stopped.
 pub const STOPPED_CAPTION: &str =
     "The background worker stopped. Restart seal-gui to seal or unseal again.";
-/// What a tab that is not built yet shows.
-pub const PLACEHOLDER: &str = "This tab arrives with the next change.";
 
 /// The key of the control `focus` names.
 pub fn focus_key(focus: Focus) -> String {
@@ -63,6 +70,10 @@ pub fn focus_key(focus: Focus) -> String {
         Focus::AddFiles => ADD_FILES_KEY.to_owned(),
         Focus::RemoveRow(index) => remove_key(index),
         Focus::ChooseFolder => CHOOSE_FOLDER_KEY.to_owned(),
+        Focus::Generate => GENERATE_KEY.to_owned(),
+        Focus::AddLabel => LABEL_KEY.to_owned(),
+        Focus::AddKey => PUBLIC_KEY_KEY.to_owned(),
+        Focus::Delete(id) => delete_key(id.number()),
     }
 }
 
@@ -77,11 +88,13 @@ pub fn set_appearance(s: &mut AppState, dark: bool) -> bool {
     s.theme.set(dark)
 }
 
-/// Runs as the window closes: the worker's later posts go nowhere.
-pub fn on_close(s: &mut AppState, _: &mut Tx) {
+/// Runs as the window closes: the worker's later posts go nowhere, then a config save that
+/// failed earlier is tried once more.
+pub fn on_close(s: &mut AppState, tx: &mut Tx) {
     if let Some(gate) = &s.gate {
         gate.close();
     }
+    dispatch(s, tx, Input::Closing);
 }
 
 /// The window's shortcuts: `mod+1..3` pick a tab as a fresh press, and `mod+enter` starts the
@@ -128,7 +141,7 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
     let tab = match s.tab {
         Tab::Text => text_tab::view(s, k, cx).key(TEXT_TAB_KEY),
         Tab::Files => files_tab::view(s, k, cx).key(FILES_TAB_KEY),
-        Tab::Keys => placeholder(s, k).key(KEYS_TAB_KEY),
+        Tab::Keys => keys_tab::view(s, k, cx).key(KEYS_TAB_KEY),
     };
     let window = col()
         .w_full()
@@ -159,44 +172,48 @@ fn tab_status(s: &AppState, k: &Kit, tab: Tab, key: &str) -> Option<El> {
 }
 
 /// The captions every tab shows between its body and its action row while a window-wide
-/// condition stands; `None` when none does.
+/// condition stands (the settings cannot be saved, the worker stopped); `None` when none does.
 fn standing_captions(s: &AppState, k: &Kit) -> Option<El> {
-    match s.work {
-        Work::Stopped => Some(
-            col()
-                .w_full()
-                .px(SPACE_LG)
-                .pb(SPACE_SM)
-                .items_center()
-                .child(col().w_full().max_w(FORM_MAX_WIDTH).child(status_line(
-                    k,
-                    STOPPED_KEY,
-                    Tone::Danger,
-                    StatusLines::Wrap,
-                    STOPPED_CAPTION,
-                ))),
-        ),
+    let config = s.config_status.caption().map(|words| {
+        status_line(
+            k,
+            CONFIG_CAPTION_KEY,
+            Tone::Warning,
+            StatusLines::Wrap,
+            &words,
+        )
+    });
+    let stopped = match s.work {
+        Work::Stopped => Some(status_line(
+            k,
+            STOPPED_KEY,
+            Tone::Danger,
+            StatusLines::Wrap,
+            STOPPED_CAPTION,
+        )),
         Work::Idle | Work::Running(_) => None,
+    };
+    if config.is_none() && stopped.is_none() {
+        return None;
     }
-}
-
-/// A tab that is not built yet: one muted line, centred, over the standing captions.
-fn placeholder(s: &AppState, k: &Kit) -> El {
-    let mut tab = col().w_full().grow(1.0).min_h(0.0).child(
+    let lines = col()
+        .w_full()
+        .max_w(FORM_MAX_WIDTH)
+        .gap(SPACE_XS)
+        .children(config.into_iter().chain(stopped));
+    Some(
         col()
             .w_full()
-            .grow(1.0)
-            .min_h(0.0)
-            .center()
-            .child(caption(k, PLACEHOLDER)),
-    );
-    if let Some(captions) = standing_captions(s, k) {
-        tab = tab.child(captions);
-    }
-    tab
+            .px(SPACE_LG)
+            .pb(SPACE_SM)
+            .items_center()
+            .child(lines),
+    )
 }
 
 #[cfg(test)]
 mod files_tests;
+#[cfg(test)]
+mod keys_tests;
 #[cfg(test)]
 mod tests;

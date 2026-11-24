@@ -1,7 +1,8 @@
 //! The seal window's own sizes, and the one color role it draws differently from the shared
 //! kits. Everything else (colors, spacing, type, motion) comes from `common-gui-rune`.
 
-use common_gui_rune::Ds;
+use common_gui_rune::{Ds, Surface, surface};
+use rune::Color;
 use rune_kit::Kit;
 
 /// The window's size when it opens.
@@ -30,6 +31,10 @@ pub const FILES_MIN_ROWS: f32 = 3.0;
 pub const FILE_BADGE_WIDTH: f32 = 56.0;
 /// The size column of a Files row: eleven characters ("1,023.99 MB") in `TYPE_MONO`.
 pub const FILE_SIZE_WIDTH: f32 = 84.0;
+/// The add form's Label field: a name of about twenty characters.
+pub const LABEL_FIELD_WIDTH: f32 = 160.0;
+/// The fewest rows the recipient book shows on the Keys tab.
+pub const BOOK_MIN_ROWS: f32 = 3.0;
 
 /// The kits seal-gui draws its checkboxes and radio buttons with. The kit draws an empty
 /// checkbox's only edge in its weak border color, near 1.4:1 on the content surface, and an
@@ -70,12 +75,49 @@ impl Default for ChoiceKits {
     }
 }
 
+/// The kits seal-gui draws "Confirm delete" with: the kit's Danger button with its face on the
+/// list's own surface and the danger tint as its hover, where the kit's neutral face and its
+/// hover and pressed washes take the danger label under 4.5:1 in dark mode (3.8 and 2.9:1).
+/// The button's border is drawn in the danger text color by the view.
+pub struct ConfirmKits {
+    dark: Kit,
+    light: Kit,
+}
+
+impl ConfirmKits {
+    pub fn new() -> Self {
+        let ds = Ds::new();
+        let quiet = |dark: bool| {
+            let mut kit = ds.kit(dark).clone();
+            kit.c.bg_button_neutral = surface(&kit, Surface::Content);
+            kit.c.hover = kit.c.danger.bg;
+            kit.c.pressed = Color::TRANSPARENT;
+            kit
+        };
+        Self {
+            dark: quiet(true),
+            light: quiet(false),
+        }
+    }
+
+    /// The kit for "Confirm delete" in the appearance the window draws in.
+    pub fn kit(&self, dark: bool) -> &Kit {
+        if dark { &self.dark } else { &self.light }
+    }
+}
+
+impl Default for ConfirmKits {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::views::BadgeTone;
     use common_gui_rune::contrast::{Contract, NON_TEXT, TEXT, appearance_name, over};
-    use common_gui_rune::{Surface, drop_fill, surface};
+    use common_gui_rune::drop_fill;
 
     #[test]
     fn checkboxes_and_radios_are_marked_at_3_to_1_on_the_content_surface() {
@@ -117,6 +159,40 @@ mod tests {
                 &format!("{mode} selected radio dot"),
                 over(k.c.knob_on, radio_on),
                 radio_on,
+                NON_TEXT,
+            );
+        }
+
+        contract.assert_met();
+    }
+
+    #[test]
+    fn confirm_delete_reads_in_danger_text_inside_a_danger_border_on_the_list() {
+        let kits = ConfirmKits::new();
+        let mut contract = Contract::default();
+
+        for dark in [true, false] {
+            let k = kits.kit(dark);
+            let mode = appearance_name(dark);
+            let content = surface(k, Surface::Content);
+            let face = over(k.c.bg_button_neutral, content);
+            let hovered = over(k.c.hover, face);
+            for (state, fill) in [
+                ("rest", face),
+                ("hover", hovered),
+                ("pressed", over(k.c.pressed, hovered)),
+            ] {
+                contract.check(
+                    &format!("{mode} Confirm delete label {state}"),
+                    over(k.c.danger.fg, fill),
+                    fill,
+                    TEXT,
+                );
+            }
+            contract.check(
+                &format!("{mode} Confirm delete border"),
+                over(k.c.danger.fg, content),
+                content,
                 NON_TEXT,
             );
         }

@@ -52,9 +52,9 @@ pub fn run(file_logging: FileLogging) -> anyhow::Result<Option<String>> {
     let window_gate = gate.clone();
     let app = app.on_close(views::on_close).init(move || {
         AppState::new(
-            boot.config,
+            (boot.config, boot.status),
             file_logging,
-            Some(Rc::new(ProdServices::new(submit))),
+            Some(Rc::new(ProdServices::new(submit, boot.store))),
             Some(window_gate),
         )
     });

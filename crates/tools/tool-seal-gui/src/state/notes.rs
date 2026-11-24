@@ -18,6 +18,8 @@ pub enum RunningJob {
         finished: usize,
         total: usize,
     },
+    /// Generating a key pair.
+    Keygen,
 }
 
 impl RunningJob {
@@ -26,6 +28,7 @@ impl RunningJob {
         match self {
             Self::Text(_) => Tab::Text,
             Self::Files { .. } => Tab::Files,
+            Self::Keygen => Tab::Keys,
         }
     }
 
@@ -34,6 +37,7 @@ impl RunningJob {
         match self {
             Self::Text(Direction::Encrypt) => "Sealing…".to_owned(),
             Self::Text(Direction::Decrypt) => "Unsealing…".to_owned(),
+            Self::Keygen => "Generating a key pair…".to_owned(),
             Self::Files {
                 direction,
                 finished,
@@ -51,7 +55,7 @@ impl RunningJob {
     /// count, so the status is announced once rather than on every file.
     pub fn spoken(self) -> String {
         match self {
-            Self::Text(_) => self.phrase(),
+            Self::Text(_) | Self::Keygen => self.phrase(),
             Self::Files { direction, .. } => format!("{} files", verb(direction)),
         }
     }
@@ -129,6 +133,8 @@ impl Missing {
 pub enum Copied {
     /// The Text tab's output box.
     Output,
+    /// A public key, from the book or the generated pair.
+    PublicKey,
 }
 
 /// A tab's stored outcome, kept until the user's next input on that tab.
@@ -155,6 +161,10 @@ pub enum Note {
     },
     /// An intake turned a path away.
     Skipped(Skipped),
+    /// A generated key pair was saved.
+    KeySaved,
+    /// An entry joined the book: its label.
+    Added(String),
 }
 
 impl Note {
@@ -162,6 +172,15 @@ impl Note {
     pub fn words(&self) -> (Tone, String) {
         match self {
             Self::Failure(text) => (Tone::Danger, text.clone()),
+            Self::KeySaved => (Tone::Muted, "Saved the key file.".to_owned()),
+            Self::Added(label) => (
+                Tone::Muted,
+                format!(
+                    "Added {} to the recipient book.",
+                    display_line(label.chars())
+                ),
+            ),
+            Self::Copied(Copied::PublicKey) => (Tone::Muted, "Copied the public key.".to_owned()),
             Self::Summary {
                 direction,
                 done,

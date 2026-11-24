@@ -3,18 +3,21 @@
 
 pub mod files;
 mod files_flow;
+pub mod keys;
+mod keys_flow;
 pub mod notes;
 pub mod recipients;
 pub mod text;
 
-use crate::config::SealConfig;
-use crate::design::ChoiceKits;
+use crate::config::{ConfigStatus, SaveOutcome, SealConfig};
+use crate::design::{ChoiceKits, ConfirmKits};
 use crate::services::{PostGate, Services};
 use crate::worker::{FileResult, JobEvent, JobOutcome, JobRequest, WorkerMsg};
 use common_cli::app_logger::FileLogging;
 use common_gui_rune::Theme;
 use common_gui_rune::parts::Tone;
 use files::{FilesInput, FilesTab, PathKind, RowStatus};
+use keys::{KeygenStep, KeysInput, KeysTab};
 use notes::{Copied, Missing, Note, Notes, RunningJob};
 use recipients::{Book, EntryId, Picker, RecipientPicker};
 use rune::FileDialogResult;
@@ -89,6 +92,8 @@ pub enum DialogPurpose {
     AddFile,
     /// Choose the Files tab's output folder.
     OutputFolder,
+    /// Choose where a new key pair's identity file goes.
+    SaveIdentity,
 }
 
 impl DialogPurpose {
@@ -97,6 +102,7 @@ impl DialogPurpose {
         match self {
             Self::Identity(picker) => picker.tab(),
             Self::AddFile | Self::OutputFolder => Tab::Files,
+            Self::SaveIdentity => Tab::Keys,
         }
     }
 
@@ -106,6 +112,7 @@ impl DialogPurpose {
             Self::Identity(_) => "identity",
             Self::AddFile => "add-file",
             Self::OutputFolder => "output-folder",
+            Self::SaveIdentity => "save-identity",
         }
     }
 }
@@ -127,6 +134,14 @@ pub enum Focus {
     RemoveRow(usize),
     /// The Files tab's "Choose folder…".
     ChooseFolder,
+    /// The Keys tab's "Generate key pair".
+    Generate,
+    /// The add form's Label field.
+    AddLabel,
+    /// The add form's Public key field.
+    AddKey,
+    /// Delete on the book row of this entry.
+    Delete(EntryId),
 }
 
 /// Everything that can happen to the window.
@@ -137,6 +152,12 @@ pub enum Input {
     Text(TextInput),
     /// The user did something on the Files tab.
     Files(FilesInput),
+    /// The user did something on the Keys tab.
+    Keys(KeysInput),
+    /// How a config save ended.
+    ConfigSaved(SaveOutcome),
+    /// The window is closing.
+    Closing,
     /// What the paths an intake asked about are.
     Inspected(Vec<(PathBuf, PathKind)>),
     /// Which rows' outputs exist, by row path.
@@ -166,6 +187,9 @@ impl fmt::Debug for Input {
             Self::TabPicked(tab) => f.debug_tuple("TabPicked").field(tab).finish(),
             Self::Text(input) => f.debug_tuple("Text").field(input).finish(),
             Self::Files(input) => f.debug_tuple("Files").field(input).finish(),
+            Self::Keys(input) => f.debug_tuple("Keys").field(input).finish(),
+            Self::ConfigSaved(outcome) => f.debug_tuple("ConfigSaved").field(outcome).finish(),
+            Self::Closing => f.write_str("Closing"),
             Self::Inspected(paths) => f.debug_tuple("Inspected").field(&paths.len()).finish(),
             Self::OutputsProbed(paths) => {
                 f.debug_tuple("OutputsProbed").field(&paths.len()).finish()
@@ -195,6 +219,8 @@ pub enum Effect {
     /// Find out which outputs exist, for (row path, output path) pairs; answered as
     /// [`Input::OutputsProbed`].
     ProbeOutputs(Vec<(PathBuf, PathBuf)>),
+    /// Write this snapshot to the config file; answered as [`Input::ConfigSaved`].
+    SaveConfig(SealConfig),
 }
 
 impl fmt::Debug for Effect {
@@ -205,6 +231,10 @@ impl fmt::Debug for Effect {
             Self::Copy(text) => f.debug_struct("Copy").field("len", &text.len()).finish(),
             Self::Inspect(paths) => f.debug_tuple("Inspect").field(&paths.len()).finish(),
             Self::ProbeOutputs(pairs) => f.debug_tuple("ProbeOutputs").field(&pairs.len()).finish(),
+            Self::SaveConfig(config) => f
+                .debug_struct("SaveConfig")
+                .field("recipients", &config.recipients.len())
+                .finish_non_exhaustive(),
         }
     }
 }
@@ -217,12 +247,15 @@ pub struct Outcome {
     pub effects: Vec<Effect>,
     /// Where focus goes, when the transition names a place.
     pub focus: Option<Focus>,
+    /// What to scroll into view, when the transition shows something new away from focus.
+    pub reveal: Option<Focus>,
 }
 
 /// The seal window's state.
 pub struct AppState {
     pub theme: Theme,
     pub choice_kits: ChoiceKits,
+    pub confirm_kits: ConfirmKits,
     pub tab: Tab,
     pub work: Work,
     /// The file dialog showing, if any; cleared only by its own answer.
@@ -232,6 +265,9 @@ pub struct AppState {
     pub identity_path: Option<PathBuf>,
     pub text: TextTab,
     pub files: FilesTab,
+    pub keys: KeysTab,
+    /// What the session may do with the config file.
+    pub config_status: ConfigStatus,
     notes: Notes,
     /// What the log file is doing, for the Keys tab's About group.
     pub file_logging: FileLogging,
@@ -250,16 +286,18 @@ impl fmt::Debug for AppState {
             .field("identity_path", &self.identity_path)
             .field("text", &self.text)
             .field("files", &self.files)
+            .field("keys", &self.keys)
+            .field("config_status", &self.config_status)
             .field("notes", &self.notes)
             .finish_non_exhaustive()
     }
 }
 
 impl AppState {
-    /// A window over `config`, starting jobs through `services` and closing `gate` when the
-    /// window closes.
+    /// A window over `config`, which the boot found in `config_status`, starting jobs through
+    /// `services` and closing `gate` when the window closes.
     pub fn new(
-        config: SealConfig,
+        (config, config_status): (SealConfig, ConfigStatus),
         file_logging: FileLogging,
         services: Option<Rc<dyn Services>>,
         gate: Option<PostGate>,
@@ -267,6 +305,7 @@ impl AppState {
         Self {
             theme: Theme::new(),
             choice_kits: ChoiceKits::new(),
+            confirm_kits: ConfirmKits::new(),
             tab: Tab::Text,
             work: Work::Idle,
             dialog: None,
@@ -278,6 +317,8 @@ impl AppState {
                 overwrite: config.overwrite_existing,
                 ..FilesTab::default()
             },
+            keys: KeysTab::default(),
+            config_status,
             notes: Notes::default(),
             file_logging,
             services,
@@ -287,7 +328,12 @@ impl AppState {
 
     /// An empty window with no services, for `AppSpec`'s plain constructor.
     pub fn detached() -> Self {
-        Self::new(SealConfig::default(), FileLogging::Off, None, None)
+        Self::new(
+            (SealConfig::default(), ConfigStatus::Clean),
+            FileLogging::Off,
+            None,
+            None,
+        )
     }
 
     /// The note `tab` holds, if any.
@@ -306,7 +352,9 @@ impl AppState {
             | Note::DialogError(_)
             | Note::OtherTabFailed(_)
             | Note::Summary { .. }
-            | Note::Skipped(_) => None,
+            | Note::Skipped(_)
+            | Note::KeySaved
+            | Note::Added(_) => None,
         }
     }
 
@@ -374,10 +422,19 @@ impl AppState {
         for tab in failures_cleared {
             self.clear_other_tab_failure(tab);
         }
+        if keys_flow::disarms(&input, self.tab) && self.keys.disarm() {
+            out.changed = true;
+        }
         match input {
             Input::TabPicked(tab) => self.tab_picked(tab, &mut out),
             Input::Text(input) => self.text_input(input, &mut out),
             Input::Files(input) => self.files_input(input, &mut out),
+            Input::Keys(input) => self.keys_input(input, &mut out),
+            Input::ConfigSaved(outcome) => self.config_saved(outcome, &mut out),
+            Input::Closing => match self.config_status {
+                ConfigStatus::Failed(_) => self.save_config(&mut out),
+                ConfigStatus::Clean | ConfigStatus::Refused(_) | ConfigStatus::NoLocation => {}
+            },
             Input::Inspected(inspected) => self.inspected(inspected, &mut out),
             Input::OutputsProbed(probed) => {
                 self.files.set_outputs(probed);
@@ -530,13 +587,16 @@ impl AppState {
                     // Both tabs unseal with this one file, so neither still lacks it.
                     self.notes
                         .clear_where(|_, note| *note == Note::Missing(Missing::Identity));
+                    self.save_config(out);
                 }
                 DialogPurpose::AddFile => out.effects.push(Effect::Inspect(vec![path])),
                 DialogPurpose::OutputFolder => {
                     self.files.out_dir = Some(path);
                     self.files.out_choice = files::OutputChoice::Folder;
                     self.probe_outputs(out);
+                    self.save_config(out);
                 }
+                DialogPurpose::SaveIdentity => self.keygen_path_chosen(path, out),
             },
             Ok(None) => {}
             Err(error) => self.notes.set(purpose.tab(), Note::DialogError(error.0)),
@@ -549,6 +609,50 @@ impl AppState {
             .push(Effect::ProbeOutputs(self.files.output_pairs()));
     }
 
+    /// What the config file holds of this session: the book without its ids, the identity
+    /// file, the output folder, and the overwrite choice.
+    pub fn snapshot(&self) -> SealConfig {
+        SealConfig {
+            recipients: self.book.to_config(),
+            last_identity_file: self.identity_path.clone(),
+            last_output_folder: self.files.out_dir.clone(),
+            overwrite_existing: self.files.overwrite,
+            ..SealConfig::default()
+        }
+    }
+
+    /// Asks for the config to be written, when this session may write it.
+    fn save_config(&self, out: &mut Outcome) {
+        match self.config_status {
+            ConfigStatus::Clean | ConfigStatus::Failed(_) => {
+                out.effects.push(Effect::SaveConfig(self.snapshot()));
+            }
+            ConfigStatus::Refused(_) | ConfigStatus::NoLocation => {}
+        }
+    }
+
+    /// A save's answer: a success clears an earlier failure, a failure replaces it. The store
+    /// answers Refused or NoLocation only in those statuses, which set no save; such an answer
+    /// changes nothing.
+    fn config_saved(&mut self, outcome: SaveOutcome, out: &mut Outcome) {
+        let writable = match self.config_status {
+            ConfigStatus::Clean | ConfigStatus::Failed(_) => true,
+            ConfigStatus::Refused(_) | ConfigStatus::NoLocation => false,
+        };
+        if !writable {
+            return;
+        }
+        let next = match outcome {
+            SaveOutcome::Saved => ConfigStatus::Clean,
+            SaveOutcome::Failed(text) => ConfigStatus::Failed(text),
+            SaveOutcome::Refused | SaveOutcome::NoLocation => return,
+        };
+        if self.config_status != next {
+            self.config_status = next;
+            out.changed = true;
+        }
+    }
+
     fn job_event(&mut self, event: JobEvent, out: &mut Outcome) {
         let job = match self.work {
             Work::Running(job) => job,
@@ -556,7 +660,7 @@ impl AppState {
         };
         match event {
             JobEvent::FileProgress { path } => match job {
-                RunningJob::Text(_) => {}
+                RunningJob::Text(_) | RunningJob::Keygen => {}
                 RunningJob::Files { .. } => {
                     if let Some(row) = self.files.row_mut(&path)
                         && row.status == RowStatus::Pending
@@ -567,7 +671,7 @@ impl AppState {
                 }
             },
             JobEvent::FileFinished { path, result } => match job {
-                RunningJob::Text(_) => {}
+                RunningJob::Text(_) | RunningJob::Keygen => {}
                 RunningJob::Files {
                     direction,
                     finished,
@@ -581,6 +685,7 @@ impl AppState {
                 match job {
                     RunningJob::Text(_) => self.text.output.clear(),
                     RunningJob::Files { .. } => self.files.abandon_running(),
+                    RunningJob::Keygen => {}
                 }
                 for other in Tab::ALL {
                     if other == tab {
@@ -661,6 +766,21 @@ impl AppState {
                 self.probe_outputs(out);
                 true
             }
+            (RunningJob::Keygen, JobOutcome::Keygen { public_key, path }) => {
+                self.keys.generated = Some(keys::Generated { public_key, path });
+                self.notes.set(Tab::Keys, Note::KeySaved);
+                if self.tab == Tab::Keys {
+                    out.focus = Some(Focus::Generate);
+                }
+                true
+            }
+            (RunningJob::Keygen, JobOutcome::KeygenExists { path }) => {
+                // One confirm at a time: a delete armed while the keygen ran gives way, so a
+                // key press meant for the new warning cannot delete an entry.
+                self.keys.armed = None;
+                self.keys.step = KeygenStep::ConfirmReplace { path };
+                true
+            }
             (
                 RunningJob::Text(_),
                 JobOutcome::Keygen { .. }
@@ -673,6 +793,10 @@ impl AppState {
                 | JobOutcome::TextRedirect
                 | JobOutcome::Keygen { .. }
                 | JobOutcome::KeygenExists { .. },
+            )
+            | (
+                RunningJob::Keygen,
+                JobOutcome::Text(_) | JobOutcome::TextRedirect | JobOutcome::Files { .. },
             ) => false,
         };
         if answered {
@@ -687,6 +811,7 @@ impl AppState {
             Work::Idle | Work::Running(_) => {
                 self.work = Work::Stopped;
                 self.files.abandon_running();
+                self.keys.step = KeygenStep::Idle;
                 self.notes.clear_where(|_, _| true);
                 out.changed = true;
             }
@@ -709,17 +834,31 @@ pub fn clears_note(input: &Input, tab: Tab, note: &Note) -> bool {
             | Note::DialogError(_)
             | Note::Missing(_)
             | Note::Summary { .. }
-            | Note::Skipped(_) => false,
+            | Note::Skipped(_)
+            | Note::KeySaved
+            | Note::Added(_) => false,
         },
         Input::Text(_) => user_on(Tab::Text),
         Input::Files(FilesInput::DropHover(_)) => false,
         Input::Files(_) => user_on(Tab::Files),
+        Input::Keys(_) => user_on(Tab::Keys),
         Input::DialogOpened(purpose) | Input::DialogAnswered(purpose, _) => user_on(purpose.tab()),
-        Input::Inspected(_) | Input::OutputsProbed(_) | Input::Job(_) | Input::Stopped => false,
+        Input::Inspected(_)
+        | Input::OutputsProbed(_)
+        | Input::Job(_)
+        | Input::Stopped
+        | Input::ConfigSaved(_)
+        | Input::Closing => false,
     }
 }
 
 #[cfg(test)]
+mod config_tests;
+#[cfg(test)]
 mod files_tests;
+#[cfg(test)]
+mod keys_fixtures;
+#[cfg(test)]
+mod keys_tests;
 #[cfg(test)]
 mod tests;

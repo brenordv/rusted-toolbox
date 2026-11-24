@@ -1,6 +1,6 @@
 //! Test support: services that record each job and a state with a recipient book.
 
-use crate::config::{RecipientEntry, SealConfig};
+use crate::config::{ConfigStatus, RecipientEntry, SaveOutcome, SealConfig};
 use crate::services::Services;
 use crate::state::AppState;
 use crate::state::files::PathKind;
@@ -25,6 +25,10 @@ pub struct Recording {
     pub existing: RefCell<HashSet<PathBuf>>,
     /// Each file-system check in order: its name and how many paths it was asked about.
     pub checks: RefCell<Vec<(&'static str, usize)>>,
+    /// Every config snapshot asked to be saved, oldest first.
+    pub saves: RefCell<Vec<SealConfig>>,
+    /// What each save answers; `Saved` until a test sets it.
+    pub save_answer: RefCell<Option<SaveOutcome>>,
 }
 
 impl Recording {
@@ -68,6 +72,14 @@ impl Services for Recording {
             .collect()
     }
 
+    fn save_config(&self, snapshot: &SealConfig) -> SaveOutcome {
+        self.saves.borrow_mut().push(snapshot.clone());
+        self.save_answer
+            .borrow()
+            .clone()
+            .unwrap_or(SaveOutcome::Saved)
+    }
+
     fn probe(&self, pairs: Vec<(PathBuf, PathBuf)>) -> Vec<(PathBuf, bool)> {
         self.checks.borrow_mut().push(("probe", pairs.len()));
         let existing = self.existing.borrow();
@@ -98,10 +110,13 @@ pub fn state_with_book(labels: &[&str]) -> AppState {
         })
         .collect();
     AppState::new(
-        SealConfig {
-            recipients,
-            ..SealConfig::default()
-        },
+        (
+            SealConfig {
+                recipients,
+                ..SealConfig::default()
+            },
+            ConfigStatus::Clean,
+        ),
         FileLogging::Off,
         None,
         None,

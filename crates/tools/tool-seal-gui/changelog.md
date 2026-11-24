@@ -5,7 +5,7 @@
   dependencies. The window keeps its title, size (980 x 720), and settings file; its smallest
   size is 760 x 680, the Text tab at rest with nothing to scroll.
 - The tabs (Text, Files, Keys) sit in a header row; `mod+1`, `mod+2`, and `mod+3` switch
-  between them, also while typing. The Keys tab says it arrives with the next change.
+  between them, also while typing.
 - Text tab: Direction (Seal or Unseal), the input, the recipients (each saved one as a
   checkbox row with its shortened key, plus an Other key field) or the identity file with
   "Choose identity file…", the output in a selectable box with "Copy output", and Seal or
@@ -33,15 +33,31 @@
   same label are chosen separately. An empty checkbox's edge and an empty radio's ring are
   drawn in the muted icon color (over 5:1 on the list), where the kit's own are 1.2 to 1.4:1,
   and a selected radio's dot in white.
+- Keys tab: the recipient book (filling the window, with Copy and Delete on each row; Delete
+  becomes "Confirm delete" once pressed), the add form under it (Label and Public key, added
+  with "Add recipient", Return, or `mod+enter`; an empty or taken label or a bad key is named
+  under its field), "Generate key pair" with an in-window confirm before an existing identity
+  file is replaced, the generated public key with "Copy" and "Add to recipient book" (under the
+  saved file's name, or into the form when that name is taken), and an About group with the
+  log folder.
+- The settings file is saved whenever the book, the identity file, the output folder, or the
+  overwrite choice changes, instead of on tab switches and exit. A failed save shows a caption
+  on every tab until a later save works, and closing the window tries once more; a foreign or
+  unreadable `config.json`, or no settings folder at all, shows its own caption.
+- Fixes that came with the rewrite: deleting a book entry no longer moves the checked boxes to
+  other entries; "Add to recipient book" can no longer take a name from a failed key
+  generation; a pipe or device can no longer join the Files list and hang the worker; Files
+  rows have Remove and the list has "Clear list", so "Remove the invalid rows first" can be
+  done.
 - One background thread runs one job at a time. A job always ends with one answer; if the
   thread stops, the window says so instead of waiting. Closing the window during a job lets the
   job finish before the program exits, and the log says it is waiting.
 - Logging boots through `common-cli`'s GUI boot: the log file is on, the default level is
   `info` (was `warn`), and a panic is logged. The log holds when a job starts and ends, file
   paths, and failure text; never the text being sealed or unsealed, a key, or a request.
-- Generating a key pair (wired in the Keys tab next) never replaces an existing identity file
-  without asking: the worker creates the file only if none is there, through `shared-crypto`'s
-  new `create_identity_file`.
+- Generating a key pair never replaces an existing identity file without asking: the worker
+  creates the file only if none is there, through `shared-crypto`'s new `create_identity_file`,
+  and only the in-window confirm sends a replace.
 
 ## Unreleased
 - Builds on Rune's forks of `winit`, `wgpu-hal`, and `accesskit_windows`: the workspace now

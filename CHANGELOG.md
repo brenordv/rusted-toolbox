@@ -24,8 +24,12 @@
   identity file only if none is there.
 - `seal-gui` Files tab on Rune: a file list that takes dropped files and grows with the window,
   per-row badges and messages, a counted status line with a summary, and Output next to each
-  input or in a chosen folder; only regular files join the list. The Keys tab follows.
+  input or in a chosen folder; only regular files join the list.
   `common-gui-rune` 1.3.0 gains `drop_fill`, a drop-target fill that keeps captions at 4.5:1.
+- `seal-gui` Keys tab on Rune: the recipient book with an add form and a confirm before a
+  delete, key generation with an in-window confirm before an identity file is replaced, and the
+  log folder. The settings file is saved on each change, with a caption on every tab while it
+  cannot be.
 
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system

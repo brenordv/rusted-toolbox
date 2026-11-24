@@ -74,6 +74,13 @@ impl Book {
         self.entries.iter().find(|entry| entry.id == id)
     }
 
+    /// Removes the entry with `id`; the place it held, if the book held it.
+    pub fn remove(&mut self, id: EntryId) -> Option<usize> {
+        let index = self.entries.iter().position(|entry| entry.id == id)?;
+        self.entries.remove(index);
+        Some(index)
+    }
+
     /// The entries as the config file stores them, without ids.
     pub fn to_config(&self) -> Vec<RecipientEntry> {
         self.entries

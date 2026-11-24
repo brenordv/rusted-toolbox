@@ -229,13 +229,16 @@ fn w13_nothing_selected_says_so_and_focuses_the_first_recipient() {
 #[test]
 fn w13_a_saved_key_that_no_longer_parses_names_its_label() {
     let (mut s, _) = recording_state(AppState::new(
-        SealConfig {
-            recipients: vec![RecipientEntry {
-                label: "Alice".to_owned(),
-                public_key: "hand-edited garbage".to_owned(),
-            }],
-            ..SealConfig::default()
-        },
+        (
+            SealConfig {
+                recipients: vec![RecipientEntry {
+                    label: "Alice".to_owned(),
+                    public_key: "hand-edited garbage".to_owned(),
+                }],
+                ..SealConfig::default()
+            },
+            ConfigStatus::Clean,
+        ),
         FileLogging::Off,
         None,
         None,
@@ -259,19 +262,22 @@ fn w13_a_saved_key_that_no_longer_parses_names_its_label() {
 #[test]
 fn w13_a_bad_saved_key_shared_by_label_with_a_good_one_focuses_the_bad_entry() {
     let (mut s, _) = recording_state(AppState::new(
-        SealConfig {
-            recipients: vec![
-                RecipientEntry {
-                    label: "Alice".to_owned(),
-                    public_key: fresh_key(),
-                },
-                RecipientEntry {
-                    label: "Alice".to_owned(),
-                    public_key: "hand-edited garbage".to_owned(),
-                },
-            ],
-            ..SealConfig::default()
-        },
+        (
+            SealConfig {
+                recipients: vec![
+                    RecipientEntry {
+                        label: "Alice".to_owned(),
+                        public_key: fresh_key(),
+                    },
+                    RecipientEntry {
+                        label: "Alice".to_owned(),
+                        public_key: "hand-edited garbage".to_owned(),
+                    },
+                ],
+                ..SealConfig::default()
+            },
+            ConfigStatus::Clean,
+        ),
         FileLogging::Off,
         None,
         None,

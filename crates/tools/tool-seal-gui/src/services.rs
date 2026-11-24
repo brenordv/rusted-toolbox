@@ -1,6 +1,7 @@
 //! The work the window hands out, and `dispatch`, which applies an input and runs what it
 //! asks for.
 
+use crate::config::{ConfigStore, SaveOutcome, SealConfig};
 use crate::state::files::PathKind;
 use crate::state::{AppState, DialogPurpose, Effect, Input};
 use crate::views::focus_key;
@@ -9,7 +10,7 @@ use rune::{FileDialogOptions, FileDialogResult, Tx};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 /// The work the window hands out.
 pub trait Services {
@@ -24,23 +25,31 @@ pub trait Services {
 
     /// For each (row path, output path) pair, the row path and whether the output exists.
     fn probe(&self, pairs: Vec<(PathBuf, PathBuf)>) -> Vec<(PathBuf, bool)>;
+
+    /// Writes `snapshot` to the config file.
+    fn save_config(&self, snapshot: &SealConfig) -> SaveOutcome;
 }
 
-/// The services of a real window: the worker, and the file system for the short checks the
-/// Files tab makes on the UI thread.
+/// The services of a real window: the worker, the config file, and the file system for the
+/// short checks the Files tab makes on the UI thread.
 pub struct ProdServices {
     worker: WorkerSubmit,
+    store: ConfigStore,
 }
 
 impl ProdServices {
-    pub fn new(worker: WorkerSubmit) -> Self {
-        Self { worker }
+    pub fn new(worker: WorkerSubmit, store: ConfigStore) -> Self {
+        Self { worker, store }
     }
 }
 
 impl Services for ProdServices {
     fn run(&self, request: JobRequest) -> anyhow::Result<()> {
         self.worker.run(request)
+    }
+
+    fn save_config(&self, snapshot: &SealConfig) -> SaveOutcome {
+        self.store.flush(snapshot)
     }
 
     fn inspect(&self, paths: Vec<PathBuf>) -> Vec<(PathBuf, PathKind)> {
@@ -112,11 +121,15 @@ pub fn dispatch(s: &mut AppState, tx: &mut Tx, input: Input) -> bool {
     let mut pending = VecDeque::from([input]);
     let mut changed = false;
     let mut focus = None;
+    let mut reveal = None;
     while let Some(input) = pending.pop_front() {
         let outcome = s.apply(input);
         changed |= outcome.changed;
         if outcome.focus.is_some() {
             focus = outcome.focus;
+        }
+        if outcome.reveal.is_some() {
+            reveal = outcome.reveal;
         }
         for effect in outcome.effects {
             if let Some(answer) = run_effect(s, tx, effect) {
@@ -128,6 +141,9 @@ pub fn dispatch(s: &mut AppState, tx: &mut Tx, input: Input) -> bool {
         let key = focus_key(focus);
         tx.focus(&key, true);
         tx.scroll_into_view(&key);
+    }
+    if let Some(reveal) = reveal {
+        tx.scroll_into_view(focus_key(reveal));
     }
     changed
 }
@@ -161,6 +177,19 @@ fn run_effect(s: &AppState, tx: &mut Tx, effect: Effect) -> Option<Input> {
             .services
             .as_ref()
             .map(|services| Input::OutputsProbed(services.probe(pairs))),
+        Effect::SaveConfig(snapshot) => {
+            let outcome = s.services.as_ref()?.save_config(&snapshot);
+            match &outcome {
+                SaveOutcome::Refused | SaveOutcome::NoLocation => {
+                    error!(
+                        outcome = ?outcome,
+                        "a config save was asked of a store that never writes"
+                    );
+                }
+                SaveOutcome::Saved | SaveOutcome::Failed(_) => {}
+            }
+            Some(Input::ConfigSaved(outcome))
+        }
     }
 }
 
@@ -192,6 +221,13 @@ fn open_dialog(tx: &mut Tx, purpose: DialogPurpose) {
         DialogPurpose::Identity(_) => tx.open_file(titled("Choose identity file"), answer),
         DialogPurpose::AddFile => tx.open_file(titled("Add files"), answer),
         DialogPurpose::OutputFolder => tx.open_folder(titled("Choose output folder"), answer),
+        DialogPurpose::SaveIdentity => tx.save_file(
+            FileDialogOptions {
+                file_name: Some("seal-identity.txt".to_owned()),
+                ..titled("Save identity file")
+            },
+            answer,
+        ),
     }
 }
 

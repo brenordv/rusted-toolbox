@@ -20,13 +20,51 @@ pub const TOOL_MARKER: &str = "seal";
 /// The config layout this build reads and writes.
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// Status-bar note shown when another tool's config occupies seal's path.
-pub const NOTE_FOREIGN_CONFIG: &str = "another tool's config.json sits in the seal config \
-     folder; changes will not be saved until it is moved";
+/// Why the config file found at boot is not seal's to write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigNote {
+    /// It carries another tool's marker.
+    Foreign,
+    /// It could not be read or parsed.
+    Unreadable,
+}
 
-/// Status-bar note shown when the config exists but cannot be read.
-pub const NOTE_UNREADABLE_CONFIG: &str =
-    "config.json could not be read; changes will not be saved until it is fixed or removed";
+/// What the session may do with the config file: write it (and whether the last write
+/// failed), or never, for the reason found at boot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigStatus {
+    /// Nothing failed.
+    Clean,
+    /// The last save failed: its text.
+    Failed(String),
+    /// The file found at boot is not seal's; nothing is written this session.
+    Refused(ConfigNote),
+    /// The environment names no config folder; nothing is written this session.
+    NoLocation,
+}
+
+impl ConfigStatus {
+    /// The standing caption every tab shows for the status, when it has one.
+    pub fn caption(&self) -> Option<String> {
+        match self {
+            Self::Clean => None,
+            Self::Failed(text) => Some(format!("Settings could not be saved: {text}")),
+            Self::Refused(ConfigNote::Foreign) => Some(
+                "Another tool's config.json is in seal's settings folder; changes are not saved \
+                 until it is moved."
+                    .to_owned(),
+            ),
+            Self::Refused(ConfigNote::Unreadable) => Some(
+                "config.json could not be read; changes are not saved until it is fixed or \
+                 removed."
+                    .to_owned(),
+            ),
+            Self::NoLocation => {
+                Some("No settings folder was found; changes are not saved.".to_owned())
+            }
+        }
+    }
+}
 
 /// One saved recipient: a human label for an `age1...` public key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,34 +185,31 @@ pub fn save(path: &Path, config: &SealConfig) -> anyhow::Result<()> {
     })
 }
 
-/// The session's relationship with the config file: where it lives, whether
-/// saves are allowed, and whether a save failure was already reported.
+/// The session's relationship with the config file: where it lives and whether saves are
+/// allowed.
 pub struct ConfigStore {
     path: Option<PathBuf>,
     poisoned: bool,
-    save_warned: bool,
 }
 
 /// Everything boot-time config resolution produced.
 pub struct Boot {
     pub store: ConfigStore,
     pub config: SealConfig,
-    /// A standing status-bar note (foreign or unreadable config file).
-    pub note: Option<&'static str>,
+    /// What the session may do with the file.
+    pub status: ConfigStatus,
 }
 
-/// How one flush attempt ended.
-#[derive(Debug, PartialEq, Eq)]
-pub enum FlushOutcome {
+/// How one save ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaveOutcome {
     Saved,
+    /// The write failed: the error chain.
+    Failed(String),
     /// The stored file is not ours; nothing was written.
     Refused,
     /// The environment names no config location.
     NoLocation,
-    /// First save failure of the session; worth a toast.
-    FailedFirst(String),
-    /// A repeat failure, already reported once.
-    FailedAgain,
 }
 
 impl ConfigStore {
@@ -188,54 +223,55 @@ impl ConfigStore {
                 store: ConfigStore {
                     path: None,
                     poisoned: false,
-                    save_warned: false,
                 },
                 config: SealConfig::default(),
-                note: None,
+                status: ConfigStatus::NoLocation,
             };
         };
 
-        let (config, poisoned, note) = match load(&path) {
-            LoadOutcome::Loaded(config) => (config, false, None),
-            LoadOutcome::Missing => (SealConfig::default(), false, None),
-            LoadOutcome::Foreign => (SealConfig::default(), true, Some(NOTE_FOREIGN_CONFIG)),
-            LoadOutcome::Invalid => (SealConfig::default(), true, Some(NOTE_UNREADABLE_CONFIG)),
+        let (config, status) = match load(&path) {
+            LoadOutcome::Loaded(config) => (config, ConfigStatus::Clean),
+            LoadOutcome::Missing => (SealConfig::default(), ConfigStatus::Clean),
+            LoadOutcome::Foreign => (
+                SealConfig::default(),
+                ConfigStatus::Refused(ConfigNote::Foreign),
+            ),
+            LoadOutcome::Invalid => (
+                SealConfig::default(),
+                ConfigStatus::Refused(ConfigNote::Unreadable),
+            ),
+        };
+        let poisoned = match status {
+            ConfigStatus::Refused(_) => true,
+            ConfigStatus::Clean | ConfigStatus::Failed(_) | ConfigStatus::NoLocation => false,
         };
 
         Boot {
             store: ConfigStore {
                 path: Some(path),
                 poisoned,
-                save_warned: false,
             },
             config,
-            note,
+            status,
         }
     }
 
-    /// Writes the config unless the path is poisoned or absent. The first
-    /// save failure of the session is reported loudly (warn here, a toast in
-    /// the app); repeats stay quiet so a read-only profile cannot toast on
-    /// every tab switch.
-    pub fn flush(&mut self, config: &SealConfig) -> FlushOutcome {
+    /// Writes the config unless the path is poisoned or absent. A failed write is logged at
+    /// `warn` with the path, every time.
+    pub fn flush(&self, config: &SealConfig) -> SaveOutcome {
         let Some(path) = self.path.as_ref() else {
-            return FlushOutcome::NoLocation;
+            return SaveOutcome::NoLocation;
         };
         if self.poisoned {
             debug!("config save refused: the stored file is not ours");
-            return FlushOutcome::Refused;
+            return SaveOutcome::Refused;
         }
         match save(path, config) {
-            Ok(()) => FlushOutcome::Saved,
-            Err(error) if self.save_warned => {
-                debug!(error = format!("{error:#}"), "config save failed again");
-                FlushOutcome::FailedAgain
-            }
+            Ok(()) => SaveOutcome::Saved,
             Err(error) => {
-                self.save_warned = true;
                 let rendered = format!("{error:#}");
-                warn!(error = %rendered, "config save failed");
-                FlushOutcome::FailedFirst(rendered)
+                warn!(path = %path.display(), error = %rendered, "config save failed");
+                SaveOutcome::Failed(rendered)
             }
         }
     }
@@ -353,13 +389,13 @@ mod tests {
         let foreign = r#"{"tool": "eh", "schema_version": 1}"#;
         fs::write(&path, foreign).unwrap();
 
-        let mut boot = ConfigStore::boot(&env);
+        let boot = ConfigStore::boot(&env);
 
         assert_eq!(boot.config, SealConfig::default());
-        assert_eq!(boot.note, Some(NOTE_FOREIGN_CONFIG));
+        assert_eq!(boot.status, ConfigStatus::Refused(ConfigNote::Foreign));
         assert_eq!(
             boot.store.flush(&SealConfig::default()),
-            FlushOutcome::Refused
+            SaveOutcome::Refused
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), foreign);
     }
@@ -372,25 +408,25 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "garbage").unwrap();
 
-        let mut boot = ConfigStore::boot(&env);
+        let boot = ConfigStore::boot(&env);
 
-        assert_eq!(boot.note, Some(NOTE_UNREADABLE_CONFIG));
+        assert_eq!(boot.status, ConfigStatus::Refused(ConfigNote::Unreadable));
         assert_eq!(
             boot.store.flush(&SealConfig::default()),
-            FlushOutcome::Refused
+            SaveOutcome::Refused
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), "garbage");
     }
 
     #[test]
-    fn boot_with_no_config_location_still_runs_and_refuses_nothing_loudly() {
-        let mut boot = ConfigStore::boot(env_with(&[]));
+    fn s3_boot_with_no_config_location_still_runs_and_saves_nowhere() {
+        let boot = ConfigStore::boot(env_with(&[]));
 
         assert_eq!(boot.config, SealConfig::default());
-        assert_eq!(boot.note, None);
+        assert_eq!(boot.status, ConfigStatus::NoLocation);
         assert_eq!(
             boot.store.flush(&SealConfig::default()),
-            FlushOutcome::NoLocation
+            SaveOutcome::NoLocation
         );
     }
 
@@ -399,38 +435,54 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let env = env_all(dir.path());
 
-        let mut boot = ConfigStore::boot(&env);
-        assert_eq!(boot.note, None);
+        let boot = ConfigStore::boot(&env);
+        assert_eq!(boot.status, ConfigStatus::Clean);
 
         let mut config = SealConfig::default();
         config.recipients.push(RecipientEntry {
             label: "Bea".to_string(),
             public_key: "age1whatever".to_string(),
         });
-        assert_eq!(boot.store.flush(&config), FlushOutcome::Saved);
+        assert_eq!(boot.store.flush(&config), SaveOutcome::Saved);
 
         let reloaded = ConfigStore::boot(&env);
         assert_eq!(reloaded.config, config);
     }
 
-    #[test]
-    fn save_failures_report_once_then_stay_quiet() {
-        let dir = tempfile::tempdir().unwrap();
-        // The config path's parent is a file, so create_dir_all must fail.
-        let blocker = dir.path().join("seal");
+    /// A store whose config folder is a file, so every save fails.
+    fn failing_store(dir: &Path) -> ConfigStore {
+        let blocker = dir.join("seal");
         fs::write(&blocker, b"in the way").unwrap();
-        let mut store = ConfigStore {
+        ConfigStore {
             path: Some(blocker.join("config.json")),
             poisoned: false,
-            save_warned: false,
-        };
+        }
+    }
+
+    #[test]
+    fn s1_every_failed_save_answers_failed_with_the_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = failing_store(dir.path());
         let config = SealConfig::default();
 
         let first = store.flush(&config);
         let second = store.flush(&config);
 
-        assert!(matches!(first, FlushOutcome::FailedFirst(_)));
-        assert_eq!(second, FlushOutcome::FailedAgain);
+        assert!(matches!(&first, SaveOutcome::Failed(text) if text.contains("failed to create")));
+        assert_eq!(second, first);
+    }
+
+    #[test]
+    fn s2_a_poisoned_store_refuses_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let store = ConfigStore {
+            path: Some(path.clone()),
+            poisoned: true,
+        };
+
+        assert_eq!(store.flush(&SealConfig::default()), SaveOutcome::Refused);
+        assert!(!path.exists());
     }
 
     #[test]
