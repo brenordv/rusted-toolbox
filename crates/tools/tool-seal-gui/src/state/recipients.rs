@@ -2,6 +2,7 @@
 //! a session id when the book is loaded or an entry is added, so selection follows the entry
 //! whatever happens to the others. The config file never sees the ids.
 
+use super::Tab;
 use crate::config::RecipientEntry;
 use rune::TextEdit;
 use shared_crypto::Recipient;
@@ -82,6 +83,24 @@ impl Book {
                 public_key: entry.public_key.clone(),
             })
             .collect()
+    }
+}
+
+/// A tab that seals to recipients and unseals with the identity file, each with its own
+/// [`RecipientPicker`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Picker {
+    Text,
+    Files,
+}
+
+impl Picker {
+    /// The tab the picker is on.
+    pub fn tab(self) -> Tab {
+        match self {
+            Self::Text => Tab::Text,
+            Self::Files => Tab::Files,
+        }
     }
 }
 

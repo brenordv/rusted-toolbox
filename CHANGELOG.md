@@ -20,8 +20,12 @@
 - `seal-gui` 2.0.0 runs on Rune: a tabbed window with the Text tab built (Direction, input,
   recipients or identity file, output, Seal or Unseal), status lines instead of toasts, one
   background thread that always answers, and info-level file logging that never holds the
-  text or a key. The Files and Keys tabs follow. `shared-crypto` 1.1.0 gains
-  `keys::create_identity_file`, which creates an identity file only if none is there.
+  text or a key. `shared-crypto` 1.1.0 gains `keys::create_identity_file`, which creates an
+  identity file only if none is there.
+- `seal-gui` Files tab on Rune: a file list that takes dropped files and grows with the window,
+  per-row badges and messages, a counted status line with a summary, and Output next to each
+  input or in a chosen folder; only regular files join the list. The Keys tab follows.
+  `common-gui-rune` 1.3.0 gains `drop_fill`, a drop-target fill that keeps captions at 4.5:1.
 
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system

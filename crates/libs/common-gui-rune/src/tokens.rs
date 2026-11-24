@@ -53,6 +53,10 @@ pub const SPACE_XXL: f32 = 32.0;
 pub const HAIRLINE: f32 = 1.0;
 /// The focus ring an app part draws, the width the kit's own small controls use.
 pub const FOCUS_RING_WIDTH: f32 = 2.0;
+/// The accent's alpha in a drop target's hover fill. The kit's selection fill (alpha 0.3)
+/// drops muted, danger, and warning captions near 3.2:1; at this alpha the worst is 4.7:1 on
+/// Content, and the accent edge around it stays over 3:1.
+pub const DROP_FILL_ALPHA: f32 = 0.12;
 /// A regular control's height, the smallest pointer target.
 pub const CONTROL_HEIGHT: f32 = 28.0;
 /// How far a revealed field rises as it fades in.

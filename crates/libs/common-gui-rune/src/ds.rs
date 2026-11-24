@@ -1,8 +1,8 @@
 //! The two kits (dark and light) with the shared overrides, and the surface ladder.
 
 use crate::tokens::{
-    DARK_ACCENT, DARK_BG, DARK_FG, LIGHT_ACCENT, LIGHT_BG, LIGHT_FG, LIGHT_MUTED, SUBMIT_FILL,
-    SUBMIT_HOVER_ALPHA, SUBMIT_LABEL, SUBMIT_PRESSED_ALPHA, SUBMIT_SHEEN_ALPHA, rgb,
+    DARK_ACCENT, DARK_BG, DARK_FG, DROP_FILL_ALPHA, LIGHT_ACCENT, LIGHT_BG, LIGHT_FG, LIGHT_MUTED,
+    SUBMIT_FILL, SUBMIT_HOVER_ALPHA, SUBMIT_LABEL, SUBMIT_PRESSED_ALPHA, SUBMIT_SHEEN_ALPHA, rgb,
 };
 use rune::Color;
 use rune_kit::{Kit, PaletteSeed};
@@ -56,6 +56,12 @@ pub fn surface(k: &Kit, level: Surface) -> Color {
         (false, Surface::Window) => k.c.layer_01,
         (false, Surface::Content | Surface::Raised) => k.c.bg_base,
     }
+}
+
+/// The fill of a drop target while a file drag hovers it: the accent at [`DROP_FILL_ALPHA`],
+/// drawn over Content.
+pub fn drop_fill(k: &Kit) -> Color {
+    k.c.text_accent.alpha(DROP_FILL_ALPHA)
 }
 
 fn dark_kit() -> Kit {
@@ -179,6 +185,34 @@ mod tests {
                     );
                 }
             }
+        }
+
+        contract.assert_met();
+    }
+
+    #[test]
+    fn text_and_the_accent_edge_meet_their_minimums_on_the_drop_fill() {
+        let ds = Ds::new();
+        let mut contract = Contract::default();
+
+        for dark in [true, false] {
+            let k = ds.kit(dark);
+            let mode = appearance_name(dark);
+            let fill = over(drop_fill(k), surface(k, Surface::Content));
+            for (name, fg) in [
+                ("fg", k.c.text_base),
+                ("muted", k.c.text_muted),
+                ("danger caption", k.c.danger.fg),
+                ("warning caption", k.c.warning.fg),
+            ] {
+                contract.check(&format!("{mode} {name} on the drop fill"), fg, fill, TEXT);
+            }
+            contract.check(
+                &format!("{mode} accent edge on the drop fill"),
+                over(k.c.border_focus, fill),
+                fill,
+                NON_TEXT,
+            );
         }
 
         contract.assert_met();

@@ -5,22 +5,23 @@
 use common_gui_rune::test_harness::{
     a11y_nodes, deliver, press, runtime_with_keys, settle, type_into,
 };
-use rune::{Runtime, TextEdit};
+use rune::{FileDialogError, Runtime, TextEdit};
 use seal_gui::config::{RecipientEntry, SealConfig};
 use seal_gui::design::WINDOW_SIZE;
-use seal_gui::services::{Services, dispatch};
+use seal_gui::services::{ProdServices, Services, dialog_answered, dispatch};
+use seal_gui::state::files::PathKind;
+use seal_gui::state::notes::Note;
 use seal_gui::state::text::TextInput;
-use seal_gui::state::{AppState, Input, Tab};
+use seal_gui::state::{AppState, DialogPurpose, Input, Tab};
 use seal_gui::views::{INPUT_KEY, OTHER_KEY_KEY, TEXT_SUBMIT_KEY, view, window_key};
 use seal_gui::worker::{
-    self, JobKind, JobRequest, WorkerJoin, WorkerMsg, WorkerSubmit, log_file_failed,
-    log_job_failed, report_stop,
+    self, JobKind, JobRequest, WorkerJoin, WorkerMsg, log_file_failed, log_job_failed, report_stop,
 };
 use shared_crypto::keys::{generate_identity, public_key_of, save_identity_file};
 use shared_crypto::{Direction, engine};
 use std::cell::RefCell;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
@@ -50,16 +51,24 @@ impl SharedBuffer {
     }
 }
 
-/// The real worker behind services that keep each request's `Debug`.
+/// The real services behind ones that keep each request's `Debug`.
 struct Recorded {
-    worker: WorkerSubmit,
+    prod: ProdServices,
     seen: RefCell<Vec<String>>,
 }
 
 impl Services for Recorded {
     fn run(&self, request: JobRequest) -> anyhow::Result<()> {
         self.seen.borrow_mut().push(format!("{request:?}"));
-        self.worker.run(request)
+        self.prod.run(request)
+    }
+
+    fn inspect(&self, paths: Vec<PathBuf>) -> Vec<(PathBuf, PathKind)> {
+        self.prod.inspect(paths)
+    }
+
+    fn probe(&self, pairs: Vec<(PathBuf, PathBuf)>) -> Vec<(PathBuf, bool)> {
+        self.prod.probe(pairs)
     }
 }
 
@@ -80,7 +89,7 @@ impl Window {
         })
         .unwrap();
         let services = Rc::new(Recorded {
-            worker: submit,
+            prod: ProdServices::new(submit),
             seen: RefCell::new(Vec::new()),
         });
         let state = AppState::new(
@@ -228,7 +237,29 @@ fn the_log_holds_the_worker_lines_and_no_text_or_key() {
     let pasted_debug = pasted.debug_text();
     pasted.close();
 
+    // (d) The add-file dialog fails to show.
+    let mut dialog = Window::open(SealConfig::default());
+    dialog.deliver(Input::TabPicked(Tab::Files));
+    dialog.deliver(Input::DialogOpened(DialogPurpose::AddFile));
+    deliver(&mut dialog.rt, |s, tx| {
+        dialog_answered(
+            s,
+            tx,
+            DialogPurpose::AddFile,
+            Err(FileDialogError("no portal".to_owned())),
+        )
+    });
+    let dialog_note = dialog.rt.state.note(Tab::Files).cloned();
+    dialog.close();
+
     let log = logs.text();
+    assert_eq!(dialog_note, Some(Note::DialogError("no portal".to_owned())));
+    assert!(
+        log.contains("a file dialog failed")
+            && log.contains("purpose=\"add-file\"")
+            && log.contains("error=no portal"),
+        "{log}"
+    );
     assert!(
         log.contains("the worker thread stopped without being asked to")
             && log.contains("kind=\"files\""),

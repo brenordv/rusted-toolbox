@@ -5,7 +5,7 @@
   dependencies. The window keeps its title, size (980 x 720), and settings file; its smallest
   size is 760 x 680, the Text tab at rest with nothing to scroll.
 - The tabs (Text, Files, Keys) sit in a header row; `mod+1`, `mod+2`, and `mod+3` switch
-  between them, also while typing. The Files and Keys tabs say they arrive with the next change.
+  between them, also while typing. The Keys tab says it arrives with the next change.
 - Text tab: Direction (Seal or Unseal), the input, the recipients (each saved one as a
   checkbox row with its shortened key, plus an Other key field) or the identity file with
   "Choose identity file…", the output in a selectable box with "Copy output", and Seal or
@@ -16,9 +16,23 @@
   on that tab. A press that cannot start says what is missing, marks the field, and moves
   focus to it; Seal stays enabled for that. A stopped worker shows a standing caption on every
   tab.
+- Files tab: Mode (Seal or Unseal) with "Overwrite existing files" beside it; the file list,
+  which takes files dropped on it (lit with the accent while a drag hovers) and grows with the
+  window; "Add files…" (one file per dialog) and "Clear list"; the recipients or the identity
+  file as on the Text tab; Output (next to each input, or a chosen folder); and "Seal files" or
+  "Unseal files", also on `mod+enter`. Each row shows a status badge, the path, the size, and
+  Remove, with a line under the path when the row cannot run, failed, or would be skipped
+  because its output exists. The status line counts the batch ("Sealing 2 of 3") and ends with
+  a summary ("3 sealed, 0 skipped, 0 failed."); assistive technology hears "Sealing files" once
+  instead of every count.
+- Only regular files join the list. A dropped folder, pipe, or device is left out and the
+  status line says why; a path that cannot be read joins with size 0 and its row fails with
+  the real error when the batch runs. A dropped file joins whichever tab shows only when that
+  tab is Files.
 - Recipient selection follows the entry, not its place in the list, so two entries with the
-  same label are chosen separately. An empty checkbox's edge is drawn in the muted icon color
-  (over 5:1 on the list), where the kit's own edge is near 1.4:1.
+  same label are chosen separately. An empty checkbox's edge and an empty radio's ring are
+  drawn in the muted icon color (over 5:1 on the list), where the kit's own are 1.2 to 1.4:1,
+  and a selected radio's dot in white.
 - One background thread runs one job at a time. A job always ends with one answer; if the
   thread stops, the window says so instead of waiting. Closing the window during a job lets the
   job finish before the program exits, and the log says it is waiting.

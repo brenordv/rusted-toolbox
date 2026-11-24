@@ -1,7 +1,7 @@
 use super::*;
 use crate::design::{TEXT_MIN_LINES, WINDOW_MIN, WINDOW_SIZE};
 use crate::state::notes::{Note, RunningJob};
-use crate::state::recipients::EntryId;
+use crate::state::recipients::{EntryId, Picker};
 use crate::test_support::{Recording, recording_state, state_with_book};
 use crate::worker::{JobEvent, JobOutcome, JobRequest};
 use common_gui_rune::test_harness::{
@@ -73,7 +73,7 @@ fn v1_typing_checking_and_mod_enter_seal_then_copy_the_output() {
     let clipboard = use_memory_clipboard(&mut rt);
     type_into(&mut rt, INPUT_KEY, "a secret note");
     let alice = first_id(&rt);
-    press(&mut rt, &recipient_key(alice));
+    press(&mut rt, &recipient_key(Picker::Text, alice));
     press(&mut rt, INPUT_KEY);
 
     command(&mut rt, Key::Enter);
@@ -128,7 +128,7 @@ fn v4_while_a_job_runs_the_seal_button_is_busy_and_a_second_start_asks_nothing()
     let (mut rt, services) = window(&["Alice"], WINDOW_SIZE);
     type_into(&mut rt, INPUT_KEY, "hello");
     let alice = first_id(&rt);
-    press(&mut rt, &recipient_key(alice));
+    press(&mut rt, &recipient_key(Picker::Text, alice));
     press(&mut rt, TEXT_SUBMIT_KEY);
 
     press(&mut rt, INPUT_KEY);
@@ -248,7 +248,7 @@ fn v7_the_output_box_and_the_recipients_are_named_and_a_key_is_described_whole()
 
     let output = node(&rt, OUTPUT_KEY);
     let recipients = node(&rt, RECIPIENTS_KEY);
-    let checkbox = node(&rt, &recipient_key(alice.id));
+    let checkbox = node(&rt, &recipient_key(Picker::Text, alice.id));
 
     assert_eq!(output["name"], "Output");
     assert!(output["role"].as_str().is_some());
@@ -344,7 +344,7 @@ fn w10_w17_a_start_the_worker_refuses_ends_idle_in_one_dispatch_with_the_failure
     services.refuse.set(true);
     type_into(&mut rt, INPUT_KEY, "hello");
     let alice = first_id(&rt);
-    press(&mut rt, &recipient_key(alice));
+    press(&mut rt, &recipient_key(Picker::Text, alice));
 
     deliver(
         &mut rt,

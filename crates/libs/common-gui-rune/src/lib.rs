@@ -19,5 +19,5 @@ mod theme;
 pub mod tokens;
 pub mod window;
 
-pub use ds::{Ds, Surface, surface};
+pub use ds::{Ds, Surface, drop_fill, surface};
 pub use theme::Theme;

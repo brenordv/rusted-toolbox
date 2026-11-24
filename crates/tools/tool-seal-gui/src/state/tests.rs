@@ -220,7 +220,10 @@ fn w13_nothing_selected_says_so_and_focuses_the_first_recipient() {
     let out = start(&mut s);
 
     assert_eq!(s.note(Tab::Text), Some(&Note::Missing(Missing::Recipients)));
-    assert_eq!(out.focus, Some(Focus::TextRecipient(first_id(&s))));
+    assert_eq!(
+        out.focus,
+        Some(Focus::Recipient(Picker::Text, first_id(&s)))
+    );
 }
 
 #[test]
@@ -250,7 +253,7 @@ fn w13_a_saved_key_that_no_longer_parses_names_its_label() {
             label: "Alice".to_owned()
         }))
     );
-    assert_eq!(out.focus, Some(Focus::TextRecipient(alice)));
+    assert_eq!(out.focus, Some(Focus::Recipient(Picker::Text, alice)));
 }
 
 #[test]
@@ -281,7 +284,7 @@ fn w13_a_bad_saved_key_shared_by_label_with_a_good_one_focuses_the_bad_entry() {
 
     let out = start(&mut s);
 
-    assert_eq!(out.focus, Some(Focus::TextRecipient(bad)));
+    assert_eq!(out.focus, Some(Focus::Recipient(Picker::Text, bad)));
 }
 
 #[test]
@@ -318,7 +321,7 @@ fn w13_a_bad_pasted_key_says_so_and_focuses_the_field() {
     let out = start(&mut s);
 
     assert_eq!(s.note(Tab::Text), Some(&Note::Missing(Missing::OtherKey)));
-    assert_eq!(out.focus, Some(Focus::TextOtherKey));
+    assert_eq!(out.focus, Some(Focus::OtherKey(Picker::Text)));
 }
 
 #[test]
@@ -425,7 +428,7 @@ fn copy_with_no_output_copies_nothing() {
 }
 
 fn identity_purpose() -> DialogPurpose {
-    DialogPurpose::Identity(Tab::Text)
+    DialogPurpose::Identity(Picker::Text)
 }
 
 #[test]
@@ -505,7 +508,7 @@ fn w15_an_answer_for_another_purpose_or_with_none_open_changes_nothing() {
     ));
     s.apply(Input::DialogOpened(identity_purpose()));
     let other = s.apply(Input::DialogAnswered(
-        DialogPurpose::Identity(Tab::Files),
+        DialogPurpose::Identity(Picker::Files),
         Ok(Some(PathBuf::from("other.txt"))),
     ));
 
@@ -610,7 +613,7 @@ fn unseal_without_an_identity_says_so() {
     let out = start(&mut s);
 
     assert_eq!(s.note(Tab::Text), Some(&Note::Missing(Missing::Identity)));
-    assert_eq!(out.focus, Some(Focus::TextChooseIdentity));
+    assert_eq!(out.focus, Some(Focus::ChooseIdentity(Picker::Text)));
 }
 
 #[test]

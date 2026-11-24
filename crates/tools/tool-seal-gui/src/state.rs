@@ -1,22 +1,26 @@
 //! What the seal window holds, and how each input changes it. `apply` is pure: it reads no
 //! file, clock, or window, and hands what it needs done back as effects.
 
+pub mod files;
+mod files_flow;
 pub mod notes;
 pub mod recipients;
 pub mod text;
 
 use crate::config::SealConfig;
-use crate::design::CheckboxKits;
+use crate::design::ChoiceKits;
 use crate::services::{PostGate, Services};
-use crate::worker::{JobEvent, JobOutcome, JobRequest, WorkerMsg};
+use crate::worker::{FileResult, JobEvent, JobOutcome, JobRequest, WorkerMsg};
 use common_cli::app_logger::FileLogging;
 use common_gui_rune::Theme;
 use common_gui_rune::parts::Tone;
+use files::{FilesInput, FilesTab, PathKind, RowStatus};
 use notes::{Copied, Missing, Note, Notes, RunningJob};
-use recipients::{Book, EntryId};
+use recipients::{Book, EntryId, Picker, RecipientPicker};
 use rune::FileDialogResult;
+use shared_crypto::Direction;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use text::{TextInput, TextTab, text_job};
 
@@ -79,15 +83,20 @@ pub enum Blocked {
 /// A file dialog's purpose. One shows at a time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DialogPurpose {
-    /// Choose the identity file, from the tab named.
-    Identity(Tab),
+    /// Choose the identity file, from the picker's tab.
+    Identity(Picker),
+    /// Add a file to the Files list.
+    AddFile,
+    /// Choose the Files tab's output folder.
+    OutputFolder,
 }
 
 impl DialogPurpose {
     /// The tab whose button opened the dialog.
     pub fn tab(self) -> Tab {
         match self {
-            Self::Identity(tab) => tab,
+            Self::Identity(picker) => picker.tab(),
+            Self::AddFile | Self::OutputFolder => Tab::Files,
         }
     }
 
@@ -95,6 +104,8 @@ impl DialogPurpose {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Identity(_) => "identity",
+            Self::AddFile => "add-file",
+            Self::OutputFolder => "output-folder",
         }
     }
 }
@@ -104,12 +115,18 @@ impl DialogPurpose {
 pub enum Focus {
     /// The Text tab's input box.
     TextInput,
-    /// A recipient's checkbox on the Text tab.
-    TextRecipient(EntryId),
-    /// The Text tab's Other key field.
-    TextOtherKey,
-    /// The Text tab's "Choose identity file…".
-    TextChooseIdentity,
+    /// A recipient's checkbox in the picker named.
+    Recipient(Picker, EntryId),
+    /// The Other key field of the picker named.
+    OtherKey(Picker),
+    /// "Choose identity file…" on the picker's tab.
+    ChooseIdentity(Picker),
+    /// The Files tab's "Add files…".
+    AddFiles,
+    /// Remove on the Files row at this place in the list.
+    RemoveRow(usize),
+    /// The Files tab's "Choose folder…".
+    ChooseFolder,
 }
 
 /// Everything that can happen to the window.
@@ -118,6 +135,12 @@ pub enum Input {
     TabPicked(Tab),
     /// The user did something on the Text tab.
     Text(TextInput),
+    /// The user did something on the Files tab.
+    Files(FilesInput),
+    /// What the paths an intake asked about are.
+    Inspected(Vec<(PathBuf, PathKind)>),
+    /// Which rows' outputs exist, by row path.
+    OutputsProbed(Vec<(PathBuf, bool)>),
     /// A button asked to open a file dialog.
     DialogOpened(DialogPurpose),
     /// The open dialog answered.
@@ -142,6 +165,11 @@ impl fmt::Debug for Input {
         match self {
             Self::TabPicked(tab) => f.debug_tuple("TabPicked").field(tab).finish(),
             Self::Text(input) => f.debug_tuple("Text").field(input).finish(),
+            Self::Files(input) => f.debug_tuple("Files").field(input).finish(),
+            Self::Inspected(paths) => f.debug_tuple("Inspected").field(&paths.len()).finish(),
+            Self::OutputsProbed(paths) => {
+                f.debug_tuple("OutputsProbed").field(&paths.len()).finish()
+            }
             Self::DialogOpened(purpose) => f.debug_tuple("DialogOpened").field(purpose).finish(),
             Self::DialogAnswered(purpose, answer) => f
                 .debug_struct("DialogAnswered")
@@ -162,6 +190,11 @@ pub enum Effect {
     OpenDialog(DialogPurpose),
     /// Put text on the clipboard.
     Copy(String),
+    /// Find out what these paths are; answered as [`Input::Inspected`].
+    Inspect(Vec<PathBuf>),
+    /// Find out which outputs exist, for (row path, output path) pairs; answered as
+    /// [`Input::OutputsProbed`].
+    ProbeOutputs(Vec<(PathBuf, PathBuf)>),
 }
 
 impl fmt::Debug for Effect {
@@ -170,6 +203,8 @@ impl fmt::Debug for Effect {
             Self::Run(request) => f.debug_tuple("Run").field(request).finish(),
             Self::OpenDialog(purpose) => f.debug_tuple("OpenDialog").field(purpose).finish(),
             Self::Copy(text) => f.debug_struct("Copy").field("len", &text.len()).finish(),
+            Self::Inspect(paths) => f.debug_tuple("Inspect").field(&paths.len()).finish(),
+            Self::ProbeOutputs(pairs) => f.debug_tuple("ProbeOutputs").field(&pairs.len()).finish(),
         }
     }
 }
@@ -187,7 +222,7 @@ pub struct Outcome {
 /// The seal window's state.
 pub struct AppState {
     pub theme: Theme,
-    pub checkbox_kits: CheckboxKits,
+    pub choice_kits: ChoiceKits,
     pub tab: Tab,
     pub work: Work,
     /// The file dialog showing, if any; cleared only by its own answer.
@@ -196,6 +231,7 @@ pub struct AppState {
     /// The identity file Unseal reads, shared by the Text and Files tabs.
     pub identity_path: Option<PathBuf>,
     pub text: TextTab,
+    pub files: FilesTab,
     notes: Notes,
     /// What the log file is doing, for the Keys tab's About group.
     pub file_logging: FileLogging,
@@ -213,6 +249,7 @@ impl fmt::Debug for AppState {
             .field("book_entries", &self.book.entries().len())
             .field("identity_path", &self.identity_path)
             .field("text", &self.text)
+            .field("files", &self.files)
             .field("notes", &self.notes)
             .finish_non_exhaustive()
     }
@@ -229,13 +266,18 @@ impl AppState {
     ) -> Self {
         Self {
             theme: Theme::new(),
-            checkbox_kits: CheckboxKits::new(),
+            choice_kits: ChoiceKits::new(),
             tab: Tab::Text,
             work: Work::Idle,
             dialog: None,
             book: Book::from_entries(config.recipients),
             identity_path: config.last_identity_file,
             text: TextTab::default(),
+            files: FilesTab {
+                out_dir: config.last_output_folder,
+                overwrite: config.overwrite_existing,
+                ..FilesTab::default()
+            },
             notes: Notes::default(),
             file_logging,
             services,
@@ -251,6 +293,21 @@ impl AppState {
     /// The note `tab` holds, if any.
     pub fn note(&self, tab: Tab) -> Option<&Note> {
         self.notes.get(tab)
+    }
+
+    /// What a refused start on `tab` found missing, while its note says so; the view marks
+    /// that field.
+    pub fn missing(&self, tab: Tab) -> Option<&Missing> {
+        match self.notes.get(tab)? {
+            Note::Missing(missing) => Some(missing),
+            Note::Failure(_)
+            | Note::NotText
+            | Note::Copied(_)
+            | Note::DialogError(_)
+            | Note::OtherTabFailed(_)
+            | Note::Summary { .. }
+            | Note::Skipped(_) => None,
+        }
     }
 
     /// The notes, for a test to set one directly.
@@ -280,13 +337,21 @@ impl AppState {
     /// running on another, this tab's note, nothing.
     pub fn status(&self, tab: Tab) -> Option<(Tone, String)> {
         match self.work {
-            Work::Running(job) if job.tab() == tab => {
-                return Some((Tone::Muted, job.phrase().to_owned()));
-            }
+            Work::Running(job) if job.tab() == tab => return Some((Tone::Muted, job.phrase())),
             Work::Running(job) => return Some((Tone::Muted, job.elsewhere())),
             Work::Idle | Work::Stopped => {}
         }
         self.notes.get(tab).map(Note::words)
+    }
+
+    /// What assistive technology hears for `tab`'s status while a job runs, when it differs
+    /// from what shows: a running batch's count is left out.
+    pub fn status_spoken(&self, tab: Tab) -> Option<String> {
+        match self.work {
+            Work::Running(job) if job.tab() == tab => Some(job.spoken()),
+            Work::Running(job) => Some(job.spoken_elsewhere()),
+            Work::Idle | Work::Stopped => None,
+        }
     }
 
     /// Applies `input`.
@@ -312,6 +377,12 @@ impl AppState {
         match input {
             Input::TabPicked(tab) => self.tab_picked(tab, &mut out),
             Input::Text(input) => self.text_input(input, &mut out),
+            Input::Files(input) => self.files_input(input, &mut out),
+            Input::Inspected(inspected) => self.inspected(inspected, &mut out),
+            Input::OutputsProbed(probed) => {
+                self.files.set_outputs(probed);
+                out.changed = true;
+            }
             Input::DialogOpened(purpose) => self.dialog_opened(purpose, &mut out),
             Input::DialogAnswered(purpose, answer) => {
                 self.dialog_answered(purpose, answer, &mut out);
@@ -327,10 +398,12 @@ impl AppState {
             return;
         }
         self.tab = tab;
+        self.files.drop_hover = false;
         out.changed = true;
         out.focus = match tab {
             Tab::Text => Some(Focus::TextInput),
-            Tab::Files | Tab::Keys => None,
+            Tab::Files => Some(Focus::AddFiles),
+            Tab::Keys => None,
         };
     }
 
@@ -375,36 +448,59 @@ impl AppState {
         }
         match text_job(&self.text, &self.book, self.identity_path.as_ref()) {
             Ok(request) => {
-                self.work = Work::Running(RunningJob::Text(self.text.direction));
-                self.clear_other_tab_failure(Tab::Text);
-                out.effects.push(Effect::Run(request));
+                self.accept_start(RunningJob::Text(self.text.direction), request, out);
             }
-            Err(missing) => {
-                out.focus = Some(self.focus_for(&missing));
-                self.notes.set(Tab::Text, Note::Missing(missing));
-            }
+            Err(missing) => self.refuse_start(Picker::Text, missing, out),
         }
-        out.changed = true;
     }
 
-    /// The field a refused start names, for focus.
-    fn focus_for(&self, missing: &Missing) -> Focus {
+    /// The recipient choice of `picker`'s tab.
+    pub fn picker(&self, picker: Picker) -> &RecipientPicker {
+        match picker {
+            Picker::Text => &self.text.picker,
+            Picker::Files => &self.files.picker,
+        }
+    }
+
+    /// The field a refused start on `picker`'s tab names, for focus.
+    fn focus_for(&self, picker: Picker, missing: &Missing) -> Focus {
         match missing {
             Missing::Input => Focus::TextInput,
             Missing::Recipients => self
                 .book
                 .entries()
                 .first()
-                .map_or(Focus::TextOtherKey, |entry| Focus::TextRecipient(entry.id)),
-            Missing::SavedKey { id, .. } => Focus::TextRecipient(*id),
-            Missing::OtherKey => Focus::TextOtherKey,
-            Missing::Identity => Focus::TextChooseIdentity,
+                .map_or(Focus::OtherKey(picker), |entry| {
+                    Focus::Recipient(picker, entry.id)
+                }),
+            Missing::SavedKey { id, .. } => Focus::Recipient(picker, *id),
+            Missing::OtherKey => Focus::OtherKey(picker),
+            Missing::Identity => Focus::ChooseIdentity(picker),
+            Missing::Files => Focus::AddFiles,
+            Missing::ValidRows(index) => Focus::RemoveRow(*index),
+            Missing::Folder => Focus::ChooseFolder,
         }
     }
 
     fn clear_other_tab_failure(&mut self, started: Tab) {
         self.notes
             .clear_where(|_, note| *note == Note::OtherTabFailed(started));
+    }
+
+    /// A start that found something missing: the note says it and focus goes to the field.
+    fn refuse_start(&mut self, picker: Picker, missing: Missing, out: &mut Outcome) {
+        out.focus = Some(self.focus_for(picker, &missing));
+        self.notes.set(picker.tab(), Note::Missing(missing));
+        out.changed = true;
+    }
+
+    /// A start that can run: the worker is busy with `job`, and the other tabs stop pointing at
+    /// this tab's last failure.
+    fn accept_start(&mut self, job: RunningJob, request: JobRequest, out: &mut Outcome) {
+        self.work = Work::Running(job);
+        self.clear_other_tab_failure(job.tab());
+        out.effects.push(Effect::Run(request));
+        out.changed = true;
     }
 
     fn dialog_opened(&mut self, purpose: DialogPurpose, out: &mut Outcome) {
@@ -429,11 +525,28 @@ impl AppState {
         out.changed = true;
         match answer {
             Ok(Some(path)) => match purpose {
-                DialogPurpose::Identity(_) => self.identity_path = Some(path),
+                DialogPurpose::Identity(_) => {
+                    self.identity_path = Some(path);
+                    // Both tabs unseal with this one file, so neither still lacks it.
+                    self.notes
+                        .clear_where(|_, note| *note == Note::Missing(Missing::Identity));
+                }
+                DialogPurpose::AddFile => out.effects.push(Effect::Inspect(vec![path])),
+                DialogPurpose::OutputFolder => {
+                    self.files.out_dir = Some(path);
+                    self.files.out_choice = files::OutputChoice::Folder;
+                    self.probe_outputs(out);
+                }
             },
             Ok(None) => {}
             Err(error) => self.notes.set(purpose.tab(), Note::DialogError(error.0)),
         }
+    }
+
+    /// Asks which of the rows' outputs exist.
+    fn probe_outputs(&self, out: &mut Outcome) {
+        out.effects
+            .push(Effect::ProbeOutputs(self.files.output_pairs()));
     }
 
     fn job_event(&mut self, event: JobEvent, out: &mut Outcome) {
@@ -442,37 +555,32 @@ impl AppState {
             Work::Idle | Work::Stopped => return,
         };
         match event {
-            JobEvent::FileProgress { .. } | JobEvent::FileFinished { .. } => match job {
+            JobEvent::FileProgress { path } => match job {
                 RunningJob::Text(_) => {}
-            },
-            JobEvent::Finished(outcome) => {
-                let answered = match (job, outcome) {
-                    (RunningJob::Text(_), JobOutcome::Text(text)) => {
-                        self.text.output = text;
-                        true
+                RunningJob::Files { .. } => {
+                    if let Some(row) = self.files.row_mut(&path)
+                        && row.status == RowStatus::Pending
+                    {
+                        row.status = RowStatus::Running;
+                        out.changed = true;
                     }
-                    (RunningJob::Text(_), JobOutcome::TextRedirect) => {
-                        self.text.output.clear();
-                        self.notes.set(Tab::Text, Note::NotText);
-                        true
-                    }
-                    (
-                        RunningJob::Text(_),
-                        JobOutcome::Keygen { .. }
-                        | JobOutcome::KeygenExists { .. }
-                        | JobOutcome::Files { .. },
-                    ) => false,
-                };
-                if answered {
-                    self.work = Work::Idle;
-                    out.changed = true;
                 }
-            }
+            },
+            JobEvent::FileFinished { path, result } => match job {
+                RunningJob::Text(_) => {}
+                RunningJob::Files {
+                    direction,
+                    finished,
+                    total,
+                } => self.file_finished((direction, finished, total), &path, result, out),
+            },
+            JobEvent::Finished(outcome) => self.job_finished(job, outcome, out),
             JobEvent::Failed(text) => {
                 self.work = Work::Idle;
                 let tab = job.tab();
                 match job {
                     RunningJob::Text(_) => self.text.output.clear(),
+                    RunningJob::Files { .. } => self.files.abandon_running(),
                 }
                 for other in Tab::ALL {
                     if other == tab {
@@ -486,11 +594,99 @@ impl AppState {
         }
     }
 
+    /// One file of the running batch finished: its row takes the result, from Pending or
+    /// Running, and the count moves on. A path that is not a row changes nothing.
+    fn file_finished(
+        &mut self,
+        (direction, finished, total): (Direction, usize, usize),
+        path: &Path,
+        result: FileResult,
+        out: &mut Outcome,
+    ) {
+        let Some(row) = self.files.row_mut(path) else {
+            return;
+        };
+        match row.status {
+            RowStatus::Pending | RowStatus::Running => {}
+            RowStatus::Invalid(_)
+            | RowStatus::Done(_)
+            | RowStatus::Failed(_)
+            | RowStatus::Skipped => {
+                return;
+            }
+        }
+        row.status = match result {
+            FileResult::Done(size) => RowStatus::Done(size),
+            FileResult::Skipped => RowStatus::Skipped,
+            FileResult::Failed(text) => RowStatus::Failed(text),
+        };
+        self.work = Work::Running(RunningJob::Files {
+            direction,
+            finished: finished + 1,
+            total,
+        });
+        out.changed = true;
+    }
+
+    fn job_finished(&mut self, job: RunningJob, outcome: JobOutcome, out: &mut Outcome) {
+        let answered = match (job, outcome) {
+            (RunningJob::Text(_), JobOutcome::Text(text)) => {
+                self.text.output = text;
+                true
+            }
+            (RunningJob::Text(_), JobOutcome::TextRedirect) => {
+                self.text.output.clear();
+                self.notes.set(Tab::Text, Note::NotText);
+                true
+            }
+            (
+                RunningJob::Files { .. },
+                JobOutcome::Files {
+                    direction,
+                    done,
+                    skipped,
+                    failed,
+                },
+            ) => {
+                self.files.abandon_running();
+                self.notes.set(
+                    Tab::Files,
+                    Note::Summary {
+                        direction,
+                        done,
+                        skipped,
+                        failed,
+                    },
+                );
+                self.probe_outputs(out);
+                true
+            }
+            (
+                RunningJob::Text(_),
+                JobOutcome::Keygen { .. }
+                | JobOutcome::KeygenExists { .. }
+                | JobOutcome::Files { .. },
+            )
+            | (
+                RunningJob::Files { .. },
+                JobOutcome::Text(_)
+                | JobOutcome::TextRedirect
+                | JobOutcome::Keygen { .. }
+                | JobOutcome::KeygenExists { .. },
+            ) => false,
+        };
+        if answered {
+            self.work = Work::Idle;
+            out.changed = true;
+        }
+    }
+
     fn stopped(&mut self, out: &mut Outcome) {
         match self.work {
             Work::Stopped => {}
             Work::Idle | Work::Running(_) => {
                 self.work = Work::Stopped;
+                self.files.abandon_running();
                 self.notes.clear_where(|_, _| true);
                 out.changed = true;
             }
@@ -500,7 +696,8 @@ impl AppState {
 
 /// Whether `input` clears `tab`'s `note`. The user's input on a tab clears that tab's note; a
 /// switch to a tab is an input on neither, and only clears every note that points at the tab
-/// switched to; a background answer clears nothing (the stop clears every note itself).
+/// switched to; a background answer and a drag passing over the list clear nothing (the stop
+/// clears every note itself).
 pub fn clears_note(input: &Input, tab: Tab, note: &Note) -> bool {
     let user_on = |on: Tab| on == tab;
     match input {
@@ -510,13 +707,19 @@ pub fn clears_note(input: &Input, tab: Tab, note: &Note) -> bool {
             | Note::NotText
             | Note::Copied(_)
             | Note::DialogError(_)
-            | Note::Missing(_) => false,
+            | Note::Missing(_)
+            | Note::Summary { .. }
+            | Note::Skipped(_) => false,
         },
         Input::Text(_) => user_on(Tab::Text),
+        Input::Files(FilesInput::DropHover(_)) => false,
+        Input::Files(_) => user_on(Tab::Files),
         Input::DialogOpened(purpose) | Input::DialogAnswered(purpose, _) => user_on(purpose.tab()),
-        Input::Job(_) | Input::Stopped => false,
+        Input::Inspected(_) | Input::OutputsProbed(_) | Input::Job(_) | Input::Stopped => false,
     }
 }
 
+#[cfg(test)]
+mod files_tests;
 #[cfg(test)]
 mod tests;

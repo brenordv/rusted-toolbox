@@ -1,17 +1,29 @@
 //! The seal window: the tab switch in a fixed header row over the tab that shows. Views are pure
 //! functions of the state; handlers dispatch inputs.
 
+mod files_tab;
 mod parts;
+mod picker;
 mod text_tab;
 
+pub use files_tab::{
+    ADD_FILES_KEY, CHOOSE_FOLDER_KEY, CLEAR_LIST_KEY, FILE_LIST_KEY, FILES_ACTIONS_KEY,
+    FILES_CHOOSE_IDENTITY_KEY, FILES_FORM_KEY, FILES_IDENTITY_KEY, FILES_OTHER_KEY_KEY,
+    FILES_RECIPIENTS_KEY, FILES_SCROLL_KEY, FILES_STATUS_KEY, FILES_SUBMIT_KEY, MODE_KEY,
+    MSG_OUTPUT_EXISTS, OUTPUT_CHOICE_KEY, OUTPUT_FOLDER_KEY, OVERWRITE_KEY, file_row_key,
+    remove_key,
+};
+pub use parts::BadgeTone;
+pub use picker::{picker_keys, recipient_key};
 pub use text_tab::{
     CHOOSE_IDENTITY_KEY, COPY_OUTPUT_KEY, DIRECTION_KEY, IDENTITY_KEY, INPUT_KEY, OTHER_KEY_KEY,
     OUTPUT_KEY, RECIPIENTS_KEY, TEXT_ACTIONS_KEY, TEXT_FORM_KEY, TEXT_SCROLL_KEY, TEXT_STATUS_KEY,
-    TEXT_SUBMIT_KEY, recipient_key,
+    TEXT_SUBMIT_KEY,
 };
 
 use crate::design::FORM_MAX_WIDTH;
 use crate::services::dispatch;
+use crate::state::files::FilesInput;
 use crate::state::text::TextInput;
 use crate::state::{AppState, Focus, Input, Tab, Work};
 use common_gui_rune::keys::{area_chord, is_chord};
@@ -45,9 +57,12 @@ pub const PLACEHOLDER: &str = "This tab arrives with the next change.";
 pub fn focus_key(focus: Focus) -> String {
     match focus {
         Focus::TextInput => INPUT_KEY.to_owned(),
-        Focus::TextRecipient(id) => recipient_key(id),
-        Focus::TextOtherKey => OTHER_KEY_KEY.to_owned(),
-        Focus::TextChooseIdentity => CHOOSE_IDENTITY_KEY.to_owned(),
+        Focus::Recipient(picker, id) => recipient_key(picker, id),
+        Focus::OtherKey(picker) => picker_keys(picker).other_key.to_owned(),
+        Focus::ChooseIdentity(picker) => picker_keys(picker).choose_identity.to_owned(),
+        Focus::AddFiles => ADD_FILES_KEY.to_owned(),
+        Focus::RemoveRow(index) => remove_key(index),
+        Focus::ChooseFolder => CHOOSE_FOLDER_KEY.to_owned(),
     }
 }
 
@@ -70,21 +85,21 @@ pub fn on_close(s: &mut AppState, _: &mut Tx) {
 }
 
 /// The window's shortcuts: `mod+1..3` pick a tab as a fresh press, and `mod+enter` starts the
-/// Text tab's job while it shows. True when `key` was one of them. A focused field takes these
-/// chords for itself, so each field runs this before its own keys.
+/// job of the Text or Files tab while it shows. True when `key` was one of them. A focused field
+/// takes these chords for itself, so each field runs this before its own keys.
 pub fn window_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
     if let Some(tab) = area_chord(Tab::ALL.len(), key, tx).and_then(|index| Tab::ALL.get(index)) {
         dispatch(s, tx, Input::TabPicked(*tab));
         return true;
     }
     if is_chord("mod+enter", key, tx) {
-        return match s.tab {
-            Tab::Text => {
-                dispatch(s, tx, Input::Text(TextInput::StartPressed));
-                true
-            }
-            Tab::Files | Tab::Keys => false,
+        let start = match s.tab {
+            Tab::Text => Input::Text(TextInput::StartPressed),
+            Tab::Files => Input::Files(FilesInput::StartPressed),
+            Tab::Keys => return false,
         };
+        dispatch(s, tx, start);
+        return true;
     }
     false
 }
@@ -112,7 +127,7 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
         .child(row().w_full().max_w(FORM_MAX_WIDTH).child(tabs));
     let tab = match s.tab {
         Tab::Text => text_tab::view(s, k, cx).key(TEXT_TAB_KEY),
-        Tab::Files => placeholder(s, k).key(FILES_TAB_KEY),
+        Tab::Files => files_tab::view(s, k, cx).key(FILES_TAB_KEY),
         Tab::Keys => placeholder(s, k).key(KEYS_TAB_KEY),
     };
     let window = col()
@@ -130,6 +145,17 @@ pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
                 .child(tab.transition(Transition::opacity().springs(CONTROL_PAIR))),
         );
     rune_kit::root(window, Vec::new())
+}
+
+/// `tab`'s status line keyed `key`, when it has something to say. While a job runs, assistive
+/// technology hears the job's phrase without a running count, so a batch is announced once.
+fn tab_status(s: &AppState, k: &Kit, tab: Tab, key: &str) -> Option<El> {
+    let (tone, words) = s.status(tab)?;
+    let line = status_line(k, key, tone, StatusLines::Wrap, &words);
+    Some(match s.status_spoken(tab) {
+        Some(spoken) => line.label(spoken),
+        None => line,
+    })
 }
 
 /// The captions every tab shows between its body and its action row while a window-wide
@@ -170,5 +196,7 @@ fn placeholder(s: &AppState, k: &Kit) -> El {
     tab
 }
 
+#[cfg(test)]
+mod files_tests;
 #[cfg(test)]
 mod tests;

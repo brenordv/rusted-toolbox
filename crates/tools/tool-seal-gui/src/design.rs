@@ -20,21 +20,36 @@ pub const FORM_MAX_WIDTH: f32 = 640.0;
 pub const TEXT_MIN_LINES: f32 = 4.0;
 /// The recipient rows the Text tab's list shows before it scrolls.
 pub const TEXT_RECIPIENT_ROWS: f32 = 3.0;
+/// The recipient rows the Files tab's list shows before it scrolls; the file list takes the
+/// height the Text tab gives its input.
+pub const FILES_RECIPIENT_ROWS: f32 = 2.0;
+/// The fewest rows the Files list shows.
+pub const FILES_MIN_ROWS: f32 = 3.0;
+/// The badge column of a Files row: the widest status label in `TYPE_CAPTION` with the badge's
+/// padding.
+pub const FILE_BADGE_WIDTH: f32 = 56.0;
+/// The size column of a Files row: eleven characters ("1,023.99 MB") in `TYPE_MONO`.
+pub const FILE_SIZE_WIDTH: f32 = 84.0;
 
-/// The kits seal-gui draws its checkboxes with. The kit draws an empty checkbox's only edge in
-/// its weak border color, near 1.4:1 on the content surface; these copies draw it in the muted
-/// icon color, over 5:1, and leave every other role, the hairlines' among them, as they are.
-pub struct CheckboxKits {
+/// The kits seal-gui draws its checkboxes and radio buttons with. The kit draws an empty
+/// checkbox's only edge in its weak border color, near 1.4:1 on the content surface, and an
+/// empty radio's ring in its strong border color, near 1.2:1 there in light mode; these copies
+/// draw both in the muted icon color, over 5:1, and a selected radio's dot in white, where the
+/// kit's knob color is 2.96:1 on the dark accent. Every other role, the hairlines' among them,
+/// stays as it is.
+pub struct ChoiceKits {
     dark: Kit,
     light: Kit,
 }
 
-impl CheckboxKits {
+impl ChoiceKits {
     pub fn new() -> Self {
         let ds = Ds::new();
         let edged = |dark: bool| {
             let mut kit = ds.kit(dark).clone();
             kit.c.border_weak = kit.c.icon_muted;
+            kit.c.border_strong = kit.c.icon_muted;
+            kit.c.knob_on = kit.c.white;
             kit
         };
         Self {
@@ -43,13 +58,13 @@ impl CheckboxKits {
         }
     }
 
-    /// The checkbox kit for the appearance the window draws in.
+    /// The kit for checkboxes and radios in the appearance the window draws in.
     pub fn kit(&self, dark: bool) -> &Kit {
         if dark { &self.dark } else { &self.light }
     }
 }
 
-impl Default for CheckboxKits {
+impl Default for ChoiceKits {
     fn default() -> Self {
         Self::new()
     }
@@ -58,12 +73,13 @@ impl Default for CheckboxKits {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common_gui_rune::contrast::{Contract, NON_TEXT, appearance_name, over};
-    use common_gui_rune::{Surface, surface};
+    use crate::views::BadgeTone;
+    use common_gui_rune::contrast::{Contract, NON_TEXT, TEXT, appearance_name, over};
+    use common_gui_rune::{Surface, drop_fill, surface};
 
     #[test]
-    fn a_checkbox_is_marked_at_3_to_1_on_the_content_surface_empty_and_checked() {
-        let kits = CheckboxKits::new();
+    fn checkboxes_and_radios_are_marked_at_3_to_1_on_the_content_surface() {
+        let kits = ChoiceKits::new();
         let mut contract = Contract::default();
 
         for dark in [true, false] {
@@ -71,6 +87,8 @@ mod tests {
             let mode = appearance_name(dark);
             let content = surface(k, Surface::Content);
             let checked_fill = over(k.c.surface_weak, content);
+            let radio_fill = over(k.c.bg_base, content);
+            let radio_on = over(k.c.bg_accent, content);
             contract.check(
                 &format!("{mode} empty checkbox edge"),
                 over(k.c.border_weak, content),
@@ -83,6 +101,51 @@ mod tests {
                 checked_fill,
                 NON_TEXT,
             );
+            contract.check(
+                &format!("{mode} empty radio ring"),
+                over(k.c.border_strong, radio_fill),
+                content,
+                NON_TEXT,
+            );
+            contract.check(
+                &format!("{mode} selected radio on the list"),
+                radio_on,
+                content,
+                NON_TEXT,
+            );
+            contract.check(
+                &format!("{mode} selected radio dot"),
+                over(k.c.knob_on, radio_on),
+                radio_on,
+                NON_TEXT,
+            );
+        }
+
+        contract.assert_met();
+    }
+
+    #[test]
+    fn each_badge_label_meets_the_text_contrast_on_the_list_and_on_the_drop_fill() {
+        let ds = Ds::new();
+        let mut contract = Contract::default();
+
+        for dark in [true, false] {
+            let k = ds.kit(dark);
+            let mode = appearance_name(dark);
+            let content = surface(k, Surface::Content);
+            let hovered = over(drop_fill(k), content);
+            for (under_name, under) in [("list", content), ("drop fill", hovered)] {
+                for tone in BadgeTone::ALL {
+                    let (fill, ink) = tone.colors(k);
+                    let fill = over(fill, under);
+                    contract.check(
+                        &format!("{mode} {} badge on the {under_name}", tone.name()),
+                        over(ink, fill),
+                        fill,
+                        TEXT,
+                    );
+                }
+            }
         }
 
         contract.assert_met();

@@ -1,24 +1,22 @@
 //! The Text tab: Direction, the input, the recipients or the identity file, the output, and the
 //! action row with Seal or Unseal.
 
-use super::parts::{list_box, output_box};
-use super::{standing_captions, window_key};
+use super::parts::output_box;
+use super::picker::{identity, recipients};
+use super::{standing_captions, tab_status, window_key};
 use crate::design::{FORM_MAX_WIDTH, TEXT_MIN_LINES, TEXT_RECIPIENT_ROWS};
 use crate::services::dispatch;
-use crate::state::notes::{Missing, Note};
-use crate::state::recipients::{BookEntry, EntryId, MSG_BAD_KEY, truncated_key};
+use crate::state::notes::Missing;
+use crate::state::recipients::Picker;
 use crate::state::text::TextInput;
-use crate::state::{AppState, Blocked, DialogPurpose, Input, Tab};
+use crate::state::{AppState, Blocked, Input, Tab};
 use common_gui_rune::keys::type_newline;
 use common_gui_rune::parts::{
-    EditorHeight, EditorSpec, LineFieldSpec, StatusLines, action_row, choice_switch, detail_row,
-    field_label, line_field, reveal, section_header, status_line, text_editor,
+    EditorHeight, EditorSpec, action_row, choice_switch, field_label, reveal, text_editor,
 };
-use common_gui_rune::tokens::{CONTROL_HEIGHT, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS};
-use common_gui_rune::tokens::{TYPE_BODY, TYPE_MONO};
-use common_utils::string_utils::display_line;
-use rune::{Cx, El, KeyEvent, ScrollSpec, Tx, col, row, spacer, text};
-use rune_kit::{Button, ButtonVariant, Checkbox, Kit, ScrollBar};
+use common_gui_rune::tokens::{CONTROL_HEIGHT, SPACE_LG, SPACE_MD, SPACE_XL, SPACE_XS, TYPE_MONO};
+use rune::{Cx, El, KeyEvent, ScrollSpec, Tx, col, row, spacer};
+use rune_kit::{Button, ButtonVariant, Kit, ScrollBar};
 use shared_crypto::Direction;
 
 /// The Text tab's scroll viewport.
@@ -48,22 +46,16 @@ pub const TEXT_STATUS_KEY: &str = "seal-text-status";
 /// Seal or Unseal.
 pub const TEXT_SUBMIT_KEY: &str = "seal-text-submit";
 
-const DIRECTIONS: [Direction; 2] = [Direction::Encrypt, Direction::Decrypt];
-const DIRECTION_LABELS: [&str; 2] = ["Seal", "Unseal"];
-
-/// The key of the checkbox for the recipient `id`.
-pub fn recipient_key(id: EntryId) -> String {
-    format!("seal-text-recipient-{}", id.number())
-}
+/// Seal and Unseal, in the switches' order.
+pub const DIRECTIONS: [Direction; 2] = [Direction::Encrypt, Direction::Decrypt];
+/// The Seal/Unseal switches' labels, in [`DIRECTIONS`]' order.
+pub const DIRECTION_LABELS: [&str; 2] = ["Seal", "Unseal"];
 
 /// The Text tab.
 pub fn view(s: &AppState, k: &Kit, cx: &mut Cx<AppState>) -> El {
     let viewport = cx.layout_with(TEXT_SCROLL_KEY, |rect| rect[3]);
-    let checkbox_kit = s.checkbox_kits.kit(s.theme.dark(cx.system_dark()));
-    let missing = match s.note(Tab::Text) {
-        Some(Note::Missing(missing)) => Some(missing),
-        Some(_) | None => None,
-    };
+    let choice_kit = s.choice_kits.kit(s.theme.dark(cx.system_dark()));
+    let missing = s.missing(Tab::Text);
     let form = col()
         .w_full()
         .max_w(FORM_MAX_WIDTH)
@@ -71,10 +63,17 @@ pub fn view(s: &AppState, k: &Kit, cx: &mut Cx<AppState>) -> El {
         .child(direction(s, k))
         .child(input(s, k, missing).mt(SPACE_MD))
         .child(match s.text.direction {
-            Direction::Encrypt => {
-                reveal(recipients(s, (k, checkbox_kit), missing)).key("seal-text-recipients-group")
+            Direction::Encrypt => reveal(recipients(
+                s,
+                (k, choice_kit),
+                Picker::Text,
+                missing,
+                TEXT_RECIPIENT_ROWS,
+            ))
+            .key("seal-text-recipients-group"),
+            Direction::Decrypt => {
+                reveal(identity(s, k, Picker::Text)).key("seal-text-identity-group")
             }
-            Direction::Decrypt => reveal(identity(s, k)).key("seal-text-identity-group"),
         })
         .child(output(s, k).mt(SPACE_XL));
     let body = col()
@@ -173,129 +172,6 @@ fn input(s: &AppState, k: &Kit, missing: Option<&Missing>) -> El {
         ))
 }
 
-/// The recipient list and the Other key field; `checkbox_kit` draws the list's checkboxes.
-fn recipients(s: &AppState, (k, checkbox_kit): (&Kit, &Kit), missing: Option<&Missing>) -> El {
-    let rows = s
-        .book
-        .entries()
-        .iter()
-        .map(|entry| {
-            recipient_row(
-                (k, checkbox_kit),
-                entry,
-                s.text.picker.selected.contains(&entry.id),
-            )
-        })
-        .collect();
-    let other_issue = match missing {
-        Some(Missing::OtherKey) => Some(MSG_BAD_KEY),
-        Some(_) | None => s.text.picker.other_key_bad.then_some(MSG_BAD_KEY),
-    };
-    col()
-        .w_full()
-        .child(section_header(k, "Recipients").mb(SPACE_SM))
-        .child(list_box(
-            k,
-            (RECIPIENTS_KEY, "Recipients"),
-            rows,
-            "No saved recipients yet. Add them in the Keys tab.",
-            TEXT_RECIPIENT_ROWS,
-        ))
-        .child(
-            line_field(
-                k,
-                LineFieldSpec {
-                    key: OTHER_KEY_KEY,
-                    label: "Other key",
-                    placeholder: "age1…",
-                    issue: other_issue,
-                },
-                &s.text.picker.other_key,
-                |s: &mut AppState| &mut s.text.picker.other_key,
-                window_key,
-                |s: &mut AppState, tx: &mut Tx| {
-                    dispatch(s, tx, Input::Text(TextInput::OtherKeyEdited));
-                },
-            )
-            .mt(SPACE_MD),
-        )
-}
-
-/// One recipient: its checkbox, which is the row's one node (named by the label, described by
-/// the whole key), then the label and the shortened key. A press anywhere on the row toggles it.
-fn recipient_row((k, checkbox_kit): (&Kit, &Kit), entry: &BookEntry, checked: bool) -> El {
-    let id = entry.id;
-    let toggle = move |s: &mut AppState, tx: &mut Tx| {
-        dispatch(s, tx, Input::Text(TextInput::RecipientToggled(id)));
-    };
-    let label = display_line(entry.label.chars());
-    let checkbox = Checkbox::new(checked)
-        .label(label.clone())
-        .hide_label()
-        .description(entry.public_key.clone())
-        .on_toggle_tx(toggle)
-        .build(checkbox_kit)
-        .key(recipient_key(id));
-    row()
-        .w_full()
-        .min_h(CONTROL_HEIGHT)
-        .gap(SPACE_SM)
-        .center_y()
-        .on_press_tx(toggle)
-        .child(checkbox)
-        .child(
-            text(label)
-                .font(TYPE_BODY)
-                .color(k.c.text_base)
-                .truncate()
-                .min_w(0.0)
-                .shrink()
-                .a11y_hidden(),
-        )
-        .child(spacer())
-        .child(
-            text(truncated_key(&entry.public_key))
-                .font(TYPE_MONO)
-                .color(k.c.text_muted)
-                .a11y_hidden(),
-        )
-}
-
-fn identity(s: &AppState, k: &Kit) -> El {
-    let shown = s.identity_path.as_ref().map_or_else(
-        || "None chosen".to_owned(),
-        |path| display_line(path.display().to_string().chars()),
-    );
-    let choose = Button::new("Choose identity file…")
-        .variant(ButtonVariant::Ghost)
-        .disabled(s.dialog.is_some())
-        .on_press_tx(|s: &mut AppState, tx: &mut Tx| {
-            dispatch(
-                s,
-                tx,
-                Input::DialogOpened(DialogPurpose::Identity(Tab::Text)),
-            );
-        })
-        .build(k)
-        .key(CHOOSE_IDENTITY_KEY);
-    col()
-        .w_full()
-        .child(section_header(k, "Identity").mb(SPACE_SM))
-        .child(
-            row()
-                .w_full()
-                .gap(SPACE_MD)
-                .child(
-                    col()
-                        .grow(1.0)
-                        .min_w(0.0)
-                        .key(IDENTITY_KEY)
-                        .child(detail_row(k, "Identity file", &shown)),
-                )
-                .child(choose),
-        )
-}
-
 fn output(s: &AppState, k: &Kit) -> El {
     let copy = Button::new("Copy output")
         .variant(ButtonVariant::Ghost)
@@ -347,8 +223,10 @@ fn actions(s: &AppState, k: &Kit) -> El {
         .build(k)
         .key(TEXT_SUBMIT_KEY)
         .default_button();
-    let status = s
-        .status(Tab::Text)
-        .map(|(tone, words)| status_line(k, TEXT_STATUS_KEY, tone, StatusLines::Wrap, &words));
-    action_row(k, TEXT_ACTIONS_KEY, status, vec![submit])
+    action_row(
+        k,
+        TEXT_ACTIONS_KEY,
+        tab_status(s, k, Tab::Text, TEXT_STATUS_KEY),
+        vec![submit],
+    )
 }
