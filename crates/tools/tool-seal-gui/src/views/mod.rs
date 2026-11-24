@@ -1,16 +1,174 @@
-pub mod files_tab;
-pub mod keys_tab;
-pub mod picker;
-pub mod text_tab;
+//! The seal window: the tab switch in a fixed header row over the tab that shows. Views are pure
+//! functions of the state; handlers dispatch inputs.
 
-use crate::worker::JobRequest;
-use std::path::PathBuf;
+mod parts;
+mod text_tab;
 
-/// What a view asks the shell to do. Views render, validate, and open native
-/// dialogs; the app submits jobs and touches the filesystem.
-pub enum ViewIntent {
-    Submit(JobRequest),
-    /// Paths picked in the file dialog, handed over for intake (the size
-    /// probe and dedup happen in the app).
-    AddFiles(Vec<PathBuf>),
+pub use text_tab::{
+    CHOOSE_IDENTITY_KEY, COPY_OUTPUT_KEY, DIRECTION_KEY, IDENTITY_KEY, INPUT_KEY, OTHER_KEY_KEY,
+    OUTPUT_KEY, RECIPIENTS_KEY, TEXT_ACTIONS_KEY, TEXT_FORM_KEY, TEXT_SCROLL_KEY, TEXT_STATUS_KEY,
+    TEXT_SUBMIT_KEY, recipient_key,
+};
+
+use crate::design::FORM_MAX_WIDTH;
+use crate::services::dispatch;
+use crate::state::text::TextInput;
+use crate::state::{AppState, Focus, Input, Tab, Work};
+use common_gui_rune::keys::{area_chord, is_chord};
+use common_gui_rune::motion::CONTROL_PAIR;
+use common_gui_rune::parts::{StatusLines, Tone, caption, choice_switch, hairline, status_line};
+use common_gui_rune::tokens::{SPACE_LG, SPACE_SM};
+use common_gui_rune::{Surface, surface};
+use rune::{Cx, El, KeyEvent, Transition, Tx, col, row};
+use rune_kit::Kit;
+
+/// The window's title in the OS.
+pub const OS_TITLE: &str = "seal";
+/// The tab switch in the header row.
+pub const TABS_KEY: &str = "seal-tabs";
+/// The Text tab's root.
+pub const TEXT_TAB_KEY: &str = "seal-text";
+/// The Files tab's root.
+pub const FILES_TAB_KEY: &str = "seal-files";
+/// The Keys tab's root.
+pub const KEYS_TAB_KEY: &str = "seal-keys";
+/// The standing caption shown once the worker stopped.
+pub const STOPPED_KEY: &str = "seal-worker-stopped";
+
+/// What the standing caption says once the worker stopped.
+pub const STOPPED_CAPTION: &str =
+    "The background worker stopped. Restart seal-gui to seal or unseal again.";
+/// What a tab that is not built yet shows.
+pub const PLACEHOLDER: &str = "This tab arrives with the next change.";
+
+/// The key of the control `focus` names.
+pub fn focus_key(focus: Focus) -> String {
+    match focus {
+        Focus::TextInput => INPUT_KEY.to_owned(),
+        Focus::TextRecipient(id) => recipient_key(id),
+        Focus::TextOtherKey => OTHER_KEY_KEY.to_owned(),
+        Focus::TextChooseIdentity => CHOOSE_IDENTITY_KEY.to_owned(),
+    }
 }
+
+/// Runs when the window is first on screen: focus goes to the Text tab's input. Always true.
+pub fn shown(_: &mut AppState, tx: &mut Tx) -> bool {
+    tx.focus(INPUT_KEY, false);
+    true
+}
+
+/// Sets the appearance the window draws in (true: dark); true when it changed.
+pub fn set_appearance(s: &mut AppState, dark: bool) -> bool {
+    s.theme.set(dark)
+}
+
+/// Runs as the window closes: the worker's later posts go nowhere.
+pub fn on_close(s: &mut AppState, _: &mut Tx) {
+    if let Some(gate) = &s.gate {
+        gate.close();
+    }
+}
+
+/// The window's shortcuts: `mod+1..3` pick a tab as a fresh press, and `mod+enter` starts the
+/// Text tab's job while it shows. True when `key` was one of them. A focused field takes these
+/// chords for itself, so each field runs this before its own keys.
+pub fn window_key(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
+    if let Some(tab) = area_chord(Tab::ALL.len(), key, tx).and_then(|index| Tab::ALL.get(index)) {
+        dispatch(s, tx, Input::TabPicked(*tab));
+        return true;
+    }
+    if is_chord("mod+enter", key, tx) {
+        return match s.tab {
+            Tab::Text => {
+                dispatch(s, tx, Input::Text(TextInput::StartPressed));
+                true
+            }
+            Tab::Files | Tab::Keys => false,
+        };
+    }
+    false
+}
+
+/// The window's root.
+pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
+    let k = s.theme.kit(cx.system_dark());
+    let tabs = choice_switch(
+        k,
+        TABS_KEY,
+        "Tab",
+        &Tab::LABELS,
+        s.tab.index(),
+        true,
+        |s: &mut AppState, index: usize, tx: &mut Tx| {
+            if let Some(tab) = Tab::ALL.get(index) {
+                dispatch(s, tx, Input::TabPicked(*tab));
+            }
+        },
+    );
+    let header = col()
+        .w_full()
+        .padding(SPACE_LG)
+        .items_center()
+        .child(row().w_full().max_w(FORM_MAX_WIDTH).child(tabs));
+    let tab = match s.tab {
+        Tab::Text => text_tab::view(s, k, cx).key(TEXT_TAB_KEY),
+        Tab::Files => placeholder(s, k).key(FILES_TAB_KEY),
+        Tab::Keys => placeholder(s, k).key(KEYS_TAB_KEY),
+    };
+    let window = col()
+        .w_full()
+        .h_full()
+        .fill(surface(k, Surface::Window))
+        .child(header)
+        .child(hairline(k))
+        .child(
+            col()
+                .w_full()
+                .grow(1.0)
+                .min_h(0.0)
+                .fill(surface(k, Surface::Content))
+                .child(tab.transition(Transition::opacity().springs(CONTROL_PAIR))),
+        );
+    rune_kit::root(window, Vec::new())
+}
+
+/// The captions every tab shows between its body and its action row while a window-wide
+/// condition stands; `None` when none does.
+fn standing_captions(s: &AppState, k: &Kit) -> Option<El> {
+    match s.work {
+        Work::Stopped => Some(
+            col()
+                .w_full()
+                .px(SPACE_LG)
+                .pb(SPACE_SM)
+                .items_center()
+                .child(col().w_full().max_w(FORM_MAX_WIDTH).child(status_line(
+                    k,
+                    STOPPED_KEY,
+                    Tone::Danger,
+                    StatusLines::Wrap,
+                    STOPPED_CAPTION,
+                ))),
+        ),
+        Work::Idle | Work::Running(_) => None,
+    }
+}
+
+/// A tab that is not built yet: one muted line, centred, over the standing captions.
+fn placeholder(s: &AppState, k: &Kit) -> El {
+    let mut tab = col().w_full().grow(1.0).min_h(0.0).child(
+        col()
+            .w_full()
+            .grow(1.0)
+            .min_h(0.0)
+            .center()
+            .child(caption(k, PLACEHOLDER)),
+    );
+    if let Some(captions) = standing_captions(s, k) {
+        tab = tab.child(captions);
+    }
+    tab
+}
+
+#[cfg(test)]
+mod tests;

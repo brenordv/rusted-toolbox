@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.0.0
+- seal-gui runs on Rune instead of egui and eframe; `common-gui` and `rfd` are no longer
+  dependencies. The window keeps its title, size (980 x 720), and settings file; its smallest
+  size is 760 x 680, the Text tab at rest with nothing to scroll.
+- The tabs (Text, Files, Keys) sit in a header row; `mod+1`, `mod+2`, and `mod+3` switch
+  between them, also while typing. The Files and Keys tabs say they arrive with the next change.
+- Text tab: Direction (Seal or Unseal), the input, the recipients (each saved one as a
+  checkbox row with its shortened key, plus an Other key field) or the identity file with
+  "Choose identity file…", the output in a selectable box with "Copy output", and Seal or
+  Unseal at the bottom. Return types a line break in the input; `mod+enter` starts the job from
+  any field.
+- No toasts and no status bar. Each tab's status line says what runs, what another tab runs
+  ("Text: sealing…"), or what the last action found or copied; it stays until your next input
+  on that tab. A press that cannot start says what is missing, marks the field, and moves
+  focus to it; Seal stays enabled for that. A stopped worker shows a standing caption on every
+  tab.
+- Recipient selection follows the entry, not its place in the list, so two entries with the
+  same label are chosen separately.
+- One background thread runs one job at a time. A job always ends with one answer; if the
+  thread stops, the window says so instead of waiting. Closing the window during a job lets the
+  job finish before the program exits, and the log says it is waiting.
+- Logging boots through `common-cli`'s GUI boot: the log file is on, the default level is
+  `info` (was `warn`), and a panic is logged. The log holds when a job starts and ends, file
+  paths, and failure text; never the text being sealed or unsealed, a key, or a request.
+- Generating a key pair (wired in the Keys tab next) never replaces an existing identity file
+  without asking: the worker creates the file only if none is there, through `shared-crypto`'s
+  new `create_identity_file`.
+
 ## Unreleased
 - Builds on Rune's forks of `winit`, `wgpu-hal`, and `accesskit_windows`: the workspace now
   depends on Rune (for `eh-gui`), and its `[patch.crates-io]` applies to every crate here.

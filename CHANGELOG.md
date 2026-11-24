@@ -17,6 +17,11 @@
   control spring pair, and logging boot from the shared layer; its section chords now ignore a
   held key, and the Send action row is 52 pt tall, the shared row's minimum. `common-gui-rune`
   1.2.1 keeps a growing status centred in `action_row`.
+- `seal-gui` 2.0.0 runs on Rune: a tabbed window with the Text tab built (Direction, input,
+  recipients or identity file, output, Seal or Unseal), status lines instead of toasts, one
+  background thread that always answers, and info-level file logging that never holds the
+  text or a key. The Files and Keys tabs follow. `shared-crypto` 1.1.0 gains
+  `keys::create_identity_file`, which creates an identity file only if none is there.
 
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system
