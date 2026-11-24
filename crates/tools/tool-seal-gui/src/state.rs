@@ -6,6 +6,7 @@ pub mod recipients;
 pub mod text;
 
 use crate::config::SealConfig;
+use crate::design::CheckboxKits;
 use crate::services::{PostGate, Services};
 use crate::worker::{JobEvent, JobOutcome, JobRequest, WorkerMsg};
 use common_cli::app_logger::FileLogging;
@@ -186,6 +187,7 @@ pub struct Outcome {
 /// The seal window's state.
 pub struct AppState {
     pub theme: Theme,
+    pub checkbox_kits: CheckboxKits,
     pub tab: Tab,
     pub work: Work,
     /// The file dialog showing, if any; cleared only by its own answer.
@@ -227,6 +229,7 @@ impl AppState {
     ) -> Self {
         Self {
             theme: Theme::new(),
+            checkbox_kits: CheckboxKits::new(),
             tab: Tab::Text,
             work: Work::Idle,
             dialog: None,

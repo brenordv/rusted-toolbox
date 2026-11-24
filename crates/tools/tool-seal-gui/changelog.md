@@ -17,7 +17,8 @@
   focus to it; Seal stays enabled for that. A stopped worker shows a standing caption on every
   tab.
 - Recipient selection follows the entry, not its place in the list, so two entries with the
-  same label are chosen separately.
+  same label are chosen separately. An empty checkbox's edge is drawn in the muted icon color
+  (over 5:1 on the list), where the kit's own edge is near 1.4:1.
 - One background thread runs one job at a time. A job always ends with one answer; if the
   thread stops, the window says so instead of waiting. Closing the window during a job lets the
   job finish before the program exits, and the log says it is waiting.

@@ -59,6 +59,7 @@ pub fn recipient_key(id: EntryId) -> String {
 /// The Text tab.
 pub fn view(s: &AppState, k: &Kit, cx: &mut Cx<AppState>) -> El {
     let viewport = cx.layout_with(TEXT_SCROLL_KEY, |rect| rect[3]);
+    let checkbox_kit = s.checkbox_kits.kit(s.theme.dark(cx.system_dark()));
     let missing = match s.note(Tab::Text) {
         Some(Note::Missing(missing)) => Some(missing),
         Some(_) | None => None,
@@ -71,7 +72,7 @@ pub fn view(s: &AppState, k: &Kit, cx: &mut Cx<AppState>) -> El {
         .child(input(s, k, missing).mt(SPACE_MD))
         .child(match s.text.direction {
             Direction::Encrypt => {
-                reveal(recipients(s, k, missing)).key("seal-text-recipients-group")
+                reveal(recipients(s, (k, checkbox_kit), missing)).key("seal-text-recipients-group")
             }
             Direction::Decrypt => reveal(identity(s, k)).key("seal-text-identity-group"),
         })
@@ -172,12 +173,19 @@ fn input(s: &AppState, k: &Kit, missing: Option<&Missing>) -> El {
         ))
 }
 
-fn recipients(s: &AppState, k: &Kit, missing: Option<&Missing>) -> El {
+/// The recipient list and the Other key field; `checkbox_kit` draws the list's checkboxes.
+fn recipients(s: &AppState, (k, checkbox_kit): (&Kit, &Kit), missing: Option<&Missing>) -> El {
     let rows = s
         .book
         .entries()
         .iter()
-        .map(|entry| recipient_row(k, entry, s.text.picker.selected.contains(&entry.id)))
+        .map(|entry| {
+            recipient_row(
+                (k, checkbox_kit),
+                entry,
+                s.text.picker.selected.contains(&entry.id),
+            )
+        })
         .collect();
     let other_issue = match missing {
         Some(Missing::OtherKey) => Some(MSG_BAD_KEY),
@@ -215,7 +223,7 @@ fn recipients(s: &AppState, k: &Kit, missing: Option<&Missing>) -> El {
 
 /// One recipient: its checkbox, which is the row's one node (named by the label, described by
 /// the whole key), then the label and the shortened key. A press anywhere on the row toggles it.
-fn recipient_row(k: &Kit, entry: &BookEntry, checked: bool) -> El {
+fn recipient_row((k, checkbox_kit): (&Kit, &Kit), entry: &BookEntry, checked: bool) -> El {
     let id = entry.id;
     let toggle = move |s: &mut AppState, tx: &mut Tx| {
         dispatch(s, tx, Input::Text(TextInput::RecipientToggled(id)));
@@ -226,7 +234,7 @@ fn recipient_row(k: &Kit, entry: &BookEntry, checked: bool) -> El {
         .hide_label()
         .description(entry.public_key.clone())
         .on_toggle_tx(toggle)
-        .build(k)
+        .build(checkbox_kit)
         .key(recipient_key(id));
     row()
         .w_full()
