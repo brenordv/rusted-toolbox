@@ -1,6 +1,6 @@
 //! Key checks a window's key handlers share.
 
-use rune::{Chord, Key, KeyEvent, Mods, Tx};
+use rune::{Chord, Key, KeyEvent, Mods, TextEdit, Tx};
 
 /// Whether `key` is the chord `text` spells, such as `mod+enter` or `mod+1`. A `text` that is
 /// not a chord matches nothing.
@@ -20,64 +20,26 @@ pub fn is_newline(key: &KeyEvent) -> bool {
             }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_harness::{command, command_mods, press_key, runtime_at};
-    use rstest::rstest;
-    use rune::{Cx, El, col};
-
-    #[derive(Default)]
-    struct Seen {
-        mod_enter: usize,
-        mod_two: usize,
-        not_a_chord: usize,
+/// The area `mod+1` through `mod+<count>` picks, counting from 0, as a fresh press: a key the
+/// OS repeats while it is held picks nothing, so holding the chord does not flick between
+/// areas.
+pub fn area_chord(count: usize, key: &KeyEvent, tx: &Tx) -> Option<usize> {
+    if tx.key_repeat() {
+        return None;
     }
-
-    fn view(_: &Seen, _: &mut Cx<Seen>) -> El {
-        col().w_full().h_full()
-    }
-
-    fn count(seen: &mut Seen, key: &KeyEvent, tx: &mut Tx) -> bool {
-        if is_chord("mod+enter", key, tx) {
-            seen.mod_enter += 1;
-        }
-        if is_chord("mod+2", key, tx) {
-            seen.mod_two += 1;
-        }
-        if is_chord("no such chord", key, tx) {
-            seen.not_a_chord += 1;
-        }
-        true
-    }
-
-    #[test]
-    fn a_chord_matches_only_its_own_key_and_modifier() {
-        let mut rt = runtime_at(Seen::default(), view, (200.0, 100.0));
-        rt.on_key = Some(count);
-
-        command(&mut rt, Key::Enter);
-        command(&mut rt, Key::Command('2'));
-        command(&mut rt, Key::Command('2'));
-        press_key(&mut rt, Key::Enter);
-
-        assert_eq!(
-            (rt.state.mod_enter, rt.state.mod_two, rt.state.not_a_chord),
-            (1, 2, 0)
-        );
-    }
-
-    #[rstest]
-    #[case::plain_return(Key::Enter, Mods::default(), true)]
-    #[case::shift_return(Key::Enter, Mods { shift: true, ..Mods::default() }, true)]
-    #[case::mod_return(Key::Enter, command_mods(), false)]
-    #[case::alt_return(Key::Enter, Mods { alt: true, ..Mods::default() }, false)]
-    #[case::another_key(Key::Tab, Mods::default(), false)]
-    fn only_return_with_or_without_shift_types_a_line_break(
-        #[case] key: Key,
-        #[case] mods: Mods,
-        #[case] newline: bool,
-    ) {
-        assert_eq!(is_newline(&KeyEvent { key, mods }), newline);
-    }
+    (0..count).find(|index| is_chord(&format!("mod+{}", index + 1), key, tx))
 }
+
+/// Types a line break into `edit` at the caret, over any selection, when `key` is Return with
+/// or without Shift ([`is_newline`]); true when it did. The field's change hook does not run for
+/// this insert.
+pub fn type_newline(edit: &mut TextEdit, key: &KeyEvent) -> bool {
+    if !is_newline(key) {
+        return false;
+    }
+    edit.insert("\n");
+    true
+}
+
+#[cfg(test)]
+mod tests;

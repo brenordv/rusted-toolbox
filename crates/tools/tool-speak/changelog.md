@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1
+- `mod+1` and `mod+2` switch areas on a fresh press only: holding the chord no longer flips
+  back and forth as the key repeats.
+- The window's theme, area switch, action rows, line-break key, area chords, window watch, and
+  failure log line now come from `common-gui-rune`, and `--gui` boots logging through
+  `common-cli`'s GUI boot, which also logs a panic (thread, location, message) before the
+  default hook prints it. Nothing else the window does changed.
+
 ## 1.2.0
 - Settings has two fields where it had one URL field: Server (scheme, host, and port, such as
   `http://my-server.local:10157`; `http://` is assumed when there is no scheme) and Endpoint

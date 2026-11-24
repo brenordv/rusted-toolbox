@@ -4,8 +4,10 @@
 //! Test support only (`cfg(test)` or the dev-only `test-harness` feature): helpers panic on a
 //! failed expectation, which fails the test that called them.
 
-use rune::{Cx, El, ElementInfo, Env, Key, KeyEvent, Mods, Runtime};
+use rune::clipboard::MemoryClipboard;
+use rune::{Cx, El, ElementInfo, Env, FileDialogKind, Key, KeyEvent, Mods, Runtime, Tx};
 use serde_json::Value;
+use std::path::Path;
 
 /// Frames a settle runs: half a second of virtual time, enough for every transition the motion
 /// roles give. A spinner loops forever, so "until nothing moves" would never end.
@@ -25,11 +27,107 @@ pub fn runtime_at<S: 'static>(
     rt
 }
 
+/// [`runtime_at`] with `on_key` as the window's key handler, so window shortcuts reach the
+/// state.
+pub fn runtime_with_keys<S: 'static>(
+    state: S,
+    view: fn(&S, &mut Cx<S>) -> El,
+    on_key: fn(&mut S, &KeyEvent, &mut Tx) -> bool,
+    size: (f32, f32),
+) -> Runtime<S> {
+    let mut rt = runtime_at(state, view, size);
+    rt.on_key = Some(on_key);
+    rt
+}
+
 /// Runs [`SETTLE_FRAMES`] frames.
 pub fn settle<S: 'static>(rt: &mut Runtime<S>) {
     for _ in 0..SETTLE_FRAMES {
         rt.frame(FRAME);
     }
+}
+
+/// What a background thread posts: `f` applied on the UI thread as
+/// `AppHandle::update_if` would apply it, then a settle.
+pub fn deliver<S: 'static>(rt: &mut Runtime<S>, f: impl FnOnce(&mut S, &mut Tx) -> bool + 'static) {
+    rt.update_if(f);
+    settle(rt);
+}
+
+/// Whether focus is on the element keyed `key` or inside it (the key may sit on a wrapper
+/// around the control that takes focus).
+///
+/// # Panics
+/// When nothing is keyed `key`.
+pub fn focus_is_inside<S: 'static>(rt: &Runtime<S>, key: &str) -> bool {
+    let target = element(rt, key).path;
+    let inside = format!("{target}/");
+    rt.elements().into_iter().any(|element| {
+        element.focused && (element.path == target || element.path.starts_with(&inside))
+    })
+}
+
+/// Presses the field keyed `key`, checks that focus landed in it, selects its text, and pastes
+/// `text` over it: typing through the event loop, as a person would.
+///
+/// # Panics
+/// When nothing is keyed `key`, or the press leaves focus outside it.
+pub fn type_into<S: 'static>(rt: &mut Runtime<S>, key: &str, text: &str) {
+    press(rt, key);
+    assert!(
+        focus_is_inside(rt, key),
+        "{key} did not take focus: {:?}",
+        focused_key(rt)
+    );
+    command(rt, Key::Command('a'));
+    rt.paste(text);
+    settle(rt);
+}
+
+/// Where the element keyed `key` ends, top to bottom.
+///
+/// # Panics
+/// When nothing is keyed `key`.
+pub fn bottom<S: 'static>(rt: &Runtime<S>, key: &str) -> f32 {
+    let [_, y, _, height] = rect(rt, key);
+    y + height
+}
+
+/// Whether the accessibility node keyed `key` reads as disabled.
+///
+/// # Panics
+/// When no accessibility node is keyed `key`.
+pub fn is_disabled<S: 'static>(rt: &Runtime<S>, key: &str) -> bool {
+    let tree = rt.accessibility_json();
+    let node = a11y_node(&tree, key).unwrap_or_else(|| panic!("no accessibility node keyed {key}"));
+    node["states"]
+        .as_array()
+        .is_some_and(|states| states.iter().any(|state| state == "disabled"))
+}
+
+/// Gives `rt` an in-memory clipboard and returns it, so a test reads what the app copied.
+pub fn use_memory_clipboard<S: 'static>(rt: &mut Runtime<S>) -> MemoryClipboard {
+    let clipboard = rune::clipboard::memory();
+    rt.use_clipboard(&clipboard);
+    clipboard
+}
+
+/// The text `clipboard` holds, when it holds text.
+pub fn clipboard_text(clipboard: &MemoryClipboard) -> Option<String> {
+    clipboard.text().map(|text| text.to_string())
+}
+
+/// Answers the `kind` dialog that shows with `path`, or cancels it with `None`, then settles.
+///
+/// # Panics
+/// When no file dialog shows, or the one that shows is another kind.
+pub fn answer_dialog<S: 'static>(rt: &mut Runtime<S>, kind: FileDialogKind, path: Option<&Path>) {
+    let showing = rt.file_dialog().map(|(showing, _)| showing);
+    assert_eq!(showing, Some(kind), "the dialog showing is not {kind:?}");
+    if let Err(error) = rt.resolve_file_dialog(path.map(Path::to_path_buf)) {
+        panic!("answering the dialog failed: {error}");
+    }
+    settle(rt);
 }
 
 /// The element keyed `key` that is not on its way out.
@@ -152,3 +250,6 @@ pub fn a11y_node<'a>(tree: &'a Value, key: &str) -> Option<&'a Value> {
         .into_iter()
         .find(|node| node["key"].as_str() == Some(key))
 }
+
+#[cfg(test)]
+mod tests;

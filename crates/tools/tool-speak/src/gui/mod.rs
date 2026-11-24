@@ -11,7 +11,7 @@ use crate::config::{self, SpeakConfig};
 use crate::design::{WINDOW_MIN, WINDOW_SIZE};
 use crate::speech_client::SpeechClient;
 use anyhow::{Context, Result};
-use common_gui_rune::window::{WatchHooks, spawn_window_watch};
+use common_gui_rune::window::{WatchHooks, run_watched};
 use rune::{App, AppSpec};
 use services::ProdServices;
 use state::SpeakState;
@@ -61,25 +61,20 @@ pub fn run(config_path: PathBuf) -> Result<Option<String>> {
     spec.min_size = Some(WINDOW_MIN);
     spec.on_key = Some(views::window_key);
     let app = App::new(spec);
-    let watch = spawn_window_watch(
-        app.handle(),
+    let handle = app.handle();
+    let rt = runtime.handle().clone();
+    let app = app.init(move || {
+        let services = ProdServices::new(handle, rt, client);
+        SpeakState::new(config, config_path, Some(Rc::new(services)))
+    });
+    run_watched(
+        app,
         WatchHooks {
             shown: views::shown,
             appearance: views::set_appearance,
         },
-    );
-    let handle = app.handle();
-    let rt = runtime.handle().clone();
-    let ran = app
-        .args(Vec::new())
-        .init(move || {
-            let services = ProdServices::new(handle, rt, client);
-            SpeakState::new(config, config_path, Some(Rc::new(services)))
-        })
-        .try_run();
-    ran.map_err(|reason| anyhow::anyhow!(reason))
-        .context("Could not start the speak window")?;
-    Ok(watch.failure())
+        "Could not start the speak window",
+    )
 }
 
 #[cfg(test)]

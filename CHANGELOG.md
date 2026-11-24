@@ -44,6 +44,13 @@
 - `speak` 1.2.0: the window's Settings area has a Server field and an Endpoint field where it
   had one URL field. Save joins them into the settings file's one `url`, so the file and the
   command line are unchanged.
+- GUI revamp, shared layer: `common-gui-rune` 1.2.0 gains `Theme`, the parts `action_row`,
+  `choice_switch`, `reveal`, and `section_header`, the keys `area_chord` and `type_newline`,
+  `motion::CONTROL_PAIR`, `window::run_watched` and `report_failure`, and more headless test
+  helpers; its focus rings and badge labels are in the contrast test. `common-cli` 1.9.0 gains
+  `gui_boot::boot_gui`, the logging boot every window uses, which also logs a panic. `speak`
+  1.2.1 and `alert` 1.0.2 use them in place of their own copies (speak's `mod+1`/`mod+2` now
+  ignore a held key); `eh-gui` 1.0.4 re-exports the two parts and the token that moved.
 
 ## v7
 - Rebuilt the Azure Event Hubs tooling on the official `azure_messaging_eventhubs` SDK and a redb

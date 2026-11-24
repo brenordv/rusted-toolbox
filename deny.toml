@@ -24,7 +24,7 @@ ignore = [
     { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (informational, no vulnerability); no safe upgrade; replacing it is a separate migration" },
 ]
 
-# Every crate comes from crates.io except Rune (eh-gui's UI framework), which is
+# Every crate comes from crates.io except Rune (the UI framework of the workspace's windowed tools), which is
 # not published there. Rune's own crates come from a fork (brenordv/rune) pinned to
 # one reviewed rev: anomalyco/rune's c4eda05 plus three fixes. The forks in the root
 # Cargo.toml's [patch.crates-io] come from anomalyco/rune at c4eda05. Advisory data

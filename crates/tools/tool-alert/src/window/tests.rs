@@ -1,8 +1,8 @@
 use super::*;
 use crate::design::ALERT_SIZE;
 use common_gui_rune::test_harness::{
-    a11y_node, element, focused_key, has_key, has_text, press, press_key, rect, runtime_at, settle,
-    text_visible,
+    a11y_node, bottom, element, focused_key, has_key, has_text, press, press_key, rect,
+    runtime_with_keys, settle, text_visible,
 };
 use common_gui_rune::tokens::TYPE_CAPTION;
 use rstest::rstest;
@@ -32,9 +32,7 @@ fn shown_long_ago(title: Option<&str>, body: &str) -> AlertState {
 }
 
 fn runtime(state: AlertState) -> Runtime<AlertState> {
-    let mut rt = runtime_at(state, view, ALERT_SIZE);
-    rt.on_key = Some(window_key);
-    rt
+    runtime_with_keys(state, view, window_key, ALERT_SIZE)
 }
 
 fn key(key: Key) -> KeyEvent {
@@ -42,11 +40,6 @@ fn key(key: Key) -> KeyEvent {
         key,
         mods: Mods::default(),
     }
-}
-
-fn bottom(rt: &Runtime<AlertState>, key: &str) -> f32 {
-    let [_, y, _, height] = rect(rt, key);
-    y + height
 }
 
 #[rstest]

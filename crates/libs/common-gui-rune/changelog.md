@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2.0
+- `Theme`: the two kits and the appearance a window watch read, with `kit(system_dark)`,
+  `dark(system_dark)` (the read value wins once there is one), and `set(dark)`, which says
+  whether it changed. It replaces the `Ds` plus `system_dark` pair each window held.
+- New parts: `action_row` (a hairline over a fixed row with the status leading and the buttons
+  trailing), `choice_switch` (a segmented choice with its accessible name, picking by index,
+  every segment disabled when it is), and, moved from eh-gui, `reveal` and `section_header`.
+- `keys::area_chord(count, key, tx)`: the area `mod+1` to `mod+<count>` picks, on a fresh press
+  only. `keys::type_newline(edit, key)`: Return types a line break at the caret.
+- `motion::CONTROL_PAIR` and, moved from eh-gui, `tokens::REVEAL_OFFSET`.
+- `window::run_watched(app, hooks, context)` runs an app under the window watch with no Rune
+  flags read from the process; `window::report_failure(tool, reason)` writes the one log line
+  for a window that could not be created.
+- `test_harness` gains `runtime_with_keys`, `deliver`, `type_into` (press, check focus, select
+  all, paste), `focus_is_inside`, `bottom`, `is_disabled`, `use_memory_clipboard`,
+  `clipboard_text`, and `answer_dialog`.
+- `Ds` draws the kit's `border_active` (the checkbox focus ring, a progress fill) in the accent,
+  which clears 3:1 on every surface where the kit's lifted neutral did not, and light muted text
+  is `#6B6B70` (was `#6E6E73`) so a neutral badge's label clears 4.5:1 on its fill. The contrast
+  test covers the focus rings and the neutral and accent badge labels.
+
 ## 1.1.0
 - New part `parts::line_field` with `LineFieldSpec`: a label over a single-line field whose
   `on_key` runs before the field's own keys (the kit's `TextField` has no key hook, so a

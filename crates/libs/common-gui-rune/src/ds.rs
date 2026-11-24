@@ -93,14 +93,17 @@ fn shared_overrides(kit: &mut Kit) {
     kit.c.submit_fg = rgb(SUBMIT_LABEL);
     kit.c.submit_icon = rgb(SUBMIT_LABEL);
     kit.c.submit_highlight = Color::WHITE.alpha(SUBMIT_SHEEN_ALPHA);
-    // Focus ring: the accent, so focus reads as the one interactive tint.
+    // Focus ring: the accent, so focus reads as the one interactive tint. The kit draws the
+    // checkbox's ring and a progress bar's fill in `border_active`, a lifted neutral under 3:1
+    // on every surface; the accent clears it.
     kit.c.border_focus = kit.c.text_accent;
+    kit.c.border_active = kit.c.text_accent;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contrast::{Contract, LEVELS, TEXT, appearance_name, over};
+    use crate::contrast::{Contract, LEVELS, NON_TEXT, TEXT, appearance_name, over};
     use crate::tokens::{SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL};
 
     #[test]
@@ -137,6 +140,44 @@ mod tests {
                     face,
                     TEXT,
                 );
+            }
+        }
+
+        contract.assert_met();
+    }
+
+    #[test]
+    fn focus_rings_and_badge_labels_meet_their_minimums_in_both_appearances() {
+        let ds = Ds::new();
+        let mut contract = Contract::default();
+
+        for dark in [true, false] {
+            let k = ds.kit(dark);
+            let mode = appearance_name(dark);
+            for level in LEVELS {
+                let bg = surface(k, level);
+                for (name, ring) in [
+                    ("focus ring", k.c.border_focus),
+                    ("checkbox focus ring", k.c.border_active),
+                ] {
+                    contract.check(
+                        &format!("{mode} {name} on {level:?}"),
+                        over(ring, bg),
+                        bg,
+                        NON_TEXT,
+                    );
+                }
+                for (name, label, fill) in [
+                    ("neutral badge", k.c.text_muted, k.c.layer_02),
+                    ("accent badge", k.c.text_contrast, k.c.bg_accent),
+                ] {
+                    contract.check(
+                        &format!("{mode} {name} label on {level:?}"),
+                        label,
+                        over(fill, bg),
+                        TEXT,
+                    );
+                }
             }
         }
 

@@ -1,14 +1,17 @@
 //! Parts every Rune window shares: the styled pieces the kit lacks. Views compose these and
 //! kit components. A tool's own parts live in that tool.
 
+use crate::motion::CONTROL_PAIR;
 use crate::tokens::{
-    HAIRLINE, RADIUS_CONTROL, SPACE_SM, SPACE_XS, TYPE_CAPTION, TYPE_LABEL, TYPE_MONO,
+    CONTROL_HEIGHT, HAIRLINE, RADIUS_CONTROL, REVEAL_OFFSET, SPACE_LG, SPACE_MD, SPACE_SM,
+    SPACE_XS, TYPE_CAPTION, TYPE_HEADLINE, TYPE_LABEL, TYPE_MONO,
 };
 use common_utils::string_utils::{display_line, error_preview};
 use rune::{
-    El, KeyEvent, LiveRegion, ScrollSpec, TextEdit, TextStyle, Tx, col, el, text, text_input,
+    El, KeyEvent, LiveRegion, ScrollSpec, TextEdit, TextStyle, Transition, Tx, col, el, row,
+    spacer, text, text_input,
 };
-use rune_kit::{Kit, ScrollBar, TextInput};
+use rune_kit::{Kit, ScrollBar, SegmentedControl, State, TextInput};
 
 /// A caption label over a selectable monospace value, for paths and ids.
 pub fn detail_row(k: &Kit, label: &str, value: &str) -> El {
@@ -48,6 +51,70 @@ pub fn warning(k: &Kit, line: &str) -> El {
 /// A full-width hairline, as under a header or over a footer.
 pub fn hairline(k: &Kit) -> El {
     el().w_full().h(HAIRLINE).fill(k.c.border_weak)
+}
+
+/// A section header in a form or a sidebar.
+pub fn section_header(k: &Kit, title: &str) -> El {
+    text(title)
+        .font(TYPE_HEADLINE)
+        .color(k.c.text_base)
+        .mt(SPACE_LG)
+}
+
+/// `content` entering and leaving with the field-reveal treatment: a fade and a
+/// [`REVEAL_OFFSET`] rise on the control spring.
+pub fn reveal(content: El) -> El {
+    content.transition(
+        Transition::opacity()
+            .combined(Transition::offset(0.0, REVEAL_OFFSET))
+            .springs(CONTROL_PAIR),
+    )
+}
+
+/// The fixed row under an area: a full-width hairline over a row keyed `key`, at least a
+/// control tall plus [`SPACE_MD`] above and below whatever the status says, with
+/// [`SPACE_LG`] side insets. `status` leads and takes the width `buttons` leave; with none,
+/// nothing is mounted in its place. The status wraps or cuts as the caller built it.
+pub fn action_row(k: &Kit, key: &str, status: Option<El>, buttons: Vec<El>) -> El {
+    let status = match status {
+        Some(status) => col().grow(1.0).min_w(0.0).child(status),
+        None => spacer(),
+    };
+    col().w_full().child(hairline(k)).child(
+        row()
+            .key(key)
+            .w_full()
+            .min_h(CONTROL_HEIGHT + 2.0 * SPACE_MD)
+            .gap(SPACE_MD)
+            .center_y()
+            .px(SPACE_LG)
+            .py(SPACE_MD)
+            .child(status)
+            .child(row().gap(SPACE_SM).center_y().children(buttons)),
+    )
+}
+
+/// A segmented choice keyed `key` over `labels`, named `label` for assistive technology, with
+/// `selected` showing. A press on a segment calls `on_pick` with its index. When `enabled` is
+/// false every segment reads as disabled, takes no focus, and a press calls nothing.
+pub fn choice_switch<S: 'static>(
+    k: &Kit,
+    key: &str,
+    label: &str,
+    labels: &[&str],
+    selected: usize,
+    enabled: bool,
+    on_pick: impl Fn(&mut S, usize, &mut Tx) + Clone + 'static,
+) -> El {
+    let mut control = SegmentedControl::new(labels, Some(selected)).label(label);
+    if enabled {
+        control = control.on_pick(on_pick);
+    } else {
+        for index in 0..labels.len() {
+            control = control.segment_state(index, State::Disabled);
+        }
+    }
+    control.build(k).key(key)
 }
 
 /// What a [`status_line`] says with its color.
@@ -274,5 +341,7 @@ pub fn text_editor<S: 'static>(
     shell
 }
 
+#[cfg(test)]
+mod row_tests;
 #[cfg(test)]
 mod tests;

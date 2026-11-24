@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4
+- No change in what the app does. `design::parts::reveal`, `design::parts::section_header`,
+  and `design::tokens::REVEAL_OFFSET` moved to `common-gui-rune` and are re-exported from the
+  paths they had.
+
 ## 1.0.3
 - No change in what the app does. The chord check and the Return-types-a-line-break check its
   key handlers used moved to `common-gui-rune::keys` (`is_chord`, `is_newline`), which `speak`

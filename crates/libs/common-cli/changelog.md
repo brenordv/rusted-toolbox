@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.0
+- New module `gui_boot`: `boot_gui(name, version, level, args)` boots logging for a tool that
+  opens a window. It turns the file sink on whatever `--log-to-file` said (`with_file_logging`,
+  pure), boots at `level` unless `--log-level` says otherwise, installs a panic hook that writes
+  one `error!` with the thread, the location, and the message (`PanicReport`) before handing the
+  panic to the hook installed before it, and returns the `FileLogging` the boot reported.
+
 ## 1.8.0
 - `AppLogger::init` returns `FileLogging`: `Off` (no file layer asked for, or logging off),
   `Writing(path)` with the log file it actually opened, or `Failed { path, error }` with the path

@@ -2,16 +2,14 @@
 //! Close.
 
 use crate::models::{AlertSpec, ClosedBy};
-use common_gui_rune::motion::{CONTROL, CONTROL_EXIT};
+use common_gui_rune::motion::CONTROL_PAIR;
 use common_gui_rune::parts::{StatusLines, Tone, caption, hairline, status_line};
 use common_gui_rune::tokens::{
     CONTROL_HEIGHT, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, TYPE_BODY, TYPE_TITLE,
 };
-use common_gui_rune::{Ds, Surface, appearance, surface};
+use common_gui_rune::{Surface, Theme, surface};
 use common_utils::string_utils::{display_line, display_lines, error_preview};
-use rune::{
-    Cx, El, Key, KeyEvent, Mods, ScrollSpec, SpringPair, Transition, Tx, col, row, spacer, text,
-};
+use rune::{Cx, El, Key, KeyEvent, Mods, ScrollSpec, Transition, Tx, col, row, spacer, text};
 use rune_kit::{Button, ButtonVariant, Kit, ScrollBar};
 use std::time::{Duration, Instant};
 use tracing::info;
@@ -87,8 +85,7 @@ pub fn os_title(title: Option<&str>) -> String {
 
 /// What the alert window shows and how it ended.
 pub struct AlertState {
-    ds: Ds,
-    system_dark: Option<bool>,
+    theme: Theme,
     title: Option<String>,
     body: String,
     has_sound: bool,
@@ -103,8 +100,7 @@ impl AlertState {
     /// is first seen.
     pub fn new(spec: &AlertSpec, start_sound: Option<Box<dyn FnOnce()>>) -> Self {
         Self {
-            ds: Ds::new(),
-            system_dark: None,
+            theme: Theme::new(),
             title: spec
                 .title
                 .as_deref()
@@ -207,7 +203,7 @@ pub fn shown(s: &mut AlertState, tx: &mut Tx) -> bool {
 
 /// Sets the appearance the window draws in (true: dark); true when it changed.
 pub fn set_appearance(s: &mut AlertState, dark: bool) -> bool {
-    appearance::set_appearance(&mut s.system_dark, dark)
+    s.theme.set(dark)
 }
 
 /// Runs as the window closes: records the window's own close control when nothing else
@@ -249,8 +245,7 @@ fn close_pressed(s: &mut AlertState, tx: &mut Tx) {
 
 /// The window's root.
 pub fn view(s: &AlertState, cx: &mut Cx<AlertState>) -> El {
-    let dark = s.system_dark.unwrap_or(cx.system_dark());
-    let k = s.ds.kit(dark);
+    let k = s.theme.kit(cx.system_dark());
     let mut dialog = col()
         .key(ROOT_KEY)
         .role("dialog")
@@ -311,7 +306,7 @@ fn sound_issue_line(k: &Kit, issue: &str) -> El {
         &message,
     )
     .mt(SPACE_MD)
-    .transition(Transition::opacity().springs(SpringPair::new(CONTROL, CONTROL_EXIT)))
+    .transition(Transition::opacity().springs(CONTROL_PAIR))
 }
 
 /// A hairline over a row with the muted caption leading and Close trailing.

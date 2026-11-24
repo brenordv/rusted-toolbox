@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use common_audio::{Clip, Speaker};
 use common_cli::tool_exit_helpers::{exit_error, exit_success};
-use common_gui_rune::window::gpu_hint;
+use common_gui_rune::window::report_failure;
 use speak::cli_utils::initialize;
 use speak::config::default_config_path;
 use speak::gui;
@@ -22,11 +22,7 @@ fn main() {
     match result {
         Ok(None) => exit_success(),
         Ok(Some(reason)) => {
-            error!(
-                reason = %reason,
-                hint = %gpu_hint(env!("CARGO_PKG_NAME")),
-                "speak could not open a window"
-            );
+            report_failure(env!("CARGO_PKG_NAME"), &reason);
             exit_error();
         }
         Err(error) => {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+- Both windows take their theme, the Body's line-break key, the window watch, and the failure
+  log line from `common-gui-rune`, and logging boots through `common-cli`'s GUI boot, which
+  also logs a panic (thread, location, message) before the default hook prints it. Nothing the
+  windows do changed.
+
 ## 1.0.1
 - The tester's single-line fields, its key checks, the appearance setter, and the GPU hint now
   come from `common-gui-rune`.

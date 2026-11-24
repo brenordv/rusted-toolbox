@@ -5,14 +5,14 @@ use super::tokens::{
     CONTROL_HEIGHT, COUNT_BADGE_HEIGHT, EMPTY_GLYPH_SIZE, FLOATING_BLUR, FLOATING_HEIGHT,
     FOCUS_RING_WIDTH, FORM_POPOVER_WIDTH, HAIRLINE, ICON_SIZE, LIST_ROW_HEIGHT, LIVE_DOT_SIZE,
     POPOVER_WIDTH, PRESS_SCALE, RADIUS_BADGE, RADIUS_SELECTION, RADIUS_SHEET, RADIUS_TILE,
-    REVEAL_OFFSET, SAMPLE_LINES, SELECTION_INSET, SHEET_TOP, SPACE_LG, SPACE_MD, SPACE_SM,
-    SPACE_XL, SPACE_XS, SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM,
-    TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
+    SAMPLE_LINES, SELECTION_INSET, SHEET_TOP, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS,
+    SPACE_XXL, TILE_MIN_WIDTH, TILE_STAGGER, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY,
+    TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO, TYPE_TITLE,
 };
 use super::{Surface, floating_tint, motion, selected_secondary_text, selection_fill, surface};
 pub use common_gui_rune::parts::{
     EditorHeight, EditorSpec, caption, detail_row, field_label, hairline, issue, lines_editor,
-    text_editor, warning,
+    reveal, section_header, text_editor, warning,
 };
 use rune::{
     Color, El, Icon, KeyEvent, ScrollSpec, SpringPair, TextEdit, Transition, Tx, col, el, icon,
@@ -269,14 +269,6 @@ pub fn sheet<S: 'static>(
     );
 }
 
-/// A section header in a form or the sidebar.
-pub fn section_header(k: &Kit, title: &str) -> El {
-    text(title)
-        .font(TYPE_HEADLINE)
-        .color(k.c.text_base)
-        .mt(SPACE_LG)
-}
-
 /// A stat tile: a caption over a metric whose digits roll on change. `order` staggers the
 /// tiles' entrance, which plays when the strip first appears.
 pub fn stat_tile(k: &Kit, key: &str, label: &str, value: Metric, order: usize) -> El {
@@ -529,16 +521,6 @@ pub fn body_editor<S: 'static>(
         font: TYPE_MONO,
     };
     text_editor(k, spec, edit, access, on_key, on_change)
-}
-
-/// `content` entering and leaving with the field-reveal treatment: a fade and a 6 pt rise on
-/// the control spring.
-pub fn reveal(content: El) -> El {
-    content.transition(
-        Transition::opacity()
-            .combined(Transition::offset(0.0, REVEAL_OFFSET))
-            .springs(SpringPair::new(motion::CONTROL, motion::CONTROL_EXIT)),
-    )
 }
 
 /// A card holding a sample: a header row (`title` in `caption` and `action` at its end) over a

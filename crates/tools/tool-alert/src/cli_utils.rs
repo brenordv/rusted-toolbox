@@ -1,6 +1,7 @@
 use crate::models::AlertArgs;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgsNoVerbose;
+use common_cli::gui_boot::boot_gui;
 use common_cli::tool_log_level::ToolLogLevel;
 
 /// Shows a window with a message and waits for the user to close it.
@@ -45,20 +46,17 @@ impl CliArgs {
     }
 }
 
-/// Parses the command line and boots logging before any window exists. The file sink is
-/// forced on and the default level is info, inverting the house defaults: an alert started in
-/// the background has no stderr anyone watches, so the log file is where its shown and closed
-/// lines land. `--log-level disabled` still silences everything.
+/// Parses the command line and boots logging before any window exists, with the window boot:
+/// the file sink forced on, info by default, and panics logged, inverting the house defaults.
+/// An alert started in the background has no stderr anyone watches, so the log file is where
+/// its shown and closed lines land. `--log-level disabled` still silences everything.
 pub fn initialize() -> AlertArgs {
-    let mut args = CliArgs::parse();
-    args.common.log_to_file = true;
-    args.common.app_boot_up_with_level(
+    let args = CliArgs::parse();
+    boot_gui(
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         ToolLogLevel::Info,
-        "<unused>",
-        false,
-        None::<fn()>,
+        args.common.clone(),
     );
     args.into_alert_args()
 }

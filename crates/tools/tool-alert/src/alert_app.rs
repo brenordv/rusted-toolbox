@@ -7,7 +7,7 @@ use crate::tester::{self, TesterState, start_alert};
 use crate::window::{self, AlertState};
 use anyhow::{Context, Result, bail};
 use common_audio::{Clip, Speaker};
-use common_gui_rune::window::{WatchHooks, spawn_window_watch};
+use common_gui_rune::window::{WatchHooks, run_watched};
 use common_utils::string_utils::display_line;
 use rune::{App, AppSpec, WindowOptions};
 use std::ffi::OsString;
@@ -129,13 +129,6 @@ fn show(spec: AlertSpec) -> Result<Option<String>> {
     app_spec.min_size = Some(ALERT_SIZE);
     app_spec.on_key = Some(window::window_key);
     let app = App::new(app_spec);
-    let watch = spawn_window_watch(
-        app.handle(),
-        WatchHooks {
-            shown: window::shown,
-            appearance: window::set_appearance,
-        },
-    );
     let poster = app.handle();
     let options = WindowOptions {
         always_on_top: true,
@@ -144,8 +137,7 @@ fn show(spec: AlertSpec) -> Result<Option<String>> {
         max_size: Some(ALERT_SIZE),
         ..WindowOptions::default()
     };
-    let ran = app
-        .args(Vec::new())
+    let app = app
         .window_options(options)
         .on_close(window::on_close)
         .init(move || {
@@ -157,11 +149,15 @@ fn show(spec: AlertSpec) -> Result<Option<String>> {
                 }) as Box<dyn FnOnce()>
             });
             AlertState::new(&spec, start_sound)
-        })
-        .try_run();
-    ran.map_err(|reason| anyhow::anyhow!(reason))
-        .context("Could not start the alert window")?;
-    Ok(watch.failure())
+        });
+    run_watched(
+        app,
+        WatchHooks {
+            shown: window::shown,
+            appearance: window::set_appearance,
+        },
+        "Could not start the alert window",
+    )
 }
 
 /// Opens the tester. Its Test button starts this same executable.
@@ -174,21 +170,16 @@ fn open_tester(seed: TesterSeed) -> Result<Option<String>> {
     );
     app_spec.min_size = Some(TESTER_MIN);
     app_spec.on_key = Some(tester::window_key);
-    let app = App::new(app_spec);
-    let watch = spawn_window_watch(
-        app.handle(),
+    let app =
+        App::new(app_spec).init(move || TesterState::new(&seed, Box::new(start_this_program)));
+    run_watched(
+        app,
         WatchHooks {
             shown: tester::shown,
             appearance: tester::set_appearance,
         },
-    );
-    let ran = app
-        .args(Vec::new())
-        .init(move || TesterState::new(&seed, Box::new(start_this_program)))
-        .try_run();
-    ran.map_err(|reason| anyhow::anyhow!(reason))
-        .context("Could not start the tester window")?;
-    Ok(watch.failure())
+        "Could not start the tester window",
+    )
 }
 
 /// Starts the running executable again with `arguments`.

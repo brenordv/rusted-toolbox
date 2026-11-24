@@ -4,6 +4,7 @@
 pub mod app_logger;
 pub mod broken_pipe;
 pub mod common_tool_args;
+pub mod gui_boot;
 pub mod header_format;
 pub mod test_writers;
 pub mod tool_exit_helpers;

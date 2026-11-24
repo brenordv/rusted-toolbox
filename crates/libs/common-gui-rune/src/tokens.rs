@@ -38,8 +38,8 @@ pub const SUBMIT_HOVER_ALPHA: f32 = 0.12;
 /// `Submit` press darkens too, for the same reason.
 pub const SUBMIT_PRESSED_ALPHA: f32 = 0.20;
 /// Light muted text. The kit floors muted text against white only, which lands near 4.4:1 on
-/// the light window surface.
-pub const LIGHT_MUTED: u32 = 0x6E_6E_73;
+/// the light window surface and on a neutral badge's fill.
+pub const LIGHT_MUTED: u32 = 0x6B_6B_70;
 
 // Spacing, in logical points on a 4 pt base.
 pub const SPACE_XS: f32 = 4.0;
@@ -55,6 +55,8 @@ pub const HAIRLINE: f32 = 1.0;
 pub const FOCUS_RING_WIDTH: f32 = 2.0;
 /// A regular control's height, the smallest pointer target.
 pub const CONTROL_HEIGHT: f32 = 28.0;
+/// How far a revealed field rises as it fades in.
+pub const REVEAL_OFFSET: f32 = 6.0;
 
 // Radius by role.
 pub const RADIUS_BADGE: f32 = 4.0;
