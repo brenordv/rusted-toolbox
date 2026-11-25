@@ -1,7 +1,7 @@
 //! The Files tab: Mode and the overwrite choice, the file list (the drop target), the
 //! recipients or the identity file, where the outputs go, and the action row.
 
-use super::parts::{BadgeTone, ListHeight, badge, drop_hovered, list_box};
+use super::parts::{BadgeTone, ListHeight, ListRows, badge, drop_hovered, list_box};
 use super::picker::{identity, recipients};
 use super::text_tab::{DIRECTION_LABELS, DIRECTIONS};
 use super::{standing_captions, tab_status};
@@ -20,10 +20,12 @@ use common_gui_rune::tokens::{
     TYPE_MONO,
 };
 use common_utils::string_utils::{display_line, format_bytes_to_string};
-use rune::{Align, Cx, El, ScrollSpec, Tx, col, row, spacer, text};
+use rune::{Align, Cx, El, GrowthSpec, ScrollSpec, Tx, col, row, spacer, text};
 use rune_kit::{Button, ButtonVariant, Checkbox, Kit, RadioGroup, RadioItem, ScrollBar};
 use shared_crypto::Direction;
+use std::borrow::Cow;
 use std::path::PathBuf;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// The Files tab's scroll viewport.
 pub const FILES_SCROLL_KEY: &str = "seal-files-scroll";
@@ -39,6 +41,8 @@ pub const ADD_FILES_KEY: &str = "seal-files-add";
 pub const CLEAR_LIST_KEY: &str = "seal-files-clear";
 /// The file list, which is the drop target.
 pub const FILE_LIST_KEY: &str = "seal-files-list";
+/// The column inside the file list that builds only the rows in view.
+pub const FILE_ROWS_KEY: &str = "seal-files-rows";
 /// The recipient list.
 pub const FILES_RECIPIENTS_KEY: &str = "seal-files-recipients";
 /// The Other key field.
@@ -74,17 +78,39 @@ pub fn remove_key(index: usize) -> String {
     format!("seal-files-remove-{index}")
 }
 
+/// The key of the path text of the row at `index`.
+pub fn file_path_key(index: usize) -> String {
+    format!("seal-files-path-{index}")
+}
+
+/// `text` with a zero-width space between each two graphemes, so a layout that breaks lines only
+/// between words can break it anywhere. A grapheme (a letter with its combining marks, an emoji
+/// sequence) is never split.
+pub(super) fn breakable(text: &str) -> String {
+    let mut graphemes = text.graphemes(true);
+    let mut out = String::with_capacity(text.len() * 2);
+    if let Some(first) = graphemes.next() {
+        out.push_str(first);
+    }
+    for grapheme in graphemes {
+        out.push('\u{200B}');
+        out.push_str(grapheme);
+    }
+    out
+}
+
 /// The Files tab.
 pub fn view(s: &AppState, k: &Kit, cx: &mut Cx<AppState>) -> El {
     let viewport = cx.layout_with(FILES_SCROLL_KEY, |rect| rect[3]);
-    let choice_kit = s.choice_kits.kit(s.theme.dark(cx.system_dark()));
+    let system_dark = cx.system_dark();
+    let choice_kit = s.choice_kits.kit(s.theme.dark(system_dark));
     let missing = s.missing(Tab::Files);
     let form = col()
         .w_full()
         .max_w(FORM_MAX_WIDTH)
         .grow(1.0)
         .child(mode_row(s, (k, choice_kit)))
-        .child(file_list(s, k))
+        .child(file_list(s, k, system_dark))
         .child(match s.files.mode {
             Direction::Encrypt => reveal(recipients(
                 s,
@@ -177,9 +203,9 @@ fn mode_row(s: &AppState, (k, choice_kit): (&Kit, &Kit)) -> El {
         .child(overwrite)
 }
 
-/// The Files header with its two actions over the list, which fills the space the form leaves
-/// and takes dropped files.
-fn file_list(s: &AppState, k: &Kit) -> El {
+/// The Files header with its two actions over the list, which fills the space the form leaves,
+/// takes dropped files, and builds only the rows in view, drawn with the kit for `system_dark`.
+fn file_list(s: &AppState, k: &Kit, system_dark: bool) -> El {
     let running = s.running_on(Tab::Files);
     let add = Button::new("Add files…")
         .variant(ButtonVariant::Ghost)
@@ -197,17 +223,22 @@ fn file_list(s: &AppState, k: &Kit) -> El {
         })
         .build(k)
         .key(CLEAR_LIST_KEY);
-    let rows = s
-        .files
-        .rows
-        .iter()
-        .enumerate()
-        .map(|(index, file)| file_row(k, index, file, (!running && !s.files.overwrite, !running)))
-        .collect();
+    let count = s.files.rows.len();
+    let column = col()
+        .key(FILE_ROWS_KEY)
+        .w_full()
+        .gap(SPACE_XS)
+        .growth(GrowthSpec::default())
+        .virtual_rows(
+            count,
+            CONTROL_HEIGHT,
+            |_: &AppState, index| Cow::Owned(file_row_key(index)),
+            move |s: &AppState, index| file_row_at(s, system_dark, index),
+        );
     let mut list = list_box(
         k,
         (FILE_LIST_KEY, "Files"),
-        rows,
+        ListRows::Virtual { count, column },
         "Drop files here, or use Add files…",
         ListHeight::Fill {
             min_rows: FILES_MIN_ROWS,
@@ -253,10 +284,27 @@ fn badge_for(status: &RowStatus) -> (&'static str, BadgeTone) {
     }
 }
 
-/// One file: its badge, the path (wrapping anywhere) with its message under it, the size, and
-/// Remove. The row is one node named by its status and file name, described by its message;
-/// Remove is named with the file name. `warn_skip` says whether a pending row whose output
-/// exists is marked as one the next run skips; `removable` enables Remove.
+/// The row at `index` of the file list, drawn with the kit for `system_dark`. An index past the
+/// rows gets an empty row of a row's height: the list asks for its rows by index after counting
+/// them, and a row removed in between leaves the last index with nothing to show.
+pub(super) fn file_row_at(s: &AppState, system_dark: bool, index: usize) -> El {
+    let Some(file) = s.files.rows.get(index) else {
+        return row().h(CONTROL_HEIGHT);
+    };
+    let running = s.running_on(Tab::Files);
+    file_row(
+        s.theme.kit(system_dark),
+        index,
+        file,
+        (!running && !s.files.overwrite, !running),
+    )
+}
+
+/// One file: its badge, the path on one line (cut in the middle when it does not fit, with the
+/// whole path as a tooltip) with its message under it, the size, and Remove. The row is one node
+/// named by its status and file name, described by its message; Remove is named with the file
+/// name. `warn_skip` says whether a pending row whose output exists is marked as one the next run
+/// skips; `removable` enables Remove.
 fn file_row(k: &Kit, index: usize, file: &FileRow, (warn_skip, removable): (bool, bool)) -> El {
     let (status, tone) = badge_for(&file.status);
     let path = display_line(file.path.display().to_string().chars());
@@ -282,10 +330,11 @@ fn file_row(k: &Kit, index: usize, file: &FileRow, (warn_skip, removable): (bool
         .build(k)
         .key(remove_key(index))
         .label(format!("Remove {name}"));
-    // Each text sits centred on the first line's control height and stays at the top when the
-    // path wraps.
+    // Each text sits centred on the path line's control height and stays at the top when the
+    // message under the path wraps.
     let mono_inset = (CONTROL_HEIGHT - TYPE_MONO.line_px()) / 2.0;
     let badge_inset = (CONTROL_HEIGHT - TYPE_CAPTION.line_px()) / 2.0;
+    let tooltip = breakable(&path);
     let mut main = col()
         .grow(1.0)
         .min_w(0.0)
@@ -293,9 +342,11 @@ fn file_row(k: &Kit, index: usize, file: &FileRow, (warn_skip, removable): (bool
         .pt(mono_inset)
         .child(
             text(path)
+                .key(file_path_key(index))
                 .font(TYPE_MONO)
                 .color(k.c.text_base)
-                .wrap_anywhere()
+                .truncate_middle()
+                .help_when_truncated(tooltip)
                 .a11y_hidden(),
         );
     let mut entry = row()

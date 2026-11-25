@@ -6,10 +6,12 @@ use crate::state::recipients::Picker;
 use crate::test_support::{Recording, recording_state, state_with_book};
 use crate::worker::{FileResult, JobEvent, JobOutcome, JobRequest};
 use common_gui_rune::test_harness::{
-    self, FRAME, a11y_node, answer_dialog, bottom, command, focus_is_inside, has_text, is_disabled,
-    press, rect, runtime_with_keys, settle,
+    self, FRAME, a11y_node, answer_dialog, bottom, command, focus_is_inside, focused_key, has_key,
+    has_text, is_disabled, press, rect, runtime_at, runtime_with_keys, settle, tooltip_of,
 };
-use rune::{FileDialogKind, Key, Runtime};
+use common_gui_rune::tokens::{CONTROL_HEIGHT, SPACE_XS};
+use rstest::rstest;
+use rune::{FileDialogKind, Key, KeyEvent, Mods, Runtime};
 use serde_json::Value;
 use shared_crypto::Direction;
 use std::path::PathBuf;
@@ -339,6 +341,197 @@ fn f14_one_dispatch_adds_the_rows_and_marks_their_existing_outputs() {
     ));
 }
 
+/// `count` paths of `folder/file-NNNN.txt`.
+fn batch(folder: &str, count: usize) -> Vec<PathBuf> {
+    (0..count)
+        .map(|n| PathBuf::from(format!("{folder}/file-{n:04}.txt")))
+        .collect()
+}
+
+/// How many file rows are built, out of however many the list holds.
+fn built_rows(rt: &Runtime<AppState>) -> usize {
+    rt.elements()
+        .iter()
+        .filter(|element| {
+            !element.exiting
+                && element
+                    .key
+                    .as_deref()
+                    .is_some_and(|key| key.starts_with("seal-files-row-"))
+        })
+        .count()
+}
+
+/// Scrolls the file list to its end, then settles.
+fn scroll_list_to_end(rt: &mut Runtime<AppState>) {
+    let viewport = format!("{FILE_LIST_KEY}-scroll");
+    test_harness::deliver(rt, move |_, tx| {
+        tx.scroll_to_bottom(viewport);
+        true
+    });
+}
+
+/// Presses Tab, a few frames apart, until focus is on the element keyed `key`; how many presses
+/// that took, or `None` when `limit` presses did not get there.
+fn tab_until(rt: &mut Runtime<AppState>, key: &str, limit: usize) -> Option<usize> {
+    (1..=limit).find(|_| {
+        rt.key(KeyEvent {
+            key: Key::Tab,
+            mods: Mods::default(),
+        });
+        for _ in 0..3 {
+            rt.frame(FRAME);
+        }
+        focused_key(rt).as_deref() == Some(key)
+    })
+}
+
+#[test]
+fn a_path_that_fits_shows_no_tooltip() {
+    let (mut rt, _) = files_window(&[], WINDOW_SIZE);
+    add_rows(&mut rt, &["a.txt"]);
+
+    let tooltip = tooltip_of(&mut rt, &file_path_key(0));
+
+    assert_eq!(tooltip, None);
+}
+
+#[test]
+fn a_long_path_takes_one_line_and_its_tooltip_is_the_whole_cleaned_path() {
+    let folders = "deep/".repeat(60);
+    let name = format!("{folders}invoice\u{202E}fdp\u{1E}x\u{1F}y.exe");
+    let (mut rt, _) = files_window(&[], WINDOW_SIZE);
+    add_rows(&mut rt, &[name.as_str()]);
+
+    let height = rect(&rt, &file_row_key(0))[3];
+    let tooltip =
+        tooltip_of(&mut rt, &file_path_key(0)).map(|(text, _)| text.replace('\u{200B}', ""));
+
+    assert!((height - CONTROL_HEIGHT).abs() < 0.5, "{height}");
+    assert_eq!(tooltip, Some(format!("{folders}invoice fdp x y.exe")));
+}
+
+#[rstest]
+#[case::one_long_name("x".repeat(300))]
+#[case::backslash_path(format!("C:\\{}\\file.txt", ["folder"; 40].join("\\")))]
+#[case::slash_path(format!("/{}/file.txt", ["folder"; 40].join("/")))]
+fn the_tooltip_of_a_long_path_of_any_shape_stays_inside_the_window(#[case] name: String) {
+    let (mut rt, _) = files_window(&[], WINDOW_MIN);
+    add_rows(&mut rt, &[name.as_str()]);
+
+    let [x, y, width, height] = tooltip_of(&mut rt, &file_path_key(0))
+        .map(|(_, at)| at)
+        .unwrap_or_else(|| panic!("no tooltip for {name}"));
+
+    assert!(x >= 0.0 && x + width <= WINDOW_MIN.0, "{x} + {width}");
+    assert!(y >= 0.0 && y + height <= WINDOW_MIN.1, "{y} + {height}");
+}
+
+#[rstest]
+#[case::letters("abc", "a\u{200B}b\u{200B}c")]
+#[case::one_letter("a", "a")]
+#[case::empty("", "")]
+#[case::combining_mark("e\u{301}x", "e\u{301}\u{200B}x")]
+#[case::emoji_sequence("\u{1F468}\u{200D}\u{1F469}a", "\u{1F468}\u{200D}\u{1F469}\u{200B}a")]
+fn breakable_puts_a_zero_width_space_between_graphemes(#[case] text: &str, #[case] expected: &str) {
+    assert_eq!(files_tab::breakable(text), expected);
+}
+
+#[test]
+fn dropping_two_thousand_files_builds_only_the_rows_around_the_view() {
+    let (mut rt, _) = files_window(&[], WINDOW_SIZE);
+    let names = batch("batch", 2_000);
+    let at = centre(&rt, FILE_LIST_KEY);
+
+    rt.drop_files(names, Some(at));
+    rt.frame(FRAME);
+    let first_frame = built_rows(&rt);
+    settle(&mut rt);
+    let settled = built_rows(&rt);
+
+    assert_eq!(rt.state.files.rows.len(), 2_000);
+    assert!(
+        first_frame < 200,
+        "{first_frame} rows built in the first frame"
+    );
+    assert!(settled < 200, "{settled} rows built once settled");
+}
+
+#[test]
+fn the_last_of_two_thousand_rows_shows_in_the_list_once_it_scrolls_to_the_end() {
+    let (mut rt, _) = files_window(&[], WINDOW_SIZE);
+    deliver(
+        &mut rt,
+        Input::Files(FilesInput::AddPaths(batch("batch", 2_000))),
+    );
+
+    scroll_list_to_end(&mut rt);
+    let last = file_row_key(1_999);
+
+    assert!(has_key(&rt, &last));
+    let [_, top, _, _] = rect(&rt, &last);
+    let [_, list_top, _, _] = rect(&rt, &format!("{FILE_LIST_KEY}-scroll"));
+    assert!(top >= list_top, "{top} above {list_top}");
+    assert!(
+        bottom(&rt, &last) <= bottom(&rt, &format!("{FILE_LIST_KEY}-scroll")) + 0.5,
+        "the last row is below the list"
+    );
+}
+
+#[test]
+fn remove_on_the_last_of_two_thousand_rows_removes_that_file() {
+    let (mut rt, _) = files_window(&[], WINDOW_SIZE);
+    deliver(
+        &mut rt,
+        Input::Files(FilesInput::AddPaths(batch("batch", 2_000))),
+    );
+    scroll_list_to_end(&mut rt);
+
+    press(&mut rt, &remove_key(1_999));
+
+    let paths = row_paths(&rt);
+    assert_eq!(paths.len(), 1_999);
+    assert_eq!(
+        paths.last().map(String::as_str),
+        Some("batch/file-1998.txt")
+    );
+}
+
+#[test]
+fn tab_from_the_first_remove_reaches_the_remove_of_the_last_row() {
+    let (mut rt, _) = files_window(&[], WINDOW_MIN);
+    deliver(
+        &mut rt,
+        Input::Files(FilesInput::AddPaths(batch("batch", 150))),
+    );
+    test_harness::deliver(&mut rt, |_, tx| {
+        tx.focus(remove_key(0), true);
+        true
+    });
+
+    let presses = tab_until(&mut rt, &remove_key(149), 400);
+
+    assert!(presses.is_some(), "focus stopped at {:?}", focused_key(&rt));
+}
+
+/// The row at index 0 of a list with no rows, on its own.
+fn row_past_the_end(s: &AppState, _: &mut Cx<AppState>) -> El {
+    col()
+        .w_full()
+        .child(files_tab::file_row_at(s, true, 0).key("past-the-end"))
+}
+
+#[test]
+fn a_row_index_past_the_rows_builds_an_empty_row_of_a_rows_height() {
+    let (state, _) = recording_state(state_with_book(&[]));
+
+    let rt = runtime_at(state, row_past_the_end, WINDOW_SIZE);
+
+    assert!((rect(&rt, "past-the-end")[3] - CONTROL_HEIGHT).abs() < 0.5);
+    assert!(!has_key(&rt, &remove_key(0)));
+    assert!(!has_key(&rt, &file_path_key(0)));
+}
+
 /// The median, 95th percentile, and slowest of `frames`.
 fn spread(mut frames: Vec<Duration>) -> String {
     frames.sort();
@@ -407,4 +600,71 @@ fn g9_a_large_batch_measured_frame_by_frame() {
             MEASURED_FILES
         );
     }
+}
+
+/// How long one frame takes.
+fn timed_frame(rt: &mut Runtime<AppState>) -> Duration {
+    let started = Instant::now();
+    rt.frame(FRAME);
+    started.elapsed()
+}
+
+/// G9 with every row cut: 2,000 paths of 149 characters at the minimum size. Times the frame
+/// after the drop, the first 200 files' progress and finish as the worker posts them, frames
+/// with nothing new, and a scroll pass of one list viewport per frame to the end. Run in a
+/// release build: `cargo test -p seal-gui --release --lib -- --ignored --nocapture g9`.
+#[test]
+#[ignore = "a release-build measurement, recorded in the PR"]
+fn g9_long_paths_at_the_minimum_size_measured_frame_by_frame() {
+    const MEASURED_FILES: usize = 200;
+    let folder = format!("srv{}", "/projects/archive/2026".repeat(6));
+    let names = batch(&folder, 2_000);
+    let (mut rt, _) = files_window(&["Alice"], WINDOW_MIN);
+    let at = centre(&rt, FILE_LIST_KEY);
+    let started = Instant::now();
+    rt.drop_files(names.clone(), Some(at));
+    let handled = started.elapsed();
+    let dropped = timed_frame(&mut rt);
+    let built = built_rows(&rt);
+    settle(&mut rt);
+    let alice = rt.state.book.entries()[0].id;
+    deliver(&mut rt, Input::Files(FilesInput::RecipientToggled(alice)));
+    deliver(&mut rt, Input::Files(FilesInput::StartPressed));
+
+    let mut busy = Vec::with_capacity(2 * MEASURED_FILES);
+    for path in names.into_iter().take(MEASURED_FILES) {
+        for event in [
+            JobEvent::FileProgress { path: path.clone() },
+            JobEvent::FileFinished {
+                path,
+                result: FileResult::Done(1),
+            },
+        ] {
+            rt.update_if(move |s, tx| dispatch(s, tx, Input::Job(event)));
+            busy.push(timed_frame(&mut rt));
+        }
+    }
+    let idle = (0..30).map(|_| timed_frame(&mut rt)).collect();
+    let [x, y, width, height] = rect(&rt, &format!("{FILE_LIST_KEY}-scroll"));
+    let steps = (2_000.0 * (CONTROL_HEIGHT + SPACE_XS) / height).ceil() as usize + 2;
+    let scroll = (0..steps)
+        .map(|_| {
+            rt.wheel(x + width / 2.0, y + height / 2.0, -height);
+            timed_frame(&mut rt)
+        })
+        .collect();
+
+    eprintln!(
+        "g9 2,000 rows of {} characters at {WINDOW_MIN:?}: the drop's handler {handled:?}, the \
+         frame after it {dropped:?} ({built} rows built); after an event {}; scrolling {}; \
+         idle {}",
+        folder.len() + "/file-0000.txt".len(),
+        spread(busy),
+        spread(scroll),
+        spread(idle)
+    );
+    assert!(
+        has_key(&rt, &file_row_key(1_999)),
+        "the scroll pass did not reach the end"
+    );
 }

@@ -187,6 +187,19 @@ pub fn press<S: 'static>(rt: &mut Runtime<S>, key: &str) {
     settle(rt);
 }
 
+/// The tooltip the element keyed `key` shows once the pointer has rested on its centre past the
+/// hover delay: its text and its box (`[x, y, width, height]`), or `None` when it shows none.
+///
+/// # Panics
+/// When nothing is keyed `key`.
+pub fn tooltip_of<S: 'static>(rt: &mut Runtime<S>, key: &str) -> Option<(String, [f32; 4])> {
+    let [x, y, width, height] = rect(rt, key);
+    rt.pointer_move(x + width / 2.0, y + height / 2.0);
+    rt.frame(FRAME);
+    rt.frame(rt.help_delay + FRAME);
+    rt.help_tooltip().map(|(text, at)| (text.to_owned(), at))
+}
+
 /// Whether an element keyed `key` is mounted.
 pub fn has_key<S: 'static>(rt: &Runtime<S>, key: &str) -> bool {
     rt.elements()

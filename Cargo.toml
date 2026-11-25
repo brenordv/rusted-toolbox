@@ -116,6 +116,7 @@ tokio-util = { version = "0.7.20", features = ["io"] }
 tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+unicode-segmentation = "1.13.3"
 url = "2.5.9"
 uuid = { version = "1.29.3", features = ["v4"] }
 walkdir = "2.5.1"

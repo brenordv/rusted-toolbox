@@ -60,24 +60,38 @@ pub enum ListHeight {
     Fill { min_rows: f32 },
 }
 
+/// The rows a [`list_box`] holds.
+pub enum ListRows {
+    /// Every row, built.
+    Built(Vec<El>),
+    /// `count` rows in `column`, a column that builds only the rows in view
+    /// (`El::virtual_rows`).
+    Virtual { count: usize, column: El },
+}
+
 /// A list box keyed `key`: a group named `label` holding `rows`, as tall as `height` says and
 /// scrolling past it; with no rows, `empty` centred in the box, which keeps its height.
 pub fn list_box(
     k: &Kit,
     (key, label): (&str, &str),
-    rows: Vec<El>,
+    rows: ListRows,
     empty: &str,
     height: ListHeight,
 ) -> El {
-    let body = if rows.is_empty() {
-        col()
+    let column = match rows {
+        ListRows::Built(rows) if rows.is_empty() => None,
+        ListRows::Built(rows) => Some(col().w_full().gap(SPACE_XS).children(rows)),
+        ListRows::Virtual { count: 0, .. } => None,
+        ListRows::Virtual { column, .. } => Some(column),
+    };
+    let body = match column {
+        None => col()
             .w_full()
             .grow(1.0)
             .min_h(0.0)
             .center()
-            .child(text(empty).font(TYPE_BODY).color(k.c.text_muted).wrap())
-    } else {
-        col()
+            .child(text(empty).font(TYPE_BODY).color(k.c.text_muted).wrap()),
+        Some(column) => col()
             .key(format!("{key}-scroll"))
             .w_full()
             .grow(1.0)
@@ -85,8 +99,8 @@ pub fn list_box(
             .scroll(ScrollSpec {
                 stick_bottom: false,
             })
-            .child(col().w_full().gap(SPACE_XS).children(rows))
-            .scroll_bar(k)
+            .child(column)
+            .scroll_bar(k),
     };
     let list = col()
         .key(key)

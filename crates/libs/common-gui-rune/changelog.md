@@ -5,6 +5,8 @@
   `tokens::DROP_FILL_ALPHA` (0.12). The kit's selection fill (alpha 0.3) drops muted, danger,
   and warning captions to about 3.2:1; on this fill the worst is 4.7:1 over Content, and the
   contrast test covers those captions and the accent edge around the box.
+- `test_harness::tooltip_of(rt, key)`: rests the pointer on an element past the hover delay and
+  returns the tooltip it shows, text and box.
 
 ## 1.2.1
 - `parts::action_row` holds the status in a row, so a status element that grows (eh-gui's Send

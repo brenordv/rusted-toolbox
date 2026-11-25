@@ -1,7 +1,7 @@
 //! The Recipients and Identity groups the Text and Files tabs share; each tab has its own keys
 //! and its own recipient choice in state.
 
-use super::parts::{ListHeight, list_box};
+use super::parts::{ListHeight, ListRows, list_box};
 use super::window_key;
 use super::{files_tab, text_tab};
 use crate::services::dispatch;
@@ -109,7 +109,7 @@ pub fn recipients(
         .child(list_box(
             k,
             (keys.recipients, "Recipients"),
-            entries,
+            ListRows::Built(entries),
             "No saved recipients yet. Add them in the Keys tab.",
             ListHeight::Rows(rows),
         ))

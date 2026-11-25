@@ -1,7 +1,7 @@
 //! The Keys tab: the recipient book with its add form, the key pair the user generates, what
 //! the log file is doing, and the action row with the status line.
 
-use super::parts::{ListHeight, list_box};
+use super::parts::{ListHeight, ListRows, list_box};
 use super::{standing_captions, tab_status, window_key};
 use crate::design::{BOOK_MIN_ROWS, FORM_MAX_WIDTH, LABEL_FIELD_WIDTH};
 use crate::services::dispatch;
@@ -201,7 +201,7 @@ fn book(s: &AppState, (k, confirm_kit): (&Kit, &Kit)) -> El {
         .child(list_box(
             k,
             (BOOK_KEY, "Recipient book"),
-            rows,
+            ListRows::Built(rows),
             "No saved recipients yet.",
             ListHeight::Fill {
                 min_rows: BOOK_MIN_ROWS,

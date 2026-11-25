@@ -23,6 +23,7 @@ rune-kit = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+unicode-segmentation = { workspace = true }
 
 [dev-dependencies]
 common-gui-rune = { workspace = true, features = ["test-harness"] }
