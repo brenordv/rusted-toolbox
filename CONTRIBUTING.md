@@ -26,7 +26,7 @@ The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
    - `crates/libs/common-utils-ext`: helpers that pull in heavier dependencies and that only some tools need (clipboard, GUID generation, regex sanitizing).
    - `crates/libs/common-cli`: the common CLI arg parser, header formatting, exit helpers, and basic logging used by all tools.
    - `crates/libs/common-file-utils`: file-system operations more specialized than the ones in `common-utils`.
-   - `crates/libs/common-gui-rune`: the Rune design system shared by the Rune tools (kits, tokens, motion roles, parts, the system appearance, a window watch, and headless test helpers behind its `test-harness` feature).
+   - `crates/libs/common-gui-rune`: the Rune design system shared by the Rune tools (kits, tokens, motion roles, parts, the system appearance, a window watch, and headless test helpers behind its `test-harness` feature). Its [`DESIGN.md`](crates/libs/common-gui-rune/DESIGN.md) holds the rules every windowed tool follows; a new GUI starts there.
    - `crates/libs/common-serialization-utils`: loads serialized data (JSON) from files into typed objects and saves them back.
    - `crates/libs/common-audio`: decodes a sound (WAV, MP3, FLAC, Ogg Vorbis) and plays it on the default output device. On Linux it needs the ALSA development files (`libasound2-dev`) to build.
    - `crates/libs/cli-signal-monitor`: watches for Ctrl+C and runs the tool's graceful-shutdown path.

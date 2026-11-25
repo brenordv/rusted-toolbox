@@ -7,6 +7,8 @@
   contrast test covers those captions and the accent edge around the box.
 - `test_harness::tooltip_of(rt, key)`: rests the pointer on an element past the hover delay and
   returns the tooltip it shows, text and box.
+- `DESIGN.md`: the repo's GUI design system, the rules every windowed tool follows, with a
+  table of the parts that still live in one app. The readme and CONTRIBUTING.md link it.
 
 ## 1.2.1
 - `parts::action_row` holds the status in a row, so a status element that grows (eh-gui's Send

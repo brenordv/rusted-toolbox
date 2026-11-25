@@ -4,15 +4,20 @@ The tool-neutral part of the workspace's Rune design system. A Rune tool in this
 its windows from this crate and rune-kit, and keeps only its own sizes and parts in its own
 design module. A windowed tool boots logging with `common-cli`'s `gui_boot::boot_gui`.
 
+The rules the design system sets (window shapes, color, type, motion, words, accessibility, how
+an app is built and tested, and which parts still live in one app) are in
+[DESIGN.md](DESIGN.md). A new GUI starts there.
+
 Modules:
 
 - the crate root: `Ds` (the dark and light kits with the shared overrides: the `Submit` blue,
   light muted text, the accent focus rings), `Surface` and `surface` (the window, content, and
-  raised levels in either appearance), and `Theme` (the kits plus the appearance a window was
-  told: `kit(cx.system_dark())`, `set(dark)`).
+  raised levels in either appearance), `drop_fill` (a drop target's fill while a file drag
+  hovers it), and `Theme` (the kits plus the appearance a window was told:
+  `kit(cx.system_dark())`, `set(dark)`).
 - `tokens`: `rgb`, the palette seeds, the spacing scale (`SPACE_XS` 4 through `SPACE_XXL` 32),
   the radii, the nine type roles, `CONTROL_HEIGHT`, `HAIRLINE`, `FOCUS_RING_WIDTH`,
-  `REVEAL_OFFSET`.
+  `DROP_FILL_ALPHA`, `REVEAL_OFFSET`.
 - `motion`: the roles `FEEDBACK`, `CONTROL`, and `CONTROL_EXIT`, all critically damped, and
   `CONTROL_PAIR` for presence transitions.
 - `keys`: `is_chord` (is this key the chord `mod+enter`?), `is_newline` (Return, with or
@@ -82,7 +87,7 @@ The `test-harness` feature adds two modules for tests:
   (`runtime_at(state, view, size)`, `runtime_with_keys`, `settle`, `deliver`, `press`,
   `press_key`, `command`, `type_into`, `element`, `rect`, `bottom`, `has_key`, `has_text`,
   `text_visible`, `focused_key`, `focus_is_inside`, `label_of`, `is_disabled`, `a11y_nodes`,
-  `a11y_node`, `use_memory_clipboard`, `clipboard_text`, `answer_dialog`).
+  `a11y_node`, `use_memory_clipboard`, `clipboard_text`, `answer_dialog`, `tooltip_of`).
 - `contrast`: WCAG ratio helpers and the `Contract` collector for a contrast-contract test.
 
 A consumer lists the crate again under `[dev-dependencies]` with the feature on, so a plain
