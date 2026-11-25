@@ -78,8 +78,8 @@ saved until the file is moved or fixed.
 File logging is on by default, because a window has no visible terminal. The
 log holds when each job starts and ends, file paths, and failure text; never
 the text being sealed or unsealed, a key, or what was copied. The default
-level is `info`. The Keys tab's About group shows the folder: `.seal-gui/logs/`
-in your home folder.
+level is `info`. The Keys tab's About group shows the folder:
+`.rusted-toolbox/seal-gui/logs/` in your home folder.
 
 The shared logging flags still apply:
 

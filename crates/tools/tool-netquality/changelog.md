@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/netquality/logs` (they went to
+  `~/.netquality/logs`). The old folder is not moved, since another program may use that
+  name; delete it if it holds only netquality's logs.
+
 ## 2.2.0
 - Internal update making `BotToken` use `common_utils::string_utils::SecretString` instead of `String`.
 

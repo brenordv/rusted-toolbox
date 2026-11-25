@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/b64/logs` (they went to
+  `~/.b64/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only b64's logs.
+
 ## 2.0.2
 - Moved the internal error model from the crate-local `AppError` struct to `anyhow`, adopting the
   shared `common_cli::broken_pipe::BrokenPipe` marker used by the sibling stream tools. Decode

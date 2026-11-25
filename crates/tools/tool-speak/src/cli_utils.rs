@@ -9,7 +9,7 @@ use common_cli::tool_log_level::ToolLogLevel;
 /// Sends the text to the server set on the first run and plays the audio it answers with.
 /// The text comes from TEXT, or from stdin when TEXT is absent and stdin is piped. speak
 /// returns when the audio ends. The server address is asked on the first run in a terminal
-/// and kept in ~/.rusted-toolbox/tool-speak/config.json; no flag sets it. With --gui, speak
+/// and kept in ~/.rusted-toolbox/speak/config.json; no flag sets it. With --gui, speak
 /// opens a window instead, to try a text and to change the settings.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about)]

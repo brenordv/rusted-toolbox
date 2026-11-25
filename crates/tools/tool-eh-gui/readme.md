@@ -376,8 +376,8 @@ works). When no window can be created at all, eh-gui logs why and exits with cod
 ## Logging and diagnosing
 
 eh-gui logs to a file by default, at info, because a window has no visible console. The file is
-`~/.eh-gui/logs/eh-gui.log`; the connection pill's popover shows the exact path, or why file
-logging is unavailable. `RUST_LOG` overrides the level (`RUST_LOG=warn` writes a sparse file),
+`~/.rusted-toolbox/eh-gui/logs/eh-gui.log`; the connection pill's popover shows the exact
+path, or why file logging is unavailable. `RUST_LOG` overrides the level (`RUST_LOG=warn` writes a sparse file),
 and `--log-level disabled` turns logging off. eh-gui's own lines never hold a property or a
 correlation id, but the SDK's trace level (`RUST_LOG=azure_messaging_eventhubs=trace`) writes
 every received message's AMQP properties to the file, correlation and message ids included;

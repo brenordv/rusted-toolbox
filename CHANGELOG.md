@@ -38,6 +38,16 @@
   event takes under 1 ms (it took 80 ms) and a frame while scrolling about 1.5 ms. Each row
   shows its path on one line, cut in the middle when it does not fit, with the whole path in a
   tooltip. Adding files checks for duplicates against a set, not row by row.
+- Tools keep their data under `~/.rusted-toolbox/<tool>`. `common-utils` 3.0.0's
+  `get_app_folder` returns `~/.rusted-toolbox/<name>` (it returned `~/.<name>`), so every
+  tool's log files go to `~/.rusted-toolbox/<tool>/logs`; old log folders are left where they
+  are. Every tool gets a minor bump for it (seal-gui stays at 2.0.0). `speak` 2.0.0 keeps its
+  settings in `~/.rusted-toolbox/speak` and moves them there from
+  `~/.rusted-toolbox/tool-speak` on its first start. `common-file-utils` 2.4.0 gains
+  `adoption::adopt`, which moves a tool's data from its old default place once (a hard link or
+  a rename, never a copy, never over existing data, never a symbolic link) and reports what it
+  did. Workspace dependency added: `same-file` 1.0.6, already in the tree through `walkdir`.
+  The root readme has a "Where tools keep their data" section.
 
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system

@@ -175,6 +175,31 @@ otherwise, stdout carries only data and diagnostics go to stderr, so chaining th
 ### QR Code
 ![QR Code Demo](https://github.com/brenordv/rusted-toolbox/raw/refs/heads/master/.demos/qrcode-demo-0001.mp4)
 
+## Where tools keep their data
+Every tool keeps what it saves in a folder named after it under `~/.rusted-toolbox` in your home
+folder: `~/.rusted-toolbox/<tool>` (`%USERPROFILE%\.rusted-toolbox\<tool>` on Windows). On Linux
+and macOS the tool folders are created readable by you only.
+
+| What | Where | To put it somewhere else |
+|---|---|---|
+| Log files: with `--log-to-file`, and always for alert, eh-gui, seal-gui, and `speak --gui` | `~/.rusted-toolbox/<tool>/logs` (with no home folder, `.rusted-toolbox/<tool>/logs` in the current folder) | nothing |
+| speak's settings | `~/.rusted-toolbox/speak/config.json` | nothing, on purpose |
+
+Older versions kept these elsewhere:
+
+- Log folders were `~/.<tool>/logs`. They are not moved: with names like `~/.cat` or `~/.ts`, the
+  folder may belong to another program. Delete the ones that hold only this toolbox's logs.
+- speak's settings were in `~/.rusted-toolbox/tool-speak`. speak moves them to its new folder on
+  its first start and logs a warning naming both places; the empty `tool-speak` folder can be
+  deleted.
+
+When data cannot be moved (it is on another drive, the old place is a symbolic link, another
+program has the file open), the tool keeps using the old place and warns on every start until you
+move it there yourself. When both places hold data, the tool uses the new one and warns on every
+start: copy what you need from the old one, then delete it. On a ReFS volume Windows can give two
+different files the same identity, which makes a copy in the old place look like the file that
+moved and gets it removed; back up data kept on ReFS before upgrading.
+
 ## Installation
 ### Building all tools locally
 Considering you have Rust installed, you can build all tools by running:

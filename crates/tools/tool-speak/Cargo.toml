@@ -1,6 +1,6 @@
 [package]
 name = "speak"
-version = "1.2.1"
+version = "2.0.0"
 description = "Sends text to a text-to-speech server and plays the audio it answers with, from the command line or a window."
 edition.workspace = true
 authors.workspace = true
@@ -11,6 +11,7 @@ license.workspace = true
 # Internal
 common-audio = { workspace = true }
 common-cli = { workspace = true }
+common-file-utils = { workspace = true }
 common-gui-rune = { workspace = true }
 common-serialization-utils = { workspace = true }
 common-utils = { workspace = true }

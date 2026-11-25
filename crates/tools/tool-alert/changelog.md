@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+- Log files go to `~/.rusted-toolbox/alert/logs` (they went to `~/.alert/logs`). The old
+  folder is not moved, since another program may use that name; delete it if it holds only
+  alert's logs.
+
 ## 1.0.2
 - Both windows take their theme, the Body's line-break key, the window watch, and the failure
   log line from `common-gui-rune`, and logging boots through `common-cli`'s GUI boot, which

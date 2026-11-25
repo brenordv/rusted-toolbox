@@ -1,6 +1,6 @@
 [package]
 name = "https"
-version = "2.7.0"
+version = "2.8.0"
 description = "Lightweight async HTTP server for quickly serving static files with directory browsing, MIME detection, logging, and secure development-focused features."
 edition.workspace = true
 authors.workspace = true

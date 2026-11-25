@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/mqtt/logs` (they went to
+  `~/.mqtt/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only mqtt's logs.
+
 ## 2.3.1
 - Broker credentials travel as a typed pair (`MqttCredentials`) built during argument
   resolution, so `create_connection_options` no longer unwraps `--username`/`--password`

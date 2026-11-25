@@ -82,8 +82,9 @@ presses Test; Return in Body types a new line.
 
 ## Logs
 
-alert writes its log to a file by default, at `info`: `~/.alert/logs/alert.log`. An alert
-started in the background has no terminal anyone watches, so the file is where "shown"
+alert writes its log to a file by default, at `info`:
+`~/.rusted-toolbox/alert/logs/alert.log`. An alert started in the background has no
+terminal anyone watches, so the file is where "shown"
 (whether it had a title and a sound, and how long the message was) and "closed" (after how
 long, and by the button, a key, or the window's own close control) land. The message
 itself is never logged. The same lines go to stderr; `--log-level warn` keeps the info

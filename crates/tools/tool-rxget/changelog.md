@@ -1,3 +1,8 @@
+# 1.2.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/rxget/logs` (they went to
+  `~/.rxget/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only rxget's logs.
+
 # 1.1.0
 - Stdin input via the `-` target convention: the exact argument `-` reads standard input at
   its position in the target order, mixing freely with files and patterns. It labels as

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/whisper/logs` (they went to
+  `~/.whisper/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only whisper's logs.
+
 ## 2.0.3
 - Moved to `rsa` 0.10. Its arithmetic is constant-time and decryption is blinded, which closes the Marvin timing attack ([RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071.html) lists 0.10.0 as patched). Messages still use PKCS#1 v1.5 padding, so 2.0.x peers can still talk to this version.
 - A corrupted incoming frame can now show up as a line of garbled text instead of an `incoming message dropped` notice. `rsa` 0.10 answers bad padding with synthetic bytes rather than an error (implicit rejection), and whisper drops the frame only when those bytes aren't valid UTF-8.

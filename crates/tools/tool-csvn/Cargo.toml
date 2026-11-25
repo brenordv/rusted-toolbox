@@ -1,6 +1,6 @@
 [package]
 name = "csvn"
-version = "2.0.2"
+version = "2.1.0"
 description = "CLI tool that fills missing CSV fields with defaults and outputs a `_normalized` file for consistent, error-free downstream processing."
 edition.workspace = true
 authors.workspace = true

@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.3.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/lookup/logs` (they went to
+  `~/.lookup/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only lookup's logs.
+
 ## 3.2.2
 - Test suites use the shared `common_cli::test_writers` doubles instead of the two private
   closed-pipe copies (one per lookup app); behavior pinned by the tests is unchanged.

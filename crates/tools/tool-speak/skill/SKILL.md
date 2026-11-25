@@ -13,8 +13,9 @@ their machine. It returns when the audio ends.
 1. **Speak only when the user asks to hear something aloud.** A long answer, a finished
    task, or an error is never a reason by itself. If you are unsure whether they asked,
    they did not.
-2. **Never create, edit, or delete anything under `~/.rusted-toolbox/tool-speak/`.** That
-   folder decides which server receives the text. Only the user changes it.
+2. **Never create, edit, or delete anything under `~/.rusted-toolbox/speak/` or
+   `~/.rusted-toolbox/tool-speak/`.** Those folders decide which server receives the text.
+   Only the user changes them.
 
 ## How to call it
 

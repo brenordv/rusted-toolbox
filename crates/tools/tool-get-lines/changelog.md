@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/get-lines/logs` (they went to
+  `~/.get-lines/logs`). The old folder is not moved, since another program may use that
+  name; delete it if it holds only get-lines's logs.
+
 ## 2.0.3
 - Test suites use the shared `common_cli::test_writers` doubles instead of a private
   failing-writer copy; behavior pinned by the tests is unchanged.

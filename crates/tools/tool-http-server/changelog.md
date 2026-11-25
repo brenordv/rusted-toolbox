@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/https/logs` (they went to
+  `~/.https/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only https's logs.
+
 ## 2.7.0
 - The selection form's header row carries a select-all checkbox: ticking it selects every entry
   in the listed directory, unticking clears them, and it tracks manual changes (indeterminate

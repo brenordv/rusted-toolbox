@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/eh/logs` (they went to
+  `~/.eh/logs`). The old `logs` folder is not moved; delete it once you no longer need its
+  logs, and leave the rest of `~/.eh` (the profiles) where it is.
+
 ## 1.0.0
 - Initial release, replacing `eh-read` and `eh-export` 1.1.0 with one binary: `eh read`
   captures events into a redb archive per data folder, `eh export` writes archived events to

@@ -70,9 +70,10 @@ pub struct AppLogger {
 impl AppLogger {
     /// Builds a logger for `app_name` from the given level and output flags.
     ///
-    /// The log file folder is the tool's `logs` subfolder under the user's home
-    /// (`~/.<app_name>/logs`). `app_name` must be a plain name with no path
-    /// separators; every caller passes its own `env!("CARGO_PKG_NAME")`.
+    /// The log file folder is the `logs` subfolder of the tool's folder in the
+    /// toolbox home (`~/.rusted-toolbox/<app_name>/logs`). `app_name` must be a
+    /// plain name with no path separators; every caller passes its own
+    /// `env!("CARGO_PKG_NAME")`.
     pub fn new(
         app_name: &str,
         log_level: ToolLogLevel,
@@ -470,7 +471,7 @@ mod tests {
 
         let path = app_logger.resolve_log_filename();
 
-        assert!(path.parent().unwrap().ends_with(".b64/logs"));
+        assert!(path.parent().unwrap().ends_with(".rusted-toolbox/b64/logs"));
     }
 
     #[test]

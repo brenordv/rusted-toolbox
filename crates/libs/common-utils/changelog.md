@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0
+- Breaking: `get_app_folder` returns `~/.rusted-toolbox/<app_name>` where it returned
+  `~/.<app_name>`, and `<current folder>/.rusted-toolbox/<app_name>` when there is no home
+  folder. `get_app_sub_folder` follows it.
+- Added `TOOLBOX_HOME_FOLDER`, `toolbox_home` and `toolbox_home_with` (the toolbox home,
+  `<home>/.rusted-toolbox`, or `None` with no absolute home folder), and `app_folder_in`, the
+  pure form of `get_app_folder`.
+
 ## 2.4.0
 - Added `string_utils::display_lines`: text of several lines with each line cleaned as `display_line` does and the line breaks kept. Moved from eh-gui.
 

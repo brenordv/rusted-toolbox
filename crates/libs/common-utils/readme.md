@@ -6,6 +6,8 @@ dependencies by design; only `anyhow` and `chrono` are used.
 Modules:
 
 - `datetime_utc_utils`: filename-safe datetime formatting and elapsed-time helpers.
-- `file_system`: home and application folder paths, dated filenames, directory creation.
+- `file_system`: home and application folder paths, dated filenames, directory creation. Every
+  tool's folder is in the toolbox home, `~/.rusted-toolbox/<package>` (`toolbox_home`,
+  `get_app_folder`).
 - `string_utils`: filename sanitization, terminal-display escaping, one-line display of outside text and the 140-character failure preview, duration formatting, and byte-size formatting.
 - `constants`: shared size and formatting constants.

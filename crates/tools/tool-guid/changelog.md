@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/guid/logs` (they went to
+  `~/.guid/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only guid's logs.
+
 ## 2.0.4
 - The single-guid print goes through `common_cli::broken_pipe`: `guid | true` exits 0 with a
   debug note instead of panicking with 101 (the bulk `-m` path already behaved this way). A

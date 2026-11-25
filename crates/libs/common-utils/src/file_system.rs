@@ -17,28 +17,55 @@ pub fn get_current_dir() -> PathBuf {
     env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-/// Returns the application's data folder: a dotfile directory named after
-/// `app_name` under the user's home, falling back to the current directory when
-/// the home cannot be resolved.
+/// The name of the folder under the user's home that holds every tool's own folder.
+pub const TOOLBOX_HOME_FOLDER: &str = ".rusted-toolbox";
+
+/// The toolbox home for `home`: `<home>/.rusted-toolbox`, or `None` when `home` is `None`,
+/// empty, or not an absolute path.
+pub fn toolbox_home_with(home: Option<PathBuf>) -> Option<PathBuf> {
+    home.filter(|home| home.is_absolute())
+        .map(|home| home.join(TOOLBOX_HOME_FOLDER))
+}
+
+/// The toolbox home, `<home>/.rusted-toolbox`, for the current user's home folder; `None` when
+/// the home folder cannot be determined or is not an absolute path.
+///
+/// A tool's saved data lives under this folder only: with `None`, the data has no default
+/// place.
+pub fn toolbox_home() -> Option<PathBuf> {
+    toolbox_home_with(get_user_home_folder())
+}
+
+/// A tool's folder: `<root>/<app_name>`, or `<cwd>/.rusted-toolbox/<app_name>` when there is
+/// no `root`.
+///
+/// `app_name` carries the same no-separator contract as [`get_app_folder`].
+pub fn app_folder_in(root: Option<&Path>, cwd: &Path, app_name: &str) -> PathBuf {
+    match root {
+        Some(root) => root.join(app_name),
+        None => cwd.join(TOOLBOX_HOME_FOLDER).join(app_name),
+    }
+}
+
+/// Returns the application's folder: `app_name`'s folder in the toolbox home
+/// (`~/.rusted-toolbox/<app_name>`), or in a `.rusted-toolbox` folder in the current
+/// directory when the home folder cannot be determined. Log files use it; a tool's saved data
+/// takes its place from [`toolbox_home`] instead, which has no current-directory fallback.
 ///
 /// `app_name` must be a plain name with no path separators: a package name
 /// (`env!("CARGO_PKG_NAME")` cannot contain separators) or another fixed name
 /// from the code, never text from outside the program. The value is joined
-/// under the user's home and reaches `create_dir_all`, so this contract is the
+/// under the toolbox home and reaches `create_dir_all`, so this contract is the
 /// guard against path traversal.
 ///
 /// Note that this is the app DATA folder, not where the executable is (necessarily) located.
 pub fn get_app_folder(app_name: &str) -> PathBuf {
-    let app_folder = format!(".{app_name}");
-    match get_user_home_folder() {
-        Some(user_home) => user_home.join(app_folder),
-        None => get_current_dir().join(app_folder),
-    }
+    app_folder_in(toolbox_home().as_deref(), &get_current_dir(), app_name)
 }
 
 /// Returns a named subfolder within the application folder for `app_name`.
 ///
-/// `app_name` carries the same no-separator contract as [` get_app_folder `],
+/// `app_name` carries the same no-separator contract as [`get_app_folder`],
 /// and `sub_folder` is a fixed name from the code as well.
 pub fn get_app_sub_folder(app_name: &str, sub_folder: &str) -> PathBuf {
     get_app_folder(app_name).join(sub_folder)
@@ -150,15 +177,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn app_folder_ends_with_dotted_app_name() {
-        let folder = get_app_folder("b64");
-        assert!(folder.ends_with(".b64"));
+    fn toolbox_home_with_an_absolute_home_is_the_hidden_folder_in_it() {
+        let home = tempfile::tempdir().unwrap();
+
+        let root = toolbox_home_with(Some(home.path().to_path_buf()));
+
+        assert_eq!(root, Some(home.path().join(".rusted-toolbox")));
+    }
+
+    #[rstest::rstest]
+    #[case::no_home(None)]
+    #[case::empty_home(Some(PathBuf::new()))]
+    #[case::relative_home(Some(PathBuf::from("relative/home")))]
+    fn toolbox_home_with_no_usable_home_is_none(#[case] home: Option<PathBuf>) {
+        assert_eq!(toolbox_home_with(home), None);
+    }
+
+    #[test]
+    fn app_folder_in_a_root_is_the_app_name_under_it() {
+        let root = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+
+        let folder = app_folder_in(Some(root.path()), cwd.path(), "b64");
+
+        assert_eq!(folder, root.path().join("b64"));
+    }
+
+    #[test]
+    fn app_folder_in_with_no_root_is_the_toolbox_folder_in_the_current_folder() {
+        let cwd = tempfile::tempdir().unwrap();
+
+        let folder = app_folder_in(None, cwd.path(), "b64");
+
+        assert_eq!(folder, cwd.path().join(".rusted-toolbox").join("b64"));
     }
 
     #[test]
     fn app_sub_folder_appends_sub_folder_component() {
         let folder = get_app_sub_folder("b64", "logs");
-        assert!(folder.ends_with(".b64/logs"));
+        assert!(folder.ends_with(".rusted-toolbox/b64/logs"));
     }
 
     #[test]

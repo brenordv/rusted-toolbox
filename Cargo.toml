@@ -103,6 +103,9 @@ rune = { git = "https://github.com/brenordv/rune", rev = "6cf05a0ee0f445c25a33ce
 ] }
 rune-kit = { git = "https://github.com/brenordv/rune", rev = "6cf05a0ee0f445c25a33ceeede066b78bd73ef6a" }
 rusqlite = { version = "0.43.0", features = ["bundled"] }
+# File identity (device and inode, or volume serial and file index) for moving a tool's data
+# from its old place (`common-file-utils`'s `adoption`); already in the tree through walkdir.
+same-file = "1.0.6"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 # The decoder behind warp's query filter; https parses the raw query string

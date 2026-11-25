@@ -1,6 +1,8 @@
 # Changelog
 
 ## 2.0.0
+- Log files go to `~/.rusted-toolbox/seal-gui/logs` (they went to `~/.seal-gui/logs`). The
+  old folder is not moved; delete it once you no longer need its logs.
 - seal-gui runs on Rune instead of egui and eframe; `common-gui` and `rfd` are no longer
   dependencies. The window keeps its title, size (980 x 720), and settings file; its smallest
   size is 760 x 680, the Text tab at rest with nothing to scroll.

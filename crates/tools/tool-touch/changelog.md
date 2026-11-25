@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/touch/logs` (they went to
+  `~/.touch/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only touch's logs.
+
 ## 2.2.1
 - On Windows, touch can now update a read-only file's timestamps. It used to fail with an access-denied error because the file was opened for writing first; the timestamps are now set with attribute-only access.
 - On Windows, a `-d` or `-t` date before 1601-01-01 (where Windows file time starts) now exits with an `out of range` error instead of crashing.

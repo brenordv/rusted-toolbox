@@ -6,6 +6,9 @@
   pure), boots at `level` unless `--log-level` says otherwise, installs a panic hook that writes
   one `error!` with the thread, the location, and the message (`PanicReport`) before handing the
   panic to the hook installed before it, and returns the `FileLogging` the boot reported.
+- Log files go to `~/.rusted-toolbox/<tool>/logs` (they went to `~/.<tool>/logs`), through
+  `common-utils` 3.0.0's `get_app_folder`; the folders it creates are owner-only on Unix as
+  before.
 
 ## 1.8.0
 - `AppLogger::init` returns `FileLogging`: `Off` (no file layer asked for, or logging off),

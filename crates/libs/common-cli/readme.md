@@ -33,7 +33,7 @@ per-item contracts live in this crate's rustdoc.
   is the weakest layer: an explicit `--log-level` beats it, and `RUST_LOG`
   beats both (with the same `disabled` exception).
 - `--log-to-file` adds an append-mode file layer under the tool's `logs`
-  subfolder in the user's home; `--rotate-log-file-by-day` puts the date in the
-  filename. On Unix the logs folder is created 0o700 and the file is kept 0o600
+  subfolder in the toolbox home (`~/.rusted-toolbox/<tool>/logs`);
+  `--rotate-log-file-by-day` puts the date in the filename. On Unix the logs folder is created 0o700 and the file is kept 0o600
   (a pre-existing wide file is tightened on open); on Windows the file inherits
   the user profile's ACL.

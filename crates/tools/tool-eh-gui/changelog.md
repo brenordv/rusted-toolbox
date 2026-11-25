@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0
+- Log files go to `~/.rusted-toolbox/eh-gui/logs` (they went to `~/.eh-gui/logs`). The old
+  folder is not moved; delete it once you no longer need its logs.
+
 ## 1.0.5
 - `mod+1`, `mod+2`, and `mod+3` pick a section on a fresh press only: holding the chord no
   longer flips sections as the key repeats.

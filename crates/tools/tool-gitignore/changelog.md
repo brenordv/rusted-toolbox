@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/gitignore/logs` (they went to
+  `~/.gitignore/logs`). The old folder is not moved, since another program may use that
+  name; delete it if it holds only gitignore's logs.
+
 ## 2.1.2
 - The detection walk no longer descends into ignorable folders (`target/`, `node_modules/`,
   `.venv/`, the IDE and AI agent state dirs, ...). The folders themselves still surface as
