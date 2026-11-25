@@ -1,6 +1,11 @@
 # Changelog
 
-## 1.1.0
+## 2.0.0
+- The Profile picker reads the workspace at `~/.rusted-toolbox/eh/profiles` (it was
+  `~/.eh/profiles`), the one `eh` 2.0.0 uses. On start eh-gui moves the old `profiles` folder
+  there in one rename and logs a warning naming both folders; when it cannot, the old folder
+  stays the workspace and every start warns. `EH_WORKSPACE` still wins and blocks the move.
+  Upgrade eh and eh-gui together: an older eh keeps using `~/.eh/profiles`.
 - Log files go to `~/.rusted-toolbox/eh-gui/logs` (they went to `~/.eh-gui/logs`). The old
   folder is not moved; delete it once you no longer need its logs.
 

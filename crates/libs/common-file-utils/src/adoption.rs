@@ -19,6 +19,11 @@ pub enum Shape {
     File,
     /// A folder and everything in it, moved by one rename.
     Folder,
+    /// A database file, which its program keeps open while it runs, with journal files named
+    /// after it. Moved like a [`Shape::File`], but while its old name cannot be removed the old
+    /// name stays in use, since the program may hold it open there: one database opened under
+    /// two names can be corrupted.
+    Database,
 }
 
 /// Why data stayed in its old place.
@@ -28,8 +33,10 @@ pub enum KeptReason {
     SymbolicLink,
     /// A step of the move failed: the new path's folder could not be created, the data could
     /// not be linked or renamed there (another filesystem, a file system with no hard links),
-    /// or a folder found under two names could not lose its old one.
+    /// or a database or a folder found under two names could not lose its old one.
     Failed(io::Error),
+    /// The data looked in use, so nothing was moved or removed: the text says what showed it.
+    InUse(String),
 }
 
 /// What [`adopt`] found and did.
@@ -82,6 +89,18 @@ impl Adoption {
         }
     }
 
+    /// Whether there is nothing to tell: no data at either place, or the data already at the
+    /// new path. [`Adoption::report`] logs nothing for these.
+    pub fn is_quiet(&self) -> bool {
+        match self {
+            Adoption::Nothing | Adoption::AlreadyThere => true,
+            Adoption::Moved { .. }
+            | Adoption::BothPresent { .. }
+            | Adoption::KeptLegacy { .. }
+            | Adoption::OldNameLeft { .. } => false,
+        }
+    }
+
     /// Logs the outcome at `warn`, naming `data` (what the data is, such as "speak's
     /// settings") and both paths: a move, data found in both places, and data kept in the old
     /// place, each with what to do about it. [`Adoption::Nothing`] and
@@ -93,7 +112,7 @@ impl Adoption {
                 data,
                 old = %from.display(),
                 new = %target.display(),
-                "moved to the toolbox folder; the old folder can be deleted once it is empty"
+                "moved to the toolbox folder"
             ),
             Adoption::BothPresent { legacy } => warn!(
                 data,
@@ -123,6 +142,17 @@ impl Adoption {
                 "could not be moved, so the old place stays in use; move it there by hand to \
                  stop this message"
             ),
+            Adoption::KeptLegacy {
+                legacy,
+                reason: KeptReason::InUse(detail),
+            } => warn!(
+                data,
+                old = %legacy.display(),
+                new = %target.display(),
+                in_use = %detail,
+                "looks in use, so the old place stays in use; stop every program using it, then \
+                 start this one again"
+            ),
             Adoption::OldNameLeft { legacy, error } => warn!(
                 data,
                 old = %legacy.display(),
@@ -142,7 +172,8 @@ impl Adoption {
 ///
 /// - Only `target` present: [`Adoption::AlreadyThere`]. Neither: [`Adoption::Nothing`].
 /// - Only `legacy` present: `target`'s folder is created owner-only, then a [`Shape::File`]
-///   is hard-linked at `target` and its old name removed, and a [`Shape::Folder`] is renamed.
+///   or a [`Shape::Database`] is hard-linked at `target` and its old name removed, and a
+///   [`Shape::Folder`] is renamed.
 ///   A hard link never replaces an existing `target`, and nothing is ever copied, so data on
 ///   another filesystem stays where it is. A `legacy` that is a symbolic link is not moved.
 /// - Both present: when either is a symbolic link, the same file behind both is
@@ -156,15 +187,15 @@ impl Adoption {
 ///   absent the data stays at `legacy` ([`Adoption::KeptLegacy`]).
 /// - When the old name of one file under two names cannot be removed, `legacy` is looked at
 ///   once more. Gone (a rival removed it) is [`Adoption::AlreadyThere`]. Still there, a
-///   [`Shape::File`] is used at `target` ([`Adoption::OldNameLeft`]) and a [`Shape::Folder`]
-///   stays at `legacy` ([`Adoption::KeptLegacy`]).
+///   [`Shape::File`] is used at `target` ([`Adoption::OldNameLeft`]), and a
+///   [`Shape::Database`] or a [`Shape::Folder`] stays at `legacy` ([`Adoption::KeptLegacy`]).
 ///
 /// Logs nothing: it can run before logging starts. Pass the result's
 /// [`report`](Adoption::report) once logging is up.
 #[must_use]
 pub fn adopt(legacy: Option<&Path>, target: &Path, shape: Shape) -> Adoption {
     let mover = |from: &Path, to: &Path| match shape {
-        Shape::File => fs::hard_link(from, to),
+        Shape::File | Shape::Database => fs::hard_link(from, to),
         Shape::Folder => fs::rename(from, to),
     };
     let steps = Steps {
@@ -180,6 +211,40 @@ pub fn adopt(legacy: Option<&Path>, target: &Path, shape: Shape) -> Adoption {
 /// link and junction on the way is resolved. Two hard links to one file are two entries.
 fn same_entry(one: &Path, other: &Path) -> io::Result<bool> {
     Ok(fs::canonicalize(one)? == fs::canonicalize(other)?)
+}
+
+/// Decides like [`adopt`] for data that looks in use (`detail` says what shows it, such as a
+/// journal file beside a database), but moves and removes nothing. Where [`adopt`] would move
+/// the data or remove its old name, the data stays at `legacy` with [`KeptReason::InUse`]:
+/// one file under two names keeps the old name in use, whatever its shape. Data in both places
+/// is still [`Adoption::BothPresent`] and uses `target`, and data in one place only reads as it
+/// is.
+#[must_use]
+pub fn adopt_in_use(legacy: Option<&Path>, target: &Path, shape: Shape, detail: &str) -> Adoption {
+    let steps = Steps {
+        mover: &|_: &Path, _: &Path| Err(io::Error::other(detail.to_owned())),
+        remover: &|_: &Path| Err(io::Error::other(detail.to_owned())),
+        same_file: &|one: &Path, other: &Path| same_file::is_same_file(one, other),
+        same_entry: &same_entry,
+    };
+    match adopt_with(legacy, target, shape, &steps) {
+        Adoption::KeptLegacy {
+            legacy,
+            reason: KeptReason::Failed(_),
+        }
+        | Adoption::OldNameLeft { legacy, .. } => Adoption::KeptLegacy {
+            legacy,
+            reason: KeptReason::InUse(detail.to_owned()),
+        },
+        outcome @ (Adoption::Nothing
+        | Adoption::AlreadyThere
+        | Adoption::Moved { .. }
+        | Adoption::BothPresent { .. }
+        | Adoption::KeptLegacy {
+            reason: KeptReason::SymbolicLink | KeptReason::InUse(_),
+            ..
+        }) => outcome,
+    }
 }
 
 /// The filesystem steps [`adopt`] takes, apart so tests can make each one fail.
@@ -289,17 +354,20 @@ fn one_file_found_twice(legacy: &Path, target: &Path, shape: Shape, steps: &Step
 /// Decides after the old name of one file under two names could not be removed, from one more
 /// look at it: gone means a rival removed it first, so the data is only at the new path. A
 /// file left under both names is used at the new one, since its program reads it whole and
-/// closes it. A folder is only found under two names through two entries the entry check
-/// cannot tell apart (a bind mount), so it stays in use where it is.
+/// closes it. A database stays in use under the old name, where its program may hold it open.
+/// A folder is only found under two names through two entries the entry check cannot tell
+/// apart (a bind mount), so it stays in use where it is.
 fn old_name_not_removed(legacy: &Path, shape: Shape, error: io::Error) -> Adoption {
     let legacy = legacy.to_path_buf();
     match (presence(&legacy), shape) {
-        (Presence::Absent, Shape::File | Shape::Folder) => Adoption::AlreadyThere,
+        (Presence::Absent, Shape::File | Shape::Database | Shape::Folder) => Adoption::AlreadyThere,
         (Presence::Link | Presence::Entry, Shape::File) => Adoption::OldNameLeft { legacy, error },
-        (Presence::Link | Presence::Entry, Shape::Folder) => Adoption::KeptLegacy {
-            legacy,
-            reason: KeptReason::Failed(error),
-        },
+        (Presence::Link | Presence::Entry, Shape::Database | Shape::Folder) => {
+            Adoption::KeptLegacy {
+                legacy,
+                reason: KeptReason::Failed(error),
+            }
+        }
     }
 }
 
@@ -313,7 +381,7 @@ fn move_data(legacy: &Path, target: &Path, shape: Shape, steps: &Steps<'_>) -> A
         };
     }
     let moved = (steps.mover)(legacy, target).and_then(|()| match shape {
-        Shape::File => (steps.remover)(legacy),
+        Shape::File | Shape::Database => (steps.remover)(legacy),
         Shape::Folder => Ok(()),
     });
     match moved {

@@ -1,9 +1,19 @@
 # Changelog
 
-## 1.1.0
+## 2.0.0
+- The profile workspace is `~/.rusted-toolbox/eh/profiles` (it was `~/.eh/profiles`), shared
+  with eh-gui as before. The first command that uses the workspace (`--profile`,
+  `eh profile list`, the menu) moves the whole old `profiles` folder there in one rename and
+  logs a warning naming both folders. When it cannot (the old folder is on another drive or is a
+  symbolic link), the old folder stays the workspace and every such run warns until it is moved
+  by hand; with profiles in both folders the new one is used and every such run warns.
+  `EH_WORKSPACE` still wins, and while it is set nothing is moved. Upgrade eh and eh-gui
+  together: an older eh-gui keeps reading `~/.eh/profiles`.
 - With `--log-to-file`, log files go to `~/.rusted-toolbox/eh/logs` (they went to
   `~/.eh/logs`). The old `logs` folder is not moved; delete it once you no longer need its
-  logs, and leave the rest of `~/.eh` (the profiles) where it is.
+  logs.
+- With no home folder, locating the workspace fails as before, now also for a home folder that
+  is not an absolute path.
 
 ## 1.0.0
 - Initial release, replacing `eh-read` and `eh-export` 1.1.0 with one binary: `eh read`

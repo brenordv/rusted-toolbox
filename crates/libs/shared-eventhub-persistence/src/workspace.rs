@@ -5,8 +5,9 @@
 use crate::config::{CONFIG_FILE_NAME, ConfigLoad, ToolConfig, read_config};
 use crate::paths::{DataPaths, plain_relative};
 use anyhow::{Context, bail};
+use common_file_utils::adoption::{Adoption, Shape, adopt};
 use common_file_utils::permissions::create_dir_all_owner_only;
-use common_utils::file_system::get_user_home_folder;
+use common_utils::file_system::{get_user_home_folder, toolbox_home_with};
 use std::ffi::OsString;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -15,10 +16,14 @@ use tracing::debug;
 /// Environment variable naming the workspace folder (an absolute path).
 pub const WORKSPACE_ENV: &str = "EH_WORKSPACE";
 
-/// eh's per-user folder under the home folder.
-const EH_HOME_FOLDER: &str = ".eh";
-/// The workspace folder inside [`EH_HOME_FOLDER`].
+/// eh's folder in the toolbox home. eh-gui shares it: eh owns the profiles.
+const EH_FOLDER: &str = "eh";
+/// The workspace folder inside [`EH_FOLDER`], and inside [`LEGACY_HOME_FOLDER`].
 const PROFILES_FOLDER: &str = "profiles";
+/// The folder under the home folder that held the workspace before eh 2.0.0.
+const LEGACY_HOME_FOLDER: &str = ".eh";
+/// What the profiles are called in the line that reports moving them.
+const PROFILES_DATA: &str = "eh's profiles";
 /// The longest profile name, in characters.
 const MAX_NAME_LENGTH: usize = 64;
 /// Windows device names. A file name whose part before the first `.` is one
@@ -133,15 +138,83 @@ struct Subfolder {
     path: PathBuf,
 }
 
+/// What became of the profiles in the folder eh used before 2.0.0 when the default workspace
+/// was located.
+#[derive(Debug)]
+pub struct ProfilesAdoption {
+    target: PathBuf,
+    adoption: Adoption,
+}
+
+impl ProfilesAdoption {
+    /// What was found and done.
+    pub fn adoption(&self) -> &Adoption {
+        &self.adoption
+    }
+
+    /// Logs profiles moved from the old folder, or left there, at `warn`.
+    pub fn report(&self) {
+        self.adoption.report(PROFILES_DATA, &self.target);
+    }
+
+    /// The one to report for a run that located the workspace twice, `earlier` and then
+    /// `later`: the later look, which saw the folders last, unless it had nothing to tell (the
+    /// earlier look made the move it then found done), in which case the earlier one.
+    pub fn to_report(earlier: Option<Self>, later: Option<Self>) -> Option<Self> {
+        match later {
+            Some(later) if !later.adoption.is_quiet() => Some(later),
+            later => earlier.or(later),
+        }
+    }
+}
+
 impl Workspace {
-    /// The workspace at [`WORKSPACE_ENV`], or `<home>/.eh/profiles` when the
-    /// variable is unset or empty.
+    /// The workspace at [`WORKSPACE_ENV`], or, when the variable is unset or empty, the default
+    /// one: `<home>/.rusted-toolbox/eh/profiles`. Profiles only in the folder eh used before
+    /// 2.0.0, `<home>/.eh/profiles`, are moved there first (one rename of the whole folder);
+    /// when they cannot be, the old folder stays the workspace. The adoption is `None` under
+    /// the variable: a folder the user chose is never moved.
     ///
     /// # Errors
     /// Fails when the variable is set to a path that is not absolute, or
     /// when it is unset and there is no home folder.
-    pub fn locate() -> anyhow::Result<Self> {
-        locate_with(std::env::var_os(WORKSPACE_ENV), get_user_home_folder())
+    pub fn locate() -> anyhow::Result<(Self, Option<ProfilesAdoption>)> {
+        Self::locate_with(std::env::var_os(WORKSPACE_ENV), get_user_home_folder())
+    }
+
+    /// [`Workspace::locate`] with `variable` as the value of [`WORKSPACE_ENV`] and `home` as
+    /// the home folder.
+    ///
+    /// # Errors
+    /// Fails when `variable` is a path that is not absolute, or when it is `None` or empty and
+    /// `home` is `None` or not absolute.
+    pub fn locate_with(
+        variable: Option<OsString>,
+        home: Option<PathBuf>,
+    ) -> anyhow::Result<(Self, Option<ProfilesAdoption>)> {
+        if let Some(value) = variable.filter(|value| !value.is_empty()) {
+            let root = PathBuf::from(value);
+            if !root.is_absolute() {
+                bail!(
+                    "{WORKSPACE_ENV} must be an absolute folder path; it is '{}'",
+                    root.display()
+                );
+            }
+            return Ok((Self::at(root), None));
+        }
+        let legacy = home
+            .as_ref()
+            .map(|home| home.join(LEGACY_HOME_FOLDER).join(PROFILES_FOLDER));
+        let Some(toolbox) = toolbox_home_with(home) else {
+            bail!(
+                "No home folder was found to keep profiles in; set {WORKSPACE_ENV} to an \
+                 absolute folder path"
+            );
+        };
+        let target = toolbox.join(EH_FOLDER).join(PROFILES_FOLDER);
+        let adoption = adopt(legacy.as_deref(), &target, Shape::Folder);
+        let workspace = Self::at(adoption.path_in_use(&target));
+        Ok((workspace, Some(ProfilesAdoption { target, adoption })))
     }
 
     /// The workspace whose profile folders sit directly under `root`.
@@ -314,32 +387,6 @@ impl Workspace {
             }
         }
         Ok(folders)
-    }
-}
-
-/// The workspace `variable` (the value of [`WORKSPACE_ENV`]) names, or the
-/// default one under `home`.
-fn locate_with(variable: Option<OsString>, home: Option<PathBuf>) -> anyhow::Result<Workspace> {
-    match variable.filter(|value| !value.is_empty()) {
-        Some(value) => {
-            let root = PathBuf::from(value);
-            if !root.is_absolute() {
-                bail!(
-                    "{WORKSPACE_ENV} must be an absolute folder path; it is '{}'",
-                    root.display()
-                );
-            }
-            Ok(Workspace::at(root))
-        }
-        None => match home {
-            Some(home) => Ok(Workspace::at(
-                home.join(EH_HOME_FOLDER).join(PROFILES_FOLDER),
-            )),
-            None => bail!(
-                "No home folder was found to keep profiles in; set {WORKSPACE_ENV} to an \
-                 absolute folder path"
-            ),
-        },
     }
 }
 

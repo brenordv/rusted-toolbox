@@ -184,21 +184,36 @@ and macOS the tool folders are created readable by you only.
 |---|---|---|
 | Log files: with `--log-to-file`, and always for alert, eh-gui, seal-gui, and `speak --gui` | `~/.rusted-toolbox/<tool>/logs` (with no home folder, `.rusted-toolbox/<tool>/logs` in the current folder) | nothing |
 | speak's settings | `~/.rusted-toolbox/speak/config.json` | nothing, on purpose |
+| seal-gui's settings (the recipient book) | `~/.rusted-toolbox/seal-gui/config.json` | nothing |
+| eh and eh-gui's profiles (one workspace for both) | `~/.rusted-toolbox/eh/profiles` | `EH_WORKSPACE` (an absolute folder) |
+| netquality's database | `~/.rusted-toolbox/netquality/netquality.db` | `--db-path`, or `db_path` in its config file |
 
-Older versions kept these elsewhere:
+Older versions kept these elsewhere, and each tool moves what it finds in its old default place on
+its first start, logging a warning that names both places. A place you chose with `EH_WORKSPACE`,
+`--db-path`, or `db_path` is never a source.
 
 - Log folders were `~/.<tool>/logs`. They are not moved: with names like `~/.cat` or `~/.ts`, the
   folder may belong to another program. Delete the ones that hold only this toolbox's logs.
-- speak's settings were in `~/.rusted-toolbox/tool-speak`. speak moves them to its new folder on
-  its first start and logs a warning naming both places; the empty `tool-speak` folder can be
-  deleted.
+- speak's settings were in `~/.rusted-toolbox/tool-speak`; the empty `tool-speak` folder left
+  behind can be deleted.
+- seal-gui's settings were in `%APPDATA%\seal\` on Windows, `$XDG_CONFIG_HOME/seal/` or
+  `~/.config/seal/` elsewhere. Only a file carrying seal's marker is moved; anything else there is
+  left alone.
+- eh's profiles were in `~/.eh/profiles`. The whole folder moves in one rename the first time eh or
+  eh-gui looks for the workspace. Upgrade eh and eh-gui together: an older one keeps reading the
+  old folder.
+- netquality's database was `netquality.db` next to the executable. **Stop every running
+  netquality before the first start of the new version**: a database moved under a running
+  netquality on Linux or macOS can be corrupted. While a `-journal`, `-wal`, or `-shm` file sits
+  beside the old or the new database, nothing moves and the old one stays in use.
 
 When data cannot be moved (it is on another drive, the old place is a symbolic link), the tool
-keeps using the old place and warns on every start until you move it there yourself. When a
-settings file reached the new place but another program held the old one open, so it could not be
-removed (Windows), the tool uses the new one and warns on every start until you delete the old
-one. When both places hold data, the tool uses the new one and warns on every
-start: copy what you need from the old one, then delete it. On a ReFS volume Windows can give two
+keeps using the old place and warns on every start until you move it there yourself. When a file
+reached the new place but another program held the old one open, so it could not be removed
+(Windows), speak and seal-gui use the new one and warn on every start until you delete the old
+one, while netquality keeps using the old database until a later start finishes the move. When
+both places hold data, the tool uses the new one and warns on every start: copy what you need from
+the old one, then delete it. On a ReFS volume Windows can give two
 different files the same identity, which makes a copy in the old place look like the file that
 moved and gets it removed; back up data kept on ReFS before upgrading.
 

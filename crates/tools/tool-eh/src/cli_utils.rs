@@ -21,7 +21,7 @@ use shared_eventhub_core::filters::{
 };
 use shared_eventhub_persistence::config::ToolConfig;
 use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat};
-use shared_eventhub_persistence::workspace::{ConfigHome, Workspace};
+use shared_eventhub_persistence::workspace::{ConfigHome, ProfilesAdoption, Workspace};
 use std::fmt::Display;
 use std::sync::Arc;
 use tracing::info;
@@ -79,8 +79,8 @@ pub(crate) enum Commands {
         eh profile list\n  \
         eh read --profile orders-dev --save-config -e orders   (saves it; string in EH_CONNECTION_STRING)\n  \
         eh read --profile orders-dev\n\n\
-        The workspace is EH_WORKSPACE (an absolute folder path), or .eh/profiles in your home \
-        folder.")]
+        The workspace is EH_WORKSPACE (an absolute folder path), or .rusted-toolbox/eh/profiles \
+        in your home folder.")]
     Profile(ProfileArgs),
 }
 
@@ -382,12 +382,15 @@ impl From<FormatArg> for ExportFormat {
 /// when the profile cannot be found, when `config.json` cannot be read or is
 /// an invalid eh config, or when the merged settings are invalid.
 pub async fn initialize() -> Result<Start<EhCommand>> {
-    let args = match interactive::command_line().await? {
-        Start::Run(args) => args,
+    let (args, menu_adoption) = match interactive::command_line().await? {
+        Start::Run(run) => run,
         Start::Cancelled => return Ok(Start::Cancelled),
         Start::Interrupted => return Ok(Start::Interrupted),
     };
-    let (notice, resolved) = resolve(args.command, args.common.verbose).await;
+    let mut command_adoption = None;
+    let (notice, resolved) =
+        resolve(args.command, args.common.verbose, &mut command_adoption).await;
+    let adoption = ProfilesAdoption::to_report(menu_adoption, command_adoption);
 
     match resolved {
         Ok(command) => {
@@ -398,6 +401,7 @@ pub async fn initialize() -> Result<Start<EhCommand>> {
                 false,
                 Some(|| print_header(&command)),
             );
+            report_adoption(adoption.as_ref());
             if let Some(home) = command.home()
                 && let Some(name) = home.profile_name()
             {
@@ -414,15 +418,41 @@ pub async fn initialize() -> Result<Start<EhCommand>> {
                 false,
                 None::<fn()>,
             );
+            report_adoption(adoption.as_ref());
             print_notice(notice.as_deref());
             Err(error)
         }
     }
 }
 
+/// Logs what became of profiles in eh's old workspace folder, when the workspace was located.
+pub(crate) fn report_adoption(adoption: Option<&ProfilesAdoption>) {
+    if let Some(adoption) = adoption {
+        adoption.report();
+    }
+}
+
+/// `locate`, keeping the adoption it found in `found`, for a caller that takes a workspace
+/// alone.
+pub(crate) fn keeping_adoption<'a>(
+    locate: impl FnOnce() -> Result<(Workspace, Option<ProfilesAdoption>)> + 'a,
+    found: &'a mut Option<ProfilesAdoption>,
+) -> impl FnOnce() -> Result<Workspace> + 'a {
+    move || {
+        let (workspace, adoption) = locate()?;
+        *found = adoption;
+        Ok(workspace)
+    }
+}
+
 /// Loads `config.json` and merges it with the arguments. Returns the config
-/// notice (when there is one to show) alongside the result.
-async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<EhCommand>) {
+/// notice (when there is one to show) alongside the result; when the workspace was located,
+/// what became of profiles in its old folder is left in `adoption`.
+async fn resolve(
+    command: Commands,
+    verbose: bool,
+    adoption: &mut Option<ProfilesAdoption>,
+) -> (Option<String>, Result<EhCommand>) {
     let environment = match Environment::from_process() {
         Ok(environment) => environment,
         Err(error) => return (None, Err(error)),
@@ -433,6 +463,7 @@ async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<Eh
                 &args.data,
                 saving(args.target.save_config),
                 !args.data.no_config,
+                adoption,
             )
             .await;
             with_home(loaded, |home, recalled, source| {
@@ -441,7 +472,13 @@ async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<Eh
             })
         }
         Commands::Export(args) => {
-            let loaded = home_for(&args.data, Saving::NotOffered, !args.data.no_config).await;
+            let loaded = home_for(
+                &args.data,
+                Saving::NotOffered,
+                !args.data.no_config,
+                adoption,
+            )
+            .await;
             with_home(loaded, |home, recalled, source| {
                 export_job(*args, recalled, home, source)
                     .map(|job| EhCommand::Export(Box::new(job)))
@@ -450,13 +487,22 @@ async fn resolve(command: Commands, verbose: bool) -> (Option<String>, Result<Eh
         Commands::Send(args) => {
             // A dry run resolves no target, so it never reads config.json.
             let read_config = !(args.data.no_config || args.dry_run);
-            let loaded = home_for(&args.data, saving(args.target.save_config), read_config).await;
+            let loaded = home_for(
+                &args.data,
+                saving(args.target.save_config),
+                read_config,
+                adoption,
+            )
+            .await;
             with_home(loaded, |home, recalled, source| {
                 send_command(*args, recalled, &environment, home, source)
             })
         }
         Commands::Profile(args) => match args.command {
-            ProfileCommand::List => (None, Workspace::locate().map(EhCommand::ProfileList)),
+            ProfileCommand::List => (
+                None,
+                keeping_adoption(Workspace::locate, adoption)().map(EhCommand::ProfileList),
+            ),
         },
     }
 }
@@ -465,14 +511,20 @@ fn saving(save_config: bool) -> Saving {
     if save_config { Saving::Yes } else { Saving::No }
 }
 
-/// The run's config home in the process's current folder or workspace.
-async fn home_for(data: &DataArgs, saving: Saving, read_config: bool) -> Result<LoadedHome> {
+/// The run's config home in the process's current folder or workspace. When the workspace is
+/// located, what became of profiles in its old folder is left in `adoption`.
+async fn home_for(
+    data: &DataArgs,
+    saving: Saving,
+    read_config: bool,
+    adoption: &mut Option<ProfilesAdoption>,
+) -> Result<LoadedHome> {
     load_home(
         data,
         saving,
         read_config,
         get_current_dir(),
-        Workspace::locate,
+        keeping_adoption(Workspace::locate, adoption),
     )
     .await
 }

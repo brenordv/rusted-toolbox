@@ -6,7 +6,7 @@ mod prompter;
 #[cfg(test)]
 mod scripted;
 
-use crate::cli_utils::CliArgs;
+use crate::cli_utils::{CliArgs, keeping_adoption, report_adoption};
 use crate::progress::display;
 use anyhow::Context;
 use clap::Parser;
@@ -14,7 +14,7 @@ use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::tool_log_level::ToolLogLevel;
 use menu::{MenuContext, MenuOutcome};
 use prompter::{Prompter, TerminalPrompter};
-use shared_eventhub_persistence::workspace::{ProfileState, Workspace};
+use shared_eventhub_persistence::workspace::{ProfileState, ProfilesAdoption, Workspace};
 use std::ffi::OsString;
 use std::io::{self, IsTerminal, Write};
 
@@ -53,33 +53,54 @@ pub(crate) fn wanted(argument_count: usize, terminals: Terminals) -> bool {
 }
 
 /// The command line to run: the process's own, or, for a bare `eh` in a
-/// terminal, the one the menu builds. When the menu can't open, its line goes
-/// to stderr and the empty command line gets clap's help and exit 2, as in a
-/// pipe.
+/// terminal, the one the menu builds, with what became of profiles in eh's old
+/// workspace folder when the menu located the workspace. When the menu can't
+/// open, its line goes to stderr and the empty command line gets clap's help
+/// and exit 2, as in a pipe.
 ///
 /// # Errors
-/// Fails when the menu fails; logging is booted first, so the error reaches
-/// stderr.
-pub(crate) async fn command_line() -> anyhow::Result<Start<CliArgs>> {
+/// Fails when the menu fails; logging is booted first, so the error and the
+/// adoption reach stderr.
+pub(crate) async fn command_line() -> anyhow::Result<Start<(CliArgs, Option<ProfilesAdoption>)>> {
     if !wanted(std::env::args_os().len(), Terminals::of_process()) {
-        return Ok(Start::Run(CliArgs::parse()));
+        return Ok(Start::Run((CliArgs::parse(), None)));
     }
+    let mut adoption = None;
     let opened = open(
         &mut TerminalPrompter,
-        Workspace::locate,
+        keeping_adoption(Workspace::locate, &mut adoption),
         &mut io::stderr(),
         boot_with_defaults,
     )
-    .await?;
+    .await
+    .inspect_err(|_| report_adoption(adoption.as_ref()))?;
     Ok(match opened {
-        MenuOutcome::Run(args) => Start::Run(args),
-        MenuOutcome::Cancelled => Start::Cancelled,
-        MenuOutcome::Interrupted => Start::Interrupted,
+        MenuOutcome::Run(args) => Start::Run((args, adoption)),
+        MenuOutcome::Cancelled => {
+            report_unrun(adoption.as_ref());
+            Start::Cancelled
+        }
+        MenuOutcome::Interrupted => {
+            report_unrun(adoption.as_ref());
+            Start::Interrupted
+        }
         MenuOutcome::Unavailable(line) => {
             eprintln!("{line}");
-            Start::Run(CliArgs::parse())
+            // A bare `eh` has no arguments, so the parse below prints help and exits: no
+            // command boots logging after it.
+            report_unrun(adoption.as_ref());
+            Start::Run((CliArgs::parse(), None))
         }
     })
+}
+
+/// Boots logging the way a run with no flags would and reports `adoption`, for a menu that
+/// ends without a run: no command boots logging after it.
+fn report_unrun(adoption: Option<&ProfilesAdoption>) {
+    if adoption.is_some() {
+        boot_with_defaults();
+        report_adoption(adoption);
+    }
 }
 
 /// Gathers the profiles of the workspace `locate` finds, runs the menu, and

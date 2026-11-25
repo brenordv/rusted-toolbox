@@ -48,6 +48,16 @@
   a rename, never a copy, never over existing data, never a symbolic link) and reports what it
   did. Workspace dependency added: `same-file` 1.0.6, already in the tree through `walkdir`.
   The root readme has a "Where tools keep their data" section.
+- The rest of the tools' data moves under `~/.rusted-toolbox`, each moved from its old default
+  place on start with a warning. `seal-gui` 2.0.0 keeps its settings in
+  `~/.rusted-toolbox/seal-gui` (they were in the OS config folder, `%APPDATA%\seal` or
+  `~/.config/seal`) and moves only a file carrying seal's marker. `eh` 2.0.0 and `eh-gui` 2.0.0
+  share the profile workspace `~/.rusted-toolbox/eh/profiles` (it was `~/.eh/profiles`);
+  `shared-eventhub-persistence` 2.0.0's `Workspace::locate` moves it and returns what it did,
+  and `EH_WORKSPACE` still wins. `netquality` 3.0.0's default database is
+  `~/.rusted-toolbox/netquality/netquality.db` (it was beside the executable); nothing moves
+  while a journal file sits beside either database, and running netquality instances should be
+  stopped before the first start. `common-file-utils` 2.4.0 gains `adopt_in_use` for that guard.
 
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system

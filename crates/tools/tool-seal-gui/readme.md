@@ -57,11 +57,21 @@ Files sealed here open with any age-compatible tool and the other way round.
 
 ## Config
 
-Convenience state is remembered in `config.json` under the per-user config
-folder: `%APPDATA%\seal\` on Windows, `$XDG_CONFIG_HOME/seal/` (or
-`~/.config/seal/`) elsewhere. It holds the recipient book (labels and public
+Convenience state is remembered in `config.json` in seal-gui's folder,
+`~/.rusted-toolbox/seal-gui/`. It holds the recipient book (labels and public
 keys), the last identity file, the last output folder, and the overwrite
-choice. No field can hold a secret.
+choice. No field can hold a secret. With no home folder nothing is saved.
+
+Versions before 2.0.0 kept the file in the per-user config folder:
+`%APPDATA%\seal\` on Windows, `$XDG_CONFIG_HOME/seal/` (or `~/.config/seal/`)
+elsewhere. On start seal-gui moves a `config.json` from there when it carries
+seal's marker, and logs a warning naming both paths. A file there with another
+tool's marker is left alone; one that cannot be read is left alone with a
+warning. When the file cannot be moved, the old one stays in use and every
+start warns; when another program holds the old file open so it cannot be
+removed (Windows), the new one is used and every start warns until the old one
+is deleted; with files in both places, the new one is used and every start
+warns.
 
 The file is saved whenever one of those changes, through a temp file and a
 rename, so a crash never truncates the book. If a save fails (a read-only

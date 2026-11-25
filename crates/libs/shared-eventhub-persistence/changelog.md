@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0
+- Breaking: `Workspace::locate` returns the workspace with a `ProfilesAdoption`, and the
+  default workspace is `<home>/.rusted-toolbox/eh/profiles` (it was `<home>/.eh/profiles`).
+  Profiles only in the old folder are moved there in one rename (`common-file-utils`'s
+  `adoption::adopt`); when they cannot be, the old folder stays the workspace. The adoption is
+  `None` under `EH_WORKSPACE`, which still wins and is never moved. `ProfilesAdoption::report`
+  logs the outcome at `warn`. A home folder that is not an absolute path is refused like a
+  missing one.
+- `Workspace::locate_with(variable, home)` is `locate` with the variable's value and the home
+  folder given.
+
 ## 1.0.0
 - Initial release: redb message archive per data folder (bound to one event
   hub) implementing `MessageSink` with a group-commit writer thread, archive

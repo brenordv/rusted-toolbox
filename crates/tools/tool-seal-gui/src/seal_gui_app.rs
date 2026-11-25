@@ -10,6 +10,7 @@ use crate::worker::{self, WorkerMsg};
 use anyhow::Context;
 use common_cli::app_logger::FileLogging;
 use common_gui_rune::window::{WatchHooks, run_watched};
+use common_utils::file_system::get_user_home_folder;
 use rune::{App, AppSpec};
 use std::rc::Rc;
 use tracing::info;
@@ -26,7 +27,7 @@ pub fn run(file_logging: FileLogging) -> anyhow::Result<Option<String>> {
         log_file = ?log_file(&file_logging),
         "seal-gui started"
     );
-    let boot = ConfigStore::boot(|name| std::env::var_os(name));
+    let boot = ConfigStore::boot(get_user_home_folder(), |name| std::env::var_os(name));
 
     let mut spec = AppSpec::new(
         views::OS_TITLE,

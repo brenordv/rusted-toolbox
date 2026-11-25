@@ -70,6 +70,37 @@ async fn a_confirmed_menu_gives_the_parsed_command_and_does_not_boot() {
 }
 
 #[tokio::test]
+async fn the_menu_lists_profiles_moved_from_the_old_folder_and_keeps_the_move_to_report() {
+    let home = tempfile::tempdir().unwrap();
+    let old = home.path().join(".eh").join("profiles");
+    write_profile(&old, "orders-dev", PROFILE_CONFIG);
+    let mut adoption = None;
+
+    let context = gather(keeping_adoption(
+        || Workspace::locate_with(None, Some(home.path().to_path_buf())),
+        &mut adoption,
+    ))
+    .await
+    .unwrap();
+
+    let names: Vec<&str> = context
+        .profiles
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    assert_eq!(names, ["orders-dev"]);
+    assert_eq!(
+        context.root,
+        home.path()
+            .join(".rusted-toolbox")
+            .join("eh")
+            .join("profiles")
+    );
+    assert!(adoption.is_some());
+    assert!(!old.exists());
+}
+
+#[tokio::test]
 async fn a_failing_prompt_boots_logging_before_the_error_returns() {
     let root = tempfile::tempdir().unwrap();
     write_profile(root.path(), "orders-dev", PROFILE_CONFIG);

@@ -1,6 +1,6 @@
 use crate::models::{
     BotToken, ConnectivityConfig, NetQualityConfig, NotificationConfig, SpeedConfig, StorageConfig,
-    TelegramConfig, ThresholdCategory, Thresholds, UrlMode, resolve_urls,
+    TelegramConfig, ThresholdCategory, Thresholds, UrlMode, default_db_path, resolve_urls,
 };
 use anyhow::{Context, Result, anyhow};
 use clap::{ArgAction, Parser};
@@ -8,6 +8,7 @@ use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::format_config_item_level3;
 use common_cli::tool_path_helpers::get_tool_path;
 use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
+use common_utils::file_system::toolbox_home;
 use logging_otel::{OtelCommonToolArgs, OtelGuard};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -143,7 +144,7 @@ pub struct CliArgs {
     )]
     outage_backoff_max: u16,
 
-    /// SQLite database path [default: <tool path>/netquality.db]
+    /// SQLite database path [default: ~/.rusted-toolbox/netquality/netquality.db]
     #[arg(long = "db-path", required = false)]
     db_path: Option<PathBuf>,
 
@@ -270,17 +271,16 @@ impl StorageConfig {
     fn from_args(args: &CliArgs) -> Result<Self> {
         // No existence check: db::create_database creates the file and any
         // missing parent directories on startup.
-        let db_path = match &args.db_path {
-            Some(p) => p.clone(),
-            None => get_tool_path()
-                .context("Failed to get tool path")?
-                .join("netquality.db"),
+        let (db_path, legacy_db) = match &args.db_path {
+            Some(p) => (p.clone(), None),
+            None => default_db_path(toolbox_home(), get_tool_path)?,
         };
 
         let cleanup_interval = Duration::from_secs(args.db_cleanup_interval as u64);
 
         Ok(StorageConfig {
             db_path,
+            legacy_db,
             cleanup_enabled: !args.disable_db_cleanup_enabled,
             cleanup_interval,
         })
@@ -304,7 +304,10 @@ pub async fn initialize() -> Result<(NetQualityConfig, Option<OtelGuard>)> {
     };
 
     match config {
-        Ok(config) => {
+        Ok(mut config) => {
+            // Every check that can fail has passed, so the database moves only for a run that
+            // starts; the header then shows the database this run uses.
+            let db_adoption = config.storage.adopt_legacy_db();
             let otel_guard = args.common.app_boot_up_with_otel(
                 env!("CARGO_PKG_NAME"),
                 env!("CARGO_PKG_VERSION"),
@@ -315,6 +318,9 @@ pub async fn initialize() -> Result<(NetQualityConfig, Option<OtelGuard>)> {
                     print_runtime_info(&config);
                 }),
             );
+            if let Some(db_adoption) = &db_adoption {
+                db_adoption.report();
+            }
             Ok((config, otel_guard))
         }
         Err(e) => {

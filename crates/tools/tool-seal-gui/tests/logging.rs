@@ -88,7 +88,7 @@ struct Window {
 impl Window {
     /// A window over `config` whose settings are saved nowhere.
     fn open(config: SealConfig) -> Self {
-        let nowhere = ConfigStore::boot(|_| None);
+        let nowhere = ConfigStore::boot(None, |_| None);
         let (post, posted) = mpsc::channel::<WorkerMsg>();
         let (submit, join) = worker::spawn(move |message| {
             let _sent = post.send(message);
@@ -261,13 +261,11 @@ fn the_log_holds_the_worker_lines_and_no_text_or_key() {
     // (e) S1: a fresh profile whose config folder turns into a file after boot, so the save
     // fails. (A file in place before boot reads as unreadable on some systems, which refuses
     // saves instead.)
-    let base = dir.path().join("profile");
-    std::fs::create_dir_all(&base).unwrap();
-    let env_base = base.clone();
-    let boot = ConfigStore::boot(move |name: &str| {
-        matches!(name, "APPDATA" | "XDG_CONFIG_HOME").then(|| env_base.clone().into_os_string())
-    });
-    std::fs::write(base.join("seal"), b"in the way").unwrap();
+    let home = dir.path().join("profile");
+    let toolbox = home.join(".rusted-toolbox");
+    std::fs::create_dir_all(&toolbox).unwrap();
+    let boot = ConfigStore::boot(Some(home), |_| None);
+    std::fs::write(toolbox.join("seal-gui"), b"in the way").unwrap();
     let saved = boot.store.flush(&SealConfig::default());
 
     let log = logs.text();

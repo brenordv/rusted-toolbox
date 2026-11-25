@@ -53,7 +53,7 @@ fn report_lines(adoption: &Adoption) -> Vec<String> {
 fn a_move_or_data_left_behind_logs_one_warning_naming_both_places_and_the_rest_log_nothing() {
     let old = PathBuf::from("old-place");
     let silent = [Adoption::Nothing, Adoption::AlreadyThere];
-    let warnings: [(Adoption, &[&str]); 5] = [
+    let warnings: [(Adoption, &[&str]); 6] = [
         (Adoption::Moved { from: old.clone() }, &["moved"]),
         (
             Adoption::BothPresent {
@@ -81,6 +81,13 @@ fn a_move_or_data_left_behind_logs_one_warning_naming_both_places_and_the_rest_l
                 error: io::Error::other("held by a scanner"),
             },
             &["held by a scanner", "no longer read", "delete it by hand"],
+        ),
+        (
+            Adoption::KeptLegacy {
+                legacy: old.clone(),
+                reason: KeptReason::InUse("a journal beside it".to_owned()),
+            },
+            &["a journal beside it"],
         ),
     ];
 

@@ -1,6 +1,6 @@
 [package]
 name = "netquality"
-version = "2.3.0"
+version = "3.0.0"
 description = "Cross platform CLI tool that monitors internet connectivity and speed."
 edition.workspace = true
 authors.workspace = true
@@ -10,6 +10,7 @@ license.workspace = true
 [dependencies]
 # Internal
 common-cli = { workspace = true }
+common-file-utils = { workspace = true }
 common-serialization-utils = { workspace = true }
 common-utils = { workspace = true }
 # The otel feature pulls in raccoon-otel so a provided endpoint exports for
@@ -33,4 +34,5 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+rstest = { workspace = true }
 tempfile = { workspace = true }

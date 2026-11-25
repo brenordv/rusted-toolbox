@@ -1,6 +1,16 @@
 # Changelog
 
 ## 2.0.0
+- Settings live in `~/.rusted-toolbox/seal-gui/config.json` (they lived in `%APPDATA%\seal\`
+  on Windows and `$XDG_CONFIG_HOME/seal/` or `~/.config/seal/` elsewhere). On start seal-gui
+  moves a settings file from the old folder when it carries seal's marker, and logs a warning
+  naming both paths; a file there with another tool's marker is left alone, and one that cannot
+  be read is left alone with a warning. When the file cannot be moved the old one stays in use
+  and every start warns; when another program holds the old file open, so it cannot be removed
+  after the move (Windows), the new one is used and every start warns until the old one is
+  deleted; with files in both places the new one is used and every start warns.
+  With no home folder nothing is saved. The settings folder is created owner-only on Linux and
+  macOS.
 - Log files go to `~/.rusted-toolbox/seal-gui/logs` (they went to `~/.seal-gui/logs`). The
   old folder is not moved; delete it once you no longer need its logs.
 - seal-gui runs on Rune instead of egui and eframe; `common-gui` and `rfd` are no longer

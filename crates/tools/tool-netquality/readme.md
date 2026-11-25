@@ -26,7 +26,7 @@ It runs a simple 1-second loop that schedules connectivity and speed checks usin
 - `--connectivity-timeout <SECS>`: Connectivity request timeout in seconds
 - `--outage-backoff <SECS>`: Outage backoff delay in seconds
 - `--outage-backoff-max <SECS>`: Maximum outage backoff delay in seconds
-- `--db-path <FILE>`: SQLite database path
+- `--db-path <FILE>`: SQLite database path (default: `~/.rusted-toolbox/netquality/netquality.db`)
 - `--db-cleanup-interval <SECS>`: Database cleanup interval in seconds (default: `3600`)
 - `--disable-db-cleanup-enabled`: Disable the periodic database cleanup
 - `--speedtest-cli-path <FILE>`: Path to Ookla `speedtest` CLI binary (required if not in config)
@@ -53,9 +53,26 @@ NetQuality has two mutually exclusive configuration modes:
 There is no auto-discovery of a `config.json` next to the executable and no merging between the
 two modes.
 
+## Where the database is
+With no `--db-path` and no `db_path`, the database is `~/.rusted-toolbox/netquality/netquality.db`;
+with no home folder it is `netquality.db` next to the executable. A path you set is used as given
+and never moved.
+
+Versions before 3.0.0 kept the default database next to the executable. **Stop every running
+netquality before the first start of 3.0.0**: on start it moves `netquality.db` from next to the
+executable to the new folder (a hard link, then removing the old name), and on Linux and macOS a
+database moved under a running netquality can be corrupted. The move is logged as a warning
+naming both paths, and `--app-header` shows the database in use. Nothing moves while a
+`netquality.db-journal`, `-wal`, or `-shm` file sits beside the old or the new database: the old
+database stays in use and every start warns until netquality is stopped and started again. On
+Windows a database another netquality holds open also stays in use under its old name, and the
+next start finishes the move. With databases in both places, the new one is used and every start
+warns.
+
 ## Configuration defaults
 Here are the built-in defaults NetQuality uses when a setting is not provided:
-- `storage.db_path`: `netquality.db` next to the executable
+- `storage.db_path`: `~/.rusted-toolbox/netquality/netquality.db` (next to the executable when
+  there is no home folder)
 - `storage.cleanup_enabled`: `true`
 - `storage.cleanup_interval_days`: `365` days
 - `connectivity.delay_secs`: `60`

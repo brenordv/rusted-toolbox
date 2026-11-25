@@ -43,11 +43,18 @@ fn run(file_logging: FileLogging) -> anyhow::Result<()> {
         .enable_all()
         .build()
         .context("Failed to start the async runtime")?;
-    let workspace = Workspace::locate().map_err(|error| {
-        let reason = format!("{error:#}");
-        warn!(reason = %reason, "profiles are unavailable");
-        reason
-    });
+    let workspace = Workspace::locate()
+        .map(|(workspace, adoption)| {
+            if let Some(adoption) = adoption {
+                adoption.report();
+            }
+            workspace
+        })
+        .map_err(|error| {
+            let reason = format!("{error:#}");
+            warn!(reason = %reason, "profiles are unavailable");
+            reason
+        });
     let preload = runtime.block_on(preload_config(&working_dir, workspace, file_logging));
     let slot = Arc::new(StoreSlot::new(preload.data_paths()));
     let window_failed = Arc::new(AtomicBool::new(false));

@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::CONFIG_FILE_NAME;
+use common_file_utils::adoption::KeptReason;
 use rstest::rstest;
 
 const READY_CONFIG: &str = r#"{"tool":"eh","schema_version":1,"target":{"namespace":"orders.servicebus.windows.net","event_hub":"orders","auth":{"method":"credential","credential":{"kind":"developer-tools"}}}}"#;
@@ -77,18 +78,38 @@ fn a_windows_device_name_is_refused(#[case] text: &str) {
 fn an_absolute_workspace_variable_wins_over_the_home_folder() {
     let root = tempfile::tempdir().unwrap();
 
-    let workspace = locate_with(
+    let (workspace, adoption) = Workspace::locate_with(
         Some(root.path().as_os_str().to_owned()),
         Some(PathBuf::from("home")),
     )
     .unwrap();
 
     assert_eq!(workspace.root(), root.path());
+    assert!(adoption.is_none());
+}
+
+#[test]
+fn under_the_workspace_variable_profiles_in_the_old_folder_stay_where_they_are() {
+    let root = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let old = home.path().join(".eh").join("profiles");
+    profile_folder(&old, "orders", Some(READY_CONFIG));
+
+    let (workspace, adoption) = Workspace::locate_with(
+        Some(root.path().as_os_str().to_owned()),
+        Some(home.path().to_owned()),
+    )
+    .unwrap();
+
+    assert_eq!(workspace.root(), root.path());
+    assert!(adoption.is_none());
+    assert!(old.join("orders").join(CONFIG_FILE_NAME).is_file());
+    assert!(!home.path().join(".rusted-toolbox").exists());
 }
 
 #[test]
 fn a_relative_workspace_variable_is_refused_naming_it() {
-    let error = locate_with(
+    let error = Workspace::locate_with(
         Some(OsString::from("profiles")),
         Some(PathBuf::from("home")),
     )
@@ -104,19 +125,128 @@ fn a_relative_workspace_variable_is_refused_naming_it() {
 #[rstest]
 #[case::unset(None)]
 #[case::empty(Some(OsString::new()))]
-fn without_the_variable_the_workspace_is_under_the_home_folder(#[case] variable: Option<OsString>) {
+fn without_the_variable_the_workspace_is_in_the_toolbox_home(#[case] variable: Option<OsString>) {
     let home = tempfile::tempdir().unwrap();
 
-    let workspace = locate_with(variable, Some(home.path().to_owned())).unwrap();
+    let (workspace, adoption) =
+        Workspace::locate_with(variable, Some(home.path().to_owned())).unwrap();
 
-    assert_eq!(workspace.root(), home.path().join(".eh").join("profiles"));
+    assert_eq!(
+        workspace.root(),
+        home.path()
+            .join(".rusted-toolbox")
+            .join("eh")
+            .join("profiles")
+    );
+    assert!(matches!(
+        adoption.as_ref().map(ProfilesAdoption::adoption),
+        Some(Adoption::Nothing)
+    ));
+}
+
+#[tokio::test]
+async fn profiles_only_in_the_old_folder_move_to_the_toolbox_home_and_list_from_there() {
+    let home = tempfile::tempdir().unwrap();
+    let old = home.path().join(".eh").join("profiles");
+    profile_folder(&old, "orders", Some(READY_CONFIG));
+    std::fs::create_dir_all(home.path().join(".eh").join("logs")).unwrap();
+
+    let (workspace, adoption) = Workspace::locate_with(None, Some(home.path().to_owned())).unwrap();
+
+    let new = home
+        .path()
+        .join(".rusted-toolbox")
+        .join("eh")
+        .join("profiles");
+    assert_eq!(workspace.root(), new);
+    assert!(matches!(
+        adoption.as_ref().map(ProfilesAdoption::adoption),
+        Some(Adoption::Moved { .. })
+    ));
+    let names: Vec<String> = workspace
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.profile.name().to_owned())
+        .collect();
+    assert_eq!(names, ["orders"]);
+    assert!(!old.exists());
+    assert!(home.path().join(".eh").join("logs").is_dir());
 }
 
 #[test]
-fn without_the_variable_or_a_home_folder_locating_fails_naming_the_variable() {
-    let error = locate_with(None, None).unwrap_err().to_string();
+fn profiles_that_cannot_move_keep_the_old_folder_as_the_workspace() {
+    let home = tempfile::tempdir().unwrap();
+    let old = home.path().join(".eh").join("profiles");
+    profile_folder(&old, "orders", Some(READY_CONFIG));
+    let toolbox = home.path().join(".rusted-toolbox");
+    std::fs::create_dir_all(&toolbox).unwrap();
+    std::fs::write(toolbox.join("eh"), b"a file where eh's folder goes").unwrap();
+
+    let (workspace, adoption) = Workspace::locate_with(None, Some(home.path().to_owned())).unwrap();
+
+    assert_eq!(workspace.root(), old);
+    assert!(matches!(
+        adoption.as_ref().map(ProfilesAdoption::adoption),
+        Some(Adoption::KeptLegacy { .. })
+    ));
+    assert!(old.join("orders").join(CONFIG_FILE_NAME).is_file());
+}
+
+#[rstest]
+#[case::no_home(None)]
+#[case::relative_home(Some(PathBuf::from("home")))]
+fn without_the_variable_or_a_home_folder_locating_fails_naming_the_variable(
+    #[case] home: Option<PathBuf>,
+) {
+    let error = Workspace::locate_with(None, home).unwrap_err().to_string();
 
     assert!(error.contains("set EH_WORKSPACE"), "{error}");
+}
+
+fn looked(adoption: Adoption) -> Option<ProfilesAdoption> {
+    Some(ProfilesAdoption {
+        target: PathBuf::from("new"),
+        adoption,
+    })
+}
+
+fn moved() -> Adoption {
+    Adoption::Moved {
+        from: PathBuf::from("old"),
+    }
+}
+
+fn kept() -> Adoption {
+    Adoption::KeptLegacy {
+        legacy: PathBuf::from("old"),
+        reason: KeptReason::SymbolicLink,
+    }
+}
+
+#[rstest]
+#[case::the_earlier_look_moved_them(looked(moved()), looked(Adoption::AlreadyThere), "moved")]
+#[case::the_later_look_moved_them(looked(kept()), looked(moved()), "moved")]
+#[case::only_the_earlier_look_ran(looked(moved()), None, "moved")]
+#[case::only_the_later_look_ran(None, looked(kept()), "kept")]
+#[case::both_kept_them(looked(kept()), looked(kept()), "kept")]
+#[case::nothing_anywhere(looked(Adoption::Nothing), looked(Adoption::Nothing), "quiet")]
+fn the_outcome_reported_is_the_later_look_unless_it_has_nothing_to_tell(
+    #[case] earlier: Option<ProfilesAdoption>,
+    #[case] later: Option<ProfilesAdoption>,
+    #[case] expected: &str,
+) {
+    let reported = ProfilesAdoption::to_report(earlier, later).unwrap();
+
+    let kind = match reported.adoption() {
+        Adoption::Moved { .. } => "moved",
+        Adoption::KeptLegacy { .. } => "kept",
+        Adoption::OldNameLeft { .. } => "old name left",
+        Adoption::BothPresent { .. } => "both",
+        Adoption::Nothing | Adoption::AlreadyThere => "quiet",
+    };
+    assert_eq!(kind, expected);
 }
 
 #[tokio::test]

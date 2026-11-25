@@ -2351,7 +2351,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "eh"
-version = "1.1.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2373,7 +2373,7 @@ dependencies = [
 
 [[package]]
 name = "eh-gui"
-version = "1.1.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4873,7 +4873,7 @@ dependencies = [
 
 [[package]]
 name = "netquality"
-version = "2.3.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "cfspeedtest",
@@ -4881,10 +4881,12 @@ dependencies = [
  "clap",
  "cli-signal-monitor",
  "common-cli",
+ "common-file-utils",
  "common-serialization-utils",
  "common-utils",
  "logging-otel",
  "reqwest 0.12.28",
+ "rstest",
  "rusqlite",
  "serde",
  "serde_json",
@@ -7985,7 +7987,7 @@ dependencies = [
 
 [[package]]
 name = "shared-eventhub-persistence"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "chrono",

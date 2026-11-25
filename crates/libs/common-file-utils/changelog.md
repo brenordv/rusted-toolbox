@@ -13,6 +13,11 @@
   name cannot be removed after the link (another program has it open, on Windows) is used at
   the new path (`OldNameLeft`, with a warning to delete the old file). New dependency:
   `same-file`.
+  `Shape::Database` moves like `Shape::File`, but a database whose old name cannot be removed
+  stays in use under that name (`KeptLegacy`), since its program may hold it open there with
+  journal files named after it. `adopt_in_use` decides the same way for data that looks in use
+  (a journal file beside a database) but moves and removes nothing; where `adopt` would move,
+  it keeps the old place with `KeptReason::InUse`.
 
 ## 2.3.0
 - New `atomic_write` module: `write_via_temp`, promoted from tool-image's private

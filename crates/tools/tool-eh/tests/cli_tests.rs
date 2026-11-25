@@ -1063,6 +1063,68 @@ impl ProfileFixture {
 }
 
 #[test]
+fn profile_list_moves_profiles_from_the_old_folder_and_warns_once() {
+    let home = tempfile::tempdir().unwrap();
+    let old = home.path().join(".eh").join("profiles").join("orders-dev");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(
+        old.join("config.json"),
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"namespace":"{NAMESPACE}","event_hub":"{HUB}","auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}}}}"#
+        ),
+    )
+    .unwrap();
+    let in_home = |args: &[&str]| {
+        Command::new(EXE)
+            .args(args)
+            .current_dir(home.path())
+            .env_remove("EH_WORKSPACE")
+            .env("HOME", home.path())
+            .env("USERPROFILE", home.path())
+            .env_remove("RUST_LOG")
+            .output()
+            .expect("failed to run eh")
+    };
+
+    let first = in_home(&["profile", "list"]);
+    let second = in_home(&["profile", "list"]);
+
+    assert_eq!(first.status.code(), Some(0), "{}", stderr_of(&first));
+    assert!(
+        stdout_of(&first).contains("orders-dev"),
+        "{}",
+        stdout_of(&first)
+    );
+    assert_eq!(
+        stderr_of(&first)
+            .matches("moved to the toolbox folder")
+            .count(),
+        1,
+        "{}",
+        stderr_of(&first)
+    );
+    assert!(
+        stdout_of(&second).contains("orders-dev"),
+        "{}",
+        stdout_of(&second)
+    );
+    assert!(
+        !stderr_of(&second).contains("WARN"),
+        "{}",
+        stderr_of(&second)
+    );
+    assert!(
+        home.path()
+            .join(".rusted-toolbox")
+            .join("eh")
+            .join("profiles")
+            .join("orders-dev")
+            .join("config.json")
+            .is_file()
+    );
+}
+
+#[test]
 fn profile_list_on_an_empty_workspace_says_there_are_none() {
     let fixture = ProfileFixture::new();
 

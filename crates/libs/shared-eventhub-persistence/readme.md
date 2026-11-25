@@ -224,7 +224,11 @@ ships both could point `eh read` at someone else's event hub and dump folders.
 `workspace::Workspace` is a folder of saved connection profiles, one subfolder
 each, laid out like a working directory (`config.json` beside its data
 folder). `Workspace::locate` uses the absolute folder in `EH_WORKSPACE`, or
-`<home>/.eh/profiles`; a relative `EH_WORKSPACE` is an error.
+`<home>/.rusted-toolbox/eh/profiles`; a relative `EH_WORKSPACE` is an error. Without the
+variable it first moves profiles only in the old folder, `<home>/.eh/profiles`, to the new
+one in one rename, and returns a `ProfilesAdoption` saying what it found (the old folder stays
+the workspace when the move fails); `ProfilesAdoption::report` logs it once logging is up.
+`Workspace::locate_with` takes the variable's value and the home folder as arguments.
 
 - `ProfileName::parse` allows 1 to 64 ASCII letters, digits, `-`, `_`, and
   `.`, starting with a letter or digit, not ending with `.`, and not a Windows

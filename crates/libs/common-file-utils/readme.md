@@ -60,7 +60,12 @@ File-system helpers for the toolbox:
   the error, so a rival that moved the data first gives `AlreadyThere`.
 - A file whose old name cannot be removed (on Windows, another program has it
   open) is used at the new path and reported as `OldNameLeft`; a later save
-  replaces only the new name. A folder found under two names whose old one
-  cannot be removed stays in use where it was. When the old name is gone by
+  replaces only the new name. A database (`Shape::Database`) whose old name
+  cannot be removed stays in use under the old name, since a database must
+  never be opened under two names at once; so does a folder found under two
+  names whose old one cannot be removed. When the old name is gone by
   the time it is looked at again, a rival removed it: `AlreadyThere`.
 - Logs nothing; `Adoption::report` logs the outcome once logging is up.
+- `adopt_in_use` takes the same decisions for data that looks in use, moving
+  and removing nothing: what `adopt` would move stays in the old place
+  (`KeptReason::InUse`).

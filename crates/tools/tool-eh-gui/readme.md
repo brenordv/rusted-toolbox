@@ -39,7 +39,8 @@ config, and never shown to screen readers.
 
 A profile is a saved connection: a folder in the workspace holding a `config.json` and, beside
 it, the data folder that config names. eh-gui and `eh` share the workspace: `EH_WORKSPACE` when
-it is set (an absolute folder), else `~/.eh/profiles`. Save as profile in the connection sheet
+it is set (an absolute folder), else `~/.rusted-toolbox/eh/profiles`, where eh-gui moves an older
+`~/.eh/profiles` on start (see the `eh` readme). Save as profile in the connection sheet
 makes one from the form (below); `eh read ... --profile NAME --save-config` makes one too, and so
 does moving a folder holding an eh `config.json` into the workspace. Starting eh-gui in a new
 folder inside the workspace works too: Save config

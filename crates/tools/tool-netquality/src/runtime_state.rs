@@ -164,6 +164,7 @@ mod tests {
             },
             storage: StorageConfig {
                 db_path: PathBuf::from("netquality-test.db"),
+                legacy_db: None,
                 cleanup_enabled: false,
                 cleanup_interval: Duration::from_secs(86_400),
             },

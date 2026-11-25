@@ -322,7 +322,35 @@ fn a_file_move_whose_old_name_cannot_be_removed_is_used_at_the_new_path() {
 }
 
 #[test]
-fn one_file_under_two_names_whose_old_name_a_rival_removes_first_is_already_there() {
+fn a_database_move_whose_old_name_cannot_be_removed_keeps_the_old_name_in_use() {
+    let places = Places::new("netquality.db");
+    write(&places.legacy, OLD_DATA);
+
+    let adoption = adopt_with(
+        Some(&places.legacy),
+        &places.target,
+        Shape::Database,
+        &file_steps(&hard_link, &failing_remove),
+    );
+
+    assert!(matches!(
+        &adoption,
+        Adoption::KeptLegacy {
+            reason: KeptReason::Failed(_),
+            ..
+        }
+    ));
+    assert_eq!(adoption.path_in_use(&places.target), places.legacy);
+    assert_eq!(fs::read(&places.legacy).unwrap(), OLD_DATA);
+    assert!(places.target.exists());
+}
+
+#[rstest]
+#[case::file(Shape::File)]
+#[case::database(Shape::Database)]
+fn one_file_under_two_names_whose_old_name_a_rival_removes_first_is_already_there(
+    #[case] shape: Shape,
+) {
     let places = Places::file();
     write(&places.legacy, OLD_DATA);
     fs::hard_link(&places.legacy, &places.target).unwrap();
@@ -334,7 +362,7 @@ fn one_file_under_two_names_whose_old_name_a_rival_removes_first_is_already_ther
     let adoption = adopt_with(
         Some(&places.legacy),
         &places.target,
-        Shape::File,
+        shape,
         &file_steps(&hard_link, &removed_by_a_rival),
     );
 
@@ -457,6 +485,106 @@ fn a_failing_entry_check_on_one_file_under_two_names_removes_nothing() {
     assert!(matches!(adoption, Adoption::BothPresent { .. }));
     assert!(places.legacy.exists());
     assert!(places.target.exists());
+}
+
+#[test]
+fn data_in_use_only_in_the_old_place_stays_there_untouched() {
+    let places = Places::file();
+    write(&places.legacy, OLD_DATA);
+
+    let adoption = adopt_in_use(
+        Some(&places.legacy),
+        &places.target,
+        Shape::File,
+        "a journal beside it",
+    );
+
+    assert!(matches!(
+        &adoption,
+        Adoption::KeptLegacy {
+            reason: KeptReason::InUse(detail),
+            ..
+        } if detail == "a journal beside it"
+    ));
+    assert_eq!(adoption.path_in_use(&places.target), places.legacy);
+    assert_eq!(fs::read(&places.legacy).unwrap(), OLD_DATA);
+    assert!(!places.target.exists());
+}
+
+#[rstest]
+#[case::file(Shape::File)]
+#[case::database(Shape::Database)]
+fn data_in_use_under_two_names_keeps_both_and_the_old_name_in_use(#[case] shape: Shape) {
+    let places = Places::file();
+    write(&places.legacy, OLD_DATA);
+    fs::hard_link(&places.legacy, &places.target).unwrap();
+
+    let adoption = adopt_in_use(
+        Some(&places.legacy),
+        &places.target,
+        shape,
+        "a journal beside it",
+    );
+
+    assert!(matches!(
+        &adoption,
+        Adoption::KeptLegacy {
+            reason: KeptReason::InUse(_),
+            ..
+        }
+    ));
+    assert_eq!(adoption.path_in_use(&places.target), places.legacy);
+    assert!(places.legacy.exists());
+    assert!(places.target.exists());
+}
+
+#[test]
+fn data_in_use_in_both_places_as_different_files_uses_the_new_path() {
+    let places = Places::file();
+    write(&places.legacy, OLD_DATA);
+    write(&places.target, OTHER_DATA);
+
+    let adoption = adopt_in_use(
+        Some(&places.legacy),
+        &places.target,
+        Shape::File,
+        "a journal beside it",
+    );
+
+    assert!(matches!(adoption, Adoption::BothPresent { .. }));
+    assert_eq!(adoption.path_in_use(&places.target), places.target);
+}
+
+#[test]
+fn data_in_use_only_at_the_new_path_is_already_there() {
+    let places = Places::file();
+    write(&places.target, OLD_DATA);
+
+    let adoption = adopt_in_use(
+        Some(&places.legacy),
+        &places.target,
+        Shape::File,
+        "a journal beside it",
+    );
+
+    assert!(matches!(adoption, Adoption::AlreadyThere));
+}
+
+#[rstest]
+#[case::nothing(Adoption::Nothing, true)]
+#[case::already_there(Adoption::AlreadyThere, true)]
+#[case::moved(Adoption::Moved { from: PathBuf::from("old") }, false)]
+#[case::both_present(Adoption::BothPresent { legacy: PathBuf::from("old") }, false)]
+#[case::kept_legacy(
+    Adoption::KeptLegacy { legacy: PathBuf::from("old"), reason: KeptReason::SymbolicLink },
+    false
+)]
+#[case::old_name_left(
+    Adoption::OldNameLeft { legacy: PathBuf::from("old"), error: injected() },
+    false
+)]
+fn only_no_data_or_data_already_moved_is_quiet(#[case] adoption: Adoption, #[case] quiet: bool) {
+    assert_eq!(adoption.is_quiet(), quiet);
 }
 
 #[rstest]
