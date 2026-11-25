@@ -34,6 +34,10 @@
   brings its own file dialogs), or the `common-gui` library, so the four are removed, along
   with the `epaint_default_fonts` license exception in `deny.toml`. Every windowed tool
   (eh-gui, seal-gui, speak, alert) now builds on Rune.
+- `seal-gui` Files list builds only the rows in view: with 2,000 files, a frame after a file
+  event takes under 1 ms (it took 80 ms) and a frame while scrolling about 1.5 ms. Each row
+  shows its path on one line, cut in the middle when it does not fit, with the whole path in a
+  tooltip. Adding files checks for duplicates against a set, not row by row.
 
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system

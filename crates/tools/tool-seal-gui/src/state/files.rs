@@ -5,6 +5,7 @@ use super::notes::Missing;
 use super::recipients::{Book, EntryId, RecipientIssue, RecipientPicker, effective_recipients};
 use crate::worker::{JobRequest, resolve_output_path};
 use shared_crypto::{Direction, output_name_for};
+use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -142,6 +143,7 @@ impl FilesTab {
     /// Adds each regular or unreadable path that is not a row yet, marked for the current mode;
     /// why the first other path was turned away, if one was.
     pub fn add_inspected(&mut self, inspected: Vec<(PathBuf, PathKind)>) -> Option<Skipped> {
+        let mut listed: HashSet<PathBuf> = self.rows.iter().map(|row| row.path.clone()).collect();
         let mut skipped = None;
         for (path, kind) in inspected {
             let size = match kind {
@@ -156,7 +158,7 @@ impl FilesTab {
                     continue;
                 }
             };
-            if self.rows.iter().any(|row| row.path == path) {
+            if !listed.insert(path.clone()) {
                 continue;
             }
             let status = row_status_for(&path, self.mode);
