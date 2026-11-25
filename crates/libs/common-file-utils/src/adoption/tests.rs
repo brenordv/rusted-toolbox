@@ -76,6 +76,7 @@ fn file_steps<'a>(
         mover,
         remover,
         same_file: &identity,
+        same_entry: &same_entry,
     }
 }
 
@@ -353,6 +354,39 @@ fn a_failing_identity_check_is_both_present_and_removes_nothing() {
         mover: &hard_link,
         remover: &remove,
         same_file: &failing_identity,
+        same_entry: &same_entry,
+    };
+
+    let adoption = adopt_with(Some(&places.legacy), &places.target, Shape::File, &steps);
+
+    assert!(matches!(adoption, Adoption::BothPresent { .. }));
+    assert!(places.legacy.exists());
+    assert!(places.target.exists());
+}
+
+#[rstest]
+#[case::file(Shape::File)]
+#[case::folder(Shape::Folder)]
+fn the_same_path_as_old_and_new_place_is_already_there_and_keeps_the_data(#[case] shape: Shape) {
+    let places = Places::file();
+    write(&places.target, OLD_DATA);
+
+    let adoption = adopt(Some(&places.target), &places.target, shape);
+
+    assert!(matches!(adoption, Adoption::AlreadyThere));
+    assert_eq!(fs::read(&places.target).unwrap(), OLD_DATA);
+}
+
+#[test]
+fn a_failing_entry_check_on_one_file_under_two_names_removes_nothing() {
+    let places = Places::file();
+    write(&places.legacy, OLD_DATA);
+    fs::hard_link(&places.legacy, &places.target).unwrap();
+    let steps = Steps {
+        mover: &hard_link,
+        remover: &remove,
+        same_file: &identity,
+        same_entry: &failing_identity,
     };
 
     let adoption = adopt_with(Some(&places.legacy), &places.target, Shape::File, &steps);
@@ -481,6 +515,26 @@ mod links {
         assert!(matches!(adoption, Adoption::AlreadyThere));
         assert_eq!(fs::read(&places.legacy).unwrap(), OLD_DATA);
         assert_eq!(fs::read(&places.target).unwrap(), OLD_DATA);
+    }
+
+    #[test]
+    fn a_link_from_the_new_tool_folder_to_the_old_folder_is_already_there_and_keeps_the_data() {
+        let places = Places::file();
+        let old_folder = places.dir.path().join("old");
+        let old_file = old_folder.join("config.json");
+        write(&old_file, OLD_DATA);
+        let root = places.dir.path().join("linked-root");
+        fs::create_dir_all(&root).unwrap();
+        symlink(&old_folder, root.join("tool")).unwrap();
+
+        let adoption = adopt(
+            Some(&old_file),
+            &root.join("tool").join("config.json"),
+            Shape::File,
+        );
+
+        assert!(matches!(adoption, Adoption::AlreadyThere));
+        assert_eq!(fs::read(&old_file).unwrap(), OLD_DATA);
     }
 
     #[test]

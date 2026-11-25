@@ -51,9 +51,11 @@ File-system helpers for the toolbox:
   with no hard links, the move fails and the data stays in the old place
   (`KeptLegacy`).
 - Never moves or removes a symbolic link. When both places hold data, the same
-  file behind both (`same_file::is_same_file`) is one file under two names; two
-  different files, or a failed identity check, are `BothPresent`, and the new
-  path is used.
+  file behind both (`same_file::is_same_file`) is one file under two names, and
+  its old name is removed only when the two paths are different directory
+  entries once links and junctions are resolved (`fs::canonicalize`): one entry
+  reached twice holds the only copy. Two different files, or a failed check,
+  are `BothPresent`, and the new path is used.
 - A failed step is followed by a fresh look at both paths, never a decision on
   the error, so a rival that moved the data first gives `AlreadyThere`.
 - A file whose old name cannot be removed stays in use under the old name: a

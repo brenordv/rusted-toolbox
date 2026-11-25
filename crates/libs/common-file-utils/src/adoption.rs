@@ -126,9 +126,11 @@ impl Adoption {
 ///   A hard link never replaces an existing `target`, and nothing is ever copied, so data on
 ///   another filesystem stays where it is. A `legacy` that is a symbolic link is not moved.
 /// - Both present: when either is a symbolic link, the same file behind both is
-///   [`Adoption::AlreadyThere`] and nothing is removed. With no link, one file under two names
-///   (a move cut short between its two steps) has its old name removed. Anything else,
-///   including a failed identity check, is [`Adoption::BothPresent`].
+///   [`Adoption::AlreadyThere`] and nothing is removed. So is one directory entry reached by
+///   both paths (the same path given twice, or a link or junction above one of them). With no
+///   link, one file under two names (a move cut short between its two steps) has its old name
+///   removed. Anything else, including a failed identity check, is
+///   [`Adoption::BothPresent`].
 /// - After a failed step both paths are looked at again and decided by the rules above, so a
 ///   rival that moved the data first gives [`Adoption::AlreadyThere`]; with `target` still
 ///   absent the data stays at `legacy` ([`Adoption::KeptLegacy`]). A failed removal of the old
@@ -146,8 +148,15 @@ pub fn adopt(legacy: Option<&Path>, target: &Path, shape: Shape) -> Adoption {
         mover: &mover,
         remover: &|path: &Path| fs::remove_file(path),
         same_file: &|one: &Path, other: &Path| same_file::is_same_file(one, other),
+        same_entry: &same_entry,
     };
     adopt_with(legacy, target, shape, &steps)
+}
+
+/// Whether two paths reach one directory entry: the same name in the same folder once every
+/// link and junction on the way is resolved. Two hard links to one file are two entries.
+fn same_entry(one: &Path, other: &Path) -> io::Result<bool> {
+    Ok(fs::canonicalize(one)? == fs::canonicalize(other)?)
 }
 
 /// The filesystem steps [`adopt`] takes, apart so tests can make each one fail.
@@ -158,6 +167,8 @@ struct Steps<'a> {
     remover: &'a dyn Fn(&Path) -> io::Result<()>,
     /// Whether two paths name the same file.
     same_file: &'a dyn Fn(&Path, &Path) -> io::Result<bool>,
+    /// Whether two paths reach the same directory entry, so removing one removes the other.
+    same_entry: &'a dyn Fn(&Path, &Path) -> io::Result<bool>,
 }
 
 /// What is at a path, from its `symlink_metadata`.
@@ -210,7 +221,20 @@ fn adopt_with(legacy: Option<&Path>, target: &Path, shape: Shape, steps: &Steps<
 fn both_present(legacy: &Path, target: &Path, either_link: bool, steps: &Steps<'_>) -> Adoption {
     match ((steps.same_file)(legacy, target), either_link) {
         (Ok(true), true) => Adoption::AlreadyThere,
-        (Ok(true), false) => match (steps.remover)(legacy) {
+        (Ok(true), false) => one_file_found_twice(legacy, target, steps),
+        (Ok(false) | Err(_), _) => Adoption::BothPresent {
+            legacy: legacy.to_path_buf(),
+        },
+    }
+}
+
+/// Both paths name one file and neither is a link. One directory entry reached twice holds
+/// the only copy, so nothing is removed; two entries are a move cut short between its link and
+/// its remove, so the old name goes. When it cannot be told which, nothing is removed.
+fn one_file_found_twice(legacy: &Path, target: &Path, steps: &Steps<'_>) -> Adoption {
+    match (steps.same_entry)(legacy, target) {
+        Ok(true) => Adoption::AlreadyThere,
+        Ok(false) => match (steps.remover)(legacy) {
             Ok(()) => Adoption::Moved {
                 from: legacy.to_path_buf(),
             },
@@ -219,7 +243,7 @@ fn both_present(legacy: &Path, target: &Path, either_link: bool, steps: &Steps<'
                 reason: KeptReason::Failed(error),
             },
         },
-        (Ok(false) | Err(_), _) => Adoption::BothPresent {
+        Err(_) => Adoption::BothPresent {
             legacy: legacy.to_path_buf(),
         },
     }

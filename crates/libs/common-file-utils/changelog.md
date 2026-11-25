@@ -7,7 +7,9 @@
   `report` (one `warn` naming both paths and what to do, for a move or data left behind). A
   file moves by a hard link plus removing the old name, a folder by one rename; nothing is
   copied, the new path is never overwritten, a symbolic link is never moved or removed, and
-  data found in both places is told apart by file identity. New dependency: `same-file`.
+  data found in both places is told apart by file identity. One directory entry reached by
+  both paths (the same path twice, or a link or junction above one of them) is left as it is,
+  since removing its "old name" would remove the only copy. New dependency: `same-file`.
 
 ## 2.3.0
 - New `atomic_write` module: `write_via_temp`, promoted from tool-image's private
