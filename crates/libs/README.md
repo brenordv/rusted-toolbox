@@ -51,12 +51,13 @@ General: `common-audio`, `common-azure`, `common-cli`, `common-file-utils`, `com
 
 Tool-owned:
 
-| Crate            | Owner          |
-|------------------|----------------|
-| `eh-core`        | eh, eh-gui     |
-| `eh-persistence` | eh, eh-gui     |
-| `head-tail-core` | head, tail     |
-| `seal-crypto`    | seal, seal-gui |
+| Crate            | Owner                    |
+|------------------|--------------------------|
+| `dep-check-core` | dep-check, dep-check-gui |
+| `eh-core`        | eh, eh-gui               |
+| `eh-persistence` | eh, eh-gui               |
+| `head-tail-core` | head, tail               |
+| `seal-crypto`    | seal, seal-gui           |
 
 What each lib holds is listed in `CONTRIBUTING.md` under "Project structure", and each crate's
 `readme.md` covers its API.

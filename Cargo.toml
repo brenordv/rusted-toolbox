@@ -26,6 +26,7 @@ common-signal-monitor = { path = "crates/libs/common-signal-monitor" }
 common-utils = { path = "crates/libs/common-utils" }
 common-utils-ext = { path = "crates/libs/common-utils-ext" }
 # Internal, tool-owned: only the tool (or tool pair) in the name depends on these
+dep-check-core = { path = "crates/libs/dep-check-core" }
 eh-core = { path = "crates/libs/eh-core" }
 eh-persistence = { path = "crates/libs/eh-persistence" }
 head-tail-core = { path = "crates/libs/head-tail-core" }

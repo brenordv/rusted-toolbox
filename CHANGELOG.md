@@ -9,6 +9,9 @@
   `eh-core`, `shared-eventhub-persistence` is `eh-persistence`, and `shared-head-tail` is
   `head-tail-core`. Log targets follow the crate names, so a `RUST_LOG` filter written for
   `shared_eventhub_core` needs `eh_core` now.
+- New library `dep-check-core` 1.0.0, the engine of the coming `dep-check` tool: it asks OSV.dev
+  about one ecosystem's packages (Cargo, NuGet, PyPI, npm, RubyGems), merges the advisories into
+  one report, and saves rate-limit blocks in `~/.rusted-toolbox/dep-check/rate-limits.json`.
 
 ## v9
 - `eh-gui`'s connection sheet has a muted hint under each sign-in field saying what goes in it,

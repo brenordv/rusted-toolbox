@@ -35,6 +35,9 @@ jobs:
       # never build them; the harness feature also runs the secret-hygiene test binary.
       - run: cargo clippy -p eh-gui --features demo,test-harness --all-targets --locked -- -D warnings
       - run: cargo test -p eh-gui --features demo,test-harness --locked
+      # dep-check-core's fake server is behind `test-support`, and so is its log test binary.
+      - run: cargo clippy -p dep-check-core --features test-support --all-targets --locked -- -D warnings
+      - run: cargo test -p dep-check-core --features test-support --locked
 
   test:
     name: build & test (${{ matrix.os }})
