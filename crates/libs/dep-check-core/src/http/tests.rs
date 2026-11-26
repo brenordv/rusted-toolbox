@@ -336,6 +336,18 @@ fn encode_segment_encodes_reserved_characters_and_keeps_unreserved_ones() {
     assert_eq!(encoded, "a-b.c_d~e%2Ff%40g%3Ah%2Bi%21j%25k%20Z9");
 }
 
+#[test]
+fn an_unreachable_detail_is_kept_on_one_clean_line() {
+    let failure = unreachable_because("invalid peer certificate: \"evil\u{1b}[2J\nname\u{202e}\"");
+
+    assert_eq!(
+        failure,
+        SourceFailure::Unreachable {
+            detail: "invalid peer certificate: \"evil [2J name \"".to_owned()
+        }
+    );
+}
+
 #[rstest::rstest]
 #[case::host_only("http://127.0.0.1:9/", "/v3/a%2Fb/c%40d")]
 #[case::path_without_slash("http://127.0.0.1:9/prefix", "/prefix/v3/a%2Fb/c%40d")]

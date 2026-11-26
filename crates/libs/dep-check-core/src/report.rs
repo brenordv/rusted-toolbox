@@ -4,6 +4,7 @@
 use crate::advisory::{AdvisoryKind, Cvss, Epss, Severity, SourceName};
 use crate::ecosystem::Ecosystem;
 use crate::http::SourceFailure;
+use crate::render::count_phrase;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -300,7 +301,7 @@ impl SourceReport {
                 format!(
                     "{} ({})",
                     group.reason,
-                    count_phrase(u64::from(group.packages), "package")
+                    count_phrase(u64::from(group.packages), "package", "packages")
                 )
             })
             .collect::<Vec<_>>()
@@ -388,15 +389,6 @@ pub struct FailureGroup {
 /// `time` as people read it: "2026-11-26 14:00:05 UTC".
 pub fn display_time(time: DateTime<Utc>) -> String {
     time.format("%Y-%m-%d %H:%M:%S UTC").to_string()
-}
-
-/// `count` with `noun`, plural when `count` is not 1: "1 package", "3 packages".
-pub fn count_phrase(count: u64, noun: &str) -> String {
-    if count == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{count} {noun}s")
-    }
 }
 
 #[cfg(test)]
@@ -599,22 +591,6 @@ mod tests {
                 not_checked: 1,
                 findings: 0
             }
-        );
-    }
-
-    #[test]
-    fn count_phrase_is_singular_only_for_one() {
-        assert_eq!(
-            (
-                count_phrase(1, "package"),
-                count_phrase(0, "package"),
-                count_phrase(3, "package")
-            ),
-            (
-                "1 package".to_owned(),
-                "0 packages".to_owned(),
-                "3 packages".to_owned()
-            )
         );
     }
 }

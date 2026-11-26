@@ -6,6 +6,7 @@ use crate::rate_limits::block_until;
 use crate::report::display_time;
 use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Utc};
+use common_utils::string_utils::display_line;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::redirect::Policy;
@@ -228,11 +229,17 @@ fn classify(error: reqwest::Error) -> SourceFailure {
     if error.is_timeout() {
         SourceFailure::TimedOut
     } else if error.is_connect() {
-        SourceFailure::Unreachable {
-            detail: format!("{:#}", anyhow!(error.without_url())),
-        }
+        unreachable_because(&format!("{:#}", anyhow!(error.without_url())))
     } else {
         SourceFailure::Interrupted
+    }
+}
+
+/// An `Unreachable` failure whose detail is `chain` on one line. A TLS error can quote names
+/// the server presented, so the detail is cleaned before it can reach a terminal or a log.
+fn unreachable_because(chain: &str) -> SourceFailure {
+    SourceFailure::Unreachable {
+        detail: display_line(chain.chars()),
     }
 }
 

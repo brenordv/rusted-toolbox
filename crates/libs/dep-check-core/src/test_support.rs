@@ -258,12 +258,17 @@ pub fn cut_short(sent: &'static [u8]) -> Url {
     Url::parse(&format!("http://{addr}/")).expect("the server's address")
 }
 
-/// A host-only base on a local port nothing listens on.
+/// A host-only base on a local port nothing listens on. The port stays bound, never listening,
+/// until the test process ends, so a connection is refused and no other server in the run can
+/// take the port.
 pub fn closed_port() -> Url {
-    let port = {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("a local port");
-        listener.local_addr().expect("the port's address").port()
-    };
+    let socket = tokio::net::TcpSocket::new_v4().expect("a socket");
+    socket
+        .bind("127.0.0.1:0".parse().expect("a local address"))
+        .expect("a local port");
+    let port = socket.local_addr().expect("the port's address").port();
+    // Kept open on purpose: closing it would free the port for another test's server.
+    std::mem::forget(socket);
     Url::parse(&format!("http://127.0.0.1:{port}/")).expect("the closed port's address")
 }
 

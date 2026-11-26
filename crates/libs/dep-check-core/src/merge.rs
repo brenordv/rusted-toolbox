@@ -124,12 +124,15 @@ fn share_an_id(a: &SourceAdvisory, b: &SourceAdvisory) -> bool {
     ids(a).any(|id| ids(b).any(|other| other == id))
 }
 
-/// Which source's id heads a finding, lowest first.
-fn headline_rank(source: SourceName) -> u8 {
-    match source {
+/// Which advisory's id heads a finding, lowest first: OSV.dev's, and among OSV.dev's records the
+/// ecosystem database's (RUSTSEC, PYSEC, ...) before a GitHub one it also holds; then GitHub's,
+/// then deps.dev's.
+fn headline_rank(advisory: &SourceAdvisory) -> u8 {
+    match advisory.source {
+        SourceName::Osv if advisory.id.starts_with("GHSA-") => 1,
         SourceName::Osv => 0,
-        SourceName::GitHub => 1,
-        SourceName::DepsDev => 2,
+        SourceName::GitHub => 2,
+        SourceName::DepsDev => 3,
     }
 }
 
@@ -145,7 +148,7 @@ fn summary_rank(source: SourceName) -> u8 {
 fn finding_of(group: &[&SourceAdvisory]) -> Finding {
     let headline = group
         .iter()
-        .min_by_key(|node| headline_rank(node.source))
+        .min_by_key(|node| headline_rank(node))
         .map(|node| node.id.clone())
         .unwrap_or_default();
     let aliases: BTreeSet<&str> = group
@@ -195,18 +198,20 @@ fn severity_of(group: &[&SourceAdvisory]) -> Severity {
         .unwrap_or(Severity::Unknown)
 }
 
-/// Every rating once: two with the same vector are one.
+/// Every rating once: two with the same vector are one, and the one with a score is kept.
 fn cvss_union(group: &[&SourceAdvisory]) -> Vec<Cvss> {
     let mut ratings: Vec<Cvss> = Vec::new();
     for cvss in group.iter().flat_map(|node| node.cvss.iter()) {
         let duplicate = ratings
-            .iter()
-            .any(|kept| match (&kept.vector, &cvss.vector) {
+            .iter_mut()
+            .find(|kept| match (&kept.vector, &cvss.vector) {
                 (Some(kept_vector), Some(vector)) => kept_vector == vector,
-                (None, None) | (Some(_), None) | (None, Some(_)) => kept == cvss,
+                (None, None) | (Some(_), None) | (None, Some(_)) => *kept == cvss,
             });
-        if !duplicate {
-            ratings.push(cvss.clone());
+        match duplicate {
+            Some(kept) if kept.score.is_none() && cvss.score.is_some() => *kept = cvss.clone(),
+            Some(_) => {}
+            None => ratings.push(cvss.clone()),
         }
     }
     ratings

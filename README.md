@@ -31,6 +31,7 @@ We currently have the following tools:
 27. A desktop companion to seal called [seal-gui](crates/tools/tool-seal-gui/readme.md): the same key-based age encryption in a GPU-drawn window built on Rune, with text sealing to ASCII armor, drag-and-drop file batches, key generation, and a saved recipient book.
 28. A text-to-speech client called [speak](crates/tools/tool-speak/readme.md) that sends text (an argument, or stdin) to a speech server you run and plays the audio, so an agent can say an explanation aloud. `speak --gui` opens a window to try a text and change the settings. It ships with an agent skill.
 29. A desktop alert called [alert](crates/tools/tool-alert/readme.md) that shows a window above your other windows with a message, an optional title, and an optional sound, and waits until you close it, so an agent can ping you when it is done. It ships with an agent skill.
+30. A dependency vulnerability checker called [dep-check](crates/tools/tool-dep-check/readme.md) that asks OSV.dev and deps.dev about the packages of one ecosystem (Cargo, NuGet, PyPI, npm, RubyGems), given as arguments or on stdin, and prints one merged report as text or JSON with vulnerabilities, malicious-package advisories, and supply-chain facts. Its exit code says whether anything was found.
 
 ## Ok, but why?
 Well, three main reasons:
@@ -187,6 +188,7 @@ and macOS the tool folders are created readable by you only.
 | seal-gui's settings (the recipient book) | `~/.rusted-toolbox/seal-gui/config.json` | nothing |
 | eh and eh-gui's profiles (one workspace for both) | `~/.rusted-toolbox/eh/profiles` | `EH_WORKSPACE` (an absolute folder) |
 | netquality's database | `~/.rusted-toolbox/netquality/netquality.db` | `--db-path`, or `db_path` in its config file |
+| dep-check's rate-limit blocks (when each service may be asked again; nothing else) | `~/.rusted-toolbox/dep-check/rate-limits.json` | nothing |
 
 Older versions kept these elsewhere, and each tool moves what it finds in its old default place on
 its first start, logging a warning that names both places. A place you chose with `EH_WORKSPACE`,

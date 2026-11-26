@@ -59,6 +59,10 @@ timeouts in a row.
 - `sources::osv`: the OSV.dev client.
 - `sources::deps_dev`: the deps.dev client: latest versions, version facts, projects,
   advisories.
+- `render`: the report as text (`text_report`) and the lines a window builds its rows from
+  (`header_line`, `sources_line`, `package_line`, `finding_lines`, `supply_chain_line`),
+  every outside string on one line with control and bidirectional characters as spaces, and
+  `count_phrase` ("1 package", "1,000 packages").
 
 ## Input
 

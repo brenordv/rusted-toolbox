@@ -74,6 +74,44 @@ fn a_chain_of_shared_ids_is_one_finding() {
 }
 
 #[test]
+fn among_osv_records_the_ecosystem_database_id_heads_the_finding() {
+    let osv = answered(vec![
+        advisory(
+            SourceName::Osv,
+            "GHSA-7rrj",
+            &["RUSTSEC-2023-0001", "CVE-1"],
+        ),
+        advisory(
+            SourceName::Osv,
+            "RUSTSEC-2023-0001",
+            &["GHSA-7rrj", "CVE-1"],
+        ),
+    ]);
+
+    let verdict = merge(&[(SourceName::Osv, &osv)]);
+
+    assert_eq!(finding_ids(&verdict), ["RUSTSEC-2023-0001"]);
+    assert_eq!(verdict.findings[0].aliases, ["CVE-1", "GHSA-7rrj"]);
+}
+
+#[test]
+fn a_vector_both_sources_give_keeps_the_score_one_of_them_has() {
+    let mut vector_only = scored(SourceName::Osv, "X-1", 5.4);
+    vector_only.cvss[0].score = None;
+    let osv = answered(vec![vector_only]);
+    let deps_dev = answered(vec![scored(SourceName::DepsDev, "X-1", 5.4)]);
+
+    let verdict = merge(&[(SourceName::Osv, &osv), (SourceName::DepsDev, &deps_dev)]);
+
+    let cvss = &verdict.findings[0].cvss;
+    assert_eq!(cvss.len(), 1);
+    assert_eq!(
+        (cvss[0].score, cvss[0].from),
+        (Some(5.4), SourceName::DepsDev)
+    );
+}
+
+#[test]
 fn the_headline_is_github_s_id_without_an_osv_node() {
     let deps_dev = answered(vec![advisory(SourceName::DepsDev, "DD-1", &["GHSA-1"])]);
     let github = answered(vec![advisory(SourceName::GitHub, "GHSA-1", &[])]);

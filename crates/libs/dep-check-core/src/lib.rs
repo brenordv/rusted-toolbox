@@ -11,6 +11,7 @@ pub mod http;
 pub mod merge;
 pub mod package;
 pub mod rate_limits;
+pub mod render;
 pub mod report;
 pub mod sources;
 #[cfg(any(test, feature = "test-support"))]
