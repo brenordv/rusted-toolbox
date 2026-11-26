@@ -20,11 +20,11 @@ use crate::send::SendInput;
 use crate::state::{AppState, Input, SaveStatus, SheetPurpose, ToastInput, ToastKind};
 use crate::views::details::{COPY_KEY, DONE_KEY, FAILURE_KEY};
 use crate::views::{READ_METADATA_KEY, SAVE_STATUS_KEY, SEND_BUTTON_KEY};
+use eh_core::producer::{SendEnd, SendSummary};
+use eh_persistence::export::ExportOutcome;
 use rune::Runtime;
 use rune::accesskit::Action;
 use serde_json::Value;
-use shared_eventhub_core::producer::{SendEnd, SendSummary};
-use shared_eventhub_persistence::export::ExportOutcome;
 use std::time::Duration;
 
 const INTERACTIVE: [&str; 12] = [

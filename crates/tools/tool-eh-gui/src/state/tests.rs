@@ -4,10 +4,10 @@ use crate::archive::test_support::{messages as archive_messages, page as archive
 use crate::bridge::test_support::detached_session;
 use crate::form::SecretSource;
 use crate::read::inspector::ExportPhase;
-use shared_eventhub_core::engine::{EngineCommand, PartitionEnd};
-use shared_eventhub_core::models::MessageKey;
-use shared_eventhub_core::stats::{StatsSnapshot, StatsTracker};
-use shared_eventhub_persistence::export::ExportOutcome;
+use eh_core::engine::{EngineCommand, PartitionEnd};
+use eh_core::models::MessageKey;
+use eh_core::stats::{StatsSnapshot, StatsTracker};
+use eh_persistence::export::ExportOutcome;
 use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 
@@ -727,7 +727,7 @@ impl Fixture {
             }
             Waiting::Send => {
                 let run = self.send_running();
-                send_finished(run, shared_eventhub_core::producer::SendEnd::Cancelled)
+                send_finished(run, eh_core::producer::SendEnd::Cancelled)
             }
         }
     }
@@ -1287,10 +1287,10 @@ fn an_appearance_change_redraws_only_when_it_differs() {
     assert_eq!(f.state.theme.told(), Some(true));
 }
 
-fn bacon_rules() -> shared_eventhub_core::filters::CaptureFilters {
-    shared_eventhub_core::filters::CaptureFilters {
+fn bacon_rules() -> eh_core::filters::CaptureFilters {
+    eh_core::filters::CaptureFilters {
         time: None,
-        text: Some(shared_eventhub_core::filters::TextFilter::Contains(vec![
+        text: Some(eh_core::filters::TextFilter::Contains(vec![
             "bacon".to_owned(),
         ])),
     }
@@ -1383,7 +1383,7 @@ fn partition_errors_and_ends_go_to_the_session_log() {
 #[test]
 fn a_closed_window_waits_for_a_running_export_before_quitting() {
     let mut f = fixture();
-    let key = shared_eventhub_core::models::MessageKey {
+    let key = eh_core::models::MessageKey {
         partition_id: "0".to_owned(),
         sequence_number: 1,
     };
@@ -1411,7 +1411,7 @@ fn a_closed_window_waits_for_a_running_export_before_quitting() {
 #[test]
 fn a_failed_message_export_shows_a_danger_toast() {
     let mut f = fixture();
-    let key = shared_eventhub_core::models::MessageKey {
+    let key = eh_core::models::MessageKey {
         partition_id: "0".to_owned(),
         sequence_number: 1,
     };
@@ -1810,7 +1810,7 @@ fn a_session_failing_first_reopens_once_and_the_export_ending_later_does_not_qui
 #[test]
 fn a_closed_window_waits_for_an_export_section_message_export() {
     let mut f = fixture();
-    let key = shared_eventhub_core::models::MessageKey {
+    let key = eh_core::models::MessageKey {
         partition_id: "0".to_owned(),
         sequence_number: 1,
     };
@@ -1838,7 +1838,7 @@ fn a_closed_window_waits_for_an_export_section_message_export() {
 #[test]
 fn an_export_section_result_never_ends_a_read_export_with_the_same_owner() {
     let mut f = fixture();
-    let key = shared_eventhub_core::models::MessageKey {
+    let key = eh_core::models::MessageKey {
         partition_id: "0".to_owned(),
         sequence_number: 1,
     };
@@ -1922,10 +1922,10 @@ impl Fixture {
 
 const SEND_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=send;SharedAccessKey=c2VjcmV0";
 
-fn send_finished(run: u64, end: shared_eventhub_core::producer::SendEnd) -> Input {
+fn send_finished(run: u64, end: eh_core::producer::SendEnd) -> Input {
     Input::Send(SendInput::Finished {
         run,
-        summary: shared_eventhub_core::producer::SendSummary {
+        summary: eh_core::producer::SendSummary {
             sent: 1,
             batches: 1,
             elapsed: Duration::from_secs(1),
@@ -1942,10 +1942,7 @@ fn a_closed_window_cancels_a_send_and_quits_once_it_ends() {
 
     let closed = f.apply(Input::WindowClosed(base_time()));
     let requested = f.state.send.run.cancel_requested();
-    let finished = f.apply(send_finished(
-        run,
-        shared_eventhub_core::producer::SendEnd::Cancelled,
-    ));
+    let finished = f.apply(send_finished(run, eh_core::producer::SendEnd::Cancelled));
 
     assert!(requested);
     assert!(!has_quit(&closed));
@@ -1960,7 +1957,7 @@ fn a_closed_window_with_a_send_and_a_session_quits_after_both(#[case] send_first
     let run = f.send_running();
     let (session, _) = f.connected();
     f.apply(Input::WindowClosed(base_time()));
-    let send_end = || send_finished(run, shared_eventhub_core::producer::SendEnd::Cancelled);
+    let send_end = || send_finished(run, eh_core::producer::SendEnd::Cancelled);
     let session_end = || done(session, Ok(summary(RunEnd::Stopped, &[])), clean_finish());
 
     let (first, second) = if send_first {
@@ -1981,7 +1978,7 @@ fn a_failed_send_with_the_window_closed_reopens_it_with_a_danger_toast() {
 
     let out = f.apply(send_finished(
         run,
-        shared_eventhub_core::producer::SendEnd::Failed("unauthorized".to_owned()),
+        eh_core::producer::SendEnd::Failed("unauthorized".to_owned()),
     ));
 
     assert!(has_reopen(&out) && !has_quit(&out));
@@ -2001,10 +1998,7 @@ fn a_completed_send_with_the_window_closed_lets_the_quit_proceed() {
     let run = f.send_running();
     f.apply(Input::WindowClosed(base_time()));
 
-    let out = f.apply(send_finished(
-        run,
-        shared_eventhub_core::producer::SendEnd::Completed,
-    ));
+    let out = f.apply(send_finished(run, eh_core::producer::SendEnd::Completed));
 
     assert!(has_quit(&out) && !has_reopen(&out));
 }
@@ -2155,10 +2149,7 @@ fn a_send_outcome_toasts_only_when_its_row_cannot_be_seen(
     let run = f.send_running();
     f.state.section = section;
 
-    f.apply(send_finished(
-        run,
-        shared_eventhub_core::producer::SendEnd::Completed,
-    ));
+    f.apply(send_finished(run, eh_core::producer::SendEnd::Completed));
 
     assert_eq!(f.state.toasts().entries().len(), toasts);
 }

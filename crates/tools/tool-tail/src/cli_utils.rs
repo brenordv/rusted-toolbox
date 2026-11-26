@@ -4,8 +4,8 @@ use clap::{Args, Parser};
 use common_cli::common_tool_args::CommonToolArgsNoVerbose;
 use common_cli::tool_exit_helpers::exit_error;
 use common_cli::tool_log_level::ToolLogLevel;
-use shared_head_tail::count_parser::parse_tail_count;
-use shared_head_tail::models::{Count, CountPrefix, HeaderPolicy, resolve_count};
+use head_tail_core::count_parser::parse_tail_count;
+use head_tail_core::models::{Count, CountPrefix, HeaderPolicy, resolve_count};
 use std::ffi::OsString;
 use std::time::Duration;
 use tracing::error;
@@ -272,8 +272,8 @@ pub fn initialize() -> TailConfig {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+    use head_tail_core::models::CountUnit;
     use rstest::rstest;
-    use shared_head_tail::models::CountUnit;
 
     fn config(argv: &[&str]) -> TailConfig {
         let cli = CliArgs::try_parse_from(argv).unwrap();

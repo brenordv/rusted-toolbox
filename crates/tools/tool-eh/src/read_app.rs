@@ -7,9 +7,9 @@ use crate::progress::{
 };
 use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
-use shared_eventhub_core::engine::{CaptureEngine, RunEnd};
-use shared_eventhub_persistence::export::{DiskWriteMode, ExportOutcome, WritingSink};
-use shared_eventhub_persistence::store::MessageStore;
+use eh_core::engine::{CaptureEngine, RunEnd};
+use eh_persistence::export::{DiskWriteMode, ExportOutcome, WritingSink};
+use eh_persistence::store::MessageStore;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 

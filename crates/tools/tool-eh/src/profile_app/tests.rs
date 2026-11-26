@@ -1,6 +1,6 @@
 use super::*;
 use common_cli::test_writers::{ClosedPipe, FailingDisk};
-use shared_eventhub_persistence::config::CONFIG_FILE_NAME;
+use eh_persistence::config::CONFIG_FILE_NAME;
 
 const CREDENTIAL_CONFIG: &str = r#"{"tool":"eh","schema_version":1,"target":{"namespace":"billing.servicebus.windows.net","event_hub":"invoices","auth":{"method":"credential","credential":{"kind":"developer-tools"}}}}"#;
 const STRING_CONFIG: &str = r#"{"tool":"eh","schema_version":1,"target":{"event_hub":"orders","auth":{"method":"connection-string","stored":"local-db"}}}"#;

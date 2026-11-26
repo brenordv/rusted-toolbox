@@ -14,9 +14,9 @@ common-file-utils = { workspace = true }
 common-serialization-utils = { workspace = true }
 common-utils = { workspace = true }
 # The otel feature pulls in raccoon-otel so a provided endpoint exports for
-# real; without it logging-otel only warns and falls back to standard logging.
-logging-otel = { workspace = true, features = ["otel"] }
-cli-signal-monitor = {workspace = true }
+# real; without it common-logging-otel only warns and falls back to standard logging.
+common-logging-otel = { workspace = true, features = ["otel"] }
+common-signal-monitor = {workspace = true }
 
 # External
 anyhow = { workspace = true }

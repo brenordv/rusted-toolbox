@@ -12,8 +12,8 @@ use common_gui_rune::test_harness::{
 };
 use parts::list_height;
 use rune::{FileDialogKind, Key, Runtime};
+use seal_crypto::keys::{generate_identity, public_key_of};
 use serde_json::Value;
-use shared_crypto::keys::{generate_identity, public_key_of};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -164,7 +164,7 @@ fn h2_replace_waits_with_the_rest_while_another_job_runs() {
     keygen_exists(&mut rt, "id.txt");
 
     test_harness::deliver(&mut rt, |s, _| {
-        s.work = Work::Running(RunningJob::Text(shared_crypto::Direction::Encrypt));
+        s.work = Work::Running(RunningJob::Text(seal_crypto::Direction::Encrypt));
         true
     });
     press(&mut rt, REPLACE_KEY);

@@ -3,7 +3,7 @@
 A port of the GNU coreutils `head` command to Rust, useful on Windows where it does not exist
 as a native command. Prints the first part of files: the first 10 lines of each FILE by
 default. Its sibling [tail](../tool-tail/readme.md) covers the other end of the file; both are
-built on the shared `shared-head-tail` engine crate.
+built on the shared `head-tail-core` engine crate.
 
 ## Examples
 ### First lines of a file

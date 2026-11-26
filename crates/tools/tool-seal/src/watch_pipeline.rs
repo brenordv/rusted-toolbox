@@ -4,7 +4,7 @@
 //! without a real watcher; `watch_app` is the I/O shell around it.
 
 use anyhow::{Context, Result, bail};
-use shared_crypto::{Direction, output_name_for};
+use seal_crypto::{Direction, output_name_for};
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};

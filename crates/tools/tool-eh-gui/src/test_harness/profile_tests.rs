@@ -13,15 +13,15 @@ use crate::views::{
     NEW_PROFILE_ROW_KEY, NEW_PROFILE_SAVE_KEY, PICKER_KEY, PROFILE_GROUP_KEY, PROFILE_NOTE_KEY,
     ROW_ISSUE_KEY, SAVE_STATUS_KEY, SAVE_STATUS_LINES,
 };
-use rune::accesskit::Action;
-use rune::text::{RichLayoutOptions, measure_with};
-use rune::{Key, KeyEvent, Mods};
-use shared_eventhub_persistence::config::{
+use eh_persistence::config::{
     AuthMethodConfig, CONFIG_FILE_NAME, ConfigLoad, CredentialKindConfig, StoredSecret,
     TargetConfig, ToolConfig,
 };
-use shared_eventhub_persistence::export::DiskWriteMode;
-use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry};
+use eh_persistence::export::DiskWriteMode;
+use eh_persistence::workspace::{ConfigHome, ProfileEntry};
+use rune::accesskit::Action;
+use rune::text::{RichLayoutOptions, measure_with};
+use rune::{Key, KeyEvent, Mods};
 
 const TRIGGER: &str = "profile-picker-trigger";
 const LOCKED: &str = "The data folder can change once the cancelled connection stops.";

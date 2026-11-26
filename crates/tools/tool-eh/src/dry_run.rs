@@ -7,8 +7,8 @@ use crate::send_cli::{RENDER_CAP, template_notices};
 use anyhow::Context;
 use chrono::Utc;
 use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
+use common_mock_data::template::Template;
 use common_utils::string_utils::escape_for_terminal_display;
-use mock_data_utils::template::Template;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 

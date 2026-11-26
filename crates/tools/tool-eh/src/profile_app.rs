@@ -6,8 +6,8 @@ use crate::progress::{describe_auth, display, target_label};
 use anyhow::Context;
 use clap::{Args, Subcommand};
 use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
-use shared_eventhub_persistence::config::{AuthMethodConfig, ToolConfig};
-use shared_eventhub_persistence::workspace::{ProfileEntry, ProfileState, Workspace};
+use eh_persistence::config::{AuthMethodConfig, ToolConfig};
+use eh_persistence::workspace::{ProfileEntry, ProfileState, Workspace};
 use std::io::{self, Write};
 use std::path::Path;
 

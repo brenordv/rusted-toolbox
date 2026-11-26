@@ -10,7 +10,7 @@ license.workspace = true
 [dependencies]
 # Internal
 common-cli = { workspace = true }
-mock-data-utils = { workspace = true }
+common-mock-data = { workspace = true }
 
 # External
 anyhow = { workspace = true }

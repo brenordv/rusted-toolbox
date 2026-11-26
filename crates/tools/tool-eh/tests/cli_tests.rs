@@ -1,9 +1,9 @@
 use chrono::{DateTime, Duration, SubsecRound, Utc};
-use shared_eventhub_core::connection::EventHubIdentity;
-use shared_eventhub_core::engine::{Checkpoint, MessageSink};
-use shared_eventhub_core::models::{BodyKind, CapturedMessage, MessageKey};
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::store::MessageStore;
+use eh_core::connection::EventHubIdentity;
+use eh_core::engine::{Checkpoint, MessageSink};
+use eh_core::models::{BodyKind, CapturedMessage, MessageKey};
+use eh_persistence::paths::DataPaths;
+use eh_persistence::store::MessageStore;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

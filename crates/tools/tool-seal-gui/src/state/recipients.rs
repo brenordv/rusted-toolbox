@@ -5,7 +5,7 @@
 use super::Tab;
 use crate::config::RecipientEntry;
 use rune::TextEdit;
-use shared_crypto::Recipient;
+use seal_crypto::Recipient;
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -205,7 +205,7 @@ pub fn truncated_key(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared_crypto::keys::{generate_identity, public_key_of};
+    use seal_crypto::keys::{generate_identity, public_key_of};
 
     fn fresh_key() -> String {
         public_key_of(&generate_identity())

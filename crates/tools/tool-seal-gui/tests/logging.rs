@@ -6,6 +6,8 @@ use common_gui_rune::test_harness::{
     a11y_nodes, deliver, press, runtime_with_keys, settle, type_into,
 };
 use rune::{FileDialogError, Runtime, TextEdit};
+use seal_crypto::keys::{generate_identity, public_key_of, save_identity_file};
+use seal_crypto::{Direction, engine};
 use seal_gui::config::{ConfigStore, RecipientEntry, SaveOutcome, SealConfig};
 use seal_gui::design::WINDOW_SIZE;
 use seal_gui::services::{ProdServices, Services, dialog_answered, dispatch};
@@ -17,8 +19,6 @@ use seal_gui::views::{INPUT_KEY, OTHER_KEY_KEY, TEXT_SUBMIT_KEY, view, window_ke
 use seal_gui::worker::{
     self, JobKind, JobRequest, WorkerJoin, WorkerMsg, log_file_failed, log_job_failed, report_stop,
 };
-use shared_crypto::keys::{generate_identity, public_key_of, save_identity_file};
-use shared_crypto::{Direction, engine};
 use std::cell::RefCell;
 use std::io::Write;
 use std::path::{Path, PathBuf};

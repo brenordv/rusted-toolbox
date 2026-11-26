@@ -2,8 +2,8 @@
 //! turns Ctrl-C into a graceful stop.
 
 use crate::progress::Renderer;
-use shared_eventhub_core::cancel::CANCEL_POLL;
-use shared_eventhub_core::engine::{EngineChannels, EngineCommand, EngineEvent, RunSummary};
+use eh_core::cancel::CANCEL_POLL;
+use eh_core::engine::{EngineChannels, EngineCommand, EngineEvent, RunSummary};
 use std::future::Future;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -7,10 +7,10 @@
 //! closing says nothing about how the run ended.
 
 use chrono::{DateTime, Utc};
-use shared_eventhub_core::engine::{EngineChannels, EngineCommand, EngineEvent, RunSummary};
-use shared_eventhub_core::filters::CaptureFilters;
-use shared_eventhub_core::stats::StatsSnapshot;
-use shared_eventhub_persistence::export::ExportOutcome;
+use eh_core::engine::{EngineChannels, EngineCommand, EngineEvent, RunSummary};
+use eh_core::filters::CaptureFilters;
+use eh_core::stats::StatsSnapshot;
+use eh_persistence::export::ExportOutcome;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

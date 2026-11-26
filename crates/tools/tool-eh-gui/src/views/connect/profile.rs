@@ -12,9 +12,9 @@ use crate::state::{
     ProfileList, ProfileNote, ProfileSwitch, RowLine, error_preview, home_label,
 };
 use crate::views::{INVALID_CONNECTION_STRING, details};
+use eh_persistence::config::CONFIG_FILE_NAME;
 use rune::{El, Key, KeyEvent, LiveRegion, TextEdit, Tx, col, row, spacer};
 use rune_kit::{Button, ButtonVariant, Kit, Select, SelectAppearance, TextInput};
-use shared_eventhub_persistence::config::CONFIG_FILE_NAME;
 use tracing::debug;
 
 /// The group's key; its accessible name is "Profile".

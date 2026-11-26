@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 /// Where an operation's output goes, resolved from `-o` at parse time.
 /// `Derived` means no `-o` was given: a file input derives its sibling name
-/// through `shared-crypto`'s naming rule, and a stdin input streams to stdout.
+/// through `seal-crypto`'s naming rule, and a stdin input streams to stdout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutputSpec {
     Derived,

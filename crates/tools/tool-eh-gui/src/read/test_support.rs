@@ -1,7 +1,7 @@
 //! Messages for the Read model's tests.
 
 use chrono::Utc;
-use shared_eventhub_core::models::{BodyKind, CapturedMessage, MessageKey};
+use eh_core::models::{BodyKind, CapturedMessage, MessageKey};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

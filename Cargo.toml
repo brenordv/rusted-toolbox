@@ -13,22 +13,23 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 license = "GPL-3.0-only"
 
 [workspace.dependencies]
-# Internal
-cli-signal-monitor = { path = "crates/libs/cli-signal-monitor" }
+# Internal, general: any tool may depend on these (naming rule in crates/libs/README.md)
 common-audio = { path = "crates/libs/common-audio" }
+common-azure = { path = "crates/libs/common-azure" }
 common-cli = { path = "crates/libs/common-cli" }
 common-file-utils = { path = "crates/libs/common-file-utils" }
 common-gui-rune = { path = "crates/libs/common-gui-rune" }
+common-logging-otel = { path = "crates/libs/common-logging-otel" }
+common-mock-data = { path = "crates/libs/common-mock-data" }
 common-serialization-utils = { path = "crates/libs/common-serialization-utils" }
+common-signal-monitor = { path = "crates/libs/common-signal-monitor" }
 common-utils = { path = "crates/libs/common-utils" }
 common-utils-ext = { path = "crates/libs/common-utils-ext" }
-logging-otel = { path = "crates/libs/logging-otel" }
-mock-data-utils = { path = "crates/libs/mock-data-utils" }
-shared-azure = { path = "crates/libs/shared-azure" }
-shared-crypto = { path = "crates/libs/shared-crypto" }
-shared-eventhub-core = { path = "crates/libs/shared-eventhub-core" }
-shared-eventhub-persistence = { path = "crates/libs/shared-eventhub-persistence" }
-shared-head-tail = { path = "crates/libs/shared-head-tail" }
+# Internal, tool-owned: only the tool (or tool pair) in the name depends on these
+eh-core = { path = "crates/libs/eh-core" }
+eh-persistence = { path = "crates/libs/eh-persistence" }
+head-tail-core = { path = "crates/libs/head-tail-core" }
+seal-crypto = { path = "crates/libs/seal-crypto" }
 
 # External
 age = { version = "0.12.1", features = ["armor"] }
@@ -85,7 +86,7 @@ reqwest = { version = "0.13.5", features = ["json"] }
 rodio = { version = "0.23.0", default-features = false, features = ["playback", "wav", "mp3", "flac", "vorbis"] }
 rsa = { version = "0.10.0", features = ["pkcs1v15"] }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
-# Only for setting the process crypto provider (shared-eventhub-core's `tls`); default
+# Only for setting the process crypto provider (eh-core's `tls`); default
 # features, the same set the Azure crates enable.
 rustls = "0.23.46"
 # Rune is pre-release and not on crates.io (the crates.io `rune` is an unrelated scripting

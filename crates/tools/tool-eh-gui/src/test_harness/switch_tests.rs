@@ -8,11 +8,11 @@ use crate::views::{
     BULK_METADATA_KEY, CONDENSE_KEY, EXPORT_METADATA_KEY, LOCAL_TIME_KEY, PARTITIONS_SCROLL_KEY,
     PILL_SCROLL_KEY, READ_METADATA_KEY, SKIP_EXPORTED_KEY, SWITCH_KEY,
 };
+use eh_core::engine::EngineEvent;
+use eh_core::stats::{PartitionStats, StatsSnapshot};
 use rstest::rstest;
 use rune::Key;
 use rune::accesskit::Action;
-use shared_eventhub_core::engine::EngineEvent;
-use shared_eventhub_core::stats::{PartitionStats, StatsSnapshot};
 
 fn export_options(size: (f32, f32)) -> Harness {
     let mut h = export_selected(size);

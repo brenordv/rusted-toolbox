@@ -12,14 +12,14 @@ use crate::test_harness::builders::{
     profile_home, ready, state, test_workspace, with_profiles,
 };
 use chrono::Utc;
-use rune::TextEdit;
-use shared_eventhub_core::filters::{CaptureFilters, TextFilter};
-use shared_eventhub_core::models::MessageKey;
-use shared_eventhub_core::producer::Pacing;
-use shared_eventhub_persistence::config::{
+use eh_core::filters::{CaptureFilters, TextFilter};
+use eh_core::models::MessageKey;
+use eh_core::producer::Pacing;
+use eh_persistence::config::{
     AuthMethodConfig, ConfigLoad, CredentialKindConfig, StoredSecret, TargetConfig, ToolConfig,
 };
-use shared_eventhub_persistence::paths::DataPaths;
+use eh_persistence::paths::DataPaths;
+use rune::TextEdit;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;

@@ -17,7 +17,7 @@ use common_gui_rune::parts::{
 use common_gui_rune::tokens::{CONTROL_HEIGHT, SPACE_LG, SPACE_MD, SPACE_XL, SPACE_XS, TYPE_MONO};
 use rune::{Cx, El, KeyEvent, ScrollSpec, Tx, col, row, spacer};
 use rune_kit::{Button, ButtonVariant, Kit, ScrollBar};
-use shared_crypto::Direction;
+use seal_crypto::Direction;
 
 /// The Text tab's scroll viewport.
 pub const TEXT_SCROLL_KEY: &str = "seal-text-scroll";

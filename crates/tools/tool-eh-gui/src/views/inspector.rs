@@ -13,12 +13,12 @@ use crate::read::inspector::{
 use crate::read::rows::display_line;
 use crate::state::{AppState, Input, ListSection};
 use chrono::Local;
+use eh_core::models::BodyKind;
+use eh_persistence::export::ExportFormat;
 use rune::{El, FileDialogOptions, ScrollSpec, Tx, col, el, row, text};
 use rune_kit::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
 };
-use shared_eventhub_core::models::BodyKind;
-use shared_eventhub_persistence::export::ExportFormat;
 
 /// The export formats in picker order, with their labels.
 pub const FORMATS: [ExportFormat; 3] = [ExportFormat::Txt, ExportFormat::Csv, ExportFormat::Json];

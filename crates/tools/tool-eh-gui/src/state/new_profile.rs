@@ -9,9 +9,9 @@ use crate::form::{AuthChoice, RecalledFields, SecretKind};
 use crate::read::rows::display_line;
 use crate::send::run::Names;
 use crate::services::CreateRequest;
-use shared_eventhub_persistence::config::{SensitiveValues, ToolConfig, with_typed_names};
-use shared_eventhub_persistence::paths::{DEFAULT_DATA_FOLDER, plain_relative};
-use shared_eventhub_persistence::workspace::{ConfigHome, Profile, ProfileName, Workspace};
+use eh_persistence::config::{SensitiveValues, ToolConfig, with_typed_names};
+use eh_persistence::paths::{DEFAULT_DATA_FOLDER, plain_relative};
+use eh_persistence::workspace::{ConfigHome, Profile, ProfileName, Workspace};
 use std::borrow::Cow;
 use tracing::{debug, info, warn};
 

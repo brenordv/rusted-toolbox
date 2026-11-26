@@ -1,7 +1,7 @@
-use shared_crypto::errors::{
+use seal_crypto::errors::{
     MSG_CORRUPTED, MSG_NO_MATCHING_IDENTITY, MSG_NO_RECIPIENTS, MSG_PASSPHRASE_REFUSED,
 };
-use shared_crypto::keys::{generate_identity, load_identities, public_key_of, save_identity_file};
+use seal_crypto::keys::{generate_identity, load_identities, public_key_of, save_identity_file};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -52,7 +52,7 @@ fn stdout_of(output: &Output) -> String {
 }
 
 /// Writes an identity file plus its public key for fixture purposes, through
-/// the shared-crypto API rather than the binary under test.
+/// the seal-crypto API rather than the binary under test.
 fn fixture_identity(dir: &Path, name: &str) -> (PathBuf, String) {
     let identity = generate_identity();
     let path = dir.join(name);

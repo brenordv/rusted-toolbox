@@ -1,8 +1,8 @@
 //! Background work shared by the UI: the single archive handle.
 
 use anyhow::Context;
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::store::MessageStore;
+use eh_persistence::paths::DataPaths;
+use eh_persistence::store::MessageStore;
 use std::sync::{Mutex, PoisonError};
 use tracing::{debug, info, warn};
 

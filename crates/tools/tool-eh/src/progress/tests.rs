@@ -1,8 +1,8 @@
 use super::*;
 use chrono::Utc;
 use common_cli::test_writers::FailingDisk;
-use shared_eventhub_core::models::{BodyKind, MessageKey};
-use shared_eventhub_persistence::config::StoredSecret;
+use eh_core::models::{BodyKind, MessageKey};
+use eh_persistence::config::StoredSecret;
 use std::collections::BTreeMap;
 
 fn message(partition_id: &str, body: &str) -> CapturedMessage {

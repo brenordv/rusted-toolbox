@@ -1,8 +1,8 @@
 use crate::cli_utils::initialize;
 use crate::models::MqttCommand;
 use crate::mqtt_app::{post_message, read_messages};
-use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_cli::tool_exit_helpers::{exit_error, exit_success};
+use common_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use tracing::error;
 
 mod cli_utils;

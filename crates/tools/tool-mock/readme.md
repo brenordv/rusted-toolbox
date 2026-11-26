@@ -162,4 +162,4 @@ The tool reports a clear error for:
 
 ## Project layout exception
 
-The repository convention (see `CONTRIBUTING.md`) is that each tool keeps its logic in an in-crate `<tool>_app.rs`. This tool deliberately deviates from that rule: there is no `mock_app.rs`, and the generation logic lives in the shared library crate `crates/libs/mock-data-utils` so other tools can also generate mock data. The binary is intentionally a thin CLI wrapper: `main.rs`, `cli_utils.rs`, and `models.rs`.
+The repository convention (see `CONTRIBUTING.md`) is that each tool keeps its logic in an in-crate `<tool>_app.rs`. This tool deliberately deviates from that rule: there is no `mock_app.rs`, and the generation logic lives in the shared library crate `crates/libs/common-mock-data` so other tools can also generate mock data. The binary is intentionally a thin CLI wrapper: `main.rs`, `cli_utils.rs`, and `models.rs`.

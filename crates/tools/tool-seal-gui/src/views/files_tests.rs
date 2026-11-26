@@ -12,8 +12,8 @@ use common_gui_rune::test_harness::{
 use common_gui_rune::tokens::{CONTROL_HEIGHT, SPACE_XS};
 use rstest::rstest;
 use rune::{FileDialogKind, Key, KeyEvent, Mods, Runtime};
+use seal_crypto::Direction;
 use serde_json::Value;
-use shared_crypto::Direction;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};

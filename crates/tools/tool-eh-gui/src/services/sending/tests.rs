@@ -1,12 +1,12 @@
 use super::*;
-use mock_data_utils::template::Template;
-use shared_azure::auth::{AuthMethod, CredentialKind};
-use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
-use shared_eventhub_core::producer::{Pacing, Routing};
-use shared_eventhub_persistence::config::{
+use common_azure::auth::{AuthMethod, CredentialKind};
+use common_mock_data::template::Template;
+use eh_core::connection::DEFAULT_CONSUMER_GROUP;
+use eh_core::producer::{Pacing, Routing};
+use eh_persistence::config::{
     AuthMethodConfig, CredentialKindConfig, SensitiveValues, TargetConfig, ToolConfig,
 };
-use shared_eventhub_persistence::paths::DataPaths;
+use eh_persistence::paths::DataPaths;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use tokio::sync::oneshot;

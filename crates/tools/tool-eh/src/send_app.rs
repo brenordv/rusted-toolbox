@@ -6,8 +6,8 @@ use crate::send_cli::{RENDER_CAP, template_notices};
 use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
 use chrono::Utc;
-use shared_eventhub_core::cancel::{CANCEL_POLL, flag_set};
-use shared_eventhub_core::producer::{
+use eh_core::cancel::{CANCEL_POLL, flag_set};
+use eh_core::producer::{
     EventHubProducer, SendEnd, SendPlan, SendProgress, SendSummary, next_event, open_producer,
 };
 use std::io::Write;

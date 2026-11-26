@@ -1,4 +1,4 @@
-use mock_data_utils::models::{DataType, Locale, MockOptions};
+use common_mock_data::models::{DataType, Locale, MockOptions};
 
 /// Command-line arguments for mock data generator
 #[derive(Debug)]

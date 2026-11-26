@@ -7,9 +7,9 @@ use clap::{ArgAction, Parser};
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::format_config_item_level3;
 use common_cli::tool_path_helpers::get_tool_path;
+use common_logging_otel::{OtelCommonToolArgs, OtelGuard};
 use common_utils::constants::{CONFIG_UL_ITEM_LEVEL_2, CONFIG_UL_ITEM_LEVEL_3};
 use common_utils::file_system::toolbox_home;
-use logging_otel::{OtelCommonToolArgs, OtelGuard};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -340,11 +340,11 @@ pub async fn initialize() -> Result<(NetQualityConfig, Option<OtelGuard>)> {
     }
 }
 
-/// Presence flag for the header line, using logging-otel's own resolution
+/// Presence flag for the header line, using common-logging-otel's own resolution
 /// rules (configured value first, then OTEL_EXPORTER_OTLP_ENDPOINT). Only
 /// presence is reported; the endpoint value itself is never printed.
 fn otel_export_configured(config: &NetQualityConfig) -> bool {
-    logging_otel::is_otel_endpoint_configured(config.otel_endpoint.as_deref())
+    common_logging_otel::is_otel_endpoint_configured(config.otel_endpoint.as_deref())
 }
 
 fn print_runtime_info(config: &NetQualityConfig) {

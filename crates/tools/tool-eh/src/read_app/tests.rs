@@ -1,8 +1,8 @@
 use super::*;
-use shared_eventhub_core::engine::{PartitionEnd, RunSummary};
-use shared_eventhub_core::stats::StatsSnapshot;
-use shared_eventhub_persistence::export::DiskWriteConfig;
-use shared_eventhub_persistence::paths::DataPaths;
+use eh_core::engine::{PartitionEnd, RunSummary};
+use eh_core::stats::StatsSnapshot;
+use eh_persistence::export::DiskWriteConfig;
+use eh_persistence::paths::DataPaths;
 use std::collections::BTreeMap;
 
 fn summary(end: RunEnd, partitions: &[(&str, PartitionEnd)]) -> LoopEnd {
@@ -151,9 +151,9 @@ impl Fixture {
 
 #[tokio::test]
 async fn at_end_mode_writes_the_pending_message_files_when_the_run_ends() {
-    use shared_eventhub_core::connection::EventHubIdentity;
-    use shared_eventhub_core::engine::{Checkpoint, MessageSink};
-    use shared_eventhub_core::models::{BodyKind, CapturedMessage, MessageKey};
+    use eh_core::connection::EventHubIdentity;
+    use eh_core::engine::{Checkpoint, MessageSink};
+    use eh_core::models::{BodyKind, CapturedMessage, MessageKey};
 
     let fixture = Fixture::new();
     let inbound = fixture.root.path().join("inbound");

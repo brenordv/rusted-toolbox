@@ -20,16 +20,16 @@ use crate::read::test_support::captured;
 use crate::send::SendInput;
 use crate::send::run::SendRun;
 use crate::state::{AppState, Input, ListSection, MAX_TOASTS, NO_WORKSPACE, Section};
+use eh_core::engine::EngineEvent;
+use eh_core::models::MessageKey;
+use eh_core::producer::{SendEnd, SendSummary};
+use eh_persistence::config::ConfigLoad;
+use eh_persistence::export::ExportOutcome;
+use eh_persistence::search::SearchCursor;
+use eh_persistence::workspace::{ConfigHome, ProfileEntry};
 use rand::rngs::Xoshiro256PlusPlus;
 use rand::{Rng, SeedableRng};
 use rune::{Key, KeyEvent, Mods};
-use shared_eventhub_core::engine::EngineEvent;
-use shared_eventhub_core::models::MessageKey;
-use shared_eventhub_core::producer::{SendEnd, SendSummary};
-use shared_eventhub_persistence::config::ConfigLoad;
-use shared_eventhub_persistence::export::ExportOutcome;
-use shared_eventhub_persistence::search::SearchCursor;
-use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -948,7 +948,7 @@ impl Sequence {
     }
 }
 
-fn rows_to_events(rows: Vec<shared_eventhub_core::models::CapturedMessage>) -> Vec<EngineEvent> {
+fn rows_to_events(rows: Vec<eh_core::models::CapturedMessage>) -> Vec<EngineEvent> {
     rows.into_iter()
         .map(|message| EngineEvent::Message(Box::new(message)))
         .collect()

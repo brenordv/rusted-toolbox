@@ -7,10 +7,10 @@ use crate::design::tokens::{INSPECTOR_MAX, INSPECTOR_MIN, INSPECTOR_WIDTH};
 use crate::state::{ListSection, ToastKind};
 use chrono::{DateTime, TimeDelta, Utc};
 use common_utils::string_utils::format_bytes_to_string;
+use eh_core::models::{CapturedMessage, MessageKey};
+use eh_persistence::export::{ExportFormat, ExportOptions};
+use eh_persistence::paths::DataPaths;
 use rune_kit::PaneState;
-use shared_eventhub_core::models::{CapturedMessage, MessageKey};
-use shared_eventhub_persistence::export::{ExportFormat, ExportOptions};
-use shared_eventhub_persistence::paths::DataPaths;
 use std::path::{Path, PathBuf};
 
 /// The most body bytes the inspector shows; copying takes the whole body.

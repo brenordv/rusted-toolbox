@@ -3,9 +3,9 @@
 use crate::models::{ExportJob, RunOutcome};
 use crate::progress::{ExportProgressLine, display, export_summary_block};
 use anyhow::{Context, anyhow};
-use shared_eventhub_persistence::export::{ExportOptions, ExportOutcome};
-use shared_eventhub_persistence::search::SearchQuery;
-use shared_eventhub_persistence::store::MessageStore;
+use eh_persistence::export::{ExportOptions, ExportOutcome};
+use eh_persistence::search::SearchQuery;
+use eh_persistence::store::MessageStore;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;

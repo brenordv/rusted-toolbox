@@ -4,7 +4,7 @@ use super::notes::Missing;
 use super::recipients::{Book, RecipientIssue, RecipientPicker, effective_recipients};
 use crate::worker::JobRequest;
 use rune::TextEdit;
-use shared_crypto::Direction;
+use seal_crypto::Direction;
 use std::fmt;
 use std::path::PathBuf;
 

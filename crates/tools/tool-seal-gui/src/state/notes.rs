@@ -5,7 +5,7 @@ use super::Tab;
 use super::files::Skipped;
 use common_gui_rune::parts::Tone;
 use common_utils::string_utils::{display_line, format_thousands};
-use shared_crypto::Direction;
+use seal_crypto::Direction;
 
 /// A job the worker is running, with what its status line needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

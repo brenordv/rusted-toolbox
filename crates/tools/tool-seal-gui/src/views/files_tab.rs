@@ -22,7 +22,7 @@ use common_gui_rune::tokens::{
 use common_utils::string_utils::{display_line, format_bytes_to_string};
 use rune::{Align, Cx, El, GrowthSpec, ScrollSpec, Tx, col, row, spacer, text};
 use rune_kit::{Button, ButtonVariant, Checkbox, Kit, RadioGroup, RadioItem, ScrollBar};
-use shared_crypto::Direction;
+use seal_crypto::Direction;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use unicode_segmentation::UnicodeSegmentation;

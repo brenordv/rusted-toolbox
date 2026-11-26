@@ -1,14 +1,12 @@
 use super::*;
 use crate::form::ConnectForm;
 use crate::state::{Effect, Outcome, SheetPurpose};
+use common_azure::auth::AuthMethod;
 use common_cli::app_logger::FileLogging;
 use common_utils::string_utils::SecretString;
-use shared_azure::auth::AuthMethod;
-use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
-use shared_eventhub_persistence::config::{
-    AuthMethodConfig, CredentialKindConfig, StoredSecret, TargetConfig,
-};
-use shared_eventhub_persistence::secrets::{CONNECTION_STRING_SECRET, client_secret_name};
+use eh_core::connection::DEFAULT_CONSUMER_GROUP;
+use eh_persistence::config::{AuthMethodConfig, CredentialKindConfig, StoredSecret, TargetConfig};
+use eh_persistence::secrets::{CONNECTION_STRING_SECRET, client_secret_name};
 
 const CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=listen;SharedAccessKey=c2VjcmV0;EntityPath=orders";
 
@@ -116,7 +114,7 @@ async fn a_client_secret_neither_typed_nor_stored_fails_naming_the_client() {
 
 fn one_message_options(destination: &std::path::Path) -> ExportOptions {
     crate::read::inspector::export_options(
-        shared_eventhub_persistence::export::ExportFormat::Txt,
+        eh_persistence::export::ExportFormat::Txt,
         true,
         destination,
     )
@@ -229,8 +227,8 @@ async fn a_slot_closed_for_quit_within_the_bound_refuses_the_next_open() {
 
 /// A slot whose current folder under `root` holds `count` stored messages ("order 0", ...).
 async fn seeded_slot(root: &std::path::Path, count: i64) -> (StoreSlot, DataPaths) {
-    use shared_eventhub_core::connection::EventHubIdentity;
-    use shared_eventhub_core::engine::{Checkpoint, MessageSink};
+    use eh_core::connection::EventHubIdentity;
+    use eh_core::engine::{Checkpoint, MessageSink};
 
     let paths = DataPaths::new(root.join("data"));
     let slot = StoreSlot::new(paths.clone());
@@ -263,7 +261,7 @@ fn bulk_request(paths: DataPaths, folder: std::path::PathBuf) -> BulkRequest {
         export: 1,
         query: SearchQuery::default(),
         options: ExportOptions {
-            format: shared_eventhub_persistence::export::ExportFormat::Txt,
+            format: eh_persistence::export::ExportFormat::Txt,
             include_metadata: false,
             condense_output: false,
             use_local_time: false,
@@ -520,11 +518,7 @@ fn a_panic_inside_a_gated_open_does_not_lock_the_next_one_out() {
 /// Writes `text` as `config.json` in `dir`, creating `dir`.
 fn write_config(dir: &Path, text: &str) {
     std::fs::create_dir_all(dir).unwrap();
-    std::fs::write(
-        dir.join(shared_eventhub_persistence::config::CONFIG_FILE_NAME),
-        text,
-    )
-    .unwrap();
+    std::fs::write(dir.join(eh_persistence::config::CONFIG_FILE_NAME), text).unwrap();
 }
 
 const CREDENTIAL_CONFIG: &str = r#"{"tool":"eh","schema_version":1,"target":{"auth":{"method":"credential","credential":{"kind":"developer-tools"}}}}"#;
@@ -577,7 +571,7 @@ async fn loading_a_profile_answers_its_config_for_the_request() {
             &answer,
             Input::ProfileLoaded {
                 request: 3,
-                result: Ok(shared_eventhub_persistence::config::ConfigLoad::Loaded(_)),
+                result: Ok(eh_persistence::config::ConfigLoad::Loaded(_)),
             }
         ),
         "{answer:?}"
@@ -669,7 +663,7 @@ async fn a_second_create_of_the_name_in_another_case_fails_and_writes_nothing() 
     let config = workspace
         .root()
         .join("orders-new")
-        .join(shared_eventhub_persistence::config::CONFIG_FILE_NAME);
+        .join(eh_persistence::config::CONFIG_FILE_NAME);
     let before = std::fs::read(&config).unwrap();
 
     let answer = created_profile(new_profile_request(&workspace, "ORDERS-NEW", "captures")).await;

@@ -4,10 +4,10 @@
 use crate::read::rows::sentence;
 use crate::read::search::MAX_PATTERN_CHARS;
 use chrono::{DateTime, SecondsFormat, Utc};
-use rune::TextEdit;
-use shared_eventhub_core::filters::{
+use eh_core::filters::{
     CaptureFilters, TextFilter, TimeFilter, TimeWindow, parse_time, parse_time_with_granularity,
 };
+use rune::TextEdit;
 use std::cell::RefCell;
 
 /// The time condition the form builds.

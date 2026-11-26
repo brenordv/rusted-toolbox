@@ -2,8 +2,8 @@ use crate::models::MockConfig;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::tool_exit_helpers::exit_error;
-use mock_data_utils::locale_is_inert;
-use mock_data_utils::models::{DataType, Locale};
+use common_mock_data::locale_is_inert;
+use common_mock_data::models::{DataType, Locale};
 use tracing::{error, warn};
 
 /// Generate mock data for testing and development

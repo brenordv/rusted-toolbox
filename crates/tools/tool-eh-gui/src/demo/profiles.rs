@@ -6,12 +6,12 @@ use crate::services::{listed_profiles, open_secrets};
 use crate::state::{AppState, Effect, Input, SheetPurpose};
 use anyhow::Context;
 use common_utils::string_utils::SecretString;
-use shared_eventhub_persistence::config::{
+use eh_persistence::config::{
     AuthMethodConfig, CONFIG_FILE_NAME, CredentialKindConfig, SensitiveValues, StoredSecret,
     TargetConfig, ToolConfig, save_config,
 };
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::workspace::Workspace;
+use eh_persistence::paths::DataPaths;
+use eh_persistence::workspace::Workspace;
 use std::path::Path;
 use tokio::runtime::Handle;
 use tracing::debug;

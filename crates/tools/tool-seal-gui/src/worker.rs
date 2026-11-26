@@ -4,7 +4,7 @@
 
 use anyhow::{Context as _, anyhow};
 use common_file_utils::atomic_write::write_via_temp;
-use shared_crypto::{Direction, Recipient, engine, keys, output_name_for};
+use seal_crypto::{Direction, Recipient, engine, keys, output_name_for};
 use std::any::Any;
 use std::fmt;
 use std::fs::File;

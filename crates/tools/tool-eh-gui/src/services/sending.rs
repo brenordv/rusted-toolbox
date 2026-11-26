@@ -11,13 +11,13 @@ use crate::send::{SendInput, SendRequest};
 use crate::services::ConnectRequest;
 use crate::state::{AppState, Input, SEND_STOP_BOUND};
 use chrono::Utc;
-use rune::AppHandle;
-use shared_eventhub_core::cancel::{CANCEL_POLL, flag_set};
-use shared_eventhub_core::connection::EventHubTarget;
-use shared_eventhub_core::producer::{
+use eh_core::cancel::{CANCEL_POLL, flag_set};
+use eh_core::connection::EventHubTarget;
+use eh_core::producer::{
     EventHubProducer, OutgoingEvent, SendEnd, SendPlan, SendProgress, SendSummary, next_event,
     open_producer,
 };
+use rune::AppHandle;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

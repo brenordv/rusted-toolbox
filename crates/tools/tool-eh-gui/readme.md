@@ -196,7 +196,7 @@ captures into it.
 - One bulk export runs at a time, and the data folder cannot change while it runs.
 
 The CSV injection warning and how the archive grows (there is no purge yet) are covered in
-`shared-eventhub-persistence`'s readme.
+`eh-persistence`'s readme.
 
 ## Sending
 

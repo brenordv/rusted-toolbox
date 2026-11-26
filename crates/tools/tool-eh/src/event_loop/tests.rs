@@ -1,6 +1,6 @@
 use super::*;
-use shared_eventhub_core::engine::{PartitionEnd, RunEnd};
-use shared_eventhub_core::stats::StatsSnapshot;
+use eh_core::engine::{PartitionEnd, RunEnd};
+use eh_core::stats::StatsSnapshot;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;

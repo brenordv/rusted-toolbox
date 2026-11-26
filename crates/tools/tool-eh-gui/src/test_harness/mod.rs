@@ -47,14 +47,14 @@ pub use common_gui_rune::test_harness::{
     focused_key, has_key, has_text, label_of, press, press_key, rect, settle, text_visible,
 };
 use common_gui_rune::test_harness::{clipboard_text, type_into, use_memory_clipboard};
+use eh_core::engine::{EngineCommand, EngineEvent};
+use eh_core::models::CapturedMessage;
+use eh_core::stats::StatsSnapshot;
 use rune::accesskit::{Action, Role};
 use rune::clipboard::MemoryClipboard;
 use rune::{Key, KeyEvent, Mods, Runtime};
 use serde_json::Value;
 use services::{CallLog, ServiceCall};
-use shared_eventhub_core::engine::{EngineCommand, EngineEvent};
-use shared_eventhub_core::models::CapturedMessage;
-use shared_eventhub_core::stats::StatsSnapshot;
 use std::path::Path;
 use tokio::sync::mpsc;
 

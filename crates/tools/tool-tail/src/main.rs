@@ -3,9 +3,9 @@ mod models;
 mod tail_app;
 
 use crate::cli_utils::initialize;
-use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
+use common_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_utils::constants::SIZE_128KB;
-use shared_head_tail::io_shared::exit_from_result;
+use head_tail_core::io_shared::exit_from_result;
 use std::io::{self, BufWriter};
 
 fn main() {

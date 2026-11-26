@@ -1,5 +1,15 @@
 # Workspace Changelog
 
+## v10
+- Library crates follow one naming rule, written up in `crates/libs/README.md`: `common-*` for
+  libs any tool may use, and `<tool>-*` for libs that hold one tool's own logic. Eight libs are
+  renamed and keep their versions: `cli-signal-monitor` is now `common-signal-monitor`,
+  `logging-otel` is `common-logging-otel`, `mock-data-utils` is `common-mock-data`,
+  `shared-azure` is `common-azure`, `shared-crypto` is `seal-crypto`, `shared-eventhub-core` is
+  `eh-core`, `shared-eventhub-persistence` is `eh-persistence`, and `shared-head-tail` is
+  `head-tail-core`. Log targets follow the crate names, so a `RUST_LOG` filter written for
+  `shared_eventhub_core` needs `eh_core` now.
+
 ## v9
 - `eh-gui`'s connection sheet has a muted hint under each sign-in field saying what goes in it,
   with an example value where one helps, and a line under Sign-in method and Azure credential

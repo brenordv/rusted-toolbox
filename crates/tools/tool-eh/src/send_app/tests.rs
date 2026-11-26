@@ -1,5 +1,5 @@
 use super::*;
-use shared_eventhub_core::producer::{Pacing, Routing};
+use eh_core::producer::{Pacing, Routing};
 use std::sync::Arc;
 
 fn renderer() -> Renderer<Vec<u8>, Vec<u8>> {

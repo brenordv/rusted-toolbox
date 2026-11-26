@@ -6,9 +6,9 @@ mod watch_pipeline;
 
 use crate::cli_utils::initialize;
 use crate::seal_app::{RunOutcome, run};
-use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_cli::broken_pipe::BrokenPipe;
 use common_cli::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
+use common_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_utils::constants::EXIT_CODE_INTERRUPTED_BY_USER;
 use tracing::{debug, error};
 

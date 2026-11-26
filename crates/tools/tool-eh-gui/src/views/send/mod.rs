@@ -19,9 +19,9 @@ use crate::views::read::short_duration;
 use common_gui_rune::keys::{area_chord, is_chord, type_newline};
 use common_gui_rune::parts::action_row as fixed_action_row;
 use common_utils::string_utils::{format_bytes_to_string, format_thousands};
+use eh_core::producer::SendEnd;
 use rune::{El, KeyEvent, LiveRegion, Transition, Tx, col, icon, row, spacer, text};
 use rune_kit::{Button, ButtonVariant, Kit, RollingText, Spinner};
-use shared_eventhub_core::producer::SendEnd;
 
 /// The body editor's key.
 pub const BODY_KEY: &str = "send-body";

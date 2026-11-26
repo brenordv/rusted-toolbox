@@ -3,10 +3,10 @@
 //! event without other tests' events mixed in.
 
 use chrono::Utc;
+use eh_core::engine::{EngineChannels, EngineEvent, RunEnd, RunSummary, SkipReason};
+use eh_core::stats::StatsTracker;
 use eh_gui::bridge::{EngineDone, SessionSink, UiDelivery, UiPort, spawn_session};
-use shared_eventhub_core::engine::{EngineChannels, EngineEvent, RunEnd, RunSummary, SkipReason};
-use shared_eventhub_core::stats::StatsTracker;
-use shared_eventhub_persistence::export::ExportOutcome;
+use eh_persistence::export::ExportOutcome;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::sync::{Arc, Mutex};

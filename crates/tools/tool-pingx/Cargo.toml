@@ -11,7 +11,7 @@ license.workspace = true
 # Internal
 common-cli = { workspace = true }
 common-utils = { workspace = true }
-cli-signal-monitor = { workspace = true }
+common-signal-monitor = { workspace = true }
 
 # External
 anyhow = { workspace = true }

@@ -10,8 +10,8 @@ use crate::state::{AppState, Effect, Input};
 use crate::tasks::StoreSlot;
 use anyhow::Context;
 use chrono::{TimeDelta, Utc};
-use shared_eventhub_core::engine::{EngineEvent, MessageSink};
-use shared_eventhub_core::stats::StatsSnapshot;
+use eh_core::engine::{EngineEvent, MessageSink};
+use eh_core::stats::StatsSnapshot;
 use std::collections::BTreeMap;
 use std::path::Path;
 use tokio::runtime::Handle;
@@ -191,7 +191,7 @@ fn stats(received: u64, partitions: &[String]) -> StatsSnapshot {
             .map(|id| {
                 (
                     id.clone(),
-                    shared_eventhub_core::stats::PartitionStats {
+                    eh_core::stats::PartitionStats {
                         received: per_partition,
                         last_received_at: Some(now),
                         last_enqueued_at: Some(now),

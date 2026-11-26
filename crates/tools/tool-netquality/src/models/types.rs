@@ -17,7 +17,7 @@ pub struct NetQualityConfig {
     pub speed: SpeedConfig,
     pub notifications: NotificationConfig,
     pub storage: StorageConfig,
-    /// OTLP endpoint for OpenTelemetry export. Handed to `logging-otel`, which
+    /// OTLP endpoint for OpenTelemetry export. Handed to `common-logging-otel`, which
     /// also falls back to `OTEL_EXPORTER_OTLP_ENDPOINT` when this is absent.
     /// The value is never printed or logged; only its presence is shown.
     pub otel_endpoint: Option<String>,

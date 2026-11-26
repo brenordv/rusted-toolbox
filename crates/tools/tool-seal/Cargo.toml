@@ -9,11 +9,11 @@ license.workspace = true
 
 [dependencies]
 # Internal
-cli-signal-monitor = { workspace = true }
 common-cli = { workspace = true }
 common-file-utils = { workspace = true }
+common-signal-monitor = { workspace = true }
 common-utils = { workspace = true }
-shared-crypto = { workspace = true }
+seal-crypto = { workspace = true }
 
 # External
 anyhow = { workspace = true }

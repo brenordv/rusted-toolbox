@@ -1,12 +1,10 @@
 use super::*;
 use crate::state::ConnectionState;
-use mock_data_utils::template::Template;
-use shared_eventhub_core::connection::EventHubIdentity;
-use shared_eventhub_core::engine::{
-    Checkpoint, EngineCommand, EngineEvent, MessageSink, RunEnd, StoreOutcome,
-};
-use shared_eventhub_core::filters::{CaptureFilters, TextFilter};
-use shared_eventhub_core::models::CapturedMessage;
+use common_mock_data::template::Template;
+use eh_core::connection::EventHubIdentity;
+use eh_core::engine::{Checkpoint, EngineCommand, EngineEvent, MessageSink, RunEnd, StoreOutcome};
+use eh_core::filters::{CaptureFilters, TextFilter};
+use eh_core::models::CapturedMessage;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -68,9 +66,9 @@ impl Services for NoServices {
 fn bulk_request(folder: PathBuf, paths: DataPaths) -> BulkRequest {
     BulkRequest {
         export: 1,
-        query: shared_eventhub_persistence::search::SearchQuery::default(),
+        query: eh_persistence::search::SearchQuery::default(),
         options: ExportOptions {
-            format: shared_eventhub_persistence::export::ExportFormat::Txt,
+            format: eh_persistence::export::ExportFormat::Txt,
             include_metadata: true,
             condense_output: false,
             use_local_time: false,
@@ -206,7 +204,7 @@ fn seeding_fills_the_demo_archive_past_the_export_cap() {
 
     let store = rt.block_on(slot.acquire(&data_paths(root.path()))).unwrap();
     let page = store
-        .search(&shared_eventhub_persistence::search::SearchQuery::default())
+        .search(&eh_persistence::search::SearchQuery::default())
         .unwrap();
     assert!(page.items.len() > crate::read::rows::ROW_CAP);
 }
@@ -328,7 +326,7 @@ async fn the_partition_fail_scenario_ends_with_a_failed_partition() {
     assert_eq!(failed, "2");
     assert!(matches!(
         summary.partitions.get("2"),
-        Some(shared_eventhub_core::engine::PartitionEnd::Failed(_))
+        Some(eh_core::engine::PartitionEnd::Failed(_))
     ));
 }
 
@@ -436,7 +434,7 @@ fn the_demo_data_folder_lies_under_its_root() {
     assert!(state.workspace().unwrap().root().starts_with(root.path()));
 }
 
-fn send_request(count: u64, pacing: shared_eventhub_core::producer::Pacing) -> SendRequest {
+fn send_request(count: u64, pacing: eh_core::producer::Pacing) -> SendRequest {
     let form = crate::form::ConnectForm::default();
     let (config, given) = form.to_config();
     SendRequest {
@@ -446,14 +444,14 @@ fn send_request(count: u64, pacing: shared_eventhub_core::producer::Pacing) -> S
             given,
             paths: DataPaths::new(form.data_folder.trim()),
         },
-        event: shared_eventhub_core::producer::OutgoingEvent {
+        event: eh_core::producer::OutgoingEvent {
             body: b"ping".to_vec(),
-            ..shared_eventhub_core::producer::OutgoingEvent::default()
+            ..eh_core::producer::OutgoingEvent::default()
         },
         template: None,
-        plan: shared_eventhub_core::producer::SendPlan::new(
+        plan: eh_core::producer::SendPlan::new(
             count,
-            shared_eventhub_core::producer::Routing::automatic(),
+            eh_core::producer::Routing::automatic(),
             pacing,
         )
         .unwrap(),
@@ -484,7 +482,7 @@ impl SendPosts {
             .collect()
     }
 
-    fn finished(&self) -> Option<(shared_eventhub_core::producer::SendEnd, u64, Duration)> {
+    fn finished(&self) -> Option<(eh_core::producer::SendEnd, u64, Duration)> {
         self.0
             .lock()
             .unwrap()
@@ -502,7 +500,7 @@ impl SendPosts {
 async fn a_paced_demo_send_posts_one_event_per_interval_the_first_at_once() {
     let posts = SendPosts::default();
     let started = tokio::time::Instant::now();
-    let pacing = shared_eventhub_core::producer::Pacing::interval(Duration::from_secs(1)).unwrap();
+    let pacing = eh_core::producer::Pacing::interval(Duration::from_secs(1)).unwrap();
 
     send::demo_send(send_request(3, pacing), posts.sink(started)).await;
 
@@ -516,7 +514,7 @@ async fn a_paced_demo_send_posts_one_event_per_interval_the_first_at_once() {
     );
     assert!(matches!(
         posts.finished(),
-        Some((shared_eventhub_core::producer::SendEnd::Completed, 3, _))
+        Some((eh_core::producer::SendEnd::Completed, 3, _))
     ));
 }
 
@@ -524,7 +522,7 @@ async fn a_paced_demo_send_posts_one_event_per_interval_the_first_at_once() {
 async fn a_cancel_during_a_paced_wait_ends_the_demo_send_within_a_poll() {
     let posts = SendPosts::default();
     let started = tokio::time::Instant::now();
-    let pacing = shared_eventhub_core::producer::Pacing::interval(Duration::from_secs(1)).unwrap();
+    let pacing = eh_core::producer::Pacing::interval(Duration::from_secs(1)).unwrap();
     let request = send_request(3, pacing);
     let cancel = Arc::clone(&request.cancel);
     let running = tokio::spawn(send::demo_send(request, posts.sink(started)));
@@ -534,10 +532,10 @@ async fn a_cancel_during_a_paced_wait_ends_the_demo_send_within_a_poll() {
     running.await.unwrap();
 
     let (end, sent, at) = posts.finished().unwrap();
-    assert_eq!(end, shared_eventhub_core::producer::SendEnd::Cancelled);
+    assert_eq!(end, eh_core::producer::SendEnd::Cancelled);
     assert_eq!(sent, 2);
     assert!(
-        at <= Duration::from_millis(1_500) + shared_eventhub_core::cancel::CANCEL_POLL,
+        at <= Duration::from_millis(1_500) + eh_core::cancel::CANCEL_POLL,
         "{at:?}"
     );
 }
@@ -554,7 +552,7 @@ async fn a_demo_send_takes_a_number_for_every_event_it_counts(
     let started = tokio::time::Instant::now();
     let request = SendRequest {
         template: Some(Arc::new(Template::compile(source).unwrap())),
-        ..send_request(25, shared_eventhub_core::producer::Pacing::batched())
+        ..send_request(25, eh_core::producer::Pacing::batched())
     };
     let sequence = Arc::clone(&request.sequence);
 
@@ -569,14 +567,14 @@ async fn a_batched_demo_send_of_one_event_ends_after_one_step() {
     let started = tokio::time::Instant::now();
 
     send::demo_send(
-        send_request(1, shared_eventhub_core::producer::Pacing::batched()),
+        send_request(1, eh_core::producer::Pacing::batched()),
         posts.sink(started),
     )
     .await;
 
     assert!(matches!(
         posts.finished(),
-        Some((shared_eventhub_core::producer::SendEnd::Completed, 1, _))
+        Some((eh_core::producer::SendEnd::Completed, 1, _))
     ));
 }
 

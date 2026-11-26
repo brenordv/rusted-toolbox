@@ -40,15 +40,13 @@ use chrono::{DateTime, TimeDelta, Utc};
 use common_cli::app_logger::FileLogging;
 use common_gui_rune::Theme;
 use common_utils::file_system::get_current_dir;
+use eh_core::engine::{EngineEvent, RunEnd, RunSummary};
+use eh_persistence::config::{ConfigLoad, SensitiveValues, ToolConfig};
+use eh_persistence::paths::DataPaths;
+use eh_persistence::workspace::{ConfigHome, Profile, ProfileEntry, ProfileName, Workspace};
 use ending::{log_summary, session_failures};
 use rune::TextEdit;
 use rune_kit::PaneState;
-use shared_eventhub_core::engine::{EngineEvent, RunEnd, RunSummary};
-use shared_eventhub_persistence::config::{ConfigLoad, SensitiveValues, ToolConfig};
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::workspace::{
-    ConfigHome, Profile, ProfileEntry, ProfileName, Workspace,
-};
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{debug, info, warn};

@@ -13,10 +13,10 @@ use crate::views::details::{COPY_KEY, DONE_KEY, FAILURE_KEY};
 use crate::views::shell::open_log_line;
 use chrono::Utc;
 use common_cli::app_logger::FileLogging;
+use eh_core::engine::EngineEvent;
+use eh_core::producer::{SendEnd, SendSummary};
 use rune::accesskit::Action;
 use rune::{Key, KeyEvent, Mods};
-use shared_eventhub_core::engine::EngineEvent;
-use shared_eventhub_core::producer::{SendEnd, SendSummary};
 use std::time::Duration;
 
 const DIALOG: &str = "details-dialog";

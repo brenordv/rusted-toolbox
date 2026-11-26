@@ -3,8 +3,8 @@ use crate::cli_utils::{CliArgs, Commands, FormatArg};
 use crate::interactive::scripted::{Asked, Reply, ScriptedPrompter};
 use crate::send_cli::DEFAULT_SEND_COUNT;
 use clap::Parser;
+use eh_persistence::config::{AuthMethodConfig, CredentialKindConfig, TargetConfig};
 use rstest::rstest;
-use shared_eventhub_persistence::config::{AuthMethodConfig, CredentialKindConfig, TargetConfig};
 
 const NAMESPACE: &str = "orders.servicebus.windows.net";
 const HUB: &str = "orders";

@@ -23,12 +23,12 @@ use crate::read::rows::display_path;
 use crate::state::{
     AppState, Input, RECALLED_FIELD, SaveStatus, SaveTo, SheetPurpose, ToastKind, error_preview,
 };
+use eh_persistence::export::DiskWriteMode;
 use rune::{Align, El, FileDialogOptions, ScrollSpec, TextEdit, Tx, col, row, spacer};
 use rune_kit::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Kit, ScrollBar, SegmentedControl,
     TextField, TextInput,
 };
-use shared_eventhub_persistence::export::DiskWriteMode;
 use tracing::warn;
 
 /// The key of the footer's save status caption.

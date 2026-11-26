@@ -1,13 +1,13 @@
 //! Resolved run settings, the secrets taken from the environment, and run
 //! outcomes.
 
+use common_mock_data::template::Template;
 use common_utils::string_utils::SecretString;
-use mock_data_utils::template::Template;
-use shared_eventhub_core::filters::CaptureFilters;
-use shared_eventhub_core::producer::{OutgoingEvent, SendPlan};
-use shared_eventhub_persistence::config::{ExportSettings, SensitiveValues, ToolConfig};
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::workspace::{ConfigHome, Workspace};
+use eh_core::filters::CaptureFilters;
+use eh_core::producer::{OutgoingEvent, SendPlan};
+use eh_persistence::config::{ExportSettings, SensitiveValues, ToolConfig};
+use eh_persistence::paths::DataPaths;
+use eh_persistence::workspace::{ConfigHome, Workspace};
 use std::env::VarError;
 use std::path::PathBuf;
 use std::sync::Arc;

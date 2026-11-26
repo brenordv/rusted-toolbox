@@ -9,11 +9,11 @@
 use super::{AppState, ConnectionState, Effect, Outcome, SaveStatus, ToastKind};
 use crate::form::{ConnectForm, SecretKind};
 use crate::read::rows::display_line;
-use shared_eventhub_core::filters::CaptureFilters;
-use shared_eventhub_persistence::config::{ConfigLoad, ExportSettings, StorageConfig, ToolConfig};
-use shared_eventhub_persistence::export::DiskWriteMode;
-use shared_eventhub_persistence::paths::{DataPaths, plain_relative};
-use shared_eventhub_persistence::workspace::{ConfigHome, ProfileEntry, Workspace};
+use eh_core::filters::CaptureFilters;
+use eh_persistence::config::{ConfigLoad, ExportSettings, StorageConfig, ToolConfig};
+use eh_persistence::export::DiskWriteMode;
+use eh_persistence::paths::{DataPaths, plain_relative};
+use eh_persistence::workspace::{ConfigHome, ProfileEntry, Workspace};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 

@@ -2,12 +2,12 @@
 //! through the public store API.
 
 use crate::read::test_support::captured;
-use shared_eventhub_core::connection::EventHubIdentity;
-use shared_eventhub_core::engine::{Checkpoint, MessageSink};
-use shared_eventhub_core::models::CapturedMessage;
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::search::{SearchCursor, SearchPage, SearchQuery};
-use shared_eventhub_persistence::store::MessageStore;
+use eh_core::connection::EventHubIdentity;
+use eh_core::engine::{Checkpoint, MessageSink};
+use eh_core::models::CapturedMessage;
+use eh_persistence::paths::DataPaths;
+use eh_persistence::search::{SearchCursor, SearchPage, SearchQuery};
+use eh_persistence::store::MessageStore;
 use std::num::NonZeroUsize;
 use tempfile::TempDir;
 

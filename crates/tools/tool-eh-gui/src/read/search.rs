@@ -6,9 +6,9 @@
 //! also looks at the message and correlation ids.
 
 use crate::read::rows::RowBuffer;
+use eh_core::filters::contains_any_ci;
+use eh_core::models::CapturedMessage;
 use regex::{Regex, RegexBuilder};
-use shared_eventhub_core::filters::contains_any_ci;
-use shared_eventhub_core::models::CapturedMessage;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
