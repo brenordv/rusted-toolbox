@@ -1,5 +1,64 @@
 # Workspace Changelog
 
+## v9
+- `eh-gui`'s connection sheet has a muted hint under each sign-in field saying what goes in it,
+  with an example value where one helps, and a line under Sign-in method and Azure credential
+  saying what the picked option does. Text only: no field, check, or saved value changed.
+- `eh`'s connection flags (`read` and `send`) show an example value in their help, and the
+  menu's namespace and event hub prompts give one too. Text only.
+- GUI revamp, shared layer: `common-gui-rune` 1.2.0 gains `Theme`, the parts `action_row`,
+  `choice_switch`, `reveal`, and `section_header`, the keys `area_chord` and `type_newline`,
+  `motion::CONTROL_PAIR`, `window::run_watched` and `report_failure`, and more headless test
+  helpers; its focus rings and badge labels are in the contrast test. `common-cli` 1.9.0 gains
+  `gui_boot::boot_gui`, the logging boot every window uses, which also logs a panic. `speak`
+  1.2.1 and `alert` 1.0.2 use them in place of their own copies (speak's `mod+1`/`mod+2` now
+  ignore a held key); `eh-gui` 1.0.4 re-exports the two parts and the token that moved.
+- `eh-gui` 1.0.5 takes its theme, section switch, Send action row, section chords, newline key,
+  control spring pair, and logging boot from the shared layer; its section chords now ignore a
+  held key, and the Send action row is 52 pt tall, the shared row's minimum. `common-gui-rune`
+  1.2.1 keeps a growing status centred in `action_row`.
+- `seal-gui` 2.0.0 runs on Rune: a tabbed window with the Text tab built (Direction, input,
+  recipients or identity file, output, Seal or Unseal), status lines instead of toasts, one
+  background thread that always answers, and info-level file logging that never holds the
+  text or a key. `shared-crypto` 1.1.0 gains `keys::create_identity_file`, which creates an
+  identity file only if none is there.
+- `seal-gui` Files tab on Rune: a file list that takes dropped files and grows with the window,
+  per-row badges and messages, a counted status line with a summary, and Output next to each
+  input or in a chosen folder; only regular files join the list.
+  `common-gui-rune` 1.3.0 gains `drop_fill`, a drop-target fill that keeps captions at 4.5:1.
+- `seal-gui` Keys tab on Rune: the recipient book with an add form and a confirm before a
+  delete, key generation with an in-window confirm before an identity file is replaced, and the
+  log folder. The settings file is saved on each change, with a caption on every tab while it
+  cannot be.
+- egui leaves the workspace: with seal-gui on Rune, nothing uses `egui`, `eframe`, `rfd` (Rune
+  brings its own file dialogs), or the `common-gui` library, so the four are removed, along
+  with the `epaint_default_fonts` license exception in `deny.toml`. Every windowed tool
+  (eh-gui, seal-gui, speak, alert) now builds on Rune.
+- `seal-gui` Files list builds only the rows in view: with 2,000 files, a frame after a file
+  event takes under 1 ms (it took 80 ms) and a frame while scrolling about 1.5 ms. Each row
+  shows its path on one line, cut in the middle when it does not fit, with the whole path in a
+  tooltip. Adding files checks for duplicates against a set, not row by row.
+- Tools keep their data under `~/.rusted-toolbox/<tool>`. `common-utils` 3.0.0's
+  `get_app_folder` returns `~/.rusted-toolbox/<name>` (it returned `~/.<name>`), so every
+  tool's log files go to `~/.rusted-toolbox/<tool>/logs`; old log folders are left where they
+  are. Every tool gets a minor bump for it (seal-gui stays at 2.0.0). `speak` 2.0.0 keeps its
+  settings in `~/.rusted-toolbox/speak` and moves them there from
+  `~/.rusted-toolbox/tool-speak` on its first start. `common-file-utils` 2.4.0 gains
+  `adoption::adopt`, which moves a tool's data from its old default place once (a hard link or
+  a rename, never a copy, never over existing data, never a symbolic link) and reports what it
+  did. Workspace dependency added: `same-file` 1.0.6, already in the tree through `walkdir`.
+  The root readme has a "Where tools keep their data" section.
+- The rest of the tools' data moves under `~/.rusted-toolbox`, each moved from its old default
+  place on start with a warning. `seal-gui` 2.0.0 keeps its settings in
+  `~/.rusted-toolbox/seal-gui` (they were in the OS config folder, `%APPDATA%\seal` or
+  `~/.config/seal`) and moves only a file carrying seal's marker. `eh` 2.0.0 and `eh-gui` 2.0.0
+  share the profile workspace `~/.rusted-toolbox/eh/profiles` (it was `~/.eh/profiles`);
+  `shared-eventhub-persistence` 2.0.0's `Workspace::locate` moves it and returns what it did,
+  and `EH_WORKSPACE` still wins. `netquality` 3.0.0's default database is
+  `~/.rusted-toolbox/netquality/netquality.db` (it was beside the executable); nothing moves
+  while a journal file sits beside either database, and running netquality instances should be
+  stopped before the first start. `common-file-utils` 2.4.0 gains `adopt_in_use` for that guard.
+
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system
   (kits and surface ladder, tokens, motion roles, parts, the system appearance, a window watch

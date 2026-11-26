@@ -26,7 +26,7 @@ The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
    - `crates/libs/common-utils-ext`: helpers that pull in heavier dependencies and that only some tools need (clipboard, GUID generation, regex sanitizing).
    - `crates/libs/common-cli`: the common CLI arg parser, header formatting, exit helpers, and basic logging used by all tools.
    - `crates/libs/common-file-utils`: file-system operations more specialized than the ones in `common-utils`.
-   - `crates/libs/common-gui-rune`: the Rune design system shared by the Rune tools (kits, tokens, motion roles, parts, the system appearance, a window watch, and headless test helpers behind its `test-harness` feature).
+   - `crates/libs/common-gui-rune`: the Rune design system shared by the Rune tools (kits, tokens, motion roles, parts, the system appearance, a window watch, and headless test helpers behind its `test-harness` feature). Its [`DESIGN.md`](crates/libs/common-gui-rune/DESIGN.md) holds the rules every windowed tool follows; a new GUI starts there.
    - `crates/libs/common-serialization-utils`: loads serialized data (JSON) from files into typed objects and saves them back.
    - `crates/libs/common-audio`: decodes a sound (WAV, MP3, FLAC, Ogg Vorbis) and plays it on the default output device. On Linux it needs the ALSA development files (`libasound2-dev`) to build.
    - `crates/libs/cli-signal-monitor`: watches for Ctrl+C and runs the tool's graceful-shutdown path.
@@ -38,7 +38,8 @@ The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
    - `crates/libs/shared-head-tail`: the shared engine machinery behind `tool-head` and `tool-tail`.
    - If more than one tool needs it, it belongs in one of these crates rather than duplicating logic.
 3. **Root `README.md`**: add a reference to any new tool here, and keep the links pointing at `crates/tools/<crate>/readme.md`.
-4. **Build scripts (`build.sh`, `build.bat`)**: they build the whole workspace in one pass and copy every produced binary into `dist/` (`dist\windows\` on Windows). There is no per-tool list to maintain: a new tool crate is picked up automatically. On non-Windows systems, `cat`, `touch`, `head`, and `tail` are built but not copied, since coreutils already provides them.
+4. **A tool's data**: anything a tool saves for itself goes in its folder in the toolbox home, `~/.rusted-toolbox/<package name>`. Log files get there through `common_utils::file_system::get_app_folder`; saved data takes the folder from `toolbox_home()`, which is `None` with no home folder (data never falls back to the current folder). When a release moves data a tool already saved somewhere else, `common_file_utils::adoption::adopt` moves it from its old default place on start, and the tool logs the outcome with `Adoption::report`. The root readme's "Where tools keep their data" section lists every tool's data.
+5. **Build scripts (`build.sh`, `build.bat`)**: they build the whole workspace in one pass and copy every produced binary into `dist/` (`dist\windows\` on Windows). There is no per-tool list to maintain: a new tool crate is picked up automatically. On non-Windows systems, `cat`, `touch`, `head`, and `tail` are built but not copied, since coreutils already provides them.
 
 ## Dependencies (centralized)
 Dependency versions live in one place: the root `Cargo.toml`.

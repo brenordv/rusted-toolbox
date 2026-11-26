@@ -13,9 +13,9 @@ pub(crate) mod shell;
 
 pub(crate) use connect::move_profile_focus;
 pub use connect::{
-    NAME_ISSUE_KEY, NEW_PROFILE_CANCEL_KEY, NEW_PROFILE_KEY, NEW_PROFILE_NAME_KEY,
-    NEW_PROFILE_ROW_KEY, NEW_PROFILE_SAVE_KEY, PICKER_KEY, PROFILE_GROUP_KEY, PROFILE_NOTE_KEY,
-    ROW_ISSUE_KEY, SAVE_STATUS_KEY, SAVE_STATUS_LINES,
+    CONNECTION_STRING_EXAMPLE_KEY, NAME_ISSUE_KEY, NEW_PROFILE_CANCEL_KEY, NEW_PROFILE_KEY,
+    NEW_PROFILE_NAME_KEY, NEW_PROFILE_ROW_KEY, NEW_PROFILE_SAVE_KEY, PICKER_KEY, PROFILE_GROUP_KEY,
+    PROFILE_NOTE_KEY, ROW_ISSUE_KEY, SAVE_STATUS_KEY, SAVE_STATUS_LINES, hints,
 };
 pub use export::{BULK_METADATA_KEY, CONDENSE_KEY, LOCAL_TIME_KEY, SKIP_EXPORTED_KEY};
 pub use inspector::{EXPORT_METADATA_KEY, READ_METADATA_KEY};
@@ -34,8 +34,8 @@ pub(crate) const INVALID_CONNECTION_STRING: &str = "Not a valid connection strin
 
 /// The window's root.
 pub fn view(s: &AppState, cx: &mut Cx<AppState>) -> El {
-    let dark = s.system_dark.unwrap_or(cx.system_dark());
-    let k = s.ds.kit(dark);
+    let dark = s.theme.dark(cx.system_dark());
+    let k = s.theme.kit(dark);
     let mut layer = Vec::new();
     let body = shell::shell(s, cx, k, dark, &mut layer);
     connect::sheet(s, k, &mut layer);

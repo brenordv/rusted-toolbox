@@ -396,7 +396,7 @@ fn only_create(h: &mut Harness) -> CreateRequest {
 }
 
 /// The texts drawn inside the element keyed `key`.
-fn texts_within(h: &Harness, key: &str) -> Vec<String> {
+pub(super) fn texts_within(h: &Harness, key: &str) -> Vec<String> {
     let inside = format!("{}/", h.path_of(key));
     h.rt.elements()
         .into_iter()
@@ -548,7 +548,7 @@ fn named_config() -> ToolConfig {
 
 /// The sheet over the listed workspace at `size`, launched in a folder whose `config.json` is
 /// `config`.
-fn recalled_from(config: ToolConfig, size: (f32, f32)) -> Harness {
+pub(super) fn recalled_from(config: ToolConfig, size: (f32, f32)) -> Harness {
     let mut s = with_profiles(state());
     s.form = recalled(
         &ConfigHome::CurrentFolder(launch_folder()),
@@ -567,7 +567,7 @@ fn recalled_sheet() -> Harness {
 
 /// What the launch folder's `config.json` holds: a stored connection string for the `orders`
 /// hub, named in full.
-fn named_string_config() -> ToolConfig {
+pub(super) fn named_string_config() -> ToolConfig {
     ToolConfig::new(TargetConfig {
         auth: AuthMethodConfig::ConnectionString {
             stored: StoredSecret::LocalDb,

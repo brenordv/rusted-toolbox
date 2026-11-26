@@ -1,3 +1,8 @@
+# 2.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/jwt/logs` (they went to
+  `~/.jwt/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only jwt's logs.
+
 # 2.0.5
 - Test suites use the shared `common_cli::test_writers` doubles instead of a private
   failing-writer copy; behavior pinned by the tests is unchanged.

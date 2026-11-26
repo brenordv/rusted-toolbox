@@ -1,6 +1,6 @@
 [package]
 name = "seal"
-version = "1.0.1"
+version = "1.1.0"
 description = "Encrypts and decrypts files with key-based age encryption"
 edition.workspace = true
 authors.workspace = true

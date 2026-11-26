@@ -1,22 +1,26 @@
-use anyhow::Context as _;
+//! The background worker: one thread that runs one crypto job at a time and reports every
+//! event through a `post` callback. It never reads window state; a job carries everything it
+//! needs.
+
+use anyhow::{Context as _, anyhow};
 use common_file_utils::atomic_write::write_via_temp;
 use shared_crypto::{Direction, Recipient, engine, keys, output_name_for};
+use std::any::Any;
+use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
+use std::time::Instant;
+use tracing::{debug, error, info, warn};
 
-/// A unit of background work. Carries everything the job needs, already
-/// validated by the submitting view; the worker never reads UI state.
-///
-/// No `Debug`: [`Recipient`] does not implement it (the age crate keeps its
-/// key types out of format machinery), and nothing logs whole requests.
+/// What [`WorkerSubmit::run`] answers once the worker thread is gone.
+pub const WORKER_GONE: &str = "The background worker has stopped. Restart seal-gui to run jobs.";
+
+/// A unit of background work, already validated; the worker never reads window state.
 pub enum JobRequest {
-    /// Round-trips the full event sequence without doing any real work, so
-    /// the bridge tests can prove the pipeline end to end.
-    #[cfg(test)]
-    Probe,
     /// Seals `text` to `recipients` as ASCII armor.
     EncryptText {
         text: String,
@@ -27,7 +31,7 @@ pub enum JobRequest {
         text: String,
         identity_path: PathBuf,
     },
-    /// Seals every file to `recipients`; one job, per-file events.
+    /// Seals every file to `recipients`; one job, events per file.
     EncryptFiles {
         files: Vec<PathBuf>,
         recipients: Vec<Recipient>,
@@ -41,52 +45,131 @@ pub enum JobRequest {
         out_dir: Option<PathBuf>,
         overwrite: bool,
     },
-    /// Generates an identity and saves it to `path`. The secret is created,
-    /// written, and dropped inside the worker; only the public key returns.
-    Keygen { path: PathBuf },
+    /// Generates an identity and saves it to `path`. With `replace` false the file is created
+    /// only if none is there; an existing one answers [`JobOutcome::KeygenExists`] and is left
+    /// as it was. The secret never leaves the worker.
+    Keygen { path: PathBuf, replace: bool },
     #[cfg(test)]
     FailForTests,
     #[cfg(test)]
     PanicForTests,
+    /// Says it started on `started`, then holds the worker until `release` sends or hangs up.
+    #[cfg(test)]
+    HoldForTests {
+        started: mpsc::Sender<()>,
+        release: mpsc::Receiver<()>,
+    },
 }
 
-/// Which feature a job belongs to, so failure cleanup can route to the right
-/// tab's state without inspecting the request again.
+impl fmt::Debug for JobRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EncryptText { text, recipients } => f
+                .debug_struct("EncryptText")
+                .field("text_len", &text.len())
+                .field("recipients", &recipients.len())
+                .finish(),
+            Self::DecryptText {
+                text,
+                identity_path,
+            } => f
+                .debug_struct("DecryptText")
+                .field("text_len", &text.len())
+                .field("identity_path", identity_path)
+                .finish(),
+            Self::EncryptFiles {
+                files,
+                recipients,
+                out_dir,
+                overwrite,
+            } => f
+                .debug_struct("EncryptFiles")
+                .field("files", &files.len())
+                .field("recipients", &recipients.len())
+                .field("out_dir", out_dir)
+                .field("overwrite", overwrite)
+                .finish(),
+            Self::DecryptFiles {
+                files,
+                identity_path,
+                out_dir,
+                overwrite,
+            } => f
+                .debug_struct("DecryptFiles")
+                .field("files", &files.len())
+                .field("identity_path", identity_path)
+                .field("out_dir", out_dir)
+                .field("overwrite", overwrite)
+                .finish(),
+            Self::Keygen { path, replace } => f
+                .debug_struct("Keygen")
+                .field("path", path)
+                .field("replace", replace)
+                .finish(),
+            #[cfg(test)]
+            Self::FailForTests => f.write_str("FailForTests"),
+            #[cfg(test)]
+            Self::PanicForTests => f.write_str("PanicForTests"),
+            #[cfg(test)]
+            Self::HoldForTests { .. } => f.write_str("HoldForTests"),
+        }
+    }
+}
+
+/// Which tab a job belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobKind {
-    #[cfg(test)]
-    Probe,
     Text,
     Files,
     Keygen,
 }
 
+impl JobKind {
+    /// The kind's name in a log line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Files => "files",
+            Self::Keygen => "keygen",
+        }
+    }
+}
+
 impl JobRequest {
+    /// The tab the job belongs to.
     pub fn kind(&self) -> JobKind {
         match self {
             Self::EncryptText { .. } | Self::DecryptText { .. } => JobKind::Text,
             Self::EncryptFiles { .. } | Self::DecryptFiles { .. } => JobKind::Files,
             Self::Keygen { .. } => JobKind::Keygen,
             #[cfg(test)]
-            Self::Probe | Self::FailForTests | Self::PanicForTests => JobKind::Probe,
+            Self::FailForTests | Self::PanicForTests | Self::HoldForTests { .. } => JobKind::Text,
+        }
+    }
+
+    /// How many files the job works through; 0 for a text or keygen job.
+    pub fn file_count(&self) -> usize {
+        match self {
+            Self::EncryptFiles { files, .. } | Self::DecryptFiles { files, .. } => files.len(),
+            Self::EncryptText { .. } | Self::DecryptText { .. } | Self::Keygen { .. } => 0,
+            #[cfg(test)]
+            Self::FailForTests | Self::PanicForTests | Self::HoldForTests { .. } => 0,
         }
     }
 }
 
 /// What a finished job produced.
-#[derive(Debug)]
 pub enum JobOutcome {
-    /// The probe round-trip completed.
-    #[cfg(test)]
-    Probe,
     /// The text operation's result: armored ciphertext or UTF-8 plaintext.
     Text(String),
-    /// Unsealed plaintext was not UTF-8; binary content belongs in the Files
-    /// tab, not mojibake in a text box.
+    /// Unsealed plaintext that is not UTF-8; binary content belongs in the Files tab.
     TextRedirect,
-    /// The identity was saved; only its public half crosses the channel.
-    Keygen { public_key: String },
-    /// Per-file batch totals, for the summary toast.
+    /// The identity was saved at `path`; only its public half leaves the worker.
+    Keygen { public_key: String, path: PathBuf },
+    /// `path` already held a file and the request did not say to replace it; nothing was
+    /// written.
+    KeygenExists { path: PathBuf },
+    /// A file batch's totals.
     Files {
         direction: Direction,
         done: usize,
@@ -95,175 +178,304 @@ pub enum JobOutcome {
     },
 }
 
+impl JobOutcome {
+    /// The tab the outcome answers.
+    pub fn kind(&self) -> JobKind {
+        match self {
+            Self::Text(_) | Self::TextRedirect => JobKind::Text,
+            Self::Keygen { .. } | Self::KeygenExists { .. } => JobKind::Keygen,
+            Self::Files { .. } => JobKind::Files,
+        }
+    }
+
+    /// `(done, skipped, failed)` for the job-finished log line.
+    fn counts(&self) -> (usize, usize, usize) {
+        match self {
+            Self::Text(_) | Self::TextRedirect | Self::Keygen { .. } => (1, 0, 0),
+            Self::KeygenExists { .. } => (0, 1, 0),
+            Self::Files {
+                done,
+                skipped,
+                failed,
+                ..
+            } => (*done, *skipped, *failed),
+        }
+    }
+}
+
+impl fmt::Debug for JobOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Text(text) => f.debug_struct("Text").field("len", &text.len()).finish(),
+            Self::TextRedirect => f.write_str("TextRedirect"),
+            Self::Keygen { path, .. } => f.debug_struct("Keygen").field("path", path).finish(),
+            Self::KeygenExists { path } => {
+                f.debug_struct("KeygenExists").field("path", path).finish()
+            }
+            Self::Files {
+                direction,
+                done,
+                skipped,
+                failed,
+            } => f
+                .debug_struct("Files")
+                .field("direction", direction)
+                .field("done", done)
+                .field("skipped", skipped)
+                .field("failed", failed)
+                .finish(),
+        }
+    }
+}
+
 /// How one file of a batch ended.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum FileResult {
-    /// Written; carries the output file's size in bytes.
+    /// Written; the output file's size in bytes.
     Done(u64),
+    /// The failure's text.
     Failed(String),
-    /// The output already existed and the overwrite gate was off.
+    /// The output already existed and overwriting was off.
     Skipped,
 }
 
-/// One message from the worker back to the UI. Every send is followed by a
-/// repaint request, because an on-demand renderer never notices state that
-/// changed on another thread.
-#[derive(Debug)]
-pub enum JobEvent {
-    Started {
-        job_id: u64,
-    },
-    FileProgress {
-        job_id: u64,
-        path: PathBuf,
-        done: usize,
-        total: usize,
-    },
-    FileFinished {
-        job_id: u64,
-        path: PathBuf,
-        result: FileResult,
-    },
-    Done {
-        job_id: u64,
-        outcome: JobOutcome,
-    },
-    Failed {
-        job_id: u64,
-        error_text: String,
-    },
+impl fmt::Debug for FileResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Done(size) => f.debug_tuple("Done").field(size).finish(),
+            Self::Failed(text) => f.debug_struct("Failed").field("len", &text.len()).finish(),
+            Self::Skipped => f.write_str("Skipped"),
+        }
+    }
 }
 
-/// Owns the single background worker thread and the two channels bridging it
-/// to the UI. One job runs at a time; the UI disables job-starting actions
-/// while one is in flight.
-pub struct WorkerHandle {
-    /// Option so Drop can take and drop the sender, which is what ends the
-    /// worker loop.
-    requests: Option<mpsc::Sender<JobRequest>>,
-    events: mpsc::Receiver<JobEvent>,
+/// One event of a running job.
+pub enum JobEvent {
+    /// The batch started on `path`.
+    FileProgress { path: PathBuf },
+    /// The batch finished `path`.
+    FileFinished { path: PathBuf, result: FileResult },
+    /// The job's one final answer when it worked.
+    Finished(JobOutcome),
+    /// The job's one final answer when it failed: the error chain's text.
+    Failed(String),
+}
+
+impl fmt::Debug for JobEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FileProgress { path } => {
+                f.debug_struct("FileProgress").field("path", path).finish()
+            }
+            Self::FileFinished { path, result } => f
+                .debug_struct("FileFinished")
+                .field("path", path)
+                .field("result", result)
+                .finish(),
+            Self::Finished(outcome) => f.debug_tuple("Finished").field(outcome).finish(),
+            Self::Failed(text) => f.debug_struct("Failed").field("len", &text.len()).finish(),
+        }
+    }
+}
+
+/// What the worker thread posts.
+#[derive(Debug)]
+pub enum WorkerMsg {
+    /// An event of the running job.
+    Job(JobEvent),
+    /// The thread ended without being asked to; no job can run again.
+    Stopped,
+}
+
+enum Request {
+    Job(JobRequest),
+    Stop,
+}
+
+/// The half of the worker a window keeps to start jobs; cheap to clone.
+#[derive(Clone)]
+pub struct WorkerSubmit {
+    requests: mpsc::Sender<Request>,
+}
+
+impl WorkerSubmit {
+    /// Queues `request` behind any running job.
+    ///
+    /// # Errors
+    /// [`WORKER_GONE`] when the worker thread has ended.
+    pub fn run(&self, request: JobRequest) -> anyhow::Result<()> {
+        self.requests
+            .send(Request::Job(request))
+            .map_err(|_| anyhow!(WORKER_GONE))
+    }
+}
+
+/// The half of the worker the entry point keeps, to wait for it at the end.
+pub struct WorkerJoin {
+    requests: mpsc::Sender<Request>,
+    running: Arc<Mutex<Option<JobKind>>>,
     thread: Option<thread::JoinHandle<()>>,
 }
 
-impl WorkerHandle {
-    /// Spawns the worker thread. The `ctx` clone points at the live UI
-    /// context (egui contexts are refcounted), so the worker can wake the
-    /// window after each event it sends.
-    ///
-    /// # Errors
-    /// Fails when the OS refuses to spawn the thread.
-    pub fn spawn(ctx: egui::Context) -> std::io::Result<Self> {
-        let (request_tx, request_rx) = mpsc::channel::<JobRequest>();
-        let (event_tx, event_rx) = mpsc::channel::<JobEvent>();
-        let thread = thread::Builder::new()
-            .name("seal-worker".to_string())
-            .spawn(move || worker_loop(&request_rx, &event_tx, &ctx))?;
+impl WorkerJoin {
+    /// The kind of job the worker is running now, if any.
+    pub fn running(&self) -> Option<JobKind> {
+        *self.running.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 
-        Ok(Self {
-            requests: Some(request_tx),
-            events: event_rx,
+    /// Asks the worker to stop once the running job, if any, ends, and waits for the thread.
+    /// A worker that already ended takes no request; that is expected and the wait still
+    /// happens. A thread that ended by panicking is logged.
+    pub fn finish(mut self) {
+        if self.requests.send(Request::Stop).is_err() {
+            debug!("the worker had already stopped");
+        }
+        if let Some(thread) = self.thread.take()
+            && let Err(payload) = thread.join()
+        {
+            error!(error = %panic_text(payload.as_ref()), "the worker could not be joined");
+        }
+    }
+}
+
+/// The text a thread's panic payload carries, when it carries text.
+fn panic_text(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| (*text).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic with no text message".to_owned())
+}
+
+/// Starts the worker thread, which hands every event to `post`.
+///
+/// # Errors
+/// When the OS refuses to start the thread.
+pub fn spawn(
+    post: impl Fn(WorkerMsg) + Send + 'static,
+) -> std::io::Result<(WorkerSubmit, WorkerJoin)> {
+    let (requests, receiver) = mpsc::channel::<Request>();
+    let running = Arc::new(Mutex::new(None));
+    let worker_running = Arc::clone(&running);
+    let thread = thread::Builder::new()
+        .name("seal-worker".to_owned())
+        .spawn(move || worker_loop(&receiver, &post, &worker_running))?;
+    Ok((
+        WorkerSubmit {
+            requests: requests.clone(),
+        },
+        WorkerJoin {
+            requests,
+            running,
             thread: Some(thread),
-        })
-    }
-
-    /// Queues a job. Returns false when the worker is gone (its channel
-    /// closed), so the caller can surface the failure instead of silently
-    /// dropping the job.
-    pub fn submit(&self, job: JobRequest) -> bool {
-        self.requests
-            .as_ref()
-            .is_some_and(|requests| requests.send(job).is_ok())
-    }
-
-    /// Collects up to `budget` pending events without blocking; the bound
-    /// keeps a pathological burst from stretching one frame. The second
-    /// value is true when the worker side has disconnected (the thread is
-    /// gone).
-    pub fn drain(&self, budget: usize) -> (Vec<JobEvent>, bool) {
-        drain_events(&self.events, budget)
-    }
+        },
+    ))
 }
 
-impl Drop for WorkerHandle {
-    /// Dropping the sender first is what ends the thread: the worker's
-    /// `recv` fails and its loop exits, so the join cannot hang.
+/// Reports a worker thread that ends without a `Stop`: from a panic in a job, or with every
+/// sender gone. Clears the running job, logs the stop with the kind that was running, and
+/// posts [`WorkerMsg::Stopped`].
+struct StopGuard<'a> {
+    running: &'a Mutex<Option<JobKind>>,
+    post: &'a dyn Fn(WorkerMsg),
+    asked_to_stop: bool,
+}
+
+impl Drop for StopGuard<'_> {
     fn drop(&mut self) {
-        drop(self.requests.take());
-        if let Some(thread) = self.thread.take() {
-            // A panicked worker already surfaced through the drain's
-            // disconnected flag, so the join result carries nothing new.
-            let _ = thread.join();
+        if !self.asked_to_stop {
+            report_stop(self.running, self.post);
         }
     }
 }
 
-fn drain_events(events: &mpsc::Receiver<JobEvent>, budget: usize) -> (Vec<JobEvent>, bool) {
-    let mut collected = Vec::new();
-    for _ in 0..budget {
-        match events.try_recv() {
-            Ok(event) => collected.push(event),
-            Err(mpsc::TryRecvError::Empty) => return (collected, false),
-            Err(mpsc::TryRecvError::Disconnected) => return (collected, true),
-        }
-    }
-    (collected, false)
+/// What the worker does when its thread ends without being asked to: clears the running job,
+/// logs the stop at `error` with the kind of job that was running, and posts
+/// [`WorkerMsg::Stopped`].
+pub fn report_stop(running: &Mutex<Option<JobKind>>, post: &dyn Fn(WorkerMsg)) {
+    let kind = running
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take();
+    error!(
+        kind = kind.map(JobKind::as_str),
+        "the worker thread stopped without being asked to"
+    );
+    post(WorkerMsg::Stopped);
 }
 
-/// Runs jobs until the request channel closes (the handle was dropped).
 fn worker_loop(
-    requests: &mpsc::Receiver<JobRequest>,
-    events: &mpsc::Sender<JobEvent>,
-    ctx: &egui::Context,
+    requests: &mpsc::Receiver<Request>,
+    post: &dyn Fn(WorkerMsg),
+    running: &Mutex<Option<JobKind>>,
 ) {
-    let mut job_id: u64 = 0;
+    let mut guard = StopGuard {
+        running,
+        post,
+        asked_to_stop: false,
+    };
     while let Ok(request) = requests.recv() {
-        job_id += 1;
-        send_event(events, ctx, JobEvent::Started { job_id });
-        match run_job(request, job_id, events, ctx) {
-            Ok(outcome) => send_event(events, ctx, JobEvent::Done { job_id, outcome }),
-            Err(error) => send_event(
-                events,
-                ctx,
-                JobEvent::Failed {
-                    job_id,
-                    error_text: format!("{error:#}"),
-                },
-            ),
+        match request {
+            Request::Stop => {
+                guard.asked_to_stop = true;
+                return;
+            }
+            Request::Job(job) => run_one(job, post, running),
         }
     }
 }
 
-/// Sends one event and wakes the sleeping UI to render it. A failed send
-/// means the UI side is shutting down; the loop ends on the next `recv`.
-fn send_event(events: &mpsc::Sender<JobEvent>, ctx: &egui::Context, event: JobEvent) {
-    if events.send(event).is_ok() {
-        ctx.request_repaint();
-    }
+/// Runs `job` and posts its one final answer, logging its start and its end first.
+fn run_one(job: JobRequest, post: &dyn Fn(WorkerMsg), running: &Mutex<Option<JobKind>>) {
+    let kind = job.kind();
+    *running.lock().unwrap_or_else(PoisonError::into_inner) = Some(kind);
+    log_job_started(kind, job.file_count());
+    let started = Instant::now();
+    let answer = match run_job(job, post) {
+        Ok(outcome) => {
+            log_job_finished(kind, &outcome, elapsed_ms(started));
+            JobEvent::Finished(outcome)
+        }
+        Err(error) => {
+            let text = format!("{error:#}");
+            log_job_failed(kind, &text);
+            JobEvent::Failed(text)
+        }
+    };
+    *running.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    post(WorkerMsg::Job(answer));
 }
 
-/// Runs one job to completion on the worker thread. Touches egui only
-/// through the repaint wake in [`send_event`].
-fn run_job(
-    request: JobRequest,
-    job_id: u64,
-    events: &mpsc::Sender<JobEvent>,
-    ctx: &egui::Context,
-) -> anyhow::Result<JobOutcome> {
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// The job-started log line.
+pub fn log_job_started(kind: JobKind, files: usize) {
+    info!(kind = kind.as_str(), files, "job started");
+}
+
+/// The job-finished log line, with the outcome's counts.
+pub fn log_job_finished(kind: JobKind, outcome: &JobOutcome, elapsed_ms: u64) {
+    let (done, skipped, failed) = outcome.counts();
+    info!(
+        kind = kind.as_str(),
+        done, failed, skipped, elapsed_ms, "job finished"
+    );
+}
+
+/// The job-failed log line, with the error chain.
+pub fn log_job_failed(kind: JobKind, error: &str) {
+    error!(kind = kind.as_str(), error = %error, "job failed");
+}
+
+/// The line for one file of a batch that failed.
+pub fn log_file_failed(path: &Path, error: &str) {
+    warn!(path = ?path, error = %error, "a file in the batch failed");
+}
+
+fn run_job(request: JobRequest, post: &dyn Fn(WorkerMsg)) -> anyhow::Result<JobOutcome> {
     match request {
-        #[cfg(test)]
-        JobRequest::Probe => {
-            send_event(
-                events,
-                ctx,
-                JobEvent::FileProgress {
-                    job_id,
-                    path: PathBuf::new(),
-                    done: 1,
-                    total: 1,
-                },
-            );
-            Ok(JobOutcome::Probe)
-        }
         JobRequest::EncryptText { text, recipients } => run_encrypt_text(&text, &recipients),
         JobRequest::DecryptText {
             text,
@@ -281,9 +493,9 @@ fn run_job(
                 out_dir,
                 overwrite,
             };
-            run_file_batch(&spec, job_id, events, ctx, |input, output| {
+            Ok(run_file_batch(&spec, post, |input, output| {
                 engine::encrypt(&recipients, input, output, false)
-            })
+            }))
         }
         JobRequest::DecryptFiles {
             files,
@@ -291,8 +503,8 @@ fn run_job(
             out_dir,
             overwrite,
         } => {
-            // A bad identity file fails the whole job before any file event,
-            // so no row is left mid-flight.
+            // A bad identity file fails the whole job before any file event, so no row is left
+            // mid-flight.
             let identities = keys::load_identities(&[identity_path])?;
             let spec = BatchSpec {
                 files,
@@ -300,15 +512,22 @@ fn run_job(
                 out_dir,
                 overwrite,
             };
-            run_file_batch(&spec, job_id, events, ctx, |input, output| {
+            Ok(run_file_batch(&spec, post, |input, output| {
                 engine::decrypt(&identities, input, output)
-            })
+            }))
         }
-        JobRequest::Keygen { path } => run_keygen(&path),
+        JobRequest::Keygen { path, replace } => run_keygen(&path, replace),
         #[cfg(test)]
         JobRequest::FailForTests => anyhow::bail!("this test job always fails"),
         #[cfg(test)]
         JobRequest::PanicForTests => panic!("this test job always panics"),
+        #[cfg(test)]
+        JobRequest::HoldForTests { started, release } => {
+            // The test may have stopped listening; either a send or a hang-up releases the job.
+            let _told = started.send(());
+            let _released = release.recv();
+            Ok(JobOutcome::TextRedirect)
+        }
     }
 }
 
@@ -316,24 +535,24 @@ fn run_encrypt_text(text: &str, recipients: &[Recipient]) -> anyhow::Result<JobO
     let mut input = text.as_bytes();
     let mut armored = Vec::new();
     engine::encrypt(recipients, &mut input, &mut armored, true)?;
-    // Armor is ASCII by construction; a non-UTF-8 result would be an engine
-    // bug, reported instead of unwrapped.
+    // Armor is ASCII by construction; a non-UTF-8 result would be an engine bug, reported
+    // instead of unwrapped.
     let armored = String::from_utf8(armored).context("armored output was not valid UTF-8")?;
     Ok(JobOutcome::Text(armored))
 }
 
 fn run_decrypt_text(text: &str, identity_path: &Path) -> anyhow::Result<JobOutcome> {
     let identities = keys::load_identities(&[identity_path.to_path_buf()])?;
-    // Pasted armor routinely carries surrounding whitespace; the armor
-    // reader wants the BEGIN marker at the start.
+    // Pasted armor routinely carries surrounding whitespace; the armor reader wants the BEGIN
+    // marker at the start.
     let mut input = text.trim().as_bytes();
     let mut plaintext = Vec::new();
     engine::decrypt(&identities, &mut input, &mut plaintext)?;
     Ok(text_or_redirect(plaintext))
 }
 
-/// The unseal-to-text decision: UTF-8 plaintext goes to the output box,
-/// anything else is binary and belongs in the Files tab.
+/// The unseal-to-text decision: UTF-8 plaintext goes to the output box, anything else is
+/// binary and belongs in the Files tab.
 pub fn text_or_redirect(plaintext: Vec<u8>) -> JobOutcome {
     match String::from_utf8(plaintext) {
         Ok(text) => JobOutcome::Text(text),
@@ -341,13 +560,19 @@ pub fn text_or_redirect(plaintext: Vec<u8>) -> JobOutcome {
     }
 }
 
-fn run_keygen(path: &Path) -> anyhow::Result<JobOutcome> {
+fn run_keygen(path: &Path, replace: bool) -> anyhow::Result<JobOutcome> {
     let identity = keys::generate_identity();
-    // The save dialog's own replace-existing confirmation already guarded
-    // overwriting, so the save is unconditional.
-    keys::save_identity_file(&identity, path, true)?;
+    let public_key = keys::public_key_of(&identity);
+    if replace {
+        keys::save_identity_file(&identity, path, true)?;
+    } else if !keys::create_identity_file(&identity, path)? {
+        return Ok(JobOutcome::KeygenExists {
+            path: path.to_path_buf(),
+        });
+    }
     Ok(JobOutcome::Keygen {
-        public_key: keys::public_key_of(&identity),
+        public_key,
+        path: path.to_path_buf(),
     })
 }
 
@@ -359,31 +584,18 @@ struct BatchSpec {
     overwrite: bool,
 }
 
-/// Runs every file of the batch, emitting a progress and a finished event
-/// per file. One file's failure never aborts the rest; the totals land in
-/// the outcome for the summary toast.
+/// Runs every file of the batch, posting a progress and a finished event per file. One file's
+/// failure never stops the rest; the totals land in the outcome.
 fn run_file_batch(
     spec: &BatchSpec,
-    job_id: u64,
-    events: &mpsc::Sender<JobEvent>,
-    ctx: &egui::Context,
+    post: &dyn Fn(WorkerMsg),
     op: impl Fn(&mut BufReader<File>, &mut BufWriter<File>) -> anyhow::Result<u64>,
-) -> anyhow::Result<JobOutcome> {
-    let total = spec.files.len();
+) -> JobOutcome {
     let (mut done, mut skipped, mut failed) = (0usize, 0usize, 0usize);
-
-    for (index, path) in spec.files.iter().enumerate() {
-        send_event(
-            events,
-            ctx,
-            JobEvent::FileProgress {
-                job_id,
-                path: path.clone(),
-                done: index,
-                total,
-            },
-        );
-
+    for path in &spec.files {
+        post(WorkerMsg::Job(JobEvent::FileProgress {
+            path: path.clone(),
+        }));
         let result = match process_file(path, spec, &op) {
             Ok(Some(size)) => {
                 done += 1;
@@ -395,31 +607,26 @@ fn run_file_batch(
             }
             Err(error) => {
                 failed += 1;
-                FileResult::Failed(format!("{error:#}"))
+                let text = format!("{error:#}");
+                log_file_failed(path, &text);
+                FileResult::Failed(text)
             }
         };
-        send_event(
-            events,
-            ctx,
-            JobEvent::FileFinished {
-                job_id,
-                path: path.clone(),
-                result,
-            },
-        );
+        post(WorkerMsg::Job(JobEvent::FileFinished {
+            path: path.clone(),
+            result,
+        }));
     }
-
-    Ok(JobOutcome::Files {
+    JobOutcome::Files {
         direction: spec.direction,
         done,
         skipped,
         failed,
-    })
+    }
 }
 
-/// Processes one file through a temp-file-plus-rename write. `Ok(None)` is
-/// the overwrite-gated skip; `Ok(Some(size))` carries the written output's
-/// size.
+/// Processes one file through a temp-file-plus-rename write. `Ok(None)` is the skip when the
+/// output exists and overwriting is off; `Ok(Some(size))` carries the written output's size.
 fn process_file(
     path: &Path,
     spec: &BatchSpec,
@@ -447,8 +654,11 @@ fn process_file(
     Ok(Some(size))
 }
 
-/// Where a batch file's output lands: the shared naming rule next to the
-/// input, or the derived file name inside the chosen folder.
+/// Where a batch file's output lands: the shared naming rule next to the input, or the derived
+/// file name inside the chosen folder.
+///
+/// # Errors
+/// When the naming rule cannot derive a name for `input` in `direction`.
 pub fn resolve_output_path(
     input: &Path,
     direction: Direction,
@@ -458,8 +668,8 @@ pub fn resolve_output_path(
     match out_dir {
         None => Ok(derived),
         Some(dir) => {
-            // The derived path was built from a file name, so this misses
-            // only if the naming rule itself changes shape.
+            // The derived path was built from a file name, so this misses only if the naming
+            // rule itself changes shape.
             let name = derived
                 .file_name()
                 .context("derived output path has no file name")?;
@@ -469,460 +679,4 @@ pub fn resolve_output_path(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use rstest::rstest;
-    use shared_crypto::Identity;
-    use std::fs;
-    use std::time::{Duration, Instant};
-
-    fn drain_until(handle: &WorkerHandle, expected: usize) -> Vec<JobEvent> {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let mut events = Vec::new();
-        while events.len() < expected && Instant::now() < deadline {
-            let (mut batch, _) = handle.drain(16);
-            events.append(&mut batch);
-            thread::sleep(Duration::from_millis(2));
-        }
-        events
-    }
-
-    fn spawn_worker() -> WorkerHandle {
-        WorkerHandle::spawn(egui::Context::default()).unwrap()
-    }
-
-    /// Writes a fresh identity file and returns its path plus the matching
-    /// recipient set.
-    fn identity_fixture(dir: &Path) -> (PathBuf, Vec<Recipient>) {
-        let identity = keys::generate_identity();
-        let path = dir.join("identity.txt");
-        keys::save_identity_file(&identity, &path, false).unwrap();
-        (path, vec![identity.to_public()])
-    }
-
-    fn done_outcome(event: JobEvent) -> JobOutcome {
-        match event {
-            JobEvent::Done { outcome, .. } => outcome,
-            other => panic!("expected Done, got {other:?}"),
-        }
-    }
-
-    fn failed_text(event: JobEvent) -> String {
-        match event {
-            JobEvent::Failed { error_text, .. } => error_text,
-            other => panic!("expected Failed, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn probe_round_trips_started_progress_and_done() {
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::Probe));
-        let events = drain_until(&handle, 3);
-
-        assert_eq!(events.len(), 3);
-        assert!(matches!(events[0], JobEvent::Started { job_id: 1 }));
-        assert!(matches!(
-            events[1],
-            JobEvent::FileProgress {
-                job_id: 1,
-                done: 1,
-                total: 1,
-                ..
-            }
-        ));
-        assert!(matches!(
-            events[2],
-            JobEvent::Done {
-                job_id: 1,
-                outcome: JobOutcome::Probe
-            }
-        ));
-    }
-
-    #[test]
-    fn encrypt_then_decrypt_text_round_trips_through_the_worker() {
-        let dir = tempfile::tempdir().unwrap();
-        let (identity_path, recipients) = identity_fixture(dir.path());
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::EncryptText {
-            text: "a secret note".to_string(),
-            recipients,
-        }));
-        let armored = match done_outcome(drain_until(&handle, 2).remove(1)) {
-            JobOutcome::Text(text) => text,
-            other => panic!("expected armored text, got {other:?}"),
-        };
-        assert!(armored.starts_with("-----BEGIN AGE ENCRYPTED FILE-----"));
-
-        // Surrounding whitespace mimics a clipboard paste.
-        assert!(handle.submit(JobRequest::DecryptText {
-            text: format!("\n  {armored}\n\n"),
-            identity_path,
-        }));
-        let outcome = done_outcome(drain_until(&handle, 2).remove(1));
-        assert!(matches!(outcome, JobOutcome::Text(text) if text == "a secret note"));
-    }
-
-    #[test]
-    fn tampered_armor_fails_with_the_corruption_wording() {
-        let dir = tempfile::tempdir().unwrap();
-        let (identity_path, recipients) = identity_fixture(dir.path());
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::EncryptText {
-            text: "payload long enough to have a body line".to_string(),
-            recipients,
-        }));
-        let armored = match done_outcome(drain_until(&handle, 2).remove(1)) {
-            JobOutcome::Text(text) => text,
-            other => panic!("expected armored text, got {other:?}"),
-        };
-
-        // Swap one base64 character near the end of the body: still valid
-        // armor, but the final payload chunk no longer authenticates.
-        let end_marker = armored.rfind("-----END").unwrap();
-        let target = end_marker - 10;
-        let original = armored.as_bytes()[target];
-        let swapped = if original == b'A' { b'B' } else { b'A' };
-        let mut bytes = armored.into_bytes();
-        bytes[target] = swapped;
-        let tampered = String::from_utf8(bytes).unwrap();
-
-        assert!(handle.submit(JobRequest::DecryptText {
-            text: tampered,
-            identity_path,
-        }));
-        let error = failed_text(drain_until(&handle, 2).remove(1));
-        assert!(error.contains("damaged"), "unexpected wording: {error}");
-    }
-
-    #[test]
-    fn passphrase_armor_fails_with_the_refusal_wording() {
-        // The armored, passphrase-encrypted (scrypt) fixture shared with the
-        // CLI's tests; seal refuses passphrase files by policy.
-        const SCRYPT_ARMOR: &str = "-----BEGIN AGE ENCRYPTED FILE-----
-YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IHNjcnlwdCBpckNobUpjVytTSXA5RzZD
-blBVQVNBIDIKbjY2UUhIaDgxSFBUaG1LODdqMUMxNVBhNzdiVCtIbEp3SzZkbE1P
-OTB3cwotLS0gVUpyOG5yQmJKUXBmNTVHUHNjQ1pLRDVOSjhhTUFETi9POE16UHBl
-dzBFRQo1vRm4dvYl+6UsoqrFf3viXkKqt5Tjr46bijEDnHehgJU4qwywmU4P/hvT
-K1nPtvZv1tfOhPEtCjVY
------END AGE ENCRYPTED FILE-----
-";
-        let dir = tempfile::tempdir().unwrap();
-        let (identity_path, _) = identity_fixture(dir.path());
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::DecryptText {
-            text: SCRYPT_ARMOR.to_string(),
-            identity_path,
-        }));
-        let error = failed_text(drain_until(&handle, 2).remove(1));
-        assert!(
-            error.contains("passphrase-encrypted"),
-            "unexpected wording: {error}"
-        );
-    }
-
-    #[test]
-    fn binary_plaintext_redirects_to_the_files_tab() {
-        assert!(matches!(
-            text_or_redirect(vec![0xFF, 0xFE, 0x00]),
-            JobOutcome::TextRedirect
-        ));
-        assert!(matches!(
-            text_or_redirect(b"plain text".to_vec()),
-            JobOutcome::Text(text) if text == "plain text"
-        ));
-    }
-
-    #[test]
-    fn keygen_saves_the_identity_and_returns_only_the_public_key() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("new-identity.txt");
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::Keygen { path: path.clone() }));
-        let outcome = done_outcome(drain_until(&handle, 2).remove(1));
-
-        let JobOutcome::Keygen { public_key } = outcome else {
-            panic!("expected a keygen outcome, got {outcome:?}");
-        };
-        assert!(public_key.starts_with("age1"));
-        let loaded = keys::load_identities(&[path]).unwrap();
-        assert_eq!(keys::public_key_of(&loaded[0]), public_key);
-    }
-
-    #[test]
-    fn file_batch_skips_existing_outputs_when_the_gate_is_off_and_seals_the_rest() {
-        let dir = tempfile::tempdir().unwrap();
-        let identity = keys::generate_identity();
-        let fresh = dir.path().join("fresh.txt");
-        let blocked = dir.path().join("blocked.txt");
-        fs::write(&fresh, b"fresh contents").unwrap();
-        fs::write(&blocked, b"blocked contents").unwrap();
-        fs::write(dir.path().join("blocked.txt.age"), b"already here").unwrap();
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::EncryptFiles {
-            files: vec![fresh.clone(), blocked.clone()],
-            recipients: vec![identity.to_public()],
-            out_dir: None,
-            overwrite: false,
-        }));
-        // Started + 2 * (progress + finished) + Done.
-        let events = drain_until(&handle, 6);
-        assert_eq!(events.len(), 6);
-
-        let results: Vec<(PathBuf, FileResult)> = events
-            .into_iter()
-            .filter_map(|event| match event {
-                JobEvent::FileFinished { path, result, .. } => Some((path, result)),
-                JobEvent::Done { outcome, .. } => {
-                    assert!(matches!(
-                        outcome,
-                        JobOutcome::Files {
-                            direction: Direction::Encrypt,
-                            done: 1,
-                            skipped: 1,
-                            failed: 0,
-                        }
-                    ));
-                    None
-                }
-                _ => None,
-            })
-            .collect();
-
-        assert!(
-            matches!(&results[0], (path, FileResult::Done(size)) if *path == fresh && *size > 0)
-        );
-        assert_eq!(results[1], (blocked, FileResult::Skipped));
-        // The pre-existing output was not touched.
-        assert_eq!(
-            fs::read(dir.path().join("blocked.txt.age")).unwrap(),
-            b"already here"
-        );
-        assert!(fresh.with_file_name("fresh.txt.age").exists());
-    }
-
-    #[test]
-    fn file_batch_failures_do_not_abort_the_remaining_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let identity = keys::generate_identity();
-        let missing = dir.path().join("missing.txt");
-        let present = dir.path().join("present.txt");
-        fs::write(&present, b"present").unwrap();
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::EncryptFiles {
-            files: vec![missing.clone(), present.clone()],
-            recipients: vec![identity.to_public()],
-            out_dir: None,
-            overwrite: false,
-        }));
-        let events = drain_until(&handle, 6);
-        assert_eq!(events.len(), 6);
-
-        let finished: Vec<FileResult> = events
-            .iter()
-            .filter_map(|event| match event {
-                JobEvent::FileFinished { result, .. } => Some(result.clone()),
-                _ => None,
-            })
-            .collect();
-        assert!(matches!(&finished[0], FileResult::Failed(msg) if msg.contains("could not open")));
-        assert!(matches!(finished[1], FileResult::Done(_)));
-    }
-
-    #[test]
-    fn decrypt_batch_round_trips_into_a_chosen_folder() {
-        let dir = tempfile::tempdir().unwrap();
-        let out_dir = dir.path().join("out");
-        fs::create_dir(&out_dir).unwrap();
-        let (identity_path, recipients) = identity_fixture(dir.path());
-        let plain = dir.path().join("note.txt");
-        fs::write(&plain, b"round trip me").unwrap();
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::EncryptFiles {
-            files: vec![plain.clone()],
-            recipients,
-            out_dir: None,
-            overwrite: false,
-        }));
-        drain_until(&handle, 4);
-
-        let sealed = dir.path().join("note.txt.age");
-        assert!(handle.submit(JobRequest::DecryptFiles {
-            files: vec![sealed],
-            identity_path,
-            out_dir: Some(out_dir.clone()),
-            overwrite: false,
-        }));
-        let events = drain_until(&handle, 4);
-
-        assert!(matches!(
-            events.last(),
-            Some(JobEvent::Done {
-                outcome: JobOutcome::Files {
-                    direction: Direction::Decrypt,
-                    done: 1,
-                    skipped: 0,
-                    failed: 0,
-                },
-                ..
-            })
-        ));
-        assert_eq!(
-            fs::read(out_dir.join("note.txt")).unwrap(),
-            b"round trip me"
-        );
-    }
-
-    #[test]
-    fn a_bad_identity_file_fails_the_whole_decrypt_batch_before_any_file_event() {
-        let dir = tempfile::tempdir().unwrap();
-        let identity_path = dir.path().join("absent-identity.txt");
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::DecryptFiles {
-            files: vec![dir.path().join("whatever.age")],
-            identity_path,
-            out_dir: None,
-            overwrite: false,
-        }));
-        let events = drain_until(&handle, 2);
-
-        assert_eq!(events.len(), 2);
-        assert!(matches!(events[0], JobEvent::Started { .. }));
-        let error = failed_text(events.into_iter().nth(1).unwrap());
-        assert!(error.contains("could not read identity file"));
-    }
-
-    #[rstest]
-    #[case::encrypt_next_to_input(Direction::Encrypt, None, "dir/report.pdf.age")]
-    #[case::decrypt_next_to_input(Direction::Decrypt, None, "dir/report.pdf")]
-    #[case::encrypt_into_folder(Direction::Encrypt, Some("safe"), "safe/report.pdf.age")]
-    #[case::decrypt_into_folder(Direction::Decrypt, Some("safe"), "safe/report.pdf")]
-    fn resolve_output_path_places_the_derived_name(
-        #[case] direction: Direction,
-        #[case] out_dir: Option<&str>,
-        #[case] expected: &str,
-    ) {
-        let input = match direction {
-            Direction::Encrypt => Path::new("dir/report.pdf"),
-            Direction::Decrypt => Path::new("dir/report.pdf.age"),
-        };
-
-        let output = resolve_output_path(input, direction, out_dir.map(Path::new)).unwrap();
-
-        assert_eq!(output, Path::new(expected));
-    }
-
-    #[test]
-    fn job_kinds_route_requests_to_their_feature() {
-        let identity = Identity::generate();
-        assert_eq!(JobRequest::Probe.kind(), JobKind::Probe);
-        assert_eq!(
-            JobRequest::EncryptText {
-                text: String::new(),
-                recipients: vec![identity.to_public()],
-            }
-            .kind(),
-            JobKind::Text
-        );
-        assert_eq!(
-            JobRequest::DecryptFiles {
-                files: Vec::new(),
-                identity_path: PathBuf::new(),
-                out_dir: None,
-                overwrite: false,
-            }
-            .kind(),
-            JobKind::Files
-        );
-        assert_eq!(
-            JobRequest::Keygen {
-                path: PathBuf::new()
-            }
-            .kind(),
-            JobKind::Keygen
-        );
-    }
-
-    #[test]
-    fn drain_events_respects_its_budget() {
-        let (sender, receiver) = mpsc::channel::<JobEvent>();
-        for job_id in 1..=10 {
-            sender.send(JobEvent::Started { job_id }).unwrap();
-        }
-
-        let (first, disconnected_first) = drain_events(&receiver, 4);
-        let (rest, disconnected_rest) = drain_events(&receiver, 16);
-
-        assert_eq!(first.len(), 4);
-        assert!(!disconnected_first);
-        assert_eq!(rest.len(), 6);
-        assert!(!disconnected_rest);
-    }
-
-    #[test]
-    fn drain_events_returns_pending_events_and_the_disconnect_together() {
-        let (sender, receiver) = mpsc::channel::<JobEvent>();
-        sender.send(JobEvent::Started { job_id: 1 }).unwrap();
-        sender.send(JobEvent::Started { job_id: 2 }).unwrap();
-        drop(sender);
-
-        let (events, disconnected) = drain_events(&receiver, 16);
-
-        assert_eq!(events.len(), 2);
-        assert!(disconnected);
-    }
-
-    #[test]
-    fn dropping_the_handle_ends_the_worker_without_hanging() {
-        let handle = spawn_worker();
-        let (done_tx, done_rx) = mpsc::channel::<()>();
-
-        thread::spawn(move || {
-            drop(handle);
-            let _ = done_tx.send(());
-        });
-
-        assert!(done_rx.recv_timeout(Duration::from_secs(5)).is_ok());
-    }
-
-    #[test]
-    fn a_failing_job_emits_failed_with_the_rendered_error() {
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::FailForTests));
-        let events = drain_until(&handle, 2);
-
-        assert_eq!(events.len(), 2);
-        assert!(matches!(events[0], JobEvent::Started { job_id: 1 }));
-        let JobEvent::Failed { job_id, error_text } = &events[1] else {
-            panic!("expected the failed event, got {:?}", events[1]);
-        };
-        assert_eq!(*job_id, 1);
-        assert!(error_text.contains("always fails"));
-    }
-
-    #[test]
-    fn a_panicking_job_surfaces_as_the_disconnected_flag() {
-        let handle = spawn_worker();
-
-        assert!(handle.submit(JobRequest::PanicForTests));
-
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let mut disconnected = false;
-        while !disconnected && Instant::now() < deadline {
-            (_, disconnected) = handle.drain(16);
-            thread::sleep(Duration::from_millis(2));
-        }
-        assert!(disconnected);
-    }
-}
+mod tests;

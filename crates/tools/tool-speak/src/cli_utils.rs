@@ -1,6 +1,7 @@
 use crate::models::SpeakArgs;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgsNoVerbose;
+use common_cli::gui_boot::boot_gui;
 use common_cli::tool_log_level::ToolLogLevel;
 
 /// Speaks text aloud through a text-to-speech server.
@@ -8,7 +9,7 @@ use common_cli::tool_log_level::ToolLogLevel;
 /// Sends the text to the server set on the first run and plays the audio it answers with.
 /// The text comes from TEXT, or from stdin when TEXT is absent and stdin is piped. speak
 /// returns when the audio ends. The server address is asked on the first run in a terminal
-/// and kept in ~/.rusted-toolbox/tool-speak/config.json; no flag sets it. With --gui, speak
+/// and kept in ~/.rusted-toolbox/speak/config.json; no flag sets it. With --gui, speak
 /// opens a window instead, to try a text and to change the settings.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about)]
@@ -46,24 +47,27 @@ impl CliArgs {
 
 /// Parses the command line and boots logging. A plain run logs at the house default,
 /// warnings and errors on stderr, where the one error line must stand alone. With `--gui` the
-/// file sink is forced on and the default level is info: a window has no stderr anyone
-/// watches. `--log-level` still decides in both.
+/// window's boot applies: the file sink forced on, info by default, and panics logged.
+/// `--log-level` still decides in both.
 pub fn initialize() -> SpeakArgs {
-    let mut args = CliArgs::parse();
-    let default_level = if args.gui {
-        args.common.log_to_file = true;
-        ToolLogLevel::Info
+    let args = CliArgs::parse();
+    if args.gui {
+        boot_gui(
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+            ToolLogLevel::Info,
+            args.common.clone(),
+        );
     } else {
-        ToolLogLevel::Warn
-    };
-    args.common.app_boot_up_with_level(
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION"),
-        default_level,
-        "<unused>",
-        false,
-        None::<fn()>,
-    );
+        args.common.app_boot_up_with_level(
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+            ToolLogLevel::Warn,
+            "<unused>",
+            false,
+            None::<fn()>,
+        );
+    }
     args.into_speak_args()
 }
 

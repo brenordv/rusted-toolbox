@@ -164,7 +164,7 @@ setup_repository() {
 
 install_prerequisites() {
   print_status "Installing pre-requisites"
-  # The libxcb/libxkbcommon packages are needed by eframe (seal-gui) to build
+  # The libxcb/libxkbcommon packages are needed by Rune (the GUI tools) to build
   # on Linux; the same list lives in ci.yml and release.yml.
   sudo apt-get install -y build-essential pkg-config libssl-dev libcurl4-openssl-dev libxml2-dev libclang-dev \
     libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev

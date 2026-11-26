@@ -4,8 +4,8 @@ use crate::design::{WINDOW_MIN, WINDOW_SIZE};
 use crate::gui::state::FIRST_RUN_STATUS;
 use crate::gui::test_support::{Call, Recording, SERVER, clip, config, config_path, recording};
 use common_gui_rune::test_harness::{
-    FRAME, a11y_node, command, command_mods, element, has_key, has_text, press, press_key, rect,
-    runtime_at, settle,
+    self, FRAME, a11y_node, bottom, command, command_mods, focus_is_inside, has_key, has_text,
+    is_disabled, press, press_key, rect, runtime_with_keys, settle, type_into,
 };
 use rstest::rstest;
 use rune::{Key, Runtime};
@@ -32,9 +32,7 @@ const ISSUE_KEYS: [&str; 4] = [
 ];
 
 fn runtime_at_size(state: SpeakState, size: (f32, f32)) -> Runtime<SpeakState> {
-    let mut rt = runtime_at(state, view, size);
-    rt.on_key = Some(window_key);
-    rt
+    runtime_with_keys(state, view, window_key, size)
 }
 
 fn window(config: Option<SpeakConfig>) -> (Runtime<SpeakState>, Rc<Recording>) {
@@ -43,21 +41,7 @@ fn window(config: Option<SpeakConfig>) -> (Runtime<SpeakState>, Rc<Recording>) {
 }
 
 fn deliver(rt: &mut Runtime<SpeakState>, input: Input) {
-    rt.update_if(move |s, _| dispatch(s, input));
-    settle(rt);
-}
-
-fn type_into(rt: &mut Runtime<SpeakState>, key: &str, text: &str) {
-    press(rt, key);
-    rt.paste(text);
-    settle(rt);
-}
-
-fn focus_is_inside(rt: &Runtime<SpeakState>, key: &str) -> bool {
-    let field = element(rt, key).path;
-    rt.elements().into_iter().any(|element| {
-        element.focused && (element.path == field || element.path.starts_with(&format!("{field}/")))
-    })
+    test_harness::deliver(rt, move |s, _| dispatch(s, input));
 }
 
 fn focused_among(rt: &Runtime<SpeakState>, keys: &[&'static str]) -> Option<&'static str> {
@@ -71,17 +55,6 @@ fn node(rt: &Runtime<SpeakState>, key: &str) -> Value {
     a11y_node(&tree, key)
         .cloned()
         .unwrap_or_else(|| panic!("no accessibility node keyed {key}"))
-}
-
-fn is_disabled(rt: &Runtime<SpeakState>, key: &str) -> bool {
-    node(rt, key)["states"]
-        .as_array()
-        .is_some_and(|states| states.iter().any(|state| state == "disabled"))
-}
-
-fn bottom(rt: &Runtime<SpeakState>, key: &str) -> f32 {
-    let [_, y, _, height] = rect(rt, key);
-    y + height
 }
 
 fn many_reactions(count: usize) -> SpeakConfig {
@@ -357,6 +330,21 @@ fn mod_2_and_mod_1_switch_areas_whatever_has_focus(
     command(&mut rt, Key::Command('1'));
 
     assert!(on_settings);
+    assert!(has_key(&rt, COMPOSE_KEY));
+    assert!(!has_key(&rt, SETTINGS_KEY));
+}
+
+#[test]
+fn a_held_area_chord_switches_nothing() {
+    let (mut rt, _) = window(Some(config()));
+    press(&mut rt, TEXT_KEY);
+
+    rt.repeat_key(KeyEvent {
+        key: Key::Command('2'),
+        mods: command_mods(),
+    });
+    settle(&mut rt);
+
     assert!(has_key(&rt, COMPOSE_KEY));
     assert!(!has_key(&rt, SETTINGS_KEY));
 }

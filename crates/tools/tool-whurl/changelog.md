@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.2.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/whurl/logs` (they went to
+  `~/.whurl/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only whurl's logs. Execution logs hold response bodies, so delete
+  the old folder rather than keep it.
+
 ## 3.1.1
 - `--print-only-full-response` builds its JSON report in memory (hurl's buffered terminal)
   instead of writing a temp file, reading it back, and deleting it. Output is unchanged; the

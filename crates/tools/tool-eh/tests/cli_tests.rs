@@ -203,6 +203,74 @@ fn send_help_lists_the_body_count_routing_and_pacing_flags() {
     assert!(!help.contains("--consumer-group"), "{help}");
 }
 
+#[rstest::rstest]
+#[case::connection_string("EntityPath=orders")]
+#[case::event_hub("e.g. orders")]
+#[case::tenant_id("Directory (tenant) ID")]
+#[case::client_id("Application (client) ID")]
+#[case::vault_url("https://my-vault.vault.azure.net")]
+#[case::secret_name("e.g. eh-orders")]
+#[case::consumer_group("e.g. eh-local")]
+fn read_help_shows_an_example_or_the_portal_name_for_each_connection_flag(#[case] fragment: &str) {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["read", "--help"]);
+
+    assert!(output.status.success(), "{}", stderr_of(&output));
+    assert!(
+        stdout_of(&output).contains(fragment),
+        "{}",
+        stdout_of(&output)
+    );
+}
+
+#[test]
+fn read_help_warns_about_the_connection_string_flag_before_its_example() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["read", "--help"]);
+
+    let help = stdout_of(&output);
+    let entry = &help[help.find("--connection-string").unwrap()..];
+    let warning = entry.find("EH_CONNECTION_STRING").unwrap();
+    let example = entry.find("EntityPath=orders").unwrap();
+    assert!(warning < example, "{help}");
+}
+
+#[rstest::rstest]
+#[case::connection_string("EntityPath=orders")]
+#[case::event_hub("e.g. orders")]
+#[case::tenant_id("Directory (tenant) ID")]
+#[case::client_id("Application (client) ID")]
+#[case::vault_url("https://my-vault.vault.azure.net")]
+#[case::secret_name("e.g. eh-orders")]
+fn send_help_shows_the_target_flag_examples(#[case] fragment: &str) {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["send", "--help"]);
+
+    assert!(output.status.success(), "{}", stderr_of(&output));
+    assert!(
+        stdout_of(&output).contains(fragment),
+        "{}",
+        stdout_of(&output)
+    );
+}
+
+#[test]
+fn read_short_help_shows_the_examples_too() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = eh(root.path(), &["read", "-h"]);
+
+    assert!(output.status.success(), "{}", stderr_of(&output));
+    assert!(
+        stdout_of(&output).contains("e.g. orders"),
+        "{}",
+        stdout_of(&output)
+    );
+}
+
 #[test]
 fn send_without_a_target_fails_before_touching_anything() {
     let root = tempfile::tempdir().unwrap();
@@ -992,6 +1060,68 @@ impl ProfileFixture {
         .unwrap();
         dir
     }
+}
+
+#[test]
+fn profile_list_moves_profiles_from_the_old_folder_and_warns_once() {
+    let home = tempfile::tempdir().unwrap();
+    let old = home.path().join(".eh").join("profiles").join("orders-dev");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(
+        old.join("config.json"),
+        format!(
+            r#"{{"tool":"eh","schema_version":1,"target":{{"namespace":"{NAMESPACE}","event_hub":"{HUB}","auth":{{"method":"credential","credential":{{"kind":"developer-tools"}}}}}}}}"#
+        ),
+    )
+    .unwrap();
+    let in_home = |args: &[&str]| {
+        Command::new(EXE)
+            .args(args)
+            .current_dir(home.path())
+            .env_remove("EH_WORKSPACE")
+            .env("HOME", home.path())
+            .env("USERPROFILE", home.path())
+            .env_remove("RUST_LOG")
+            .output()
+            .expect("failed to run eh")
+    };
+
+    let first = in_home(&["profile", "list"]);
+    let second = in_home(&["profile", "list"]);
+
+    assert_eq!(first.status.code(), Some(0), "{}", stderr_of(&first));
+    assert!(
+        stdout_of(&first).contains("orders-dev"),
+        "{}",
+        stdout_of(&first)
+    );
+    assert_eq!(
+        stderr_of(&first)
+            .matches("moved to the toolbox folder")
+            .count(),
+        1,
+        "{}",
+        stderr_of(&first)
+    );
+    assert!(
+        stdout_of(&second).contains("orders-dev"),
+        "{}",
+        stdout_of(&second)
+    );
+    assert!(
+        !stderr_of(&second).contains("WARN"),
+        "{}",
+        stderr_of(&second)
+    );
+    assert!(
+        home.path()
+            .join(".rusted-toolbox")
+            .join("eh")
+            .join("profiles")
+            .join("orders-dev")
+            .join("config.json")
+            .is_file()
+    );
 }
 
 #[test]

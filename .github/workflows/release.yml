@@ -38,7 +38,7 @@ jobs:
         run: |
           vcpkg install libxml2:x64-windows-static-md
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-      # eframe (seal-gui) and Rune (eh-gui) need these to build on Linux, per their READMEs;
+      # Rune (eh-gui, seal-gui, speak, alert) needs these to build on Linux, per its README;
       # rodio (common-audio) needs the ALSA development files.
       - name: Install GUI system libraries (Linux)
         if: runner.os == 'Linux'

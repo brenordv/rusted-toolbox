@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/tail/logs` (they went to
+  `~/.tail/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only tail's logs.
+
 ## 1.3.0
 - GNU's obsolete first-argument forms are accepted, matching head 1.2.0's parity: `tail -5`,
   `tail +5`, and the unit letters `b` (512-byte blocks), `c` (bytes), `l` (lines) with an

@@ -1,6 +1,6 @@
 [package]
 name = "shared-eventhub-persistence"
-version = "1.0.0"
+version = "2.0.0"
 description = "Shared EventHub persistence: redb message archive, search, disk exporters, disk-write modes, and config.json with a local secrets store."
 edition.workspace = true
 authors.workspace = true

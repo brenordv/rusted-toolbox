@@ -3,7 +3,8 @@ use crate::cli_utils::CliArgs;
 use crate::design::TESTER_SIZE;
 use clap::Parser;
 use common_gui_rune::test_harness::{
-    a11y_node, command, element, has_key, has_text, press, press_key, runtime_at, settle,
+    a11y_node, command, focus_is_inside, has_key, has_text, press, press_key, runtime_with_keys,
+    settle,
 };
 use rstest::rstest;
 use rune::{Key, Runtime};
@@ -37,17 +38,11 @@ fn recording(seed: &TesterSeed) -> (TesterState, Starts) {
 }
 
 fn runtime(state: TesterState) -> Runtime<TesterState> {
-    let mut rt = runtime_at(state, view, TESTER_SIZE);
-    rt.on_key = Some(window_key);
-    rt
+    runtime_with_keys(state, view, window_key, TESTER_SIZE)
 }
 
 fn focused_field(rt: &Runtime<TesterState>) -> Option<&'static str> {
-    let focused = rt.elements().into_iter().find(|element| element.focused)?;
-    FIELD_KEYS.into_iter().find(|key| {
-        let field = element(rt, key).path;
-        focused.path == field || focused.path.starts_with(&format!("{field}/"))
-    })
+    FIELD_KEYS.into_iter().find(|key| focus_is_inside(rt, key))
 }
 
 fn parsed_back(arguments: &[OsString]) -> (Option<String>, Option<String>, Option<String>) {

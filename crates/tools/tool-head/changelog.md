@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/head/logs` (they went to
+  `~/.head/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only head's logs.
+
 ## 1.2.1
 - The test suite uses the shared `common_cli::test_writers::FailAfter` double instead of a
   private byte-budget failing-writer copy; the behavior pinned by the tests is unchanged.

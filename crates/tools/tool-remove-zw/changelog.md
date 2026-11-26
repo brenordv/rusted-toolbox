@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/remove-zw/logs` (they went to
+  `~/.remove-zw/logs`). The old folder is not moved, since another program may use that
+  name; delete it if it holds only remove-zw's logs.
+
 ## 2.2.0
 - Add `--fail-on-skip` (valid only with `--check`): exits 1 when any input was skipped
   (binary, UTF-16/32, extension filter), so a gate cannot report a clean tree it never

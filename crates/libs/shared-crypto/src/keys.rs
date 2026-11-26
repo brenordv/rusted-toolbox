@@ -32,36 +32,60 @@ pub fn public_key_of(identity: &Identity) -> String {
 /// Writes `identity` as a standard age identity file: a `# created:` RFC3339
 /// timestamp, the `# public key:` line, then the secret key. On Unix the file
 /// is owner-only (0o600) and any created parent directory 0o700; on Windows
-/// both inherit the parent's ACL.
+/// both inherit the parent's ACL. With `overwrite` false an existing file is
+/// an error naming the path, and nothing is written.
 pub fn save_identity_file(identity: &Identity, path: &Path, overwrite: bool) -> anyhow::Result<()> {
+    if !overwrite {
+        if create_identity_file(identity, path)? {
+            return Ok(());
+        }
+        bail!(identity_exists(path));
+    }
+
+    create_parent(path)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    let file = open_owner_only(&mut options, path).map_err(|error| open_failed(error, path))?;
+    write_identity_to(identity, file, path)
+}
+
+/// [`save_identity_file`] that never replaces a file: `Ok(true)` when it
+/// created `path` and wrote `identity` to it, `Ok(false)` when `path` already
+/// existed, in which case nothing is written. The open itself refuses an
+/// existing file, so there is no window between a check and the write.
+///
+/// # Errors
+/// When the parent folder cannot be created, or the file cannot be created or
+/// written for any reason other than already existing.
+pub fn create_identity_file(identity: &Identity, path: &Path) -> anyhow::Result<bool> {
+    create_parent(path)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    let file = match open_owner_only(&mut options, path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => return Ok(false),
+        Err(error) => return Err(open_failed(error, path)),
+    };
+    write_identity_to(identity, file, path)?;
+    Ok(true)
+}
+
+/// Creates `path`'s parent folder, owner-only, when it is missing.
+fn create_parent(path: &Path) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         create_dir_all_owner_only(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-
-    let mut options = OpenOptions::new();
-    options.write(true);
-
-    if overwrite {
-        options.create(true).truncate(true);
-    } else {
-        // Atomic existence guard: the open itself fails if the target already
-        // exists, with no check-then-write window.
-        options.create_new(true);
-    }
-
-    let mut file = open_owner_only(&mut options, path).map_err(|error| {
-        if error.kind() == ErrorKind::AlreadyExists {
-            anyhow!(identity_exists(path))
-        } else {
-            anyhow::Error::new(error).context(format!("failed to create {}", path.display()))
-        }
-    })?;
-
-    write_identity(identity, &mut file)
-        .with_context(|| format!("failed to write {}", path.display()))?;
-
     Ok(())
+}
+
+fn open_failed(error: io::Error, path: &Path) -> anyhow::Error {
+    anyhow::Error::new(error).context(format!("failed to create {}", path.display()))
+}
+
+fn write_identity_to(identity: &Identity, mut file: fs::File, path: &Path) -> anyhow::Result<()> {
+    write_identity(identity, &mut file)
+        .with_context(|| format!("failed to write {}", path.display()))
 }
 
 /// Writes `identity` in the standard age identity-file form (a `# created:`
@@ -240,6 +264,48 @@ mod tests {
             rendered(&err)
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn create_writes_a_new_identity_file_and_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("id.txt");
+        let identity = generate_identity();
+
+        let created = create_identity_file(&identity, &path).unwrap();
+
+        assert!(created);
+        let loaded = load_identities(&[path]).unwrap();
+        assert_eq!(public_key_of(&loaded[0]), public_key_of(&identity));
+    }
+
+    #[test]
+    fn create_onto_an_existing_file_writes_nothing_and_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("id.txt");
+        fs::write(&path, "kept as it was\n").unwrap();
+
+        let created = create_identity_file(&generate_identity(), &path).unwrap();
+
+        assert!(!created);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "kept as it was\n");
+    }
+
+    #[test]
+    fn create_under_a_file_instead_of_a_folder_is_an_error_naming_the_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("not-a-folder");
+        fs::write(&blocker, "file").unwrap();
+        let path = blocker.join("id.txt");
+
+        let err = create_identity_file(&generate_identity(), &path).unwrap_err();
+
+        assert!(
+            rendered(&err).contains("not-a-folder"),
+            "chain: {}",
+            rendered(&err)
+        );
+        assert!(!path.exists());
     }
 
     #[test]

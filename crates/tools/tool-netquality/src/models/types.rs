@@ -1,8 +1,10 @@
+use super::db_location::default_db_path;
 use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use common_cli::tool_path_helpers::get_tool_path;
 use common_serialization_utils::load_json_file_to_object::load_json_file_to_object;
+use common_utils::file_system::toolbox_home;
 use common_utils::string_utils::SecretString;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -178,11 +180,10 @@ fn resolve_storage(config: Option<StorageConfigFile>) -> Result<StorageConfig> {
         ));
     }
 
-    let db_path = match db_path {
-        Some(path) => path,
-        None => get_tool_path()
-            .context("Failed to resolve tool path for database default")?
-            .join("netquality.db"),
+    let (db_path, legacy_db) = match db_path {
+        Some(path) => (path, None),
+        None => default_db_path(toolbox_home(), get_tool_path)
+            .context("Failed to resolve the database default")?,
     };
 
     let cleanup_interval_secs = cleanup_interval_days
@@ -191,6 +192,7 @@ fn resolve_storage(config: Option<StorageConfigFile>) -> Result<StorageConfig> {
 
     Ok(StorageConfig {
         db_path,
+        legacy_db,
         cleanup_enabled,
         cleanup_interval: Duration::from_secs(cleanup_interval_secs),
     })
@@ -268,6 +270,9 @@ pub struct TelegramConfig {
 #[derive(Debug, Clone)]
 pub struct StorageConfig {
     pub db_path: PathBuf,
+    /// The database at the old default place (beside the executable) to move to `db_path`
+    /// before first use; `None` when a path was chosen or there is no home folder.
+    pub legacy_db: Option<PathBuf>,
     pub cleanup_enabled: bool,
     pub cleanup_interval: Duration,
 }

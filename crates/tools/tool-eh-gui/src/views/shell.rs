@@ -16,28 +16,35 @@ use crate::state::{
     ToastInput, ToastKind, error_preview, home_label,
 };
 use common_cli::app_logger::FileLogging;
+use common_gui_rune::parts::choice_switch;
 use rune::{Color, Cx, El, Key, KeyEvent, Tx, col, el, row, text};
 use rune_kit::toast_stack::VISIBLE;
 use rune_kit::{
-    Button, ButtonVariant, Kit, PaneState, Placement, Popover, SegmentedControl, SplitView,
-    ToastPlacement, Toolbar,
+    Button, ButtonVariant, Kit, PaneState, Placement, Popover, SplitView, ToastPlacement, Toolbar,
 };
 use tracing::debug;
 
 /// The key of the kit split view's root, the element that fills the window.
 const SHELL_KEY: &str = "shell";
+/// The section switch in the toolbar.
+pub const SECTIONS_KEY: &str = "sections";
 /// The connection popover's scroll viewport.
 pub const PILL_SCROLL_KEY: &str = "pill-popover-scroll";
 
 pub fn shell(s: &AppState, cx: &Cx<AppState>, k: &Kit, dark: bool, layer: &mut Vec<El>) -> El {
-    let sections = SegmentedControl::new(&Section::LABELS, Some(s.section.index()))
-        .label("Section")
-        .on_pick(|s: &mut AppState, index: usize, _| {
+    let sections = choice_switch(
+        k,
+        SECTIONS_KEY,
+        "Section",
+        &Section::LABELS,
+        s.section.index(),
+        true,
+        |s: &mut AppState, index: usize, _: &mut Tx| {
             if let Some(section) = Section::ALL.get(index) {
                 dispatch(s, Input::SectionPicked(*section));
             }
-        })
-        .build(k);
+        },
+    );
     let trailing = row()
         .gap(SPACE_SM)
         .center_y()

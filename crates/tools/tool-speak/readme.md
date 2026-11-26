@@ -52,8 +52,13 @@ stdout stays empty. On failure one line on stderr says why.
 
 ## First run
 
-speak keeps its settings in `~/.rusted-toolbox/tool-speak/config.json`. When that file does
-not exist:
+speak keeps its settings in `~/.rusted-toolbox/speak/config.json`. Versions before 2.0.0
+kept them in `~/.rusted-toolbox/tool-speak/config.json`: speak moves that file to the new
+folder on its first start and says so in a warning. The empty `tool-speak` folder it leaves
+can be deleted. With no home folder, speak has no place for its settings and exits 1 saying
+so.
+
+When the settings file does not exist:
 
 - in a terminal, speak asks two questions, saves the file, says where, and then speaks:
 
@@ -111,7 +116,8 @@ or `https://` and is saved without a change to either field is written back as i
 A settings file that speak cannot read stops `speak --gui` before the window opens, with an
 error that names the file, so the form never overwrites something it could not load.
 
-With `--gui`, speak logs to a file at `info` by default, under `~/.speak/logs`.
+With `--gui`, speak logs to a file at `info` by default, under
+`~/.rusted-toolbox/speak/logs`.
 
 ## The settings file
 
@@ -178,7 +184,8 @@ cp -r crates/tools/tool-speak/skill ~/.claude/skills/speak
 ```
 
 Then allow the `speak` command in the agent's permissions if you do not want a prompt each
-time.
+time. A skill copied from a version before 2.0.0 names the old settings folder: copy it
+again.
 
 ## Building on Linux
 

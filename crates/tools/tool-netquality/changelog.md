@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.0.0
+- With no `--db-path` and no `db_path`, the database is
+  `~/.rusted-toolbox/netquality/netquality.db` (it was `netquality.db` beside the executable). On start netquality moves a database it finds
+  at the old default there (a hard link, then removing the old name) and logs a warning naming
+  both paths; `--app-header`'s "Database path" shows the one in use. Stop every running
+  netquality before the first start of this version: a database moved under a running
+  netquality on Linux or macOS can be corrupted.
+- Nothing moves while a `-journal`, `-wal`, or `-shm` file sits beside the old or the new
+  database: the old database stays in use and every start warns until netquality is stopped
+  and started again. On Windows a database another netquality holds open stays in use under
+  its old name, and the next start finishes the move. With databases in both places, the new
+  one is used and every start warns. A chosen `--db-path` or `db_path` is never moved, and with
+  no home folder the database stays beside the executable.
+- The database's folder is created owner-only on Linux and macOS, and a folder that cannot be
+  created fails the start with its path (it was ignored, and opening the database failed
+  instead).
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/netquality/logs` (they went to
+  `~/.netquality/logs`). The old folder is not moved, since another program may use that
+  name; delete it if it holds only netquality's logs.
+
 ## 2.2.0
 - Internal update making `BotToken` use `common_utils::string_utils::SecretString` instead of `String`.
 

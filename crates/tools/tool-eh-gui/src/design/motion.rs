@@ -2,7 +2,7 @@
 //! are rune-motion's presets (`rune::Spring` re-exports the type but not the preset constants),
 //! all critically damped: nothing in this app bounces.
 
-pub use common_gui_rune::motion::{CONTROL, CONTROL_EXIT, FEEDBACK};
+pub use common_gui_rune::motion::{CONTROL, CONTROL_EXIT, CONTROL_PAIR, FEEDBACK};
 use rune::{Beat, Easing, Spring, SpringPair};
 
 /// Sheet height reflow (rune-motion `SETTLE`).

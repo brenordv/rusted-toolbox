@@ -6,8 +6,8 @@ pub mod template;
 use super::details;
 use crate::app::dispatch;
 use crate::design::tokens::{
-    CAPTION_ROW_HEIGHT, ICON_SIZE, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS, TYPE_BODY,
-    TYPE_BODY_NUM, TYPE_CAPTION, TYPE_LABEL,
+    CAPTION_ROW_HEIGHT, ICON_SIZE, SPACE_LG, SPACE_SM, SPACE_XS, TYPE_BODY, TYPE_BODY_NUM,
+    TYPE_CAPTION, TYPE_LABEL,
 };
 use crate::design::{motion, parts};
 use crate::read::rows::display_line;
@@ -16,11 +16,10 @@ use crate::send::compose::{BODY_CAP, SendField};
 use crate::send::run::SendRun;
 use crate::state::{AppState, Input, Section, error_preview};
 use crate::views::read::short_duration;
-use common_gui_rune::keys::{is_chord, is_newline};
+use common_gui_rune::keys::{area_chord, is_chord, type_newline};
+use common_gui_rune::parts::action_row as fixed_action_row;
 use common_utils::string_utils::{format_bytes_to_string, format_thousands};
-use rune::{
-    El, KeyEvent, LiveRegion, SpringPair, TextEdit, Transition, Tx, col, icon, row, spacer, text,
-};
+use rune::{El, KeyEvent, LiveRegion, Transition, Tx, col, icon, row, spacer, text};
 use rune_kit::{Button, ButtonVariant, Kit, RollingText, Spinner};
 use shared_eventhub_core::producer::SendEnd;
 
@@ -68,7 +67,8 @@ pub fn press_send(s: &mut AppState, tx: &mut Tx) {
 
 /// The shortcuts that work while typing in the Send section and with nothing focused, none of
 /// them while a sheet or the error details are open: `mod+enter` sends while the Send section
-/// shows, and `mod+1..3` pick a section. True when `key` was one of them and acted.
+/// shows, and `mod+1..3` pick a section as a fresh press. True when `key` was one of them and
+/// acted.
 pub fn send_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
     if s.sheet.is_some() || s.details().is_some() {
         return false;
@@ -80,34 +80,24 @@ pub fn send_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
         press_send(s, tx);
         return true;
     }
-    for (index, section) in Section::ALL.into_iter().enumerate() {
-        if is_chord(&format!("mod+{}", index + 1), key, tx) {
-            dispatch(s, Input::SectionPicked(section));
-            return true;
+    match area_chord(Section::ALL.len(), key, tx).and_then(|index| Section::ALL.get(index)) {
+        Some(section) => {
+            dispatch(s, Input::SectionPicked(*section));
+            true
         }
+        None => false,
     }
-    false
 }
 
-/// Types a newline into `edit` for Return, with or without Shift; true when `key` was one. A
-/// multi-line field without `on_submit` hands a plain Return to the window's default button, and
-/// the Send section has none, so its editors type the newline themselves.
-fn type_newline(key: &KeyEvent, edit: &mut TextEdit) -> bool {
-    let newline = is_newline(key);
-    if newline {
-        edit.insert("\n");
-    }
-    newline
-}
-
-/// The body editor's keys: the Send shortcuts, and Return typing a newline, after which the
-/// template follows the new text (the field's change hook does not run for this edit).
+/// The body editor's keys: the Send shortcuts, and Return typing a newline (the Send section has
+/// no default button), after which the template follows the new text (the field's change hook
+/// does not run for this edit).
 fn body_keys(s: &mut AppState, key: &KeyEvent, tx: &mut Tx) -> bool {
     if send_keys(s, key, tx) {
         return true;
     }
     let composer = &mut s.send.composer;
-    let typed = type_newline(key, &mut composer.body);
+    let typed = type_newline(&mut composer.body, key);
     if typed {
         composer.refresh_template();
     }
@@ -169,17 +159,16 @@ pub fn content(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> El {
         .min_h(0.0)
         .child(caption_row)
         .child(body)
-        .child(parts::hairline(k))
         .child(action_row(s, k))
 }
 
 /// The fixed row under the body: the run's status, Cancel while it runs, and Send.
 fn action_row(s: &AppState, k: &Kit) -> El {
     let run = &s.send.run;
-    let mut right = row().gap(SPACE_SM).center_y();
+    let mut buttons = Vec::new();
     if run.is_running() {
         let requested = run.cancel_requested();
-        right = right.child(
+        buttons.push(
             Button::new(if requested { "Canceling" } else { "Cancel" })
                 .variant(ButtonVariant::Outline)
                 .disabled(requested)
@@ -189,9 +178,9 @@ fn action_row(s: &AppState, k: &Kit) -> El {
         );
     }
     if run_failure_cut(run) {
-        right = right.child(details::button(k, "send-details", open_send_failure));
+        buttons.push(details::button(k, "send-details", open_send_failure));
     }
-    right = right.child(
+    buttons.push(
         Button::new("Send")
             .variant(ButtonVariant::Submit)
             .disabled(run.is_running())
@@ -199,15 +188,7 @@ fn action_row(s: &AppState, k: &Kit) -> El {
             .build(k)
             .key(SEND_BUTTON_KEY),
     );
-    row()
-        .key("send-action-row")
-        .w_full()
-        .gap(SPACE_MD)
-        .center_y()
-        .px(SPACE_LG)
-        .py(SPACE_MD)
-        .child(status(s, k))
-        .child(right)
+    fixed_action_row(k, "send-action-row", Some(status(s, k)), buttons)
 }
 
 /// The status block: keyed by the run's phase, so it swaps only when the phase changes, and
@@ -305,10 +286,7 @@ fn status(s: &AppState, k: &Kit) -> El {
         .min_w(0.0)
         .gap(SPACE_SM)
         .center_y()
-        .transition(
-            Transition::blur_replace()
-                .springs(SpringPair::new(motion::CONTROL, motion::CONTROL_EXIT)),
-        )
+        .transition(Transition::blur_replace().springs(motion::CONTROL_PAIR))
         .children(children)
 }
 

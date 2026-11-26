@@ -1,6 +1,7 @@
 use crate::models::{ConnectivityResult, SpeedResult};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, Utc};
+use common_file_utils::permissions::create_dir_all_owner_only;
 use rusqlite::{Connection, params};
 use std::path::Path;
 
@@ -13,11 +14,19 @@ pub(crate) struct CleanupStats {
     pub(crate) speed_deleted: usize,
 }
 
+/// Opens the database at `path`, creating its folder (owner-only on Unix), the file, and the
+/// tables and view when they are missing.
+///
+/// # Errors
+/// When the folder cannot be created, the database cannot be opened, or a table cannot be
+/// created.
 pub(crate) fn create_database(path: &Path) -> Result<Connection> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        std::fs::create_dir_all(parent).ok();
+        create_dir_all_owner_only(parent).with_context(|| {
+            format!("Failed to create the database folder {}", parent.display())
+        })?;
     }
 
     let conn = Connection::open(path)?;
@@ -229,6 +238,24 @@ mod tests {
             elapsed_ms: 812,
             success: true,
         }
+    }
+
+    #[test]
+    fn create_database_reports_a_folder_that_cannot_be_created() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let blocker = dir.path().join("netquality");
+        std::fs::write(&blocker, b"a file where the folder goes").expect("blocker");
+
+        let error = create_database(&blocker.join("netquality.db")).expect_err("no folder");
+
+        assert!(
+            format!("{error:#}").contains("Failed to create the database folder"),
+            "{error:#}"
+        );
+        assert_eq!(
+            std::fs::read(&blocker).expect("blocker"),
+            b"a file where the folder goes"
+        );
     }
 
     #[test]

@@ -1,32 +1,31 @@
 use anyhow::{Context, Result};
 use common_audio::{Clip, Speaker};
 use common_cli::tool_exit_helpers::{exit_error, exit_success};
-use common_gui_rune::window::gpu_hint;
+use common_gui_rune::window::report_failure;
 use speak::cli_utils::initialize;
-use speak::config::default_config_path;
+use speak::config::locate_default_config;
 use speak::gui;
 use speak::models::SpeakArgs;
 use speak::speak_app::{Deps, run};
 use std::io::IsTerminal;
+use std::path::PathBuf;
 use tracing::error;
 
 fn main() {
     let args = initialize();
 
     // `Ok(Some(reason))` is a window that could not be created; only `--gui` opens one.
-    let result = if args.gui {
-        gui::run(default_config_path())
-    } else {
-        speak(args).map(|()| None)
-    };
+    let result = config_path().and_then(|config_path| {
+        if args.gui {
+            gui::run(config_path)
+        } else {
+            speak(args, config_path).map(|()| None)
+        }
+    });
     match result {
         Ok(None) => exit_success(),
         Ok(Some(reason)) => {
-            error!(
-                reason = %reason,
-                hint = %gpu_hint(env!("CARGO_PKG_NAME")),
-                "speak could not open a window"
-            );
+            report_failure(env!("CARGO_PKG_NAME"), &reason);
             exit_error();
         }
         Err(error) => {
@@ -36,9 +35,18 @@ fn main() {
     }
 }
 
+/// The settings file to use: the one in speak's folder, after moving it there from the folder
+/// speak used before 2.0.0 when only that one holds it, or the old one when it could not be
+/// moved. The move, or why it did not happen, is logged.
+fn config_path() -> Result<PathBuf> {
+    let location = locate_default_config()?;
+    location.report();
+    Ok(location.path())
+}
+
 /// Runs the request on a current-thread runtime, so playback blocks the main thread until the
 /// audio ends.
-fn speak(args: SpeakArgs) -> Result<()> {
+fn speak(args: SpeakArgs, config_path: PathBuf) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -46,7 +54,7 @@ fn speak(args: SpeakArgs) -> Result<()> {
     let stdin = std::io::stdin();
     let stderr = std::io::stderr();
     let deps = Deps {
-        config_path: default_config_path(),
+        config_path,
         stdin_terminal: stdin.is_terminal(),
         stderr_terminal: stderr.is_terminal(),
         stdin: stdin.lock(),

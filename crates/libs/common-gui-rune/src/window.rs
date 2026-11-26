@@ -2,11 +2,13 @@
 //! it could be created at all, and the system appearance.
 
 use crate::appearance::SystemAppearance;
-use rune::{AppHandle, Tx};
+use anyhow::Context;
+use rune::{App, AppHandle, Tx};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
+use tracing::error;
 
 /// The graphics backend Rune draws with on each platform, for the text of a window failure.
 pub const GPU_BACKENDS: &str = "DirectX 12 on Windows, Vulkan on Linux, Metal on macOS";
@@ -14,6 +16,36 @@ pub const GPU_BACKENDS: &str = "DirectX 12 on Windows, Vulkan on Linux, Metal on
 /// What `tool` needs when its window could not be created, for the log line that reports it.
 pub fn gpu_hint(tool: &str) -> String {
     format!("{tool} needs a GPU that supports {GPU_BACKENDS}")
+}
+
+/// Logs, once, that `tool`'s window could not be created and why, with [`gpu_hint`]. The
+/// caller picks the exit.
+pub fn report_failure(tool: &str, reason: &str) {
+    error!(
+        tool,
+        reason = %reason,
+        hint = %gpu_hint(tool),
+        "the window could not be created"
+    );
+}
+
+/// Runs `app` until it quits, watched by [`spawn_window_watch`] with `hooks`. Rune reads none of
+/// the process's arguments: the tool's own parser owns the command line. Returns why the window
+/// could not be created, when the watch ended the app for that.
+///
+/// # Errors
+/// When the event loop cannot start; the error carries `context`.
+pub fn run_watched<S: 'static>(
+    app: App<S>,
+    hooks: WatchHooks<S>,
+    context: &'static str,
+) -> anyhow::Result<Option<String>> {
+    let watch = spawn_window_watch(app.handle(), hooks);
+    app.args(Vec::new())
+        .try_run()
+        .map_err(|reason| anyhow::anyhow!(reason))
+        .context(context)?;
+    Ok(watch.failure())
 }
 
 /// How long a window gets to appear before an error from Rune counts as a failure to create it.

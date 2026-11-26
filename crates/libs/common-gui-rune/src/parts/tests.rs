@@ -1,7 +1,7 @@
 use super::*;
 use crate::Ds;
 use crate::test_harness::{
-    a11y_node, a11y_nodes, command, command_mods, element, focused_key, has_key, has_text,
+    a11y_node, a11y_nodes, command, command_mods, focus_is_inside, focused_key, has_key, has_text,
     label_of, press, press_key, rect, runtime_at, settle,
 };
 use crate::tokens::TYPE_BODY;
@@ -104,13 +104,6 @@ fn view(form: &Form, _: &mut Cx<Form>) -> El {
 
 fn runtime(form: Form) -> Runtime<Form> {
     runtime_at(form, view, SIZE)
-}
-
-fn focus_is_inside(rt: &Runtime<Form>, key: &str) -> bool {
-    let shell = element(rt, key).path;
-    rt.elements()
-        .into_iter()
-        .any(|element| element.focused && element.path.starts_with(&format!("{shell}/")))
 }
 
 #[rstest]

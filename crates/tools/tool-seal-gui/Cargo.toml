@@ -1,6 +1,6 @@
 [package]
 name = "seal-gui"
-version = "1.0.0"
+version = "2.0.0"
 description = "Desktop GUI for seal: key-based file encryption over the age format"
 edition.workspace = true
 authors.workspace = true
@@ -11,20 +11,23 @@ license.workspace = true
 # Internal
 common-cli = { workspace = true }
 common-file-utils = { workspace = true }
-common-gui = { workspace = true }
+common-gui-rune = { workspace = true }
 common-utils = { workspace = true }
 shared-crypto = { workspace = true }
 
 # External
 anyhow = { workspace = true }
 clap = { workspace = true }
-eframe = { workspace = true }
-egui = { workspace = true }
-rfd = { workspace = true }
+rune = { workspace = true }
+rune-kit = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+unicode-segmentation = { workspace = true }
 
 [dev-dependencies]
+common-gui-rune = { workspace = true, features = ["test-harness"] }
+
 rstest = { workspace = true }
 tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }

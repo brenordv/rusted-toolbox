@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/csvn/logs` (they went to
+  `~/.csvn/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only csvn's logs.
+
 ## 2.0.2
 - An I/O-class error while reading records (for example a network share dropping mid-run) now
   aborts the run with an error naming the input file and the rows read so far. Previously the

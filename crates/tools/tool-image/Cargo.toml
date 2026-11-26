@@ -1,6 +1,6 @@
 [package]
 name = "imgx"
-version = "2.1.5"
+version = "2.2.0"
 description = "Quick way for editing images from the terminal"
 edition.workspace = true
 authors.workspace = true

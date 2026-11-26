@@ -1,6 +1,6 @@
 [package]
 name = "shared-crypto"
-version = "1.0.0"
+version = "1.1.0"
 description = "Streaming age encryption engine shared by the seal CLI and GUI"
 edition.workspace = true
 authors.workspace = true

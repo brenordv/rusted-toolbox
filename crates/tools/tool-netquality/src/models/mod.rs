@@ -1,5 +1,7 @@
+mod db_location;
 mod types;
 
+pub use db_location::default_db_path;
 pub use types::{
     BotToken, ConnectivityConfig, ConnectivityResult, NetQualityConfig, NotificationConfig,
     OutageInfo, SpeedConfig, SpeedResult, StorageConfig, TelegramConfig, ThresholdCategory,

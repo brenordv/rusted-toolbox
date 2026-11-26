@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/ts/logs` (they went to
+  `~/.ts/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only ts's logs.
+
 ## 2.0.2
 - Offset-carrying datetimes now parse offset-aware: `ts "2021-06-15T12:30:00+0900"` returns
   1623727800 (the instant the offset names) instead of the wall time re-read as local

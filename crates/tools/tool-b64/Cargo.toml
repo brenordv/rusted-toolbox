@@ -1,6 +1,6 @@
 [package]
 name = "b64"
-version = "2.0.2"
+version = "2.1.0"
 description = "Encodes/Decodes text and files to base 64 format"
 edition.workspace = true
 authors.workspace = true

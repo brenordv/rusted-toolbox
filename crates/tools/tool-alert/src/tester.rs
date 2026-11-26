@@ -4,13 +4,13 @@
 use crate::design::BODY_LINES;
 use crate::models::TesterSeed;
 use anyhow::{Context, Result};
-use common_gui_rune::keys::{is_chord, is_newline};
+use common_gui_rune::keys::{is_chord, type_newline};
 use common_gui_rune::parts::{
     EditorHeight, EditorSpec, LineFieldSpec, StatusLines, Tone, field_label, line_field,
     status_line, text_editor,
 };
 use common_gui_rune::tokens::{SPACE_LG, SPACE_MD, SPACE_XS, TYPE_BODY};
-use common_gui_rune::{Ds, Surface, appearance, surface};
+use common_gui_rune::{Surface, Theme, surface};
 use rune::{Cx, El, KeyEvent, TextEdit, Tx, col, row, spacer};
 use rune_kit::{Button, ButtonVariant, Kit};
 use std::ffi::OsString;
@@ -79,8 +79,7 @@ pub fn start_alert(executable: &Path, arguments: &[OsString]) -> Result<()> {
 
 /// The tester's form and what the last Test found.
 pub struct TesterState {
-    ds: Ds,
-    system_dark: Option<bool>,
+    theme: Theme,
     title: TextEdit,
     body: TextEdit,
     sound: TextEdit,
@@ -92,8 +91,7 @@ impl TesterState {
     /// The form filled from `seed`; Test starts alerts with `start`.
     pub fn new(seed: &TesterSeed, start: StartAlert) -> Self {
         Self {
-            ds: Ds::new(),
-            system_dark: None,
+            theme: Theme::new(),
             title: TextEdit::new(seed.title.as_str()),
             body: TextEdit::new(seed.body.as_str()),
             sound: TextEdit::new(seed.sound.as_str()),
@@ -148,7 +146,7 @@ pub fn shown(_: &mut TesterState, _: &mut Tx) -> bool {
 
 /// Sets the appearance the window draws in (true: dark); true when it changed.
 pub fn set_appearance(s: &mut TesterState, dark: bool) -> bool {
-    appearance::set_appearance(&mut s.system_dark, dark)
+    s.theme.set(dark)
 }
 
 /// `mod+enter` presses Test; true when `key` was that chord. A focused text field takes
@@ -164,20 +162,12 @@ pub fn window_key(s: &mut TesterState, key: &KeyEvent, tx: &mut Tx) -> bool {
 /// Keys in the Body editor, before the editor sees them: `mod+enter` presses Test, and Return,
 /// with or without Shift, types a line break.
 fn body_key(s: &mut TesterState, key: &KeyEvent, tx: &mut Tx) -> bool {
-    if window_key(s, key, tx) {
-        return true;
-    }
-    if is_newline(key) {
-        s.body.insert("\n");
-        return true;
-    }
-    false
+    window_key(s, key, tx) || type_newline(&mut s.body, key)
 }
 
 /// The window's root.
 pub fn view(s: &TesterState, cx: &mut Cx<TesterState>) -> El {
-    let dark = s.system_dark.unwrap_or(cx.system_dark());
-    let k = s.ds.kit(dark);
+    let k = s.theme.kit(cx.system_dark());
     let mut form = col()
         .w_full()
         .h_full()

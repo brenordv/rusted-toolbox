@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/csv-split/logs` (they went to
+  `~/.csv-split/logs`). The old folder is not moved, since another program may use that
+  name; delete it if it holds only csv-split's logs.
+
 ## 3.0.6
 - The last recorded test gap closed: `process_input_file` delegates to an inner function
   generic over part-writer creation, and two tests inject a failing-flush writer to pin that

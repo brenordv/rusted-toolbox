@@ -14,6 +14,8 @@ mod a11y_tests;
 #[cfg(test)]
 mod details_tests;
 #[cfg(test)]
+mod hint_tests;
+#[cfg(test)]
 mod journey_tests;
 #[cfg(test)]
 mod metadata_tests;
@@ -41,9 +43,10 @@ use crate::state::{AppState, Input};
 use crate::views::{view, window_key};
 use chrono::{DateTime, TimeDelta, Utc};
 pub use common_gui_rune::test_harness::{
-    FRAME, SETTLE_FRAMES, a11y_node, a11y_nodes, command, command_mods, element, focused_key,
-    has_key, has_text, label_of, press, press_key, rect, settle, text_visible,
+    FRAME, SETTLE_FRAMES, a11y_node, a11y_nodes, command, command_mods, element, focus_is_inside,
+    focused_key, has_key, has_text, label_of, press, press_key, rect, settle, text_visible,
 };
+use common_gui_rune::test_harness::{clipboard_text, type_into, use_memory_clipboard};
 use rune::accesskit::{Action, Role};
 use rune::clipboard::MemoryClipboard;
 use rune::{Key, KeyEvent, Mods, Runtime};
@@ -125,8 +128,7 @@ impl Harness {
         let calls = builders::record(&mut state);
         let mut rt = runtime_at(state, size);
         rt.on_key = Some(window_key);
-        let clipboard = rune::clipboard::memory();
-        rt.use_clipboard(&clipboard);
+        let clipboard = use_memory_clipboard(&mut rt);
         Self {
             rt,
             calls,
@@ -256,7 +258,7 @@ impl Harness {
 
     /// The text the app last copied, from the harness's in-memory clipboard.
     pub fn clipboard_text(&self) -> Option<String> {
-        self.clipboard.text().map(|text| text.to_string())
+        clipboard_text(&self.clipboard)
     }
 
     /// The element path of the element keyed `key`.
@@ -285,34 +287,12 @@ impl Harness {
     }
 
     /// Presses the field keyed `key` (the key may sit on a wrapper around the editor), selects
-    /// its text, and pastes `text` over it.
+    /// its text, and pastes `text` over it, settling a full [`SETTLE_FRAMES`] after each step.
     ///
     /// # Panics
     /// When nothing is keyed `key`, or the press leaves focus outside it.
     pub fn type_into(&mut self, key: &str, text: &str) {
-        self.press(key);
-        let field = self
-            .rt
-            .elements()
-            .into_iter()
-            .find(|element| element.key.as_deref() == Some(key) && !element.exiting)
-            .map(|element| element.path);
-        let focused = self
-            .rt
-            .elements()
-            .into_iter()
-            .find(|element| element.focused)
-            .map(|element| element.path);
-        let inside = match (&field, &focused) {
-            (Some(field), Some(focused)) => {
-                focused == field || focused.starts_with(&format!("{field}/"))
-            }
-            (None, _) | (_, None) => false,
-        };
-        assert!(inside, "{key} did not take focus: {focused:?}");
-        self.command(Key::Command('a'));
-        self.rt.paste(text);
-        self.settle();
+        type_into(&mut self.rt, key, text);
     }
 
     /// Presses `key` with no modifiers.

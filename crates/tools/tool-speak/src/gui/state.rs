@@ -3,7 +3,7 @@
 use super::services::Services;
 use crate::config::{DEFAULT_REACTIONS, SpeakConfig, UrlParts, join_url, split_url};
 use common_audio::Clip;
-use common_gui_rune::Ds;
+use common_gui_rune::Theme;
 use common_gui_rune::parts::Tone;
 use rune::TextEdit;
 use std::path::{Path, PathBuf};
@@ -250,8 +250,7 @@ impl Outcome {
 
 /// The speak window's state.
 pub struct SpeakState {
-    pub(super) ds: Ds,
-    pub(super) system_dark: Option<bool>,
+    pub(super) theme: Theme,
     area: Area,
     pub(super) text: TextEdit,
     audio: ComposeAudio,
@@ -281,8 +280,7 @@ impl SpeakState {
             ),
         };
         Self {
-            ds: Ds::new(),
-            system_dark: None,
+            theme: Theme::new(),
             area,
             text: TextEdit::new(""),
             audio: ComposeAudio::Empty,

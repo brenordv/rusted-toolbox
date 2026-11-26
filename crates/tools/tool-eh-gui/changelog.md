@@ -1,9 +1,39 @@
 # Changelog
 
+## 2.0.0
+- The Profile picker reads the workspace at `~/.rusted-toolbox/eh/profiles` (it was
+  `~/.eh/profiles`), the one `eh` 2.0.0 uses. On start eh-gui moves the old `profiles` folder
+  there in one rename and logs a warning naming both folders; when it cannot, the old folder
+  stays the workspace and every start warns. `EH_WORKSPACE` still wins and blocks the move.
+  Upgrade eh and eh-gui together: an older eh keeps using `~/.eh/profiles`.
+- Log files go to `~/.rusted-toolbox/eh-gui/logs` (they went to `~/.eh-gui/logs`). The old
+  folder is not moved; delete it once you no longer need its logs.
+
+## 1.0.5
+- `mod+1`, `mod+2`, and `mod+3` pick a section on a fresh press only: holding the chord no
+  longer flips sections as the key repeats.
+- The window's theme (`common_gui_rune::Theme`), the section switch (`choice_switch`), the Send
+  action row (`action_row`), the section chords (`area_chord`), the Return-types-a-line-break
+  key (`type_newline`), the control spring pair (`CONTROL_PAIR`), and the logging boot
+  (`common-cli`'s `boot_gui`, which also logs a panic with its thread, location, and message)
+  come from the shared libraries. The test harness's `type_into`, focus check, and clipboard
+  come from `common-gui-rune`'s. The Send action row is 52 pt tall, the shared row's minimum
+  (a control plus 12 pt above and below), 4 pt more than before, so the body box is 4 pt
+  shorter. Nothing else the app does changed.
+
+## 1.0.4
+- No change in what the app does. `design::parts::reveal`, `design::parts::section_header`,
+  and `design::tokens::REVEAL_OFFSET` moved to `common-gui-rune` and are re-exported from the
+  paths they had.
+
 ## 1.0.3
 - No change in what the app does. The chord check and the Return-types-a-line-break check its
   key handlers used moved to `common-gui-rune::keys` (`is_chord`, `is_newline`), which `speak`
   and `alert` use too.
+- The connection sheet has a muted hint under each sign-in field saying what goes in it, ending
+  with an example value where one helps (the connection string's example on its own line, in
+  monospace), and a line under Sign-in method and Azure credential saying what the picked
+  option does. Text only: no field, check, or saved value changed.
 
 ## 1.0.2
 - No change in what the app does. The cleaning of the error details text (each line's control

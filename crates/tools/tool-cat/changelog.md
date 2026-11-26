@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/cat/logs` (they went to
+  `~/.cat/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only cat's logs.
+
 ## 2.0.3
 - The test suite uses the shared `common_cli::test_writers::FailAfter` double instead of a
   private byte-budget failing-writer copy; the behavior pinned by the tests is unchanged.

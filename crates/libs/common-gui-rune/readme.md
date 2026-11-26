@@ -2,26 +2,39 @@
 
 The tool-neutral part of the workspace's Rune design system. A Rune tool in this repo builds
 its windows from this crate and rune-kit, and keeps only its own sizes and parts in its own
-design module. (`common-gui` is the egui counterpart; the two share nothing.)
+design module. A windowed tool boots logging with `common-cli`'s `gui_boot::boot_gui`.
+
+The rules the design system sets (window shapes, color, type, motion, words, accessibility, how
+an app is built and tested, and which parts still live in one app) are in
+[DESIGN.md](DESIGN.md). A new GUI starts there.
 
 Modules:
 
 - the crate root: `Ds` (the dark and light kits with the shared overrides: the `Submit` blue,
-  light muted text, the accent focus ring), `Surface` and `surface` (the window, content, and
-  raised levels in either appearance).
+  light muted text, the accent focus rings), `Surface` and `surface` (the window, content, and
+  raised levels in either appearance), `drop_fill` (a drop target's fill while a file drag
+  hovers it), and `Theme` (the kits plus the appearance a window was told:
+  `kit(cx.system_dark())`, `set(dark)`).
 - `tokens`: `rgb`, the palette seeds, the spacing scale (`SPACE_XS` 4 through `SPACE_XXL` 32),
-  the radii, the nine type roles, `CONTROL_HEIGHT`, `HAIRLINE`, `FOCUS_RING_WIDTH`.
-- `motion`: the roles `FEEDBACK`, `CONTROL`, and `CONTROL_EXIT`, all critically damped.
-- `keys`: `is_chord` (is this key the chord `mod+enter`?) and `is_newline` (Return, with or
-  without Shift) for key handlers.
-- `parts`: `field_label`, `caption`, `issue`, `warning`, `hairline`, `detail_row`, the
-  multi-line editors (`text_editor` in any type role, `lines_editor` for short lines),
-  `line_field` (a labelled single-line field), and `status_line`.
+  the radii, the nine type roles, `CONTROL_HEIGHT`, `HAIRLINE`, `FOCUS_RING_WIDTH`,
+  `DROP_FILL_ALPHA`, `REVEAL_OFFSET`.
+- `motion`: the roles `FEEDBACK`, `CONTROL`, and `CONTROL_EXIT`, all critically damped, and
+  `CONTROL_PAIR` for presence transitions.
+- `keys`: `is_chord` (is this key the chord `mod+enter`?), `is_newline` (Return, with or
+  without Shift), `area_chord` (which area `mod+1..n` picks, fresh presses only), and
+  `type_newline` (Return types a line break into a field) for key handlers.
+- `parts`: `field_label`, `caption`, `issue`, `warning`, `hairline`, `section_header`,
+  `detail_row`, the multi-line editors (`text_editor` in any type role, `lines_editor` for
+  short lines), `line_field` (a labelled single-line field), `status_line`, `action_row` (the
+  fixed row under an area: hairline, status, buttons), `choice_switch` (a segmented choice that
+  can be disabled), and `reveal` (the field-reveal transition).
 - `appearance`: `SystemAppearance` reads the system's dark or light setting on Windows, where
   Rune's own theme event does not arrive on Windows 10; `set_appearance` stores what a window
   draws in and says whether it changed.
 - `window`: `spawn_window_watch` for an app with one window, the pure `window_failure`
-  decision behind it, and `gpu_hint` for the log line that reports the failure.
+  decision behind it, `run_watched` (run an app under the watch with no Rune flags read from
+  the process), `report_failure` (the one log line for a window that could not be created), and
+  `gpu_hint`.
 
 ## Rules for consumers
 
@@ -71,9 +84,10 @@ the caller reports the failure, with `GPU_BACKENDS` for the hint.
 The `test-harness` feature adds two modules for tests:
 
 - `test_harness`: headless helpers over Rune's `Runtime`, generic over the state type
-  (`runtime_at(state, view, size)`, `settle`, `press`, `press_key`, `command`, `element`,
-  `rect`, `has_key`, `has_text`, `text_visible`, `focused_key`, `label_of`, `a11y_nodes`,
-  `a11y_node`).
+  (`runtime_at(state, view, size)`, `runtime_with_keys`, `settle`, `deliver`, `press`,
+  `press_key`, `command`, `type_into`, `element`, `rect`, `bottom`, `has_key`, `has_text`,
+  `text_visible`, `focused_key`, `focus_is_inside`, `label_of`, `is_disabled`, `a11y_nodes`,
+  `a11y_node`, `use_memory_clipboard`, `clipboard_text`, `answer_dialog`, `tooltip_of`).
 - `contrast`: WCAG ratio helpers and the `Contract` collector for a contrast-contract test.
 
 A consumer lists the crate again under `[dev-dependencies]` with the feature on, so a plain
@@ -88,5 +102,9 @@ common-gui-rune = { workspace = true, features = ["test-harness"] }
 ```
 
 The pairs this crate's own tokens produce (text, muted, and accent text, danger and warning
-captions, on the three surfaces; the `Submit` label in its four states) are tested here in
-both appearances. A tool tests only the pairs its own parts add.
+captions, on the three surfaces; the `Submit` label in its four states; the focus rings,
+`border_focus` and the checkbox's `border_active`, at 3:1 on the three surfaces; the neutral
+and accent badge labels on their fills) are tested here in both appearances. A tool tests only
+the pairs its own parts add. A button with a text label needs no 3:1 edge and a badge's text
+carries its status, so neither edge is in the contract; a checkbox's or radio's edge, the only
+mark of an empty one, is tested by the first tool that shows one.

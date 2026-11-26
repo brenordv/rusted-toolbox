@@ -1,8 +1,10 @@
 //! speak's settings: where the speech server is and what each request carries.
 
 use anyhow::{Context, Result, anyhow, bail};
+use common_file_utils::adoption::{Adoption, Shape, adopt};
+use common_file_utils::permissions::create_dir_all_owner_only;
 use common_serialization_utils::{load_json_file_to_object, save_object_to_json_file};
-use common_utils::file_system::get_app_sub_folder;
+use common_utils::file_system::toolbox_home;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -10,11 +12,13 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use url::Url;
 
-/// The folder under the user's home that holds each tool's own settings folder.
-const SETTINGS_ROOT: &str = "rusted-toolbox";
-/// speak's settings folder inside [`SETTINGS_ROOT`].
-const SETTINGS_FOLDER: &str = "tool-speak";
+/// speak's folder in the toolbox home: its package name, like every tool's.
+const SETTINGS_FOLDER: &str = env!("CARGO_PKG_NAME");
+/// The folder in the toolbox home that held speak's settings before 2.0.0.
+const LEGACY_SETTINGS_FOLDER: &str = "tool-speak";
 const CONFIG_FILE: &str = "config.json";
+/// What the settings file is called in the line that reports moving it.
+const SETTINGS_DATA: &str = "speak's settings";
 
 /// The port the first run offers.
 pub const DEFAULT_PORT: u16 = 10157;
@@ -70,9 +74,45 @@ impl Default for SpeakConfig {
     }
 }
 
-/// Where speak keeps its settings: `~/.rusted-toolbox/tool-speak/config.json`.
-pub fn default_config_path() -> PathBuf {
-    get_app_sub_folder(SETTINGS_ROOT, SETTINGS_FOLDER).join(CONFIG_FILE)
+/// Where speak's settings file is, and what happened to one found in the old folder.
+#[derive(Debug)]
+pub struct ConfigLocation {
+    /// The settings file's place in speak's folder.
+    pub target: PathBuf,
+    /// What became of a settings file in the folder speak used before 2.0.0.
+    pub adoption: Adoption,
+}
+
+impl ConfigLocation {
+    /// The settings file to read and write: [`Self::target`], or the old file when it could
+    /// not be moved.
+    pub fn path(&self) -> PathBuf {
+        self.adoption.path_in_use(&self.target)
+    }
+
+    /// Logs a settings file moved from the old folder, or left there, at `warn`.
+    pub fn report(&self) {
+        self.adoption.report(SETTINGS_DATA, &self.target);
+    }
+}
+
+/// speak's settings file in the toolbox home `root`: `<root>/speak/config.json`. A settings
+/// file only in the folder speak used before 2.0.0, `<root>/tool-speak/config.json`, is moved
+/// there first; when it cannot be, the old file stays in use.
+pub fn locate_config(root: &Path) -> ConfigLocation {
+    let target = root.join(SETTINGS_FOLDER).join(CONFIG_FILE);
+    let legacy = root.join(LEGACY_SETTINGS_FOLDER).join(CONFIG_FILE);
+    let adoption = adopt(Some(&legacy), &target, Shape::File);
+    ConfigLocation { target, adoption }
+}
+
+/// [`locate_config`] in the current user's toolbox home, `~/.rusted-toolbox`.
+///
+/// # Errors
+/// When no home folder is found: speak then has no place for its settings.
+pub fn locate_default_config() -> Result<ConfigLocation> {
+    let root = toolbox_home().context("No home folder was found to keep speak's settings in")?;
+    Ok(locate_config(&root))
 }
 
 /// Loads the settings at `path`; `Ok(None)` when the file does not exist.
@@ -259,13 +299,23 @@ impl SpeakConfig {
         })
     }
 
-    /// Saves the settings to `path`, creating its folder when it is missing.
+    /// Saves the settings to `path`, creating its folder, owner-only on Unix, when it is
+    /// missing.
     ///
     /// # Errors
-    /// When the file cannot be written; the error names the path.
+    /// When the folder cannot be created or the file cannot be written; the error names the
+    /// path.
     pub fn save(&self, path: &Path) -> Result<()> {
-        save_object_to_json_file(path, self)
-            .with_context(|| format!("speak's settings could not be saved to {}", path.display()))
+        let saved = match path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            Some(folder) => create_dir_all_owner_only(folder)
+                .with_context(|| format!("failed to create folder {}", folder.display())),
+            None => Ok(()),
+        }
+        .and_then(|()| save_object_to_json_file(path, self));
+        saved.with_context(|| format!("speak's settings could not be saved to {}", path.display()))
     }
 
     /// Checks that a request can be built from these settings.

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/imgx/logs` (they went to
+  `~/.imgx/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only imgx's logs.
+
 ## 2.1.5
 - The private temp-file-then-rename encode helper moved to `common-file-utils` as
   `atomic_write::write_via_temp` (its tests went with it); imgx now calls the shared

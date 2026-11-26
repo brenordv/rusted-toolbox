@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/seal/logs` (they went to
+  `~/.seal/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only seal's logs.
+
 ## 1.0.1
 - On Windows, `seal watch` could hang while stopping. It is now built with `notify` 8.2.2, which stops the watcher from re-arming reads on closed handles, the cause of a deadlock when Windows reused them.
 

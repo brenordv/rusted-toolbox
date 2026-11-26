@@ -604,6 +604,33 @@ fn mod_3_shows_the_send_section_with_nothing_focused() {
 }
 
 #[test]
+fn the_send_status_is_centred_on_the_send_button() {
+    let (s, _) = send_state();
+    let rt = send_runtime(s, (960.0, 600.0));
+
+    let [_, status_y, _, status_h] = rect(&rt, "send-status-summary");
+    let [_, button_y, _, button_h] = rect(&rt, crate::views::send::SEND_BUTTON_KEY);
+
+    assert!(
+        ((status_y + status_h / 2.0) - (button_y + button_h / 2.0)).abs() < 1.0,
+        "status at {status_y}+{status_h}, Send at {button_y}+{button_h}"
+    );
+}
+
+#[test]
+fn a_held_section_chord_picks_nothing() {
+    let mut rt = send_runtime(state(), (1280.0, 800.0));
+
+    rt.repeat_key(KeyEvent {
+        key: Key::Command('3'),
+        mods: crate::test_harness::command_mods(),
+    });
+    settle(&mut rt);
+
+    assert_eq!(rt.state.section, crate::state::Section::Read);
+}
+
+#[test]
 fn return_in_the_body_types_a_newline_and_sends_nothing() {
     let (s, sends) = send_state();
     let mut rt = send_runtime(s, (1280.0, 800.0));

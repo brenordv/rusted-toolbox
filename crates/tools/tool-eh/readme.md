@@ -231,9 +231,16 @@ The [profiles quick guide](profiles-guide.md) walks through the common tasks wit
     .eh-data/
 ```
 
-The workspace is `.eh/profiles` in your home folder. Set `EH_WORKSPACE` to an absolute folder
-path to keep it elsewhere (archives grow with what you capture). It must be a folder only you
-can write to: not a repository, a synced or shared folder, or a network share.
+The workspace is `.rusted-toolbox/eh/profiles` in your home folder. Set `EH_WORKSPACE` to an
+absolute folder path to keep it elsewhere (archives grow with what you capture). It must be a
+folder only you can write to: not a repository, a synced or shared folder, or a network share.
+
+Versions before 2.0.0 kept the workspace in `.eh/profiles` in your home folder. The first run
+that uses the workspace moves that whole folder to the new place in one rename and logs a
+warning naming both. When it cannot (the old folder is on another drive, or is a symbolic link),
+the old folder stays the workspace and every such run warns until you move it yourself; with
+profiles in both places the new one is used and every such run warns. Nothing moves while
+`EH_WORKSPACE` is set. Upgrade eh and eh-gui together, since an older one keeps the old folder.
 
 ```bash
 # Save a profile: --save-config with --profile writes to the profile, creating it

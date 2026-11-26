@@ -5,8 +5,9 @@ eh-gui. It keeps the event hub (namespace, event hub, consumer group, how you si
 settings you saved with it, and its own data folder, so each profile has its own archive,
 checkpoints, and exports.
 
-Profiles live in the workspace: `.eh/profiles` in your home folder, one folder per profile. The
-`eh` readme's "Profiles" section has the full rules; this page shows the common tasks.
+Profiles live in the workspace: `.rusted-toolbox/eh/profiles` in your home folder, one folder per
+profile (eh 2.0.0 moves an older `.eh/profiles` there on its first run). The `eh` readme's
+"Profiles" section has the full rules; this page shows the common tasks.
 
 ## Save your first profile
 

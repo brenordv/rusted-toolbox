@@ -5,9 +5,10 @@
 pub use common_gui_rune::tokens::{
     CONTROL_HEIGHT, DARK_ACCENT, DARK_BG, DARK_FG, FOCUS_RING_WIDTH, HAIRLINE, LIGHT_ACCENT,
     LIGHT_BG, LIGHT_FG, LIGHT_MUTED, RADIUS_BADGE, RADIUS_CONTROL, RADIUS_SHEET, RADIUS_TILE,
-    SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL, SUBMIT_FILL, SUBMIT_HOVER_ALPHA,
-    SUBMIT_LABEL, SUBMIT_PRESSED_ALPHA, SUBMIT_SHEEN_ALPHA, TYPE_BODY, TYPE_BODY_NUM, TYPE_CAPTION,
-    TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO, TYPE_TITLE, rgb,
+    REVEAL_OFFSET, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL, SUBMIT_FILL,
+    SUBMIT_HOVER_ALPHA, SUBMIT_LABEL, SUBMIT_PRESSED_ALPHA, SUBMIT_SHEEN_ALPHA, TYPE_BODY,
+    TYPE_BODY_NUM, TYPE_CAPTION, TYPE_DISPLAY, TYPE_HEADLINE, TYPE_LABEL, TYPE_METRIC, TYPE_MONO,
+    TYPE_TITLE, rgb,
 };
 
 /// The floating material's tint alpha over the content surface in light mode; text stays
@@ -79,8 +80,6 @@ pub const PROPERTY_LINES: f32 = 4.0;
 pub const COUNT_BADGE_HEIGHT: f32 = 16.0;
 /// The press scale of floating controls.
 pub const PRESS_SCALE: f32 = 0.97;
-/// How far a revealed field rises as it enters.
-pub const REVEAL_OFFSET: f32 = 6.0;
 pub const WINDOW_SIZE: (f32, f32) = (1280.0, 800.0);
 /// The smallest window: the toolbar's controls fit side by side with the sidebar open.
 pub const WINDOW_MIN: (f32, f32) = (960.0, 600.0);

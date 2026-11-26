@@ -10,6 +10,9 @@ Shared command-line machinery for the toolbox:
   No `--verbose`, and `--log-level` is optional: `app_boot_up_with_level`
   takes the tool's derived level and an explicit `--log-level` overrides it.
 - `AppLogger`: the tracing bootstrap behind both boot paths.
+- `gui_boot::boot_gui`: the boot for a tool that opens a window. The file sink is on whatever
+  `--log-to-file` says, the tool's level applies unless `--log-level` says otherwise, and a
+  panic is logged (thread, location, message) before the hook installed before it runs.
 - `tool_exit_helpers`: process exit helpers with consistent exit codes.
 - `broken_pipe`: a `BrokenPipe` marker plus `write_out`/`flush_out` wrappers so a
   streaming tool can treat a consumer-closed pipe as a clean end of output
@@ -30,7 +33,7 @@ per-item contracts live in this crate's rustdoc.
   is the weakest layer: an explicit `--log-level` beats it, and `RUST_LOG`
   beats both (with the same `disabled` exception).
 - `--log-to-file` adds an append-mode file layer under the tool's `logs`
-  subfolder in the user's home; `--rotate-log-file-by-day` puts the date in the
-  filename. On Unix the logs folder is created 0o700 and the file is kept 0o600
+  subfolder in the toolbox home (`~/.rusted-toolbox/<tool>/logs`);
+  `--rotate-log-file-by-day` puts the date in the filename. On Unix the logs folder is created 0o700 and the file is kept 0o600
   (a pre-existing wide file is tightened on open); on Windows the file inherits
   the user profile's ACL.

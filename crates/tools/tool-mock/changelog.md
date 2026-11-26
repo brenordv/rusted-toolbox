@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/mock/logs` (they went to
+  `~/.mock/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only mock's logs.
+
 ## 2.2.0
 - `random.guid`: a random GUID (UUID v4).
 - Fixed: `--length`/`-n` above 1,048,576 for `internet.password` and

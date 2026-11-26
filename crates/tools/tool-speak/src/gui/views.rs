@@ -8,19 +8,19 @@ use crate::design::{
     FORM_MAX_WIDTH, REACTION_LABEL_MAX, REACTION_LABEL_MAX_CHARS, REACTION_LINES,
     REACTION_ROWS_MAX, TEXT_MIN_LINES,
 };
-use common_gui_rune::keys::{is_chord, is_newline};
-use common_gui_rune::motion::{CONTROL, CONTROL_EXIT};
+use common_gui_rune::keys::{area_chord, is_chord, type_newline};
+use common_gui_rune::motion::CONTROL_PAIR;
 use common_gui_rune::parts::{
-    EditorHeight, EditorSpec, LineFieldSpec, StatusLines, Tone, caption, detail_row, field_label,
-    hairline, line_field, status_line, text_editor,
+    EditorHeight, EditorSpec, LineFieldSpec, StatusLines, Tone, action_row, caption, choice_switch,
+    detail_row, field_label, hairline, line_field, status_line, text_editor,
 };
 use common_gui_rune::tokens::{
     CONTROL_HEIGHT, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS, TYPE_BODY, TYPE_MONO,
 };
-use common_gui_rune::{Surface, appearance, surface};
+use common_gui_rune::{Surface, surface};
 use common_utils::string_utils::display_line;
-use rune::{Cx, El, KeyEvent, ScrollSpec, SpringPair, TextEdit, Transition, Tx, col, row, spacer};
-use rune_kit::{Button, ButtonVariant, Kit, ScrollBar, SegmentedControl, Select, SelectAppearance};
+use rune::{Cx, El, KeyEvent, ScrollSpec, TextEdit, Transition, Tx, col, row};
+use rune_kit::{Button, ButtonVariant, Kit, ScrollBar, Select, SelectAppearance};
 use tracing::info;
 
 /// The window's title in the OS.
@@ -106,18 +106,17 @@ pub fn shown(s: &mut SpeakState, tx: &mut Tx) -> bool {
 
 /// Sets the appearance the window draws in (true: dark); true when it changed.
 pub fn set_appearance(s: &mut SpeakState, dark: bool) -> bool {
-    appearance::set_appearance(&mut s.system_dark, dark)
+    s.theme.set(dark)
 }
 
-/// The window's shortcuts: `mod+1` and `mod+2` pick an area, and `mod+enter` generates while
-/// Compose shows. True when `key` was one of them. A focused text field takes these chords
-/// for itself, so each field runs this before its own keys.
+/// The window's shortcuts: `mod+1` and `mod+2` pick an area as a fresh press, and `mod+enter`
+/// generates while Compose shows. True when `key` was one of them. A focused text field takes
+/// these chords for itself, so each field runs this before its own keys.
 pub fn window_key(s: &mut SpeakState, key: &KeyEvent, tx: &mut Tx) -> bool {
-    for area in Area::ALL {
-        if is_chord(&format!("mod+{}", area.index() + 1), key, tx) {
-            dispatch(s, Input::AreaPicked(area));
-            return true;
-        }
+    if let Some(area) = area_chord(Area::ALL.len(), key, tx).and_then(|index| Area::ALL.get(index))
+    {
+        dispatch(s, Input::AreaPicked(*area));
+        return true;
     }
     if is_chord("mod+enter", key, tx) {
         return match s.area() {
@@ -134,14 +133,7 @@ pub fn window_key(s: &mut SpeakState, key: &KeyEvent, tx: &mut Tx) -> bool {
 /// Keys in the Compose text, before the editor sees them: the window's shortcuts, and Return
 /// typing a line break.
 fn text_key(s: &mut SpeakState, key: &KeyEvent, tx: &mut Tx) -> bool {
-    if window_key(s, key, tx) {
-        return true;
-    }
-    if is_newline(key) {
-        s.text.insert("\n");
-        return true;
-    }
-    false
+    window_key(s, key, tx) || type_newline(&mut s.text, key)
 }
 
 /// Keys in the reactions box, before the editor sees them: the window's shortcuts, and Return
@@ -151,8 +143,7 @@ fn reactions_key(s: &mut SpeakState, key: &KeyEvent, tx: &mut Tx) -> bool {
     if window_key(s, key, tx) {
         return true;
     }
-    if is_newline(key) {
-        s.form.reactions.insert("\n");
+    if type_newline(&mut s.form.reactions, key) {
         dispatch(s, Input::FieldEdited(Field::Reactions));
         return true;
     }
@@ -161,18 +152,21 @@ fn reactions_key(s: &mut SpeakState, key: &KeyEvent, tx: &mut Tx) -> bool {
 
 /// The window's root.
 pub fn view(s: &SpeakState, cx: &mut Cx<SpeakState>) -> El {
-    let dark = s.system_dark.unwrap_or(cx.system_dark());
-    let k = s.ds.kit(dark);
+    let k = s.theme.kit(cx.system_dark());
     let mut layer = Vec::new();
-    let areas = SegmentedControl::new(&Area::LABELS, Some(s.area().index()))
-        .label("Area")
-        .on_pick(|s: &mut SpeakState, index: usize, _| {
+    let areas = choice_switch(
+        k,
+        AREAS_KEY,
+        "Area",
+        &Area::LABELS,
+        s.area().index(),
+        true,
+        |s: &mut SpeakState, index: usize, _: &mut Tx| {
             if let Some(area) = Area::ALL.get(index) {
                 dispatch(s, Input::AreaPicked(*area));
             }
-        })
-        .build(k)
-        .key(AREAS_KEY);
+        },
+    );
     let area = match s.area() {
         Area::Compose => compose(s, k).key(COMPOSE_KEY),
         Area::Settings => settings(s, k, &mut layer).key(SETTINGS_KEY),
@@ -189,9 +183,7 @@ pub fn view(s: &SpeakState, cx: &mut Cx<SpeakState>) -> El {
                 .grow(1.0)
                 .min_h(0.0)
                 .fill(surface(k, Surface::Content))
-                .child(area.transition(
-                    Transition::opacity().springs(SpringPair::new(CONTROL, CONTROL_EXIT)),
-                )),
+                .child(area.transition(Transition::opacity().springs(CONTROL_PAIR))),
         );
     rune_kit::root(window, layer)
 }
@@ -231,10 +223,7 @@ fn compose(s: &SpeakState, k: &Kit) -> El {
     if let Some(reactions) = reactions_group(s, k) {
         body = body.child(reactions);
     }
-    filling_col()
-        .child(body)
-        .child(hairline(k))
-        .child(compose_actions(s, k))
+    filling_col().child(body).child(compose_actions(s, k))
 }
 
 /// The reaction buttons in a wrapping row, under their label; `None` when the saved settings
@@ -303,33 +292,9 @@ fn press_reaction(s: &mut SpeakState, index: usize, tx: &mut Tx) {
     tx.focus(TEXT_KEY, false);
 }
 
-/// A status line that takes the width a row's buttons leave, or the empty space when there is
-/// nothing to say: no empty status is mounted.
-fn row_status(k: &Kit, key: &str, words: Option<(Tone, String)>) -> El {
-    match words {
-        Some((tone, words)) => {
-            col()
-                .grow(1.0)
-                .min_w(0.0)
-                .child(status_line(k, key, tone, StatusLines::Wrap, &words))
-        }
-        None => spacer(),
-    }
-}
-
-/// A fixed row under an area: `status` leading and `buttons` trailing, at least a control
-/// tall whatever the status says.
-fn action_row(key: &str, status: El, buttons: Vec<El>) -> El {
-    row()
-        .key(key)
-        .w_full()
-        .min_h(CONTROL_HEIGHT + 2.0 * SPACE_MD)
-        .gap(SPACE_MD)
-        .center_y()
-        .px(SPACE_LG)
-        .py(SPACE_MD)
-        .child(status)
-        .child(row().gap(SPACE_SM).center_y().children(buttons))
+/// A wrapping status line keyed `key` for an action row, when there is something to say.
+fn row_status(k: &Kit, key: &str, words: Option<(Tone, String)>) -> Option<El> {
+    words.map(|(tone, words)| status_line(k, key, tone, StatusLines::Wrap, &words))
 }
 
 fn compose_actions(s: &SpeakState, k: &Kit) -> El {
@@ -354,6 +319,7 @@ fn compose_actions(s: &SpeakState, k: &Kit) -> El {
         .build(k)
         .key(GENERATE_KEY);
     action_row(
+        k,
         COMPOSE_ACTIONS_KEY,
         row_status(k, COMPOSE_STATUS_KEY, s.compose_status()),
         vec![play, generate],
@@ -418,14 +384,12 @@ fn settings(s: &SpeakState, k: &Kit, layer: &mut Vec<El>) -> El {
         .on_press_tx(press_save)
         .build(k)
         .key(SAVE_KEY);
-    filling_col()
-        .child(body)
-        .child(hairline(k))
-        .child(action_row(
-            SETTINGS_FOOTER_KEY,
-            row_status(k, SAVE_STATUS_KEY, s.save_words()),
-            vec![save],
-        ))
+    filling_col().child(body).child(action_row(
+        k,
+        SETTINGS_FOOTER_KEY,
+        row_status(k, SAVE_STATUS_KEY, s.save_words()),
+        vec![save],
+    ))
 }
 
 /// Save's press: saves a form that validates; otherwise shows each field's issue and moves

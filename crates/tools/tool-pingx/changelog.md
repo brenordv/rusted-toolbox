@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/pingx/logs` (they went to
+  `~/.pingx/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only pingx's logs.
+
 ## 2.0.4
 - Validation errors are visible again: logging now boots on the failure path too, before the
   error is reported, so `pingx 127.0.0.1 -c 0` reports the count error on stderr instead of

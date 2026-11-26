@@ -1,12 +1,19 @@
+use std::fs;
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
+use tempfile::{TempDir, tempdir};
 
 const EXE: &str = env!("CARGO_BIN_EXE_speak");
 
-fn speak(args: &[&str], piped: &str) -> Output {
+/// Runs speak with `home` as the user's home folder (`USERPROFILE` on Windows, `HOME`
+/// elsewhere), so a run never reads or moves the settings of the user running the tests.
+fn speak_in(home: &Path, args: &[&str], piped: &str) -> Output {
     let mut child = Command::new(EXE)
         .args(args)
         .env_remove("RUST_LOG")
+        .env("HOME", home)
+        .env("USERPROFILE", home)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -19,6 +26,37 @@ fn speak(args: &[&str], piped: &str) -> Output {
         .write_all(piped.as_bytes())
         .expect("failed to write speak's stdin");
     child.wait_with_output().expect("failed to wait for speak")
+}
+
+fn speak(args: &[&str], piped: &str) -> Output {
+    let home = tempdir().expect("a temp home folder");
+    speak_in(home.path(), args, piped)
+}
+
+fn home_with_old_settings(settings: &str) -> TempDir {
+    let home = tempdir().expect("a temp home folder");
+    let old = home.path().join(".rusted-toolbox").join("tool-speak");
+    fs::create_dir_all(&old).expect("the old settings folder");
+    fs::write(old.join("config.json"), settings).expect("the old settings file");
+    home
+}
+
+#[test]
+fn settings_in_the_old_folder_move_to_speaks_folder_at_start_with_a_warning() {
+    let settings = "{\"url\":\"http://old-host:10157/v1/audio/speech\"}";
+    let home = home_with_old_settings(settings);
+
+    let output = speak_in(home.path(), &["   "], "");
+
+    let toolbox = home.path().join(".rusted-toolbox");
+    assert_eq!(
+        fs::read_to_string(toolbox.join("speak").join("config.json")).unwrap(),
+        settings
+    );
+    assert!(!toolbox.join("tool-speak").join("config.json").exists());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("WARN"), "{stderr}");
+    assert!(stderr.contains("tool-speak"), "{stderr}");
 }
 
 #[test]

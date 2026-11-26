@@ -327,17 +327,17 @@ fn a_send_from_a_profile_without_a_namespace_asks_for_both_names() {
         ran.asked[2..5],
         [
             Asked::Text {
-                prompt: "Namespace:".to_owned(),
+                prompt: "Namespace (e.g. my-ns.servicebus.windows.net):".to_owned(),
                 initial: String::new(),
             },
             Asked::Rejected {
-                prompt: "Namespace:".to_owned(),
+                prompt: "Namespace (e.g. my-ns.servicebus.windows.net):".to_owned(),
                 message: "Invalid Event Hubs namespace: expected a host name such as \
                           '<name>.servicebus.windows.net'"
                     .to_owned(),
             },
             Asked::Text {
-                prompt: "Event hub:".to_owned(),
+                prompt: "Event hub (e.g. orders):".to_owned(),
                 initial: String::new(),
             },
         ]

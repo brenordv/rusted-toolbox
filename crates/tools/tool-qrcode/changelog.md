@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.0
+- With `--log-to-file`, log files go to `~/.rusted-toolbox/qrcode/logs` (they went to
+  `~/.qrcode/logs`). The old folder is not moved, since another program may use that name;
+  delete it if it holds only qrcode's logs.
+
 ## 2.1.1
 - The extension append and mismatch checks now compare case-insensitively, like the format
   dispatch always did: `-f PNG -o x.png` writes `x.png` (it wrote `x.png.PNG` with a spurious

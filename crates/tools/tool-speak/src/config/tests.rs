@@ -1,6 +1,7 @@
 use super::*;
 use rstest::rstest;
 use serde_json::json;
+use std::fs;
 use tempfile::tempdir;
 
 fn config_at(url: &str) -> SpeakConfig {
@@ -121,7 +122,10 @@ fn saving_into_a_path_that_cannot_be_written_names_the_path() {
 
     let error = SpeakConfig::default().save(&path).unwrap_err();
 
-    assert!(format!("{error:#}").contains(&path.display().to_string()));
+    let text = format!("{error:#}");
+    assert!(text.contains(&path.display().to_string()), "{text}");
+    assert!(text.contains("failed to create folder"), "{text}");
+    assert_eq!(std::fs::read(&blocker).unwrap(), b"a file");
 }
 
 #[test]
@@ -372,9 +376,112 @@ fn an_endpoint_cannot_change_the_scheme_host_or_port(#[case] endpoint: &str) {
     );
 }
 
-#[test]
-fn the_default_path_is_the_tools_folder_under_the_shared_root() {
-    let path = default_config_path();
+fn speaks_file(root: &Path) -> PathBuf {
+    root.join("speak").join("config.json")
+}
 
-    assert!(path.ends_with(".rusted-toolbox/tool-speak/config.json"));
+fn old_file(root: &Path) -> PathBuf {
+    root.join("tool-speak").join("config.json")
+}
+
+#[tokio::test]
+async fn settings_only_in_the_old_folder_move_to_speaks_folder_and_load_from_there() {
+    let root = tempdir().unwrap();
+    let saved = config_at("http://old-host:10157/v1/audio/speech");
+    saved.save(&old_file(root.path())).unwrap();
+
+    let location = locate_config(root.path());
+
+    assert!(matches!(location.adoption, Adoption::Moved { .. }));
+    assert_eq!(location.path(), speaks_file(root.path()));
+    assert_eq!(load(&location.path()).await.unwrap(), Some(saved));
+    assert!(!old_file(root.path()).exists());
+}
+
+#[test]
+fn with_no_settings_anywhere_the_file_goes_in_speaks_folder() {
+    let root = tempdir().unwrap();
+
+    let location = locate_config(root.path());
+
+    assert!(matches!(location.adoption, Adoption::Nothing));
+    assert_eq!(location.path(), speaks_file(root.path()));
+    assert_eq!(location.target, speaks_file(root.path()));
+}
+
+#[tokio::test]
+async fn settings_that_cannot_move_are_read_from_the_old_folder() {
+    let root = tempdir().unwrap();
+    let saved = config_at("http://old-host:10157/v1/audio/speech");
+    saved.save(&old_file(root.path())).unwrap();
+    fs::write(
+        root.path().join("speak"),
+        b"a file where speak's folder goes",
+    )
+    .unwrap();
+
+    let location = locate_config(root.path());
+
+    assert!(matches!(location.adoption, Adoption::KeptLegacy { .. }));
+    assert_eq!(location.path(), old_file(root.path()));
+    assert_eq!(load(&location.path()).await.unwrap(), Some(saved));
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn settings_held_open_in_the_old_folder_are_used_and_saved_in_speaks_folder() {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+    let root = tempdir().unwrap();
+    let original = config_at("http://old-host:1/v1/audio/speech");
+    original.save(&old_file(root.path())).unwrap();
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ_WRITE)
+        .open(old_file(root.path()))
+        .unwrap();
+
+    let location = locate_config(root.path());
+    drop(held);
+    let edited = config_at("http://new-host:2/v1/audio/speech");
+    edited.save(&location.path()).unwrap();
+    let next_start = locate_config(root.path());
+
+    assert!(matches!(location.adoption, Adoption::OldNameLeft { .. }));
+    assert_eq!(location.path(), speaks_file(root.path()));
+    assert!(matches!(next_start.adoption, Adoption::BothPresent { .. }));
+    assert_eq!(load(&next_start.path()).await.unwrap(), Some(edited));
+    assert_eq!(load(&old_file(root.path())).await.unwrap(), Some(original));
+}
+
+#[tokio::test]
+async fn settings_in_both_folders_are_read_from_speaks_folder() {
+    let root = tempdir().unwrap();
+    config_at("http://old-host:1/v1/audio/speech")
+        .save(&old_file(root.path()))
+        .unwrap();
+    let current = config_at("http://new-host:2/v1/audio/speech");
+    current.save(&speaks_file(root.path())).unwrap();
+
+    let location = locate_config(root.path());
+
+    assert!(matches!(location.adoption, Adoption::BothPresent { .. }));
+    assert_eq!(load(&location.path()).await.unwrap(), Some(current));
+    assert!(old_file(root.path()).exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn save_creates_a_missing_folder_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempdir().unwrap();
+    let path = speaks_file(root.path());
+
+    SpeakConfig::default().save(&path).unwrap();
+
+    let mode = fs::metadata(path.parent().unwrap())
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o077, 0);
 }
