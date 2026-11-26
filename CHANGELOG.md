@@ -9,13 +9,14 @@
   `eh-core`, `shared-eventhub-persistence` is `eh-persistence`, and `shared-head-tail` is
   `head-tail-core`. Log targets follow the crate names, so a `RUST_LOG` filter written for
   `shared_eventhub_core` needs `eh_core` now.
-- New library `dep-check-core` 1.0.0, the engine of the coming `dep-check` tool: it asks OSV.dev
-  and deps.dev about one ecosystem's packages (Cargo, NuGet, PyPI, npm, RubyGems), checks a
+- New library `dep-check-core` 1.0.0, the engine of the coming `dep-check` tool: it asks OSV.dev,
+  deps.dev, and the GitHub Advisory Database (unauthenticated, under its 60-an-hour limit)
+  about one ecosystem's packages (Cargo, NuGet, PyPI, npm, RubyGems), checks a
   package given without a version at its latest one, merges the advisories and supply-chain
   facts into one report, and saves rate-limit blocks in
   `~/.rusted-toolbox/dep-check/rate-limits.json`.
 - New tool `dep-check` 1.0.0: checks one ecosystem's packages (arguments or stdin) against
-  OSV.dev and deps.dev and prints the report as text or JSON; exit 0 nothing found, 1
+  OSV.dev, deps.dev, and the GitHub Advisory Database and prints the report as text or JSON; exit 0 nothing found, 1
   vulnerable, 2 usage error, 3 some packages unknown or not checked, 4 no service answered.
 
 ## v9

@@ -57,6 +57,110 @@ fn block_until_never_waits_past_an_hour() {
     assert_eq!(block_until(at, Some(u64::MAX)), at + MAX_BLOCK);
 }
 
+fn meta(retry_after: Option<u64>, remaining: Option<u64>, reset: Option<i64>) -> ResponseMeta {
+    ResponseMeta {
+        retry_after_seconds: retry_after,
+        ratelimit_remaining: remaining,
+        ratelimit_reset: reset,
+        link: None,
+    }
+}
+
+/// `at` whole seconds, so a reset time in epoch seconds compares equal.
+fn whole_second_now() -> DateTime<Utc> {
+    DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap()
+}
+
+#[test]
+fn github_retry_after_wins_on_a_refusal() {
+    let at = whole_second_now();
+
+    let until = github_block_until(at, 403, &meta(Some(30), Some(0), None), 5);
+
+    assert_eq!(until, Some(at + TimeDelta::seconds(30)));
+}
+
+#[test]
+fn github_no_requests_left_blocks_until_the_reset() {
+    let at = whole_second_now();
+    let reset = at + minutes(10);
+
+    let until = github_block_until(at, 429, &meta(None, Some(0), Some(reset.timestamp())), 0);
+
+    assert_eq!(until, Some(reset));
+}
+
+#[rstest::rstest]
+#[case::no_strikes(0, 1)]
+#[case::one_strike(1, 2)]
+#[case::three_strikes(3, 8)]
+#[case::capped(40, 60)]
+fn github_a_bare_refusal_waits_a_minute_doubled_per_strike(
+    #[case] strikes: u32,
+    #[case] wait_minutes: i64,
+) {
+    let at = whole_second_now();
+
+    let until = github_block_until(at, 403, &meta(None, None, None), strikes);
+
+    assert_eq!(until, Some(at + minutes(wait_minutes)));
+}
+
+#[rstest::rstest]
+#[case::refused_by_chrono(Some(i64::MAX))]
+#[case::in_the_past(Some(0))]
+fn github_a_reset_that_is_not_ahead_waits_the_doubled_time(#[case] reset: Option<i64>) {
+    let at = whole_second_now();
+
+    let until = github_block_until(at, 403, &meta(None, Some(0), reset), 1);
+
+    assert_eq!(until, Some(at + minutes(2)));
+}
+
+#[test]
+fn github_a_reset_two_hours_on_is_capped_at_an_hour() {
+    let at = whole_second_now();
+    let reset = at + minutes(120);
+
+    let until = github_block_until(at, 403, &meta(None, Some(0), Some(reset.timestamp())), 0);
+
+    assert_eq!(until, Some(at + MAX_BLOCK));
+}
+
+#[test]
+fn github_a_huge_retry_after_is_an_hour() {
+    let at = whole_second_now();
+
+    let until = github_block_until(at, 429, &meta(Some(u64::MAX), None, None), 0);
+
+    assert_eq!(until, Some(at + MAX_BLOCK));
+}
+
+#[rstest::rstest]
+#[case::requests_left(Some(5), None)]
+#[case::no_header(None, None)]
+fn github_a_success_with_requests_left_needs_no_block(
+    #[case] remaining: Option<u64>,
+    #[case] expected: Option<DateTime<Utc>>,
+) {
+    let at = whole_second_now();
+
+    assert_eq!(
+        github_block_until(at, 200, &meta(None, remaining, None), 0),
+        expected
+    );
+}
+
+#[test]
+fn github_a_success_with_no_requests_left_blocks_until_the_reset() {
+    let at = whole_second_now();
+    let reset = at + minutes(15);
+
+    let until = github_block_until(at, 200, &meta(None, Some(0), Some(reset.timestamp())), 0);
+
+    assert_eq!(until, Some(reset));
+}
+
 #[test]
 fn apply_blocked_keeps_the_later_end_and_adds_a_strike() {
     let now = Utc::now();

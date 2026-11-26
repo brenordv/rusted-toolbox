@@ -6,22 +6,29 @@ use crate::ecosystem::Ecosystem;
 use crate::http::{HttpLimits, SourceFailure, build_client, elapsed_ms};
 use crate::merge::merge;
 use crate::package::PackageSpec;
-use crate::rate_limits::{self, Change, RateLimits, rate_limits_path, save_changes};
+use crate::rate_limits::{self, rate_limits_path};
 use crate::report::{
-    AnswerWord, BlockOrigin, FailureGroup, Outcome, PackageReport, PackageStatus, REPORT_VERSION,
-    Report, SourceReport, SourceStatus, Summary, SupplyChain, VersionFrom,
+    AnswerWord, Outcome, PackageReport, PackageStatus, REPORT_VERSION, Report, Summary,
+    SupplyChain, VersionFrom,
 };
 use crate::sources::deps_dev::{DEPS_DEV_BASE, DepsDevClient, Latest, LatestRun};
+use crate::sources::github::{GITHUB_BASE, GitHubClient, github_headers};
 use crate::sources::osv::{OSV_BASE, OsvClient};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use reqwest::header::HeaderMap;
+use settle::{Settled, Store, settle, unasked};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::info;
 use url::Url;
+
+mod settle;
+
+#[cfg(test)]
+use settle::source_status;
 
 /// The time source a check reads when it needs "now".
 pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
@@ -36,6 +43,8 @@ pub fn system_clock() -> Clock {
 pub struct RunContext {
     /// Read when an answer arrives, so a block counts from then.
     pub clock: Clock,
+    /// The source's blocks in a row already saved; GitHub doubles its wait by them.
+    pub strikes: u32,
 }
 
 /// A package's place in the request's package list.
@@ -143,6 +152,7 @@ impl SourceRun {
 pub struct Bases {
     pub osv: Url,
     pub deps_dev: Url,
+    pub github: Url,
 }
 
 impl Bases {
@@ -154,6 +164,7 @@ impl Bases {
         Ok(Self {
             osv: Url::parse(OSV_BASE).context("Failed to read the OSV.dev address")?,
             deps_dev: Url::parse(DEPS_DEV_BASE).context("Failed to read the deps.dev address")?,
+            github: Url::parse(GITHUB_BASE).context("Failed to read the GitHub address")?,
         })
     }
 }
@@ -162,6 +173,7 @@ impl Bases {
 pub struct Checker {
     osv: OsvClient,
     deps_dev: DepsDevClient,
+    github: GitHubClient,
     limits_path: Option<PathBuf>,
     tool: String,
 }
@@ -190,9 +202,11 @@ impl Checker {
     ) -> Result<Self> {
         let limits = HttpLimits::default();
         let client = build_client(&limits, user_agent, HeaderMap::new())?;
+        let github_client = build_client(&limits, user_agent, github_headers())?;
         Ok(Self {
             osv: OsvClient::new(client.clone(), bases.osv, limits)?,
             deps_dev: DepsDevClient::new(client, bases.deps_dev, limits),
+            github: GitHubClient::new(github_client, bases.github, limits)?,
             limits_path,
             tool: tool.to_owned(),
         })
@@ -201,7 +215,8 @@ impl Checker {
     /// Checks every package of `request`. Every failure ends inside the report.
     ///
     /// deps.dev first names the latest version of each package written without one; then
-    /// OSV.dev and deps.dev run side by side, each saved and logged as soon as it finishes.
+    /// OSV.dev, deps.dev, and the GitHub Advisory Database run side by side, each saved and
+    /// logged as soon as it finishes.
     pub async fn check(&self, request: CheckRequest, clock: Clock) -> Report {
         let checked_at = clock();
         let began = Instant::now();
@@ -217,9 +232,15 @@ impl Checker {
             clock: Arc::clone(&clock),
             lock: tokio::sync::Mutex::new(()),
         };
-        let context = RunContext {
+        let context_for = |source: SourceName| RunContext {
             clock: Arc::clone(&clock),
+            strikes: loaded.strikes(source),
         };
+        let (osv_context, deps_dev_context, github_context) = (
+            context_for(SourceName::Osv),
+            context_for(SourceName::DepsDev),
+            context_for(SourceName::GitHub),
+        );
         let ecosystem = request.ecosystem;
         let every_key: Vec<PackageKey> = (0..request.packages.len()).map(PackageKey).collect();
 
@@ -228,7 +249,7 @@ impl Checker {
         let unversioned = unversioned_packages(&request.packages);
         let latest = if deps_dev_unasked.is_none() && !unversioned.is_empty() {
             self.deps_dev
-                .latest_versions(ecosystem, &unversioned, &context)
+                .latest_versions(ecosystem, &unversioned, &deps_dev_context)
                 .await
         } else {
             LatestRun::default()
@@ -242,7 +263,7 @@ impl Checker {
                 Some(settled) => settled,
                 None => {
                     let source_began = Instant::now();
-                    let run = self.osv.check(ecosystem, &resolved, &context).await;
+                    let run = self.osv.check(ecosystem, &resolved, &osv_context).await;
                     settle(run, source_began, &store).await
                 }
             }
@@ -253,15 +274,28 @@ impl Checker {
                 None => {
                     let (run, chains) = self
                         .deps_dev
-                        .check(ecosystem, &resolved, latest, &context)
+                        .check(ecosystem, &resolved, latest, &deps_dev_context)
                         .await;
                     (settle(run, deps_dev_began, &store).await, chains)
                 }
             }
         };
-        let (osv, (deps_dev, chains)) = tokio::join!(osv, deps_dev);
+        let github = async {
+            match unasked(SourceName::GitHub, &resolved_keys, &loaded, checked_at) {
+                Some(settled) => settled,
+                None => {
+                    let source_began = Instant::now();
+                    let run = self
+                        .github
+                        .check(ecosystem, &resolved, &github_context)
+                        .await;
+                    settle(run, source_began, &store).await
+                }
+            }
+        };
+        let (osv, (deps_dev, chains), github) = tokio::join!(osv, deps_dev, github);
 
-        let settled = [osv, deps_dev];
+        let settled = [osv, deps_dev, github];
         let packages: Vec<PackageReport> = request
             .packages
             .iter()
@@ -295,22 +329,6 @@ impl Checker {
         );
         report
     }
-}
-
-/// The rate-limit file and what this check loaded from it.
-struct Store<'a> {
-    path: Option<&'a Path>,
-    loaded: &'a RateLimits,
-    clock: Clock,
-    /// Held while one source's change is saved, so two sources finishing together do not
-    /// write the file at once.
-    lock: tokio::sync::Mutex<()>,
-}
-
-/// One source's finished part of a check.
-struct Settled {
-    run: SourceRun,
-    report: SourceReport,
 }
 
 /// The packages written without a version, with their names.
@@ -354,206 +372,6 @@ fn resolved_packages(
             version: version.clone(),
         })
         .collect()
-}
-
-/// The settled part of a source that is not asked: one no package needs, or one a saved block
-/// keeps out (every package in `keys` fails with the block). Logs its line; `None` when the
-/// source is to be asked.
-fn unasked(
-    source: SourceName,
-    keys: &[PackageKey],
-    loaded: &RateLimits,
-    now: DateTime<Utc>,
-) -> Option<Settled> {
-    if keys.is_empty() {
-        let run = SourceRun::empty(source);
-        let report = source_report(&run, None);
-        log_source(&report, loaded.strikes(source), 0);
-        return Some(Settled { run, report });
-    }
-    if let Some(until) = loaded.blocked_until(source, now) {
-        let mut run = SourceRun::empty(source);
-        for key in keys {
-            run.answers.insert(
-                *key,
-                PackageAnswer::Failed {
-                    failure: SourceFailure::RateLimited { until },
-                    advisories: Vec::new(),
-                },
-            );
-        }
-        let report = source_report(&run, Some(until));
-        log_source(&report, loaded.strikes(source), 0);
-        return Some(Settled { run, report });
-    }
-    None
-}
-
-/// Records, saves, and logs one finished source run. The save happens as soon as the source
-/// finishes, so its block is on disk without waiting for the slowest source.
-async fn settle(run: SourceRun, began: Instant, store: &Store<'_>) -> Settled {
-    let change = store_change(&run, store.loaded, (store.clock)());
-    let strikes = match change {
-        Some(change) => {
-            let _writing = store.lock.lock().await;
-            let saved =
-                save_changes(store.path, &[(run.source, change.clone())], (store.clock)()).await;
-            match saved {
-                Some(limits) => limits.strikes(run.source),
-                None => strikes_after(store.loaded, run.source, &change),
-            }
-        }
-        None => store.loaded.strikes(run.source),
-    };
-    let report = source_report(&run, None);
-    log_source(&report, strikes, elapsed_ms(began));
-    Settled { run, report }
-}
-
-/// The source's strikes once `change` is applied to `loaded`, for a change that was not saved.
-fn strikes_after(loaded: &RateLimits, source: SourceName, change: &Change) -> u32 {
-    let mut limits = loaded.clone();
-    limits.apply(source, change);
-    limits.strikes(source)
-}
-
-/// What the run means for the saved blocks: a block when it hit one; an answer that clears the
-/// entry this run loaded when it answered any package; nothing otherwise, and nothing when an
-/// answer has no loaded entry to clear.
-fn store_change(run: &SourceRun, loaded: &RateLimits, now: DateTime<Utc>) -> Option<Change> {
-    if let Some(until) = run.block {
-        return Some(Change::Blocked { since: now, until });
-    }
-    let answered_any = run.answers.values().any(|answer| match answer.word() {
-        AnswerWord::Answered | AnswerWord::NotFound => true,
-        AnswerWord::Failed | AnswerWord::RateLimited | AnswerWord::NotAsked => false,
-    });
-    let entry = loaded.entry(run.source)?;
-    answered_any.then_some(Change::Answered {
-        loaded: Some(entry),
-    })
-}
-
-/// The source's report row: its status, requests, grouped failures, and missing details.
-pub(crate) fn source_report(run: &SourceRun, saved_block: Option<DateTime<Utc>>) -> SourceReport {
-    let failures = match saved_block {
-        Some(_) => Vec::new(),
-        None => failure_groups(run),
-    };
-    SourceReport {
-        source: run.source,
-        status: source_status(run, saved_block),
-        requests: run.requests,
-        failures,
-        details_missing: run.details_missing,
-    }
-}
-
-/// A source's status from its run. `saved_block` is the block that kept it from being asked.
-pub(crate) fn source_status(run: &SourceRun, saved_block: Option<DateTime<Utc>>) -> SourceStatus {
-    if let Some(until) = saved_block {
-        return SourceStatus::RateLimited {
-            until,
-            origin: BlockOrigin::Saved,
-        };
-    }
-    let failures: Vec<&SourceFailure> = run
-        .answers
-        .values()
-        .filter_map(PackageAnswer::failure)
-        .collect();
-    let answered = run.answers.len() - failures.len();
-    if answered > 0 {
-        return if failures.is_empty() {
-            SourceStatus::Answered {
-                blocked_until: run.block,
-            }
-        } else {
-            SourceStatus::Partial {
-                blocked_until: run.block,
-            }
-        };
-    }
-    if let Some(until) = run.block {
-        return SourceStatus::RateLimited {
-            until,
-            origin: BlockOrigin::ThisRun,
-        };
-    }
-    match most_frequent(&failures) {
-        Some(failure) => SourceStatus::Failed {
-            failure: failure.clone(),
-        },
-        // No failure and nothing answered: the run got no package.
-        None => SourceStatus::NotAsked,
-    }
-}
-
-/// The failure that appears most often; on a tie, the one that appears first.
-fn most_frequent<'a>(failures: &[&'a SourceFailure]) -> Option<&'a SourceFailure> {
-    let mut best: Option<(&SourceFailure, usize)> = None;
-    for failure in failures {
-        let count = failures.iter().filter(|other| *other == failure).count();
-        if best.is_none_or(|(_, best_count)| count > best_count) {
-            best = Some((failure, count));
-        }
-    }
-    best.map(|(failure, _)| failure)
-}
-
-/// The run's failed packages grouped by reason, in first-seen order.
-fn failure_groups(run: &SourceRun) -> Vec<FailureGroup> {
-    let mut groups: Vec<FailureGroup> = Vec::new();
-    for failure in run.answers.values().filter_map(PackageAnswer::failure) {
-        let reason = failure.describe();
-        match groups.iter_mut().find(|group| group.reason == reason) {
-            Some(group) => group.packages = group.packages.saturating_add(1),
-            None => groups.push(FailureGroup {
-                reason,
-                packages: 1,
-            }),
-        }
-    }
-    groups
-}
-
-/// One line for one source: info when it answered every package it was asked with nothing
-/// missing, warn otherwise. Never a package name: the reasons are failure sentences only.
-fn log_source(report: &SourceReport, strikes: u32, elapsed_ms: u64) {
-    let source = report.source.name();
-    let status = report.status.name();
-    if report.fully_answered() {
-        info!(
-            source,
-            status,
-            requests = report.requests,
-            details_missing = report.details_missing,
-            elapsed_ms,
-            "source finished"
-        );
-        return;
-    }
-    let (until, origin) = match &report.status {
-        SourceStatus::RateLimited { until, origin } => (Some(*until), origin.name()),
-        SourceStatus::Answered { blocked_until } | SourceStatus::Partial { blocked_until } => {
-            (*blocked_until, "")
-        }
-        SourceStatus::Failed { .. } | SourceStatus::NotAsked => (None, ""),
-    };
-    let failed: u32 = report.failures.iter().map(|group| group.packages).sum();
-    warn!(
-        source,
-        status,
-        reason = %report.failure_reasons(),
-        until = %until.map(|until| until.to_rfc3339()).unwrap_or_default(),
-        origin,
-        strikes,
-        requests = report.requests,
-        failed,
-        details_missing = report.details_missing,
-        elapsed_ms,
-        "source finished"
-    );
 }
 
 /// One package's row, merged from every settled source's answer for it. `version` is the one

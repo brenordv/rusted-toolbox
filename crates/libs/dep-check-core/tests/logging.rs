@@ -1,7 +1,7 @@
 //! What the engine writes to the log: one start, one end, and one line per source, with no
-//! package name, address, or text from an answer; and a warn for a rate-limit file that cannot
-//! be read or written. This is the only test in its binary, so a global subscriber sees every
-//! event.
+//! package name, address, query, or text from an answer (a `Link` header included); and a warn
+//! for a rate-limit file that cannot be read or written. This is the only test in its binary,
+//! so a global subscriber sees every event.
 
 use chrono::{TimeDelta, Utc};
 use dep_check_core::advisory::SourceName;
@@ -57,6 +57,7 @@ async fn run(server: &MockServer, limits_path: Option<PathBuf>) {
         Bases {
             osv: server.base(),
             deps_dev: server.base(),
+            github: server.base(),
         },
         limits_path,
     )
@@ -127,6 +128,11 @@ async fn the_log_holds_one_line_per_source_and_no_package_or_answer_text() {
         Reply::json(200, &json!({"id": "ID-A", "summary": MARKER})),
     );
     server.route("GET", "/v1/vulns/ID-B", Reply::new(503, MARKER));
+    server.route(
+        "GET",
+        "/advisories",
+        Reply::new(403, MARKER).with_header("retry-after", "30"),
+    );
     for (name, version) in [("zebra-pkg-one", "1.0.0"), ("zebra-pkg-two", "2.0.0")] {
         server.route(
             "GET",
@@ -150,6 +156,16 @@ async fn the_log_holds_one_line_per_source_and_no_package_or_answer_text() {
         "POST",
         "/v1/querybatch",
         Reply::new(429, MARKER).with_header("retry-after", "30"),
+    );
+    limiting.route(
+        "GET",
+        "/advisories",
+        Reply::json(200, &json!([])).with_header(
+            "link",
+            &format!(
+                "<https://{MARKER}.example/advisories?affects=zebra-pkg-one%401.0.0>; rel=\"next\""
+            ),
+        ),
     );
 
     let saved = dir.path().join("saved").join("rate-limits.json");
@@ -213,7 +229,30 @@ async fn the_log_holds_one_line_per_source_and_no_package_or_answer_text() {
             })
             .collect()
     };
-    assert_eq!(count("source finished"), 2, "{first_run}");
+    assert_eq!(count("source finished"), 3, "{first_run}");
+    let github_lines = source_line("github");
+    assert_eq!(github_lines.len(), 1, "{first_run}");
+    let github_line = github_lines[0];
+    assert!(github_line.contains("WARN"), "{github_line}");
+    assert!(
+        github_line.contains("status=\"rate_limited\""),
+        "{github_line}"
+    );
+    assert!(github_line.contains("until=2"), "{github_line}");
+    assert!(github_line.contains("strikes=1"), "{github_line}");
+    assert!(
+        engine_lines(&log)
+            .iter()
+            .any(|line| line.contains("DEBUG")
+                && line.contains("a next-page link to another address")),
+        "{log}"
+    );
+    assert!(
+        engine_lines(&log)
+            .iter()
+            .all(|line| !line.contains("affects=")),
+        "the query in the log"
+    );
     let osv_lines = source_line("osv");
     assert_eq!(osv_lines.len(), 1, "{first_run}");
     let osv_line = osv_lines[0];

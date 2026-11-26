@@ -8,7 +8,7 @@ use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Utc};
 use common_utils::string_utils::display_line;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use reqwest::header::{HeaderMap, RETRY_AFTER};
+use reqwest::header::{HeaderMap, LINK, RETRY_AFTER};
 use reqwest::redirect::Policy;
 use reqwest::{Client, RequestBuilder, Response};
 use serde::Serialize;
@@ -127,23 +127,44 @@ pub(crate) struct Fetched {
     pub body: Vec<u8>,
 }
 
-/// The answer headers the rate rules read.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// The answer headers the rate rules and paging read.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ResponseMeta {
     /// `retry-after` when it is a plain non-negative number of seconds.
     pub retry_after_seconds: Option<u64>,
+    /// GitHub's `x-ratelimit-remaining`.
+    pub ratelimit_remaining: Option<u64>,
+    /// GitHub's `x-ratelimit-reset`, in epoch seconds.
+    pub ratelimit_reset: Option<i64>,
+    /// The `link` header as text. It can hold the query, so it is never logged.
+    pub link: Option<String>,
 }
 
 impl ResponseMeta {
     fn from_headers(headers: &HeaderMap) -> Self {
         Self {
             retry_after_seconds: header_number(headers, RETRY_AFTER.as_str()),
+            ratelimit_remaining: header_number(headers, "x-ratelimit-remaining"),
+            ratelimit_reset: header_number(headers, "x-ratelimit-reset")
+                .map(|reset| i64::try_from(reset).unwrap_or(i64::MAX)),
+            link: link_header(headers),
         }
     }
 }
 
 /// The header `name` as a plain non-negative integer, `u64::MAX` when it is larger; anything
 /// else (an HTTP date, a sign, a fraction, bytes that are not text) is `None`.
+/// Every `Link` field line joined with `", "`, as one header value, read even where it is not
+/// plain text, so a link is not lost to its spelling.
+fn link_header(headers: &HeaderMap) -> Option<String> {
+    let lines: Vec<String> = headers
+        .get_all(LINK)
+        .iter()
+        .map(|value| String::from_utf8_lossy(value.as_bytes()).into_owned())
+        .collect();
+    (!lines.is_empty()).then(|| lines.join(", "))
+}
+
 fn header_number(headers: &HeaderMap, name: &str) -> Option<u64> {
     let text = headers.get(name)?.to_str().ok()?.trim();
     if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {

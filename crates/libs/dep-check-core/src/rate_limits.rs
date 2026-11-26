@@ -5,6 +5,7 @@
 //! leaves the run's report as it is. Both are logged at warn.
 
 use crate::advisory::SourceName;
+use crate::http::ResponseMeta;
 use anyhow::Context;
 use chrono::{DateTime, TimeDelta, Utc};
 use common_file_utils::permissions::create_dir_all_owner_only;
@@ -65,6 +66,53 @@ pub fn block_until(at: DateTime<Utc>, retry_after_seconds: Option<u64>) -> DateT
             .map_or(MAX_BLOCK, |wait| wait.min(MAX_BLOCK)),
     };
     add_or_latest(at, wait)
+}
+
+/// The most strikes the doubled wait counts: 60 s * 2^6 is past the one-hour cap already.
+const MAX_DOUBLINGS: u32 = 6;
+
+/// When GitHub may next be asked after an answer with `status` and `meta` that arrived at `at`,
+/// or `None` when the answer needs no block. `strikes` is the blocks in a row already saved.
+///
+/// GitHub's documented order: any 403 or 429 is a block, until `retry-after` when it is given,
+/// else until `x-ratelimit-reset` when `x-ratelimit-remaining` is 0, else a minute doubled per
+/// strike. A 200 with `x-ratelimit-remaining: 0` is used and then blocks until the reset, since
+/// the next request would be refused. Every block ends within an hour of `at`.
+pub(crate) fn github_block_until(
+    at: DateTime<Utc>,
+    status: u16,
+    meta: &ResponseMeta,
+    strikes: u32,
+) -> Option<DateTime<Utc>> {
+    let refused = status == 403 || status == 429;
+    if !refused {
+        return (meta.ratelimit_remaining == Some(0)).then(|| reset_or_doubled(at, meta, strikes));
+    }
+    if let Some(seconds) = meta.retry_after_seconds {
+        return Some(block_until(at, Some(seconds)));
+    }
+    if meta.ratelimit_remaining == Some(0) {
+        return Some(reset_or_doubled(at, meta, strikes));
+    }
+    Some(doubled(at, strikes))
+}
+
+/// `x-ratelimit-reset` as a time when it is after `at` (and at most an hour on); else the
+/// doubled wait, so a local clock ahead of GitHub's still waits longer each time.
+fn reset_or_doubled(at: DateTime<Utc>, meta: &ResponseMeta, strikes: u32) -> DateTime<Utc> {
+    meta.ratelimit_reset
+        .and_then(|reset| DateTime::from_timestamp(reset, 0))
+        .filter(|reset| *reset > at)
+        .map_or_else(
+            || doubled(at, strikes),
+            |reset| reset.min(add_or_latest(at, MAX_BLOCK)),
+        )
+}
+
+/// One minute doubled per strike already saved: 60 s * 2^min(strikes, 6), at most an hour.
+fn doubled(at: DateTime<Utc>, strikes: u32) -> DateTime<Utc> {
+    let seconds = 60_i64 << strikes.min(MAX_DOUBLINGS);
+    add_or_latest(at, TimeDelta::seconds(seconds).min(MAX_BLOCK))
 }
 
 /// `at + wait`, or the latest time chrono can hold when that is past it.

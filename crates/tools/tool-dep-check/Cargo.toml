@@ -1,7 +1,7 @@
 [package]
 name = "dep-check"
 version = "1.0.0"
-description = "Checks packages of one ecosystem for known vulnerabilities and supply-chain facts through OSV.dev and deps.dev."
+description = "Checks packages of one ecosystem for known vulnerabilities and supply-chain facts through OSV.dev, deps.dev, and the GitHub Advisory Database."
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true

@@ -31,6 +31,7 @@ fn many(count: usize) -> Vec<Resolved> {
 fn context() -> RunContext {
     RunContext {
         clock: fixed_clock(Utc::now()),
+        strikes: 0,
     }
 }
 
@@ -382,6 +383,7 @@ async fn a_block_on_the_second_batch_stops_every_later_request() {
     let now = Utc::now();
     let blocked_context = RunContext {
         clock: fixed_clock(now),
+        strikes: 0,
     };
 
     let run = client_for(server.base())
@@ -414,6 +416,7 @@ async fn a_block_on_the_first_batch_sends_no_later_batch() {
     let now = Utc::now();
     let blocked_context = RunContext {
         clock: fixed_clock(now),
+        strikes: 0,
     };
 
     let run = client_for(server.base())

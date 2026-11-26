@@ -19,6 +19,7 @@ fn client_with(base: Url, limits: HttpLimits) -> DepsDevClient {
 fn context() -> RunContext {
     RunContext {
         clock: fixed_clock(Utc::now()),
+        strikes: 0,
     }
 }
 

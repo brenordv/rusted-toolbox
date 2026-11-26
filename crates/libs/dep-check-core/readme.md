@@ -21,6 +21,7 @@ let report = checker
 |---|---|---|
 | OSV.dev (`api.osv.dev`) | `POST /v1/querybatch`, then `GET /v1/vulns/{id}` | each package's name, ecosystem, and version |
 | deps.dev (`api.deps.dev`, API v3) | GetPackage, GetVersion, GetProject, GetAdvisory | each package's name, ecosystem, and version; the source repository ids and advisory ids its own answers named |
+| GitHub Advisory Database (`api.github.com`, REST 2026-03-10) | `GET /advisories?affects=...` for `reviewed` and `malware`, then the same for one package alone when an advisory names it beside another | up to 100 `name@version` per request |
 
 A package written without a version is checked at the version deps.dev installs by default
 (GetPackage's `isDefault`), and the report says so (`version_from: "deps_dev_latest"`). That
@@ -44,6 +45,27 @@ most four requests at a time to each, batches at most 1,000 packages per `queryb
 asking a source for the run when it answers 429, and stops after three connection failures or
 timeouts in a row.
 
+GitHub allows 60 unauthenticated requests an hour per IP. Its requests run one at a time, in
+chunks of at most 100 distinct names (a second version of a name goes into the next chunk), so
+a check of up to 100 packages costs 2 requests plus extra pages and confirms. A confirm asks one
+package alone, once per type, when an advisory names it beside another package of the chunk;
+the advisory is that package's when the lone answer lists it. Any 403 or 429 is a block: until
+`retry-after`, else until `x-ratelimit-reset` when `x-ratelimit-remaining` is 0, else a minute
+doubled per block already saved in a row, never more than an hour. A 2xx that leaves no
+requests is used and then blocks. A run that answered any package and then blocked starts the
+saved count again at one. The count goes by packages, not requests: a run whose `reviewed`
+request answered and whose `malware` request was refused answered no package, so it adds one. A package is answered by GitHub only when both advisory types, every
+page, and every confirm about it finished. An advisory that names none of the packages asked
+fails its chunk, since the mapping would otherwise be a guess; the rest of the answer is still
+kept. Next pages follow the `Link` header only to the advisories address itself. GitHub's
+severity label wins a finding's severity, and its EPSS values are kept as sent.
+
+GitHub matches names exactly as its advisories spell them, and one package's advisories can
+use several spellings (`Django` and `django` found disjoint sets on 2026-11-26), so GitHub's
+answers can miss advisories for a name spelled another way. OSV.dev holds GitHub's reviewed
+advisories under normalized names; in that check the merged report was the same for every
+spelling.
+
 ## Modules
 
 - `ecosystem`: `Ecosystem` (Cargo, NuGet, PyPI, npm, RubyGems), each service's name for it, the
@@ -59,6 +81,8 @@ timeouts in a row.
 - `sources::osv`: the OSV.dev client.
 - `sources::deps_dev`: the deps.dev client: latest versions, version facts, projects,
   advisories.
+- `sources::github`: the GitHub Advisory Database client: chunks, pages through `Link`
+  headers, confirms, and GitHub's rate rules (`rate_limits::github_block_until`).
 - `render`: the report as text (`text_report`) and the lines a window builds its rows from
   (`header_line`, `sources_line`, `package_line`, `finding_lines`, `supply_chain_line`),
   every outside string on one line with control and bidirectional characters as spaces, and

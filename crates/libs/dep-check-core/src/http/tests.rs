@@ -393,3 +393,29 @@ fn describe_a_block_names_its_end() {
 
     assert_eq!(text, "is rate limited until 2026-11-26 14:00:05 UTC");
 }
+
+#[test]
+fn every_link_line_is_read_even_where_it_is_not_text() {
+    use reqwest::header::HeaderValue;
+    let mut headers = HeaderMap::new();
+    headers.append(
+        LINK,
+        HeaderValue::from_static("<https://h/l>; rel=\"last\""),
+    );
+    headers.append(
+        LINK,
+        HeaderValue::from_bytes(b"<https://h/n?after=\xe9>; rel=\"next\"").unwrap(),
+    );
+
+    let link = link_header(&headers);
+
+    assert_eq!(
+        link.as_deref(),
+        Some("<https://h/l>; rel=\"last\", <https://h/n?after=\u{FFFD}>; rel=\"next\"")
+    );
+}
+
+#[test]
+fn no_link_line_is_no_link() {
+    assert_eq!(link_header(&HeaderMap::new()), None);
+}

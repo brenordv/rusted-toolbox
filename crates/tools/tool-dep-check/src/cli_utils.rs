@@ -18,8 +18,8 @@ pub const USER_AGENT: &str = concat!(
 
 /// Checks packages of one ecosystem for known vulnerabilities.
 ///
-/// Asks OSV.dev and deps.dev about each package and prints one merged report. A package
-/// without a version is checked at its latest version. With no PACKAGE, the packages are read
+/// Asks OSV.dev, deps.dev, and the GitHub Advisory Database about each package and prints one
+/// merged report. A package without a version is checked at its latest version. With no PACKAGE, the packages are read
 /// from stdin, one per line. No flag changes which services are asked or where.
 ///
 /// Exit codes: 0 nothing found, 1 vulnerabilities found, 2 usage or input error, 3 some

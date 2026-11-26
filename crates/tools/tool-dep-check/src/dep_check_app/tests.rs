@@ -34,11 +34,16 @@ fn args(format: Format, packages: &[&str]) -> DepCheckArgs {
     }
 }
 
+/// OSV.dev and deps.dev at the given bases, GitHub on a port nothing listens on.
 fn checker(osv: url::Url, deps_dev: url::Url, dir: &tempfile::TempDir) -> Checker {
     Checker::with_bases(
         "dep-check 1.0.0",
         "dep-check-test/1.0",
-        Bases { osv, deps_dev },
+        Bases {
+            osv,
+            deps_dev,
+            github: closed_port(),
+        },
         Some(dir.path().join("rate-limits.json")),
     )
     .unwrap()

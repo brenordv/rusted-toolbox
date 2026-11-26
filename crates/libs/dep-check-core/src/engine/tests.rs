@@ -1,6 +1,7 @@
 use super::*;
 use crate::advisory::{AdvisoryKind, Severity};
-use crate::rate_limits::{Block, load};
+use crate::rate_limits::{Block, Change, load, save_changes};
+use crate::report::{BlockOrigin, FailureGroup, SourceReport, SourceStatus};
 use crate::test_support::{MockServer, Reply, closed_port, fixed_clock};
 use chrono::TimeDelta;
 use serde_json::json;
@@ -8,22 +9,27 @@ use serde_json::json;
 const TOOL: &str = "dep-check 1.0.0";
 const QUERYBATCH: &str = "/v1/querybatch";
 
+mod github;
+
 /// OSV.dev at `osv_base`, deps.dev on a port nothing listens on.
 fn checker(osv_base: Url, limits_path: Option<PathBuf>) -> Checker {
     checker_with(osv_base, closed_port(), limits_path)
 }
 
+/// OSV.dev and deps.dev at the given bases, GitHub on a port nothing listens on.
 fn checker_with(osv_base: Url, deps_dev_base: Url, limits_path: Option<PathBuf>) -> Checker {
-    Checker::with_bases(
-        TOOL,
-        "dep-check-test/1.0",
+    checker_of(
         Bases {
             osv: osv_base,
             deps_dev: deps_dev_base,
+            github: closed_port(),
         },
         limits_path,
     )
-    .unwrap()
+}
+
+fn checker_of(bases: Bases, limits_path: Option<PathBuf>) -> Checker {
+    Checker::with_bases(TOOL, "dep-check-test/1.0", bases, limits_path).unwrap()
 }
 
 fn osv_source(report: &Report) -> &SourceReport {

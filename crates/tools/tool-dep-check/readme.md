@@ -1,8 +1,8 @@
 # dep-check
 
 Checks packages of one ecosystem for known vulnerabilities and supply-chain facts. It asks
-OSV.dev and deps.dev about each package, merges what they say into one report, and prints it
-as text or JSON. The exit code says whether anything was found, so a script can gate on it.
+OSV.dev, deps.dev, and the GitHub Advisory Database about each package, merges what they say
+into one report, and prints it as text or JSON. The exit code says whether anything was found, so a script can gate on it.
 
 ```bash
 dep-check -e cargo tokio@1.20.0 serde
@@ -70,6 +70,7 @@ vulnerability beats everything else: one vulnerable package and one unchecked on
 |---|---|
 | OSV.dev | each package's name, ecosystem, and version |
 | deps.dev | the same, plus the source repository ids and advisory ids its own answers named |
+| GitHub Advisory Database | the same names and versions, up to 100 in one request |
 
 No service needs a key, and no flag changes which services are asked or where: the addresses
 are built in. The process environment still steers the connection, as for any program built
@@ -83,6 +84,23 @@ asked again in `~/.rusted-toolbox/dep-check/rate-limits.json`. The next run (of 
 dep-check-gui, which share the file) skips that service until then, and the other services
 still answer. A service that answered clears the block it found. The file holds those times
 and nothing else; deleting it is safe.
+
+The GitHub Advisory Database allows 60 unauthenticated requests an hour per IP address, shared
+with every other program on that address that calls GitHub without a token. A call with up to
+100 packages costs dep-check 2 requests (one for reviewed advisories, one for malware), plus
+one per extra page, plus one for each package that an advisory names beside another package of
+the call (that package is then asked alone, once per advisory type). GitHub's requests run one
+at a time. When GitHub refuses (a 403 or 429), or an answer leaves no requests for the hour,
+GitHub is skipped until the time it named (a minute when it named none, doubled for each run in
+a row that ended blocked before any package was answered, at most an hour); the other services
+still answer, and the exit code follows them.
+
+GitHub matches a package name exactly as its advisories spell it, and one package's advisories
+can use more than one spelling: on 2026-11-26, `Django` and `django` each found advisories the
+other did not, and `newtonsoft.json` found none of `Newtonsoft.Json`'s. GitHub's row can
+therefore miss advisories for a name spelled another way. OSV.dev holds GitHub's reviewed
+advisories under normalized names and still finds them: in those checks the merged report was
+the same for every spelling.
 
 ## The report
 
@@ -113,5 +131,6 @@ bidirectional characters as spaces, and only `https://` links are shown.
 reads `outcome` (`clean`, `vulnerable`, `incomplete`; when no service answered there is no
 report, only exit 4 and the error line) and each package's `status`
 (`vulnerable`, `not_found`, `clean`, `not_checked`); `findings`, `supply_chain`, `answers` (one
-word per service), and `sources` (what each service did) carry the rest. Strings in the JSON
+word per service), and `sources` (what each service did) carry the rest. A finding's `epss`
+holds GitHub's EPSS values as GitHub sends them; the text report leaves them out. Strings in the JSON
 are as the services sent them: a program that shows them must clean them first.
