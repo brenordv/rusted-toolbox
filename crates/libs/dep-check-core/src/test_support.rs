@@ -258,18 +258,11 @@ pub fn cut_short(sent: &'static [u8]) -> Url {
     Url::parse(&format!("http://{addr}/")).expect("the server's address")
 }
 
-/// A host-only base on a local port nothing listens on. The port stays bound, never listening,
-/// until the test process ends, so a connection is refused and no other server in the run can
-/// take the port.
+/// A host-only base nothing can answer: port 0 on the loopback. A connection to port 0 fails in
+/// the connect call itself on Windows, Linux, and macOS, before any packet is sent, so the
+/// failure is immediate and no test server can ever hold the port.
 pub fn closed_port() -> Url {
-    let socket = tokio::net::TcpSocket::new_v4().expect("a socket");
-    socket
-        .bind("127.0.0.1:0".parse().expect("a local address"))
-        .expect("a local port");
-    let port = socket.local_addr().expect("the port's address").port();
-    // Kept open on purpose: closing it would free the port for another test's server.
-    std::mem::forget(socket);
-    Url::parse(&format!("http://127.0.0.1:{port}/")).expect("the closed port's address")
+    Url::parse("http://127.0.0.1:0/").expect("the closed port's address")
 }
 
 /// A clock that always reads `at`.
