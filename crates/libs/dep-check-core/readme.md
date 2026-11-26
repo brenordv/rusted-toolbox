@@ -84,8 +84,10 @@ rate-limited (a 429), with when it was seen, when it ends, and how many came in 
 source with a saved block is not asked until the block ends. Every block ends at most an hour
 after it was seen. Both binaries share the file: a save re-reads it and merges this run's
 changes source by source, so a CLI run and the window at once keep each other's blocks, and a
-run that answered clears only the block it loaded. The file holds blocks only, so one that
-cannot be read is logged at warn and replaced, and one that cannot be written is logged at warn.
+run that answered clears only the block it loaded. A save writes nothing when nothing changed.
+The file holds blocks only: one whose content does not parse is logged at warn and replaced, and
+one that cannot be read or written is logged at warn and left as it is. On Linux and macOS the
+`dep-check` folder is created readable by you only.
 
 ## Logging
 

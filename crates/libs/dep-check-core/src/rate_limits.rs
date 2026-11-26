@@ -5,7 +5,9 @@
 //! leaves the run's report as it is. Both are logged at warn.
 
 use crate::advisory::SourceName;
+use anyhow::Context;
 use chrono::{DateTime, TimeDelta, Utc};
+use common_file_utils::permissions::create_dir_all_owner_only;
 use common_serialization_utils::{load_json_file_to_object, save_object_to_json_file};
 use common_utils::file_system::toolbox_home;
 use serde::{Deserialize, Serialize};
@@ -202,8 +204,7 @@ pub async fn save_changes(
 
     let target = path.to_path_buf();
     let to_write = limits.clone();
-    let written =
-        tokio::task::spawn_blocking(move || save_object_to_json_file(&target, &to_write)).await;
+    let written = tokio::task::spawn_blocking(move || write_file(&target, &to_write)).await;
     let failure = match written {
         Ok(Ok(())) => return Some(limits),
         Ok(Err(error)) => format!("{error:#}"),
@@ -213,6 +214,19 @@ pub async fn save_changes(
     // block.
     warn!(path = %path.display(), error = %failure, "the rate-limit file could not be written");
     None
+}
+
+/// Writes `limits` to `path` atomically, creating the missing folders owner-only (0o700 on Linux
+/// and macOS), as every tool's folder under the toolbox home is.
+fn write_file(path: &Path, limits: &RateLimits) -> anyhow::Result<()> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        create_dir_all_owner_only(parent)
+            .with_context(|| format!("failed to create folder {}", parent.display()))?;
+    }
+    save_object_to_json_file(path, limits)
 }
 
 /// The blocks at `path`, tidied for `now`; an absent file gives none.

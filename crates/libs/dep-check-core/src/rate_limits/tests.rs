@@ -195,6 +195,26 @@ fn two_blocks_for_one_source_merge_to_the_later_end_and_more_strikes() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn a_save_creates_missing_folders_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("dep-check");
+    let now = Utc::now();
+
+    save_changes(
+        Some(&folder.join("rate-limits.json")),
+        &[(SourceName::Osv, blocked(now, now + minutes(1)))],
+        now,
+    )
+    .await;
+
+    let mode = std::fs::metadata(&folder).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o700);
+}
+
 #[tokio::test]
 async fn save_then_load_round_trips_with_github_written_as_github() {
     let dir = tempfile::tempdir().unwrap();

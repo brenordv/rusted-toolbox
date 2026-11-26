@@ -13,6 +13,7 @@ test-support = ["dep:warp"]
 
 [dependencies]
 # Internal
+common-file-utils = { workspace = true }
 common-serialization-utils = { workspace = true }
 common-utils = { workspace = true }
 
