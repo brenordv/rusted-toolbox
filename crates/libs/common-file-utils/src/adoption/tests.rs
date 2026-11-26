@@ -285,7 +285,7 @@ fn one_file_under_two_names_has_its_old_name_removed() {
 }
 
 #[test]
-fn one_file_under_two_names_whose_old_name_cannot_be_removed_keeps_the_old_name_in_use() {
+fn one_file_under_two_names_whose_old_name_cannot_be_removed_is_used_at_the_new_path() {
     let places = Places::file();
     write(&places.legacy, OLD_DATA);
     fs::hard_link(&places.legacy, &places.target).unwrap();
@@ -297,19 +297,14 @@ fn one_file_under_two_names_whose_old_name_cannot_be_removed_keeps_the_old_name_
         &file_steps(&hard_link, &failing_remove),
     );
 
-    assert!(matches!(
-        &adoption,
-        Adoption::KeptLegacy {
-            reason: KeptReason::Failed(_),
-            ..
-        }
-    ));
-    assert_eq!(adoption.path_in_use(&places.target), places.legacy);
+    assert!(matches!(&adoption, Adoption::OldNameLeft { legacy, .. } if *legacy == places.legacy));
+    assert_eq!(adoption.path_in_use(&places.target), places.target);
     assert_eq!(fs::read(&places.target).unwrap(), OLD_DATA);
+    assert_eq!(fs::read(&places.legacy).unwrap(), OLD_DATA);
 }
 
 #[test]
-fn a_file_move_whose_old_name_cannot_be_removed_keeps_the_old_name_in_use() {
+fn a_file_move_whose_old_name_cannot_be_removed_is_used_at_the_new_path() {
     let places = Places::file();
     write(&places.legacy, OLD_DATA);
 
@@ -320,6 +315,74 @@ fn a_file_move_whose_old_name_cannot_be_removed_keeps_the_old_name_in_use() {
         &file_steps(&hard_link, &failing_remove),
     );
 
+    assert!(matches!(&adoption, Adoption::OldNameLeft { .. }));
+    assert_eq!(adoption.path_in_use(&places.target), places.target);
+    assert_eq!(fs::read(&places.target).unwrap(), OLD_DATA);
+    assert_eq!(fs::read(&places.legacy).unwrap(), OLD_DATA);
+}
+
+#[test]
+fn one_file_under_two_names_whose_old_name_a_rival_removes_first_is_already_there() {
+    let places = Places::file();
+    write(&places.legacy, OLD_DATA);
+    fs::hard_link(&places.legacy, &places.target).unwrap();
+    let removed_by_a_rival = |path: &Path| -> io::Result<()> {
+        fs::remove_file(path)?;
+        Err(injected())
+    };
+
+    let adoption = adopt_with(
+        Some(&places.legacy),
+        &places.target,
+        Shape::File,
+        &file_steps(&hard_link, &removed_by_a_rival),
+    );
+
+    assert!(matches!(adoption, Adoption::AlreadyThere));
+    assert!(!places.legacy.exists());
+    assert_eq!(fs::read(&places.target).unwrap(), OLD_DATA);
+}
+
+#[test]
+fn a_file_move_whose_first_remove_fails_and_second_succeeds_moves() {
+    let places = Places::file();
+    write(&places.legacy, OLD_DATA);
+    let attempts = std::cell::Cell::new(0);
+    let fails_once = |path: &Path| {
+        attempts.set(attempts.get() + 1);
+        match attempts.get() {
+            1 => Err(injected()),
+            _ => fs::remove_file(path),
+        }
+    };
+
+    let adoption = adopt_with(
+        Some(&places.legacy),
+        &places.target,
+        Shape::File,
+        &file_steps(&hard_link, &fails_once),
+    );
+
+    assert!(matches!(adoption, Adoption::Moved { .. }));
+    assert_eq!(attempts.get(), 2);
+    assert!(!places.legacy.exists());
+    assert_eq!(fs::read(&places.target).unwrap(), OLD_DATA);
+}
+
+#[test]
+fn one_folder_under_two_entries_whose_old_name_cannot_be_removed_keeps_the_old_folder_in_use() {
+    let places = Places::new("profiles");
+    write(&places.legacy.join("orders"), OLD_DATA);
+    write(&places.target.join("orders"), OLD_DATA);
+    let steps = Steps {
+        mover: &failing_move,
+        remover: &failing_remove,
+        same_file: &|_: &Path, _: &Path| -> io::Result<bool> { Ok(true) },
+        same_entry: &|_: &Path, _: &Path| -> io::Result<bool> { Ok(false) },
+    };
+
+    let adoption = adopt_with(Some(&places.legacy), &places.target, Shape::Folder, &steps);
+
     assert!(matches!(
         &adoption,
         Adoption::KeptLegacy {
@@ -328,8 +391,8 @@ fn a_file_move_whose_old_name_cannot_be_removed_keeps_the_old_name_in_use() {
         }
     ));
     assert_eq!(adoption.path_in_use(&places.target), places.legacy);
-    assert_eq!(fs::read(&places.legacy).unwrap(), OLD_DATA);
-    assert!(places.target.exists());
+    assert_eq!(fs::read(places.legacy.join("orders")).unwrap(), OLD_DATA);
+    assert_eq!(fs::read(places.target.join("orders")).unwrap(), OLD_DATA);
 }
 
 #[test]
@@ -405,6 +468,10 @@ fn a_failing_entry_check_on_one_file_under_two_names_removes_nothing() {
     Adoption::KeptLegacy { legacy: PathBuf::from("old"), reason: KeptReason::SymbolicLink },
     "old"
 )]
+#[case::old_name_left(
+    Adoption::OldNameLeft { legacy: PathBuf::from("old"), error: injected() },
+    "new"
+)]
 fn the_path_in_use_is_the_old_place_only_when_the_data_was_kept_there(
     #[case] adoption: Adoption,
     #[case] expected: &str,
@@ -416,7 +483,7 @@ fn the_path_in_use_is_the_old_place_only_when_the_data_was_kept_there(
 
 #[cfg(windows)]
 #[test]
-fn a_file_held_open_without_delete_sharing_keeps_its_old_name_in_use() {
+fn a_file_held_open_without_delete_sharing_is_used_at_the_new_path() {
     use std::os::windows::fs::OpenOptionsExt;
     const FILE_SHARE_READ_WRITE: u32 = 0x1 | 0x2;
     let places = Places::file();
@@ -430,15 +497,9 @@ fn a_file_held_open_without_delete_sharing_keeps_its_old_name_in_use() {
 
     let adoption = adopt(Some(&places.legacy), &places.target, Shape::File);
 
-    assert!(matches!(
-        &adoption,
-        Adoption::KeptLegacy {
-            reason: KeptReason::Failed(_),
-            ..
-        }
-    ));
-    assert_eq!(adoption.path_in_use(&places.target), places.legacy);
-    assert_eq!(fs::read(&places.legacy).unwrap(), OLD_DATA);
+    assert!(matches!(&adoption, Adoption::OldNameLeft { .. }));
+    assert_eq!(adoption.path_in_use(&places.target), places.target);
+    assert_eq!(fs::read(&places.target).unwrap(), OLD_DATA);
 }
 
 #[test]

@@ -58,6 +58,9 @@ File-system helpers for the toolbox:
   are `BothPresent`, and the new path is used.
 - A failed step is followed by a fresh look at both paths, never a decision on
   the error, so a rival that moved the data first gives `AlreadyThere`.
-- A file whose old name cannot be removed stays in use under the old name: a
-  database must never be opened under two names at once.
+- A file whose old name cannot be removed (on Windows, another program has it
+  open) is used at the new path and reported as `OldNameLeft`; a later save
+  replaces only the new name. A folder found under two names whose old one
+  cannot be removed stays in use where it was. When the old name is gone by
+  the time it is looked at again, a rival removed it: `AlreadyThere`.
 - Logs nothing; `Adoption::report` logs the outcome once logging is up.

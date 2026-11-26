@@ -14,7 +14,8 @@ use tracing::warn;
 /// What the data at a path is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
-    /// One file, moved by a hard link at the new path and then removing the old name.
+    /// One file its program reads whole and then closes, such as a settings file, moved by a
+    /// hard link at the new path and then removing the old name.
     File,
     /// A folder and everything in it, moved by one rename.
     Folder,
@@ -27,7 +28,7 @@ pub enum KeptReason {
     SymbolicLink,
     /// A step of the move failed: the new path's folder could not be created, the data could
     /// not be linked or renamed there (another filesystem, a file system with no hard links),
-    /// or the old name could not be removed (another process may still have it open).
+    /// or a folder found under two names could not lose its old one.
     Failed(io::Error),
 }
 
@@ -55,6 +56,16 @@ pub enum Adoption {
         /// Why the data did not move.
         reason: KeptReason,
     },
+    /// A [`Shape::File`] is at the new path, which is used, and still under its old name
+    /// `legacy`, which could not be removed (on Windows, another program may have the file
+    /// open). The two names stay one file until a save replaces the new one or the old one is
+    /// removed.
+    OldNameLeft {
+        /// The old name, no longer read.
+        legacy: PathBuf,
+        /// Why the old name could not be removed.
+        error: io::Error,
+    },
 }
 
 impl Adoption {
@@ -66,7 +77,8 @@ impl Adoption {
             Adoption::Nothing
             | Adoption::AlreadyThere
             | Adoption::Moved { .. }
-            | Adoption::BothPresent { .. } => target.to_path_buf(),
+            | Adoption::BothPresent { .. }
+            | Adoption::OldNameLeft { .. } => target.to_path_buf(),
         }
     }
 
@@ -111,6 +123,14 @@ impl Adoption {
                 "could not be moved, so the old place stays in use; move it there by hand to \
                  stop this message"
             ),
+            Adoption::OldNameLeft { legacy, error } => warn!(
+                data,
+                old = %legacy.display(),
+                new = %target.display(),
+                error = %error,
+                "is at the new path and the old file is no longer read, but the old file could \
+                 not be removed (the error says why); delete it by hand to stop this message"
+            ),
         }
     }
 }
@@ -133,8 +153,11 @@ impl Adoption {
 ///   [`Adoption::BothPresent`].
 /// - After a failed step both paths are looked at again and decided by the rules above, so a
 ///   rival that moved the data first gives [`Adoption::AlreadyThere`]; with `target` still
-///   absent the data stays at `legacy` ([`Adoption::KeptLegacy`]). A failed removal of the old
-///   name keeps the old name in use, since the data may still be open under it.
+///   absent the data stays at `legacy` ([`Adoption::KeptLegacy`]).
+/// - When the old name of one file under two names cannot be removed, `legacy` is looked at
+///   once more. Gone (a rival removed it) is [`Adoption::AlreadyThere`]. Still there, a
+///   [`Shape::File`] is used at `target` ([`Adoption::OldNameLeft`]) and a [`Shape::Folder`]
+///   stays at `legacy` ([`Adoption::KeptLegacy`]).
 ///
 /// Logs nothing: it can run before logging starts. Pass the result's
 /// [`report`](Adoption::report) once logging is up.
@@ -222,16 +245,23 @@ fn adopt_with(legacy: Option<&Path>, target: &Path, shape: Shape, steps: &Steps<
         ) => both_present(
             legacy,
             target,
+            shape,
             legacy_presence == Presence::Link || target_presence == Presence::Link,
             steps,
         ),
     }
 }
 
-fn both_present(legacy: &Path, target: &Path, either_link: bool, steps: &Steps<'_>) -> Adoption {
+fn both_present(
+    legacy: &Path,
+    target: &Path,
+    shape: Shape,
+    either_link: bool,
+    steps: &Steps<'_>,
+) -> Adoption {
     match ((steps.same_file)(legacy, target), either_link) {
         (Ok(true), true) => Adoption::AlreadyThere,
-        (Ok(true), false) => one_file_found_twice(legacy, target, steps),
+        (Ok(true), false) => one_file_found_twice(legacy, target, shape, steps),
         (Ok(false) | Err(_), _) => Adoption::BothPresent {
             legacy: legacy.to_path_buf(),
         },
@@ -241,20 +271,34 @@ fn both_present(legacy: &Path, target: &Path, either_link: bool, steps: &Steps<'
 /// Both paths name one file and neither is a link. One directory entry reached twice holds
 /// the only copy, so nothing is removed; two entries are a move cut short between its link and
 /// its remove, so the old name goes. When it cannot be told which, nothing is removed.
-fn one_file_found_twice(legacy: &Path, target: &Path, steps: &Steps<'_>) -> Adoption {
+fn one_file_found_twice(legacy: &Path, target: &Path, shape: Shape, steps: &Steps<'_>) -> Adoption {
     match (steps.same_entry)(legacy, target) {
         Ok(true) => Adoption::AlreadyThere,
         Ok(false) => match (steps.remover)(legacy) {
             Ok(()) => Adoption::Moved {
                 from: legacy.to_path_buf(),
             },
-            Err(error) => Adoption::KeptLegacy {
-                legacy: legacy.to_path_buf(),
-                reason: KeptReason::Failed(error),
-            },
+            Err(error) => old_name_not_removed(legacy, shape, error),
         },
         Err(_) => Adoption::BothPresent {
             legacy: legacy.to_path_buf(),
+        },
+    }
+}
+
+/// Decides after the old name of one file under two names could not be removed, from one more
+/// look at it: gone means a rival removed it first, so the data is only at the new path. A
+/// file left under both names is used at the new one, since its program reads it whole and
+/// closes it. A folder is only found under two names through two entries the entry check
+/// cannot tell apart (a bind mount), so it stays in use where it is.
+fn old_name_not_removed(legacy: &Path, shape: Shape, error: io::Error) -> Adoption {
+    let legacy = legacy.to_path_buf();
+    match (presence(&legacy), shape) {
+        (Presence::Absent, Shape::File | Shape::Folder) => Adoption::AlreadyThere,
+        (Presence::Link | Presence::Entry, Shape::File) => Adoption::OldNameLeft { legacy, error },
+        (Presence::Link | Presence::Entry, Shape::Folder) => Adoption::KeptLegacy {
+            legacy,
+            reason: KeptReason::Failed(error),
         },
     }
 }
@@ -276,13 +320,19 @@ fn move_data(legacy: &Path, target: &Path, shape: Shape, steps: &Steps<'_>) -> A
         Ok(()) => Adoption::Moved {
             from: legacy.to_path_buf(),
         },
-        Err(error) => after_failure(legacy, target, error, steps),
+        Err(error) => after_failure(legacy, target, shape, error, steps),
     }
 }
 
 /// Decides from a fresh look at both paths after a failed move step, never from the error:
 /// which step failed and why does not say where the data is now.
-fn after_failure(legacy: &Path, target: &Path, error: io::Error, steps: &Steps<'_>) -> Adoption {
+fn after_failure(
+    legacy: &Path,
+    target: &Path,
+    shape: Shape,
+    error: io::Error,
+    steps: &Steps<'_>,
+) -> Adoption {
     match (presence(legacy), presence(target)) {
         (Presence::Absent, Presence::Absent) => Adoption::Nothing,
         (Presence::Absent, Presence::Link | Presence::Entry) => Adoption::AlreadyThere,
@@ -296,6 +346,7 @@ fn after_failure(legacy: &Path, target: &Path, error: io::Error, steps: &Steps<'
         ) => both_present(
             legacy,
             target,
+            shape,
             legacy_presence == Presence::Link || target_presence == Presence::Link,
             steps,
         ),

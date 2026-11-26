@@ -427,6 +427,33 @@ async fn settings_that_cannot_move_are_read_from_the_old_folder() {
     assert_eq!(load(&location.path()).await.unwrap(), Some(saved));
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn settings_held_open_in_the_old_folder_are_used_and_saved_in_speaks_folder() {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+    let root = tempdir().unwrap();
+    let original = config_at("http://old-host:1/v1/audio/speech");
+    original.save(&old_file(root.path())).unwrap();
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ_WRITE)
+        .open(old_file(root.path()))
+        .unwrap();
+
+    let location = locate_config(root.path());
+    drop(held);
+    let edited = config_at("http://new-host:2/v1/audio/speech");
+    edited.save(&location.path()).unwrap();
+    let next_start = locate_config(root.path());
+
+    assert!(matches!(location.adoption, Adoption::OldNameLeft { .. }));
+    assert_eq!(location.path(), speaks_file(root.path()));
+    assert!(matches!(next_start.adoption, Adoption::BothPresent { .. }));
+    assert_eq!(load(&next_start.path()).await.unwrap(), Some(edited));
+    assert_eq!(load(&old_file(root.path())).await.unwrap(), Some(original));
+}
+
 #[tokio::test]
 async fn settings_in_both_folders_are_read_from_speaks_folder() {
     let root = tempdir().unwrap();

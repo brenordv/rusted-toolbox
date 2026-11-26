@@ -193,9 +193,11 @@ Older versions kept these elsewhere:
   its first start and logs a warning naming both places; the empty `tool-speak` folder can be
   deleted.
 
-When data cannot be moved (it is on another drive, the old place is a symbolic link, another
-program has the file open), the tool keeps using the old place and warns on every start until you
-move it there yourself. When both places hold data, the tool uses the new one and warns on every
+When data cannot be moved (it is on another drive, the old place is a symbolic link), the tool
+keeps using the old place and warns on every start until you move it there yourself. When a
+settings file reached the new place but another program held the old one open, so it could not be
+removed (Windows), the tool uses the new one and warns on every start until you delete the old
+one. When both places hold data, the tool uses the new one and warns on every
 start: copy what you need from the old one, then delete it. On a ReFS volume Windows can give two
 different files the same identity, which makes a copy in the old place look like the file that
 moved and gets it removed; back up data kept on ReFS before upgrading.

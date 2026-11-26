@@ -3,13 +3,16 @@
 ## 2.4.0
 - New `adoption` module: `adopt(legacy, target, shape)` moves a tool's data from its old
   default place to its new one when only the old place holds it, and returns an `Adoption`
-  (`Nothing`, `AlreadyThere`, `Moved`, `BothPresent`, `KeptLegacy`) with `path_in_use` and
-  `report` (one `warn` naming both paths and what to do, for a move or data left behind). A
-  file moves by a hard link plus removing the old name, a folder by one rename; nothing is
-  copied, the new path is never overwritten, a symbolic link is never moved or removed, and
-  data found in both places is told apart by file identity. One directory entry reached by
-  both paths (the same path twice, or a link or junction above one of them) is left as it is,
-  since removing its "old name" would remove the only copy. New dependency: `same-file`.
+  (`Nothing`, `AlreadyThere`, `Moved`, `BothPresent`, `KeptLegacy`, `OldNameLeft`) with
+  `path_in_use` and `report` (one `warn` naming both paths and what to do, for a move or data
+  left behind). A file moves by a hard link plus removing the old name, a folder by one
+  rename; nothing is copied, the new path is never overwritten, a symbolic link is never moved
+  or removed, and data found in both places is told apart by file identity. One directory
+  entry reached by both paths (the same path twice, or a link or junction above one of them)
+  is left as it is, since removing its "old name" would remove the only copy. A file whose old
+  name cannot be removed after the link (another program has it open, on Windows) is used at
+  the new path (`OldNameLeft`, with a warning to delete the old file). New dependency:
+  `same-file`.
 
 ## 2.3.0
 - New `atomic_write` module: `write_via_temp`, promoted from tool-image's private

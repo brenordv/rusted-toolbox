@@ -6,7 +6,9 @@
   from the old folder to the new one and logs a warning naming both; the empty `tool-speak`
   folder can be deleted. When the file cannot be moved (another filesystem, a symbolic link,
   a file in the way), the old one stays in use and every start warns until it is moved by
-  hand. With files in both folders, the new one is used and every start warns.
+  hand. When another program holds the old file open, so it cannot be removed after the move
+  (Windows), the new one is used and every start warns until the old one is deleted. With
+  files in both folders, the new one is used and every start warns.
 - With no home folder speak exits 1 saying it has no place for its settings (it used a
   `.rusted-toolbox` folder in the current folder).
 - A settings folder speak creates is owner-only on Linux and macOS.

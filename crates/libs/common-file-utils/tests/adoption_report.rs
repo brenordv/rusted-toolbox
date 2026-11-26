@@ -53,27 +53,34 @@ fn report_lines(adoption: &Adoption) -> Vec<String> {
 fn a_move_or_data_left_behind_logs_one_warning_naming_both_places_and_the_rest_log_nothing() {
     let old = PathBuf::from("old-place");
     let silent = [Adoption::Nothing, Adoption::AlreadyThere];
-    let warnings = [
-        (Adoption::Moved { from: old.clone() }, "moved"),
+    let warnings: [(Adoption, &[&str]); 5] = [
+        (Adoption::Moved { from: old.clone() }, &["moved"]),
         (
             Adoption::BothPresent {
                 legacy: old.clone(),
             },
-            "not read",
+            &["not read"],
         ),
         (
             Adoption::KeptLegacy {
                 legacy: old.clone(),
                 reason: KeptReason::SymbolicLink,
             },
-            "create a link at the new path",
+            &["create a link at the new path"],
         ),
         (
             Adoption::KeptLegacy {
                 legacy: old.clone(),
                 reason: KeptReason::Failed(io::Error::other("disk on fire")),
             },
-            "disk on fire",
+            &["disk on fire"],
+        ),
+        (
+            Adoption::OldNameLeft {
+                legacy: old.clone(),
+                error: io::Error::other("held by a scanner"),
+            },
+            &["held by a scanner", "no longer read", "delete it by hand"],
         ),
     ];
 
@@ -91,6 +98,6 @@ fn a_move_or_data_left_behind_logs_one_warning_naming_both_places_and_the_rest_l
         assert!(line.contains("the test data"), "{line}");
         assert!(line.contains("old-place"), "{line}");
         assert!(line.contains("new-place"), "{line}");
-        assert!(line.contains(words), "{line}");
+        assert!(words.iter().all(|word| line.contains(word)), "{line}");
     }
 }
