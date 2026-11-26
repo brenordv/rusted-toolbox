@@ -4,6 +4,8 @@
 - `eh-gui`'s connection sheet has a muted hint under each sign-in field saying what goes in it,
   with an example value where one helps, and a line under Sign-in method and Azure credential
   saying what the picked option does. Text only: no field, check, or saved value changed.
+- `eh`'s connection flags (`read` and `send`) show an example value in their help, and the
+  menu's namespace and event hub prompts give one too. Text only.
 
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system
