@@ -441,13 +441,23 @@ fn a_file_held_open_without_delete_sharing_keeps_its_old_name_in_use() {
     assert_eq!(fs::read(&places.legacy).unwrap(), OLD_DATA);
 }
 
-#[cfg(unix)]
 #[test]
-fn an_old_place_that_cannot_be_looked_at_is_kept_never_taken_for_empty() {
+fn an_old_place_under_a_file_holds_nothing() {
     let places = Places::file();
     let blocker = places.dir.path().join("blocker");
     fs::write(&blocker, b"a file where a folder goes").unwrap();
     let legacy = blocker.join("config.json");
+
+    let adoption = adopt(Some(&legacy), &places.target, Shape::File);
+
+    assert!(matches!(adoption, Adoption::Nothing));
+    assert_eq!(fs::read(&blocker).unwrap(), b"a file where a folder goes");
+}
+
+#[test]
+fn an_old_place_that_cannot_be_looked_at_is_kept_never_taken_for_empty() {
+    let places = Places::file();
+    let legacy = places.dir.path().join("n".repeat(300));
 
     let adoption = adopt(Some(&legacy), &places.target, Shape::File);
 

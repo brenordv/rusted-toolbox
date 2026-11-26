@@ -174,11 +174,14 @@ struct Steps<'a> {
 /// What is at a path, from its `symlink_metadata`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Presence {
+    /// Nothing there: not found, or a file where a folder on the way should be (Linux and macOS
+    /// report that as "not a directory", Windows as "not found"; either way the path cannot
+    /// exist).
     Absent,
     /// A symbolic link, followed or not.
     Link,
-    /// Anything else. A path whose metadata cannot be read for a reason other than not
-    /// existing counts as present, so it is never treated as free to move onto or as empty.
+    /// Anything else. A path whose metadata cannot be read for any other reason counts as
+    /// present, so it is never treated as free to move onto or as empty.
     Entry,
 }
 
@@ -186,7 +189,14 @@ fn presence(path: &Path) -> Presence {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => Presence::Link,
         Ok(_) => Presence::Entry,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Presence::Absent,
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            Presence::Absent
+        }
         Err(_) => Presence::Entry,
     }
 }
