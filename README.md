@@ -32,6 +32,7 @@ We currently have the following tools:
 28. A text-to-speech client called [speak](crates/tools/tool-speak/readme.md) that sends text (an argument, or stdin) to a speech server you run and plays the audio, so an agent can say an explanation aloud. `speak --gui` opens a window to try a text and change the settings. It ships with an agent skill.
 29. A desktop alert called [alert](crates/tools/tool-alert/readme.md) that shows a window above your other windows with a message, an optional title, and an optional sound, and waits until you close it, so an agent can ping you when it is done. It ships with an agent skill.
 30. A dependency vulnerability checker called [dep-check](crates/tools/tool-dep-check/readme.md) that asks OSV.dev, deps.dev, and the GitHub Advisory Database about the packages of one ecosystem (Cargo, NuGet, PyPI, npm, RubyGems), given as arguments or on stdin, and prints one merged report as text or JSON with vulnerabilities, malicious-package advisories, and supply-chain facts. Its exit code says whether anything was found.
+31. A window for dep-check called [dep-check-gui](crates/tools/tool-dep-check-gui/readme.md): pick an ecosystem, paste the packages, press Check, and read one row per package with its badge, findings, and supply-chain facts, from the same engine and rate-limit file as the CLI.
 
 ## Ok, but why?
 Well, three main reasons:
@@ -183,12 +184,12 @@ and macOS the tool folders are created readable by you only.
 
 | What | Where | To put it somewhere else |
 |---|---|---|
-| Log files: with `--log-to-file`, and always for alert, eh-gui, seal-gui, and `speak --gui` | `~/.rusted-toolbox/<tool>/logs` (with no home folder, `.rusted-toolbox/<tool>/logs` in the current folder) | nothing |
+| Log files: with `--log-to-file`, and always for alert, dep-check-gui, eh-gui, seal-gui, and `speak --gui` | `~/.rusted-toolbox/<tool>/logs` (with no home folder, `.rusted-toolbox/<tool>/logs` in the current folder) | nothing |
 | speak's settings | `~/.rusted-toolbox/speak/config.json` | nothing, on purpose |
 | seal-gui's settings (the recipient book) | `~/.rusted-toolbox/seal-gui/config.json` | nothing |
 | eh and eh-gui's profiles (one workspace for both) | `~/.rusted-toolbox/eh/profiles` | `EH_WORKSPACE` (an absolute folder) |
 | netquality's database | `~/.rusted-toolbox/netquality/netquality.db` | `--db-path`, or `db_path` in its config file |
-| dep-check's rate-limit blocks (when each service may be asked again; nothing else) | `~/.rusted-toolbox/dep-check/rate-limits.json` | nothing |
+| dep-check and dep-check-gui's rate-limit blocks (when each service may be asked again; nothing else) | `~/.rusted-toolbox/dep-check/rate-limits.json` | nothing |
 
 Older versions kept these elsewhere, and each tool moves what it finds in its old default place on
 its first start, logging a warning that names both places. A place you chose with `EH_WORKSPACE`,

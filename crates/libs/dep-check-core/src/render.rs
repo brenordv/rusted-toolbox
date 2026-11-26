@@ -82,16 +82,22 @@ pub fn package_line(package: &PackageReport) -> String {
             count_phrase(package.findings.len() as u64, "advisory", "advisories")
         ),
         PackageStatus::Clean => "clean".to_owned(),
-        PackageStatus::NotFound => match package.version {
-            Some(_) => "not found: deps.dev does not know this version".to_owned(),
-            None => "not found: deps.dev does not know this package".to_owned(),
-        },
+        PackageStatus::NotFound => format!("not found: {}", not_found_sentence(package)),
         PackageStatus::NotChecked => match &package.reason {
             Some(reason) => format!("not checked: {}", shown(reason)),
             None => "not checked".to_owned(),
         },
     };
     format!("{name}  {verdict}")
+}
+
+/// What a `not_found` package's status means: "deps.dev does not know this version" when a
+/// version was asked, else "... this package".
+pub fn not_found_sentence(package: &PackageReport) -> &'static str {
+    match package.version {
+        Some(_) => "deps.dev does not know this version",
+        None => "deps.dev does not know this package",
+    }
 }
 
 /// A finding's lines, each without its indent.

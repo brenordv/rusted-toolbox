@@ -18,6 +18,18 @@ pub struct PackageSpec {
 pub struct InputIssue {
     pub line: usize,
     pub message: String,
+    pub kind: IssueKind,
+}
+
+/// What kind of refusal an [`InputIssue`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IssueKind {
+    /// The line does not read as a package.
+    BadLine,
+    /// The line reads, but it is the package past [`MAX_PACKAGES`].
+    TooMany,
+    /// No line holds a package.
+    NoPackages,
 }
 
 /// The most packages one check takes: OSV.dev's batch maximum and GitHub's `affects` maximum.
@@ -79,6 +91,7 @@ pub fn parse_specs<'a>(
         let spec = parse_spec(ecosystem, line).map_err(|reason| InputIssue {
             line: number,
             message: format!("{}: {reason}", quote_input(line.trim())),
+            kind: IssueKind::BadLine,
         })?;
         let key = (ecosystem.normalize_name(&spec.name), spec.version.clone());
         if !seen.insert(key) {
@@ -88,6 +101,7 @@ pub fn parse_specs<'a>(
             return Err(InputIssue {
                 line: number,
                 message: format!("more than {MAX_PACKAGES} packages; check them in smaller lists"),
+                kind: IssueKind::TooMany,
             });
         }
         specs.push(spec);
@@ -96,6 +110,7 @@ pub fn parse_specs<'a>(
         return Err(InputIssue {
             line: 0,
             message: "no packages were given".to_owned(),
+            kind: IssueKind::NoPackages,
         });
     }
     Ok(specs)

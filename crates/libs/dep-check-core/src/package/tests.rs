@@ -179,6 +179,7 @@ fn parse_specs_skips_blank_lines_and_counts_them() {
     let error = parse_specs(Ecosystem::Cargo, ["serde", "", "   ", "bad name"]).unwrap_err();
 
     assert_eq!(error.line, 4);
+    assert_eq!(error.kind, IssueKind::BadLine);
 }
 
 #[test]
@@ -224,6 +225,7 @@ fn parse_specs_refuses_the_1001st_package_on_its_line() {
     let error = parse_specs(Ecosystem::Cargo, lines.iter().map(String::as_str)).unwrap_err();
 
     assert_eq!(error.line, MAX_PACKAGES + 3);
+    assert_eq!(error.kind, IssueKind::TooMany);
     assert_eq!(
         error.message,
         "more than 1000 packages; check them in smaller lists"
@@ -238,7 +240,8 @@ fn parse_specs_with_only_blank_lines_reports_line_zero() {
         error,
         InputIssue {
             line: 0,
-            message: "no packages were given".to_owned()
+            message: "no packages were given".to_owned(),
+            kind: IssueKind::NoPackages
         }
     );
 }

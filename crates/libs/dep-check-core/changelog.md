@@ -12,7 +12,10 @@
 - The GitHub Advisory Database joins as the third source: reviewed and malware advisories per
   package version, unauthenticated, one request at a time, under GitHub's rate rules; its
   severity labels and EPSS values join the merge.
-- `render` writes the report as text, every outside string cleaned for a terminal.
+- `render` writes the report as text, every outside string cleaned for a terminal;
+  `render::not_found_sentence` gives a `not_found` package's words to any other view.
+- `package::InputIssue` says which kind of refusal it is (`IssueKind`: a bad line, more than
+  1,000 packages, or none), so a caller can word each one.
 - Rate-limit blocks are saved in `~/.rusted-toolbox/dep-check/rate-limits.json` and merged on
   save, so two runs at once keep each other's blocks.
 - Feature `test-support`: `test_support::MockServer` and the clocks the tools' tests use.

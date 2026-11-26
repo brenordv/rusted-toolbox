@@ -2250,6 +2250,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "dep-check-gui"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "common-cli",
+ "common-gui-rune",
+ "common-utils",
+ "dep-check-core",
+ "rstest",
+ "rune",
+ "rune-kit",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
