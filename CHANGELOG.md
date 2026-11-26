@@ -1,5 +1,10 @@
 # Workspace Changelog
 
+## v9
+- `eh-gui`'s connection sheet has a muted hint under each sign-in field saying what goes in it,
+  with an example value where one helps, and a line under Sign-in method and Azure credential
+  saying what the picked option does. Text only: no field, check, or saved value changed.
+
 ## v8
 - New library: `common-gui-rune` 1.0.0, the tool-neutral part of eh-gui's Rune design system
   (kits and surface ladder, tokens, motion roles, parts, the system appearance, a window watch
