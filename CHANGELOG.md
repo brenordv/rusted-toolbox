@@ -18,6 +18,9 @@
 - New tool `dep-check` 1.0.0: checks one ecosystem's packages (arguments or stdin) against
   OSV.dev, deps.dev, and the GitHub Advisory Database and prints the report as text or JSON; exit 0 nothing found, 1
   vulnerable, 2 usage error, 3 some packages unknown or not checked, 4 no service answered.
+- `common-gui-rune` 1.4.0 gains `parts::list_box` (with `ListRows`, `ListHeight`, and
+  `list_height`) and `parts::badge` with `BadgeTone`, moved from seal-gui with their tests;
+  `seal-gui` 2.0.1 uses them, with nothing changed on screen.
 
 ## v9
 - `eh-gui`'s connection sheet has a muted hint under each sign-in field saying what goes in it,

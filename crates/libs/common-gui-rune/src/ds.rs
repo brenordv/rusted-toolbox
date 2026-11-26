@@ -110,6 +110,7 @@ fn shared_overrides(kit: &mut Kit) {
 mod tests {
     use super::*;
     use crate::contrast::{Contract, LEVELS, NON_TEXT, TEXT, appearance_name, over};
+    use crate::parts::BadgeTone;
     use crate::tokens::{SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, SPACE_XXL};
 
     #[test]
@@ -153,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn focus_rings_and_badge_labels_meet_their_minimums_in_both_appearances() {
+    fn focus_rings_meet_their_minimum_in_both_appearances() {
         let ds = Ds::new();
         let mut contract = Contract::default();
 
@@ -173,14 +174,30 @@ mod tests {
                         NON_TEXT,
                     );
                 }
-                for (name, label, fill) in [
-                    ("neutral badge", k.c.text_muted, k.c.layer_02),
-                    ("accent badge", k.c.text_contrast, k.c.bg_accent),
-                ] {
+            }
+        }
+
+        contract.assert_met();
+    }
+
+    #[test]
+    fn each_badge_label_meets_the_text_contrast_on_the_list_and_on_the_drop_fill() {
+        let ds = Ds::new();
+        let mut contract = Contract::default();
+
+        for dark in [true, false] {
+            let k = ds.kit(dark);
+            let mode = appearance_name(dark);
+            let content = surface(k, Surface::Content);
+            let hovered = over(drop_fill(k), content);
+            for (under_name, under) in [("list", content), ("drop fill", hovered)] {
+                for tone in BadgeTone::ALL {
+                    let (fill, ink) = tone.colors(k);
+                    let fill = over(fill, under);
                     contract.check(
-                        &format!("{mode} {name} label on {level:?}"),
-                        label,
-                        over(fill, bg),
+                        &format!("{mode} {} badge on the {under_name}", tone.name()),
+                        over(ink, fill),
+                        fill,
                         TEXT,
                     );
                 }

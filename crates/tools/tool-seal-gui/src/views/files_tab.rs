@@ -1,7 +1,7 @@
 //! The Files tab: Mode and the overwrite choice, the file list (the drop target), the
 //! recipients or the identity file, where the outputs go, and the action row.
 
-use super::parts::{BadgeTone, ListHeight, ListRows, badge, drop_hovered, list_box};
+use super::parts::drop_hovered;
 use super::picker::{identity, recipients};
 use super::text_tab::{DIRECTION_LABELS, DIRECTIONS};
 use super::{standing_captions, tab_status};
@@ -13,7 +13,8 @@ use crate::state::files::{FileRow, FilesInput, OutputChoice, RowStatus};
 use crate::state::recipients::Picker;
 use crate::state::{AppState, Blocked, DialogPurpose, Input, Tab};
 use common_gui_rune::parts::{
-    action_row, choice_switch, detail_row, field_label, issue, reveal, section_header, warning,
+    BadgeTone, ListHeight, ListRows, action_row, badge, choice_switch, detail_row, field_label,
+    issue, list_box, reveal, section_header, warning,
 };
 use common_gui_rune::tokens::{
     CONTROL_HEIGHT, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, SPACE_XS, TYPE_CAPTION, TYPE_LABEL,

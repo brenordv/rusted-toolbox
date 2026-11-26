@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1
+- The list box and the status badge come from `common-gui-rune` 1.4.0, where they moved with
+  their tests; nothing on screen changes.
+
 ## 2.0.0
 - Settings live in `~/.rusted-toolbox/seal-gui/config.json` (they lived in `%APPDATA%\seal\`
   on Windows and `$XDG_CONFIG_HOME/seal/` or `~/.config/seal/` elsewhere). On start seal-gui

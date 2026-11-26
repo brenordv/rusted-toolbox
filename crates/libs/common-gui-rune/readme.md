@@ -27,7 +27,10 @@ Modules:
   `detail_row`, the multi-line editors (`text_editor` in any type role, `lines_editor` for
   short lines), `line_field` (a labelled single-line field), `status_line`, `action_row` (the
   fixed row under an area: hairline, status, buttons), `choice_switch` (a segmented choice that
-  can be disabled), and `reveal` (the field-reveal transition).
+  can be disabled), `reveal` (the field-reveal transition), `list_box` with `ListRows` and
+  `ListHeight` (a list in a form, built or virtual rows, with its empty text; `list_height`
+  gives a box's height for a row count), and `badge` with its five `BadgeTone`s (a status badge
+  in a fixed-width column).
 - `appearance`: `SystemAppearance` reads the system's dark or light setting on Windows, where
   Rune's own theme event does not arrive on Windows 10; `set_appearance` stores what a window
   draws in and says whether it changed.

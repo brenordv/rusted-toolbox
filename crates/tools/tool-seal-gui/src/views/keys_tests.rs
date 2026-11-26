@@ -6,11 +6,11 @@ use crate::state::notes::RunningJob;
 use crate::test_support::{Recording, recording_state, state_with_book};
 use crate::worker::{JobEvent, JobOutcome, JobRequest};
 use common_cli::app_logger::FileLogging;
+use common_gui_rune::parts::list_height;
 use common_gui_rune::test_harness::{
     self, a11y_node, a11y_nodes, answer_dialog, bottom, clipboard_text, focus_is_inside, has_text,
     is_disabled, press, press_key, rect, runtime_with_keys, settle, use_memory_clipboard,
 };
-use parts::list_height;
 use rune::{FileDialogKind, Key, Runtime};
 use seal_crypto::keys::{generate_identity, public_key_of};
 use serde_json::Value;
