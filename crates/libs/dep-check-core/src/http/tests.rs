@@ -337,6 +337,25 @@ fn encode_segment_encodes_reserved_characters_and_keeps_unreserved_ones() {
 }
 
 #[rstest::rstest]
+#[case::host_only("http://127.0.0.1:9/", "/v3/a%2Fb/c%40d")]
+#[case::path_without_slash("http://127.0.0.1:9/prefix", "/prefix/v3/a%2Fb/c%40d")]
+fn segment_url_appends_each_value_as_one_encoded_segment(#[case] base: &str, #[case] path: &str) {
+    let url = segment_url(&Url::parse(base).unwrap(), &["v3", "a/b", "c@d"]).unwrap();
+
+    assert_eq!(url.path(), path);
+}
+
+#[rstest::rstest]
+#[case::empty("")]
+#[case::dot(".")]
+#[case::dot_dot("..")]
+fn segment_url_refuses_a_segment_that_would_be_a_dot_path(#[case] segment: &str) {
+    let base = Url::parse("http://127.0.0.1:9/").unwrap();
+
+    assert_eq!(segment_url(&base, &["v3", segment]), None);
+}
+
+#[rstest::rstest]
 #[case::unreachable(unreachable(), "could not be reached: refused")]
 #[case::timed_out(SourceFailure::TimedOut, "did not answer in time")]
 #[case::interrupted(

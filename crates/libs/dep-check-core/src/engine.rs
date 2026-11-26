@@ -9,8 +9,9 @@ use crate::package::PackageSpec;
 use crate::rate_limits::{self, Change, RateLimits, rate_limits_path, save_changes};
 use crate::report::{
     AnswerWord, BlockOrigin, FailureGroup, Outcome, PackageReport, PackageStatus, REPORT_VERSION,
-    Report, SourceReport, SourceStatus, Summary, VersionFrom,
+    Report, SourceReport, SourceStatus, Summary, SupplyChain, VersionFrom,
 };
+use crate::sources::deps_dev::{DEPS_DEV_BASE, DepsDevClient, Latest, LatestRun};
 use crate::sources::osv::{OSV_BASE, OsvClient};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -118,7 +119,8 @@ pub struct SourceRun {
     pub requests: u32,
     /// The block this run hit, if any; once set the source sent nothing more.
     pub block: Option<DateTime<Utc>>,
-    /// Records that came back without details (an id with no record).
+    /// Details that could not be fetched: an advisory known by its id only, or a source
+    /// repository whose scorecard request failed.
     pub details_missing: u32,
     pub answers: BTreeMap<PackageKey, PackageAnswer>,
 }
@@ -140,6 +142,7 @@ impl SourceRun {
 #[derive(Debug, Clone)]
 pub struct Bases {
     pub osv: Url,
+    pub deps_dev: Url,
 }
 
 impl Bases {
@@ -150,6 +153,7 @@ impl Bases {
     pub fn real() -> Result<Self> {
         Ok(Self {
             osv: Url::parse(OSV_BASE).context("Failed to read the OSV.dev address")?,
+            deps_dev: Url::parse(DEPS_DEV_BASE).context("Failed to read the deps.dev address")?,
         })
     }
 }
@@ -157,6 +161,7 @@ impl Bases {
 /// Runs checks against the services.
 pub struct Checker {
     osv: OsvClient,
+    deps_dev: DepsDevClient,
     limits_path: Option<PathBuf>,
     tool: String,
 }
@@ -186,13 +191,17 @@ impl Checker {
         let limits = HttpLimits::default();
         let client = build_client(&limits, user_agent, HeaderMap::new())?;
         Ok(Self {
-            osv: OsvClient::new(client, bases.osv, limits)?,
+            osv: OsvClient::new(client.clone(), bases.osv, limits)?,
+            deps_dev: DepsDevClient::new(client, bases.deps_dev, limits),
             limits_path,
             tool: tool.to_owned(),
         })
     }
 
     /// Checks every package of `request`. Every failure ends inside the report.
+    ///
+    /// deps.dev first names the latest version of each package written without one; then
+    /// OSV.dev and deps.dev run side by side, each saved and logged as soon as it finishes.
     pub async fn check(&self, request: CheckRequest, clock: Clock) -> Report {
         let checked_at = clock();
         let began = Instant::now();
@@ -208,26 +217,59 @@ impl Checker {
             clock: Arc::clone(&clock),
             lock: tokio::sync::Mutex::new(()),
         };
-        let resolved = resolved_packages(&request.packages);
         let context = RunContext {
             clock: Arc::clone(&clock),
         };
+        let ecosystem = request.ecosystem;
+        let every_key: Vec<PackageKey> = (0..request.packages.len()).map(PackageKey).collect();
 
-        let osv = match unasked(SourceName::Osv, &resolved, &loaded, checked_at) {
-            Some(settled) => settled,
-            None => {
-                let source_began = Instant::now();
-                let run = self.osv.check(request.ecosystem, &resolved, &context).await;
-                settle(run, source_began, &store).await
+        let deps_dev_began = Instant::now();
+        let deps_dev_unasked = unasked(SourceName::DepsDev, &every_key, &loaded, checked_at);
+        let unversioned = unversioned_packages(&request.packages);
+        let latest = if deps_dev_unasked.is_none() && !unversioned.is_empty() {
+            self.deps_dev
+                .latest_versions(ecosystem, &unversioned, &context)
+                .await
+        } else {
+            LatestRun::default()
+        };
+        let versions = versions_of(&request.packages, &latest);
+        let resolved = resolved_packages(&request.packages, &versions);
+        let resolved_keys: Vec<PackageKey> = resolved.iter().map(|package| package.key).collect();
+
+        let osv = async {
+            match unasked(SourceName::Osv, &resolved_keys, &loaded, checked_at) {
+                Some(settled) => settled,
+                None => {
+                    let source_began = Instant::now();
+                    let run = self.osv.check(ecosystem, &resolved, &context).await;
+                    settle(run, source_began, &store).await
+                }
             }
         };
+        let deps_dev = async {
+            match deps_dev_unasked {
+                Some(settled) => (settled, BTreeMap::new()),
+                None => {
+                    let (run, chains) = self
+                        .deps_dev
+                        .check(ecosystem, &resolved, latest, &context)
+                        .await;
+                    (settle(run, deps_dev_began, &store).await, chains)
+                }
+            }
+        };
+        let (osv, (deps_dev, chains)) = tokio::join!(osv, deps_dev);
 
-        let settled = [osv];
+        let settled = [osv, deps_dev];
         let packages: Vec<PackageReport> = request
             .packages
             .iter()
             .enumerate()
-            .map(|(index, spec)| package_report(PackageKey(index), spec, &settled))
+            .map(|(index, spec)| {
+                let key = PackageKey(index);
+                package_report(key, spec, versions.get(&key), &settled, chains.get(&key))
+            })
             .collect();
         let statuses: Vec<PackageStatus> = packages.iter().map(|package| package.status).collect();
         let report = Report {
@@ -271,31 +313,59 @@ struct Settled {
     report: SourceReport,
 }
 
-/// The packages that have a version, keyed by their place in the list.
-fn resolved_packages(packages: &[PackageSpec]) -> Vec<Resolved> {
+/// The packages written without a version, with their names.
+fn unversioned_packages(packages: &[PackageSpec]) -> Vec<(PackageKey, String)> {
     packages
         .iter()
         .enumerate()
-        .filter_map(|(index, spec)| {
-            spec.version.as_ref().map(|version| Resolved {
-                key: PackageKey(index),
-                name: spec.name.clone(),
-                version: version.clone(),
-            })
+        .filter(|(_, spec)| spec.version.is_none())
+        .map(|(index, spec)| (PackageKey(index), spec.name.clone()))
+        .collect()
+}
+
+/// The version each package is checked at: the one written, or deps.dev's latest for a package
+/// written without one. A package with neither is not in the map.
+fn versions_of(
+    packages: &[PackageSpec],
+    latest: &LatestRun,
+) -> BTreeMap<PackageKey, (String, VersionFrom)> {
+    let mut versions = BTreeMap::new();
+    for (index, spec) in packages.iter().enumerate() {
+        let key = PackageKey(index);
+        if let Some(version) = &spec.version {
+            versions.insert(key, (version.clone(), VersionFrom::Input));
+        } else if let Some(Latest::Version(version)) = latest.answers.get(&key) {
+            versions.insert(key, (version.clone(), VersionFrom::DepsDevLatest));
+        }
+    }
+    versions
+}
+
+/// The packages the sources are asked about, in list order.
+fn resolved_packages(
+    packages: &[PackageSpec],
+    versions: &BTreeMap<PackageKey, (String, VersionFrom)>,
+) -> Vec<Resolved> {
+    versions
+        .iter()
+        .map(|(key, (version, _))| Resolved {
+            key: *key,
+            name: packages[key.0].name.clone(),
+            version: version.clone(),
         })
         .collect()
 }
 
 /// The settled part of a source that is not asked: one no package needs, or one a saved block
-/// keeps out (every package fails with the block). Logs its line; `None` when the source is to
-/// be asked.
+/// keeps out (every package in `keys` fails with the block). Logs its line; `None` when the
+/// source is to be asked.
 fn unasked(
     source: SourceName,
-    packages: &[Resolved],
+    keys: &[PackageKey],
     loaded: &RateLimits,
     now: DateTime<Utc>,
 ) -> Option<Settled> {
-    if packages.is_empty() {
+    if keys.is_empty() {
         let run = SourceRun::empty(source);
         let report = source_report(&run, None);
         log_source(&report, loaded.strikes(source), 0);
@@ -303,9 +373,9 @@ fn unasked(
     }
     if let Some(until) = loaded.blocked_until(source, now) {
         let mut run = SourceRun::empty(source);
-        for package in packages {
+        for key in keys {
             run.answers.insert(
-                package.key,
+                *key,
                 PackageAnswer::Failed {
                     failure: SourceFailure::RateLimited { until },
                     advisories: Vec::new(),
@@ -486,8 +556,15 @@ fn log_source(report: &SourceReport, strikes: u32, elapsed_ms: u64) {
     );
 }
 
-/// One package's row, merged from every settled source's answer for it.
-fn package_report(key: PackageKey, spec: &PackageSpec, settled: &[Settled]) -> PackageReport {
+/// One package's row, merged from every settled source's answer for it. `version` is the one
+/// the sources were asked about, if any.
+fn package_report(
+    key: PackageKey,
+    spec: &PackageSpec,
+    version: Option<&(String, VersionFrom)>,
+    settled: &[Settled],
+    supply_chain: Option<&SupplyChain>,
+) -> PackageReport {
     let answer_words: BTreeMap<SourceName, AnswerWord> = settled
         .iter()
         .map(|part| {
@@ -499,20 +576,6 @@ fn package_report(key: PackageKey, spec: &PackageSpec, settled: &[Settled]) -> P
             (part.run.source, word)
         })
         .collect();
-    let Some(version) = &spec.version else {
-        return PackageReport {
-            input: spec.input.clone(),
-            name: spec.name.clone(),
-            version: None,
-            version_from: None,
-            status: PackageStatus::NotChecked,
-            reason: Some(
-                "no version was given; finding the latest version needs deps.dev".to_owned(),
-            ),
-            findings: Vec::new(),
-            answers: answer_words,
-        };
-    };
     let answers: Vec<(SourceName, &PackageAnswer)> = settled
         .iter()
         .filter_map(|part| {
@@ -522,16 +585,54 @@ fn package_report(key: PackageKey, spec: &PackageSpec, settled: &[Settled]) -> P
                 .map(|answer| (part.run.source, answer))
         })
         .collect();
+    let Some((version, version_from)) = version else {
+        let lookup = answers
+            .iter()
+            .find(|(source, _)| *source == SourceName::DepsDev)
+            .map(|(_, answer)| *answer);
+        let (status, reason) = without_version(lookup);
+        return PackageReport {
+            input: spec.input.clone(),
+            name: spec.name.clone(),
+            version: None,
+            version_from: None,
+            status,
+            reason,
+            findings: Vec::new(),
+            supply_chain: None,
+            answers: answer_words,
+        };
+    };
     let verdict = merge(&answers);
     PackageReport {
         input: spec.input.clone(),
         name: spec.name.clone(),
         version: Some(version.clone()),
-        version_from: Some(VersionFrom::Input),
+        version_from: Some(*version_from),
         status: verdict.status,
         reason: verdict.reason,
         findings: verdict.findings,
+        supply_chain: supply_chain.cloned(),
         answers: answer_words,
+    }
+}
+
+/// The status of a package written without a version that got none, from deps.dev's answer to
+/// the lookup: `NotFound` when deps.dev does not know it, else `NotChecked` with the reason.
+fn without_version(lookup: Option<&PackageAnswer>) -> (PackageStatus, Option<String>) {
+    match lookup {
+        Some(PackageAnswer::NotFound) => (PackageStatus::NotFound, None),
+        Some(PackageAnswer::Failed { failure, .. }) => (
+            PackageStatus::NotChecked,
+            Some(format!(
+                "no version was given, and deps.dev could not name the latest one: it {}",
+                failure.describe()
+            )),
+        ),
+        Some(PackageAnswer::Answered { .. }) | None => (
+            PackageStatus::NotChecked,
+            Some("no version was given, and deps.dev did not name the latest one".to_owned()),
+        ),
     }
 }
 

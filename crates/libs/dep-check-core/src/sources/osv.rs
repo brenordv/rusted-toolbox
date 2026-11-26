@@ -5,8 +5,8 @@ use crate::advisory::{Cvss, SourceAdvisory, SourceName, kind_of_id};
 use crate::ecosystem::Ecosystem;
 use crate::engine::{PackageAnswer, Resolved, RunContext, SourceRun};
 use crate::http::{
-    Answer, HttpLimits, SourceFailure, SourceGate, encode_segment, get_json, mismatched_answer,
-    post_json,
+    Answer, HttpLimits, SourceFailure, SourceGate, get_json, mismatched_answer, post_json,
+    segment_url, unaskable_id,
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -33,9 +33,8 @@ const MAX_URLS: usize = 5;
 #[derive(Debug, Clone)]
 pub struct OsvClient {
     client: Client,
+    base: Url,
     querybatch: Url,
-    /// `v1/vulns/` on the base; a record's address is this plus its encoded id.
-    vulns: Url,
     limits: HttpLimits,
 }
 
@@ -43,31 +42,17 @@ impl OsvClient {
     /// A client for the OSV.dev at `base`, a host-only address ending in `/`.
     ///
     /// # Errors
-    /// When the addresses cannot be built on `base`.
+    /// When the querybatch address cannot be built on `base`.
     pub fn new(client: Client, base: Url, limits: HttpLimits) -> Result<Self> {
         let querybatch = base
             .join("v1/querybatch")
             .context("Failed to build the OSV.dev querybatch address")?;
-        let vulns = base
-            .join("v1/vulns/")
-            .context("Failed to build the OSV.dev record address")?;
         Ok(Self {
             client,
+            base,
             querybatch,
-            vulns,
             limits,
         })
-    }
-
-    /// The address of `id`'s record, or `None` for an id that is empty or only dots, which the
-    /// URL parser would resolve as a `.` or `..` segment into another path.
-    fn record_url(&self, id: &str) -> Option<Url> {
-        if id.chars().all(|c| c == '.') {
-            return None;
-        }
-        let mut url = self.vulns.clone();
-        url.set_path(&format!("{}{}", self.vulns.path(), encode_segment(id)));
-        Some(url)
     }
 
     /// Asks about every package: the advisory ids of each version in batches, then each
@@ -249,11 +234,7 @@ impl OsvClient {
         gate: &SourceGate,
         context: &RunContext,
     ) -> Result<Answer<OsvRecord>, SourceFailure> {
-        let url = self
-            .record_url(id)
-            .ok_or_else(|| SourceFailure::BadAnswer {
-                detail: "an advisory id the tool cannot ask about".to_owned(),
-            })?;
+        let url = segment_url(&self.base, &["v1", "vulns", id]).ok_or_else(unaskable_id)?;
         gate.open()?;
         let outcome =
             get_json::<OsvRecord>(&self.client, url, &self.limits, &context.clock, "vulns").await;

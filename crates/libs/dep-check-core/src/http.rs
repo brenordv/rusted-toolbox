@@ -305,6 +305,11 @@ pub(crate) fn mismatched_answer() -> SourceFailure {
     SourceFailure::bad_answer("the answer did not match the question")
 }
 
+/// A failure for an id from an answer that cannot be a URL path segment.
+pub(crate) fn unaskable_id() -> SourceFailure {
+    SourceFailure::bad_answer("an id the tool cannot ask about")
+}
+
 /// Every byte but ASCII letters, digits, and `-._~` is percent-encoded.
 const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -316,6 +321,30 @@ const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
 /// letters, digits, and `-._~`.
 pub fn encode_segment(value: &str) -> String {
     utf8_percent_encode(value, SEGMENT).to_string()
+}
+
+/// `base` with `segments` appended to its path, each percent-encoded as one segment, or `None`
+/// when a segment is empty or only dots: the URL parser would resolve it as a `.` or `..`
+/// segment into another path.
+pub(crate) fn segment_url(base: &Url, segments: &[&str]) -> Option<Url> {
+    if segments
+        .iter()
+        .any(|segment| segment.chars().all(|c| c == '.'))
+    {
+        return None;
+    }
+    let mut path = base.path().to_owned();
+    if !path.ends_with('/') {
+        path.push('/');
+    }
+    let encoded: Vec<String> = segments
+        .iter()
+        .map(|segment| encode_segment(segment))
+        .collect();
+    path.push_str(&encoded.join("/"));
+    let mut url = base.clone();
+    url.set_path(&path);
+    Some(url)
 }
 
 /// Milliseconds since `started`.

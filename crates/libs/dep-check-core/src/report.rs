@@ -155,8 +155,51 @@ pub struct PackageReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     pub findings: Vec<Finding>,
+    /// deps.dev's facts about the version; `None` when deps.dev gave none.
+    pub supply_chain: Option<SupplyChain>,
     /// What each source said about this package.
     pub answers: BTreeMap<SourceName, AnswerWord>,
+}
+
+/// deps.dev's facts about one package version. They never change a status. The deprecation
+/// reason, licenses, repository id, and provenance word come from the package's publisher and
+/// are kept as given.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SupplyChain {
+    /// The version is the one deps.dev installs by default.
+    pub latest: bool,
+    /// `Some(reason)` when the version is deprecated; an empty reason when none was given.
+    pub deprecated: Option<String>,
+    /// SPDX expressions, or "non-standard" for a license with no SPDX identifier.
+    pub licenses: Vec<String>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub source_repo: Option<SourceRepo>,
+    /// The source repository's OpenSSF Scorecard, when deps.dev has one.
+    pub scorecard: Option<ScorecardSummary>,
+    pub attestations: Attestations,
+}
+
+/// The repository a version says it was built from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SourceRepo {
+    /// As "github.com/tokio-rs/tokio".
+    pub id: String,
+    /// How deps.dev knows the link, lowercased: "unverified_metadata", "slsa_attestation", ...
+    pub provenance: String,
+}
+
+/// An OpenSSF Scorecard's overall score and when it was computed.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ScorecardSummary {
+    pub score: f64,
+    pub date: Option<DateTime<Utc>>,
+}
+
+/// Build attestations and SLSA provenances counted together, and how many deps.dev verified.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct Attestations {
+    pub total: u32,
+    pub verified: u32,
 }
 
 /// One source's answer for one package, in a word.
@@ -198,7 +241,8 @@ pub struct SourceReport {
     pub requests: u32,
     /// Why packages went unanswered, one entry per distinct reason.
     pub failures: Vec<FailureGroup>,
-    /// Advisories that came back as ids without their details.
+    /// Details that could not be fetched: an advisory known by its id only, or a source
+    /// repository whose scorecard request failed.
     pub details_missing: u32,
 }
 
@@ -368,6 +412,7 @@ mod tests {
             status,
             reason: None,
             findings: Vec::new(),
+            supply_chain: None,
             answers: BTreeMap::from([(SourceName::Osv, AnswerWord::Answered)]),
         }
     }

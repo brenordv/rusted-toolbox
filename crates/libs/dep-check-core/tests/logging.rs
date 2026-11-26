@@ -16,10 +16,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 const MARKER: &str = "marker-48151";
-const PACKAGES: [&str; 3] = [
+const PACKAGES: [&str; 4] = [
     "zebra-pkg-one@1.0.0",
     "zebra-pkg-two@2.0.0",
     "zebra-pkg-three@3.0.0",
+    "zebra-pkg-four",
 ];
 
 #[derive(Clone, Default)]
@@ -53,7 +54,10 @@ async fn run(server: &MockServer, limits_path: Option<PathBuf>) {
     Checker::with_bases(
         "dep-check 1.0.0",
         "dep-check-test/1.0",
-        Bases { osv: server.base() },
+        Bases {
+            osv: server.base(),
+            deps_dev: server.base(),
+        },
         limits_path,
     )
     .unwrap()
@@ -85,8 +89,37 @@ async fn the_log_holds_one_line_per_source_and_no_package_or_answer_text() {
         "/v1/querybatch",
         Reply::json(
             200,
-            &json!({"results": [{"vulns": [{"id": "ID-A"}]}, {"vulns": [{"id": "ID-B"}]}, {}]}),
+            &json!({"results": [{"vulns": [{"id": "ID-A"}]}, {"vulns": [{"id": "ID-B"}]}, {}, {}]}),
         ),
+    );
+    server.route(
+        "GET",
+        "/v3/systems/cargo/packages/zebra-pkg-four",
+        Reply::json(
+            200,
+            &json!({"versions": [{"versionKey": {"version": MARKER}, "isDefault": true}]}),
+        ),
+    );
+    server.route(
+        "GET",
+        &format!("/v3/systems/cargo/packages/zebra-pkg-four/versions/{MARKER}"),
+        Reply::json(
+            200,
+            &json!({
+                "advisoryKeys": [{"id": format!("GHSA-{MARKER}")}],
+                "relatedProjects": [{"projectKey": {"id": format!("github.com/{MARKER}/x")}, "relationType": "SOURCE_REPO"}]
+            }),
+        ),
+    );
+    server.route(
+        "GET",
+        &format!("/v3/advisories/GHSA-{MARKER}"),
+        Reply::json(200, &json!({"title": MARKER})),
+    );
+    server.route(
+        "GET",
+        &format!("/v3/projects/github.com%2F{MARKER}%2Fx"),
+        Reply::new(500, MARKER),
     );
     server.route(
         "GET",
@@ -94,6 +127,18 @@ async fn the_log_holds_one_line_per_source_and_no_package_or_answer_text() {
         Reply::json(200, &json!({"id": "ID-A", "summary": MARKER})),
     );
     server.route("GET", "/v1/vulns/ID-B", Reply::new(503, MARKER));
+    for (name, version) in [("zebra-pkg-one", "1.0.0"), ("zebra-pkg-two", "2.0.0")] {
+        server.route(
+            "GET",
+            &format!("/v3/systems/cargo/packages/{name}/versions/{version}"),
+            Reply::json(200, &json!({"deprecatedReason": MARKER})),
+        );
+    }
+    server.route(
+        "GET",
+        "/v3/systems/cargo/packages/zebra-pkg-three/versions/3.0.0",
+        Reply::new(503, MARKER),
+    );
     let dir = tempfile::tempdir().unwrap();
     let unreadable = dir.path().join("unreadable").join("rate-limits.json");
     std::fs::create_dir_all(unreadable.parent().unwrap()).unwrap();
@@ -132,7 +177,7 @@ async fn the_log_holds_one_line_per_source_and_no_package_or_answer_text() {
 
     let saved_run_lines: Vec<&str> = engine_lines(&log[before_saved_run..])
         .into_iter()
-        .filter(|line| line.contains("source finished"))
+        .filter(|line| line.contains("source finished") && line.contains("source=\"osv\""))
         .collect();
     assert_eq!(saved_run_lines.len(), 1, "{log}");
     assert!(
@@ -160,17 +205,35 @@ async fn the_log_holds_one_line_per_source_and_no_package_or_answer_text() {
     let count = |words: &str| first.iter().filter(|line| line.contains(words)).count();
     assert_eq!(count("check started"), 1, "{first_run}");
     assert_eq!(count("check finished"), 1, "{first_run}");
-    let source_lines: Vec<&&str> = first
-        .iter()
-        .filter(|line| line.contains("source finished"))
-        .collect();
-    assert_eq!(source_lines.len(), 1, "{first_run}");
-    let osv_line = source_lines[0];
+    let source_line = |source: &str| -> Vec<&&str> {
+        first
+            .iter()
+            .filter(|line| {
+                line.contains("source finished") && line.contains(&format!("source=\"{source}\""))
+            })
+            .collect()
+    };
+    assert_eq!(count("source finished"), 2, "{first_run}");
+    let osv_lines = source_line("osv");
+    assert_eq!(osv_lines.len(), 1, "{first_run}");
+    let osv_line = osv_lines[0];
     assert!(osv_line.contains("WARN"), "{osv_line}");
-    assert!(osv_line.contains("source=\"osv\""), "{osv_line}");
     assert!(osv_line.contains("status=\"answered\""), "{osv_line}");
     assert!(osv_line.contains("failed=0"), "{osv_line}");
     assert!(osv_line.contains("details_missing=1"), "{osv_line}");
+    let deps_dev_lines = source_line("deps_dev");
+    assert_eq!(deps_dev_lines.len(), 1, "{first_run}");
+    let deps_dev_line = deps_dev_lines[0];
+    assert!(deps_dev_line.contains("WARN"), "{deps_dev_line}");
+    assert!(
+        deps_dev_line.contains("status=\"partial\""),
+        "{deps_dev_line}"
+    );
+    assert!(
+        deps_dev_line.contains("reason=answered 503 (1 package)"),
+        "{deps_dev_line}"
+    );
+    assert!(deps_dev_line.contains("failed=1"), "{deps_dev_line}");
     assert!(
         first
             .iter()
@@ -192,7 +255,10 @@ async fn the_log_holds_one_line_per_source_and_no_package_or_answer_text() {
             !ports.iter().any(|port| line.contains(port.as_str())),
             "the address in: {line}"
         );
-        assert!(!line.contains("v1/"), "a request path in: {line}");
+        assert!(
+            !line.contains("v1/") && !line.contains("v3/"),
+            "a request path in: {line}"
+        );
     }
     let warns = |words: &str| {
         engine_lines(&log)

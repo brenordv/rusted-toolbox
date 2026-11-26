@@ -20,6 +20,18 @@ let report = checker
 | Service | Asked with | Gets |
 |---|---|---|
 | OSV.dev (`api.osv.dev`) | `POST /v1/querybatch`, then `GET /v1/vulns/{id}` | each package's name, ecosystem, and version |
+| deps.dev (`api.deps.dev`, API v3) | GetPackage, GetVersion, GetProject, GetAdvisory | each package's name, ecosystem, and version; the source repository ids and advisory ids its own answers named |
+
+A package written without a version is checked at the version deps.dev installs by default
+(GetPackage's `isDefault`), and the report says so (`version_from: "deps_dev_latest"`). That
+version passes the same rule as typed input before any other request uses it. A package
+deps.dev does not know is `not_found`.
+
+From GetVersion, every package also gets supply-chain facts: deprecated (and why), licenses,
+published date, whether the version is the latest, the source repository and how deps.dev
+knows it, the repository's OpenSSF Scorecard (GetProject), and how many attestations it has
+and how many deps.dev verified. deps.dev's advisory ids are OSV ids, so its advisories merge
+with OSV.dev's. The facts never change a status.
 
 No service needs a key. The addresses are constants: no flag, file, or setting points a query
 somewhere else, so a caller cannot be steered into asking a host that answers "clean". The
@@ -27,9 +39,10 @@ process environment still steers the connection the way it does for every reqwes
 `HTTPS_PROXY` and `ALL_PROXY` set a proxy, and on Linux `SSL_CERT_FILE` and `SSL_CERT_DIR`
 replace the system's trusted certificates.
 
-OSV.dev states no rate limit. The engine sends at most four record requests to it at a time,
-batches at most 1,000 packages per `querybatch`, and stops asking a source after three
-connection failures or timeouts in a row.
+OSV.dev states no rate limit, and deps.dev's reference states none either. The engine sends at
+most four requests at a time to each, batches at most 1,000 packages per `querybatch`, stops
+asking a source for the run when it answers 429, and stops after three connection failures or
+timeouts in a row.
 
 ## Modules
 
@@ -44,6 +57,8 @@ connection failures or timeouts in a row.
   report.
 - `engine`: `Checker`, `CheckRequest`, `Clock`.
 - `sources::osv`: the OSV.dev client.
+- `sources::deps_dev`: the deps.dev client: latest versions, version facts, projects,
+  advisories.
 
 ## Input
 
@@ -74,8 +89,9 @@ path.
 
 `outcome` is `failed` when every package is `not_checked`, else `vulnerable` when any package
 is, else `incomplete` when any is `not_found` or `not_checked`, else `clean`. Advisories that
-share an id or an alias are one finding, headed by OSV's id. Strings in the report are as the
-service sent them: a program that shows them must clean them first.
+share an id or an alias are one finding, headed by OSV's id. Each package also carries
+`supply_chain` (null when deps.dev gave none) and `answers`, one word per source. Strings in the
+report are as the service sent them: a program that shows them must clean them first.
 
 ## The rate-limit file
 

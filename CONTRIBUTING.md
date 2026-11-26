@@ -34,7 +34,7 @@ The repository is a Cargo workspace. Crates are grouped by role under `crates/`:
    - `crates/libs/common-logging-otel`: OpenTelemetry extension for the logging in `common-cli`.
    - `crates/libs/common-mock-data`: the mock-data generators behind `tool-mock`.
    - `crates/libs/common-azure`: Azure credentials, Key Vault secret fetching, and host suffix checks.
-   - `crates/libs/dep-check-core`: the vulnerability check engine behind `dep-check` and `dep-check-gui`: package input, the OSV.dev source, the merge, the report, and the saved rate-limit blocks.
+   - `crates/libs/dep-check-core`: the vulnerability check engine behind `dep-check` and `dep-check-gui`: package input, the OSV.dev and deps.dev sources, the merge, the report, and the saved rate-limit blocks.
    - `crates/libs/eh-core`: the Event Hubs capture engine, message model, filters, and statistics behind `eh`.
    - `crates/libs/eh-persistence`: the message archive, search, exporters, and `config.json` handling behind `eh`.
    - `crates/libs/head-tail-core`: the shared engine machinery behind `tool-head` and `tool-tail`.
