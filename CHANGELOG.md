@@ -23,6 +23,12 @@
 - `common-gui-rune` 1.4.0 gains `parts::list_box` (with `ListRows`, `ListHeight`, and
   `list_height`) and `parts::badge` with `BadgeTone`, moved from seal-gui with their tests;
   `seal-gui` 2.0.1 uses them, with nothing changed on screen.
+- `dep-check-core` can check offline against OSV.dev's per-ecosystem dumps: it downloads one on
+  request into an SQLite store under `~/.rusted-toolbox/dep-check/offline/`, with progress, and
+  uses it for the packages OSV.dev did not answer or instead of every service, with a clean
+  result only while the data was confirmed current in the last 7 days (48 hours offline only).
+  The workspace table gains `semver` and `pep440_rs` for its version ordering. The CLI and the
+  window keep checking online until their own phases add the controls.
 
 ## v9
 - `eh-gui`'s connection sheet has a muted hint under each sign-in field saying what goes in it,

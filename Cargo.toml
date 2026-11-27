@@ -71,6 +71,8 @@ notify = "9.0.0"
 notify-debouncer-full = "0.8.0"
 num_cpus = "1.17.0"
 once_cell = "1.21.4"
+# PEP 440 version ordering for dep-check's offline PyPI matching.
+pep440_rs = "0.7.3"
 percent-encoding = "2.3.2"
 qrcodegen = "1.8.0"
 raccoon-otel = "1.1.0"
@@ -108,6 +110,8 @@ rusqlite = { version = "0.43.0", features = ["bundled"] }
 # File identity (device and inode, or volume serial and file index) for moving a tool's data
 # from its old place (`common-file-utils`'s `adoption`); already in the tree through walkdir.
 same-file = "1.0.6"
+# SemVer 2.0 precedence for dep-check's offline Cargo and npm matching.
+semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 # The decoder behind warp's query filter; https parses the raw query string

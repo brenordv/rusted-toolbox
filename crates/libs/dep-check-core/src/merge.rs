@@ -124,13 +124,13 @@ fn share_an_id(a: &SourceAdvisory, b: &SourceAdvisory) -> bool {
     ids(a).any(|id| ids(b).any(|other| other == id))
 }
 
-/// Which advisory's id heads a finding, lowest first: OSV.dev's, and among OSV.dev's records the
-/// ecosystem database's (RUSTSEC, PYSEC, ...) before a GitHub one it also holds; then GitHub's,
-/// then deps.dev's.
+/// Which advisory's id heads a finding, lowest first: OSV.dev's (online or its downloaded data),
+/// and among OSV.dev's records the ecosystem database's (RUSTSEC, PYSEC, ...) before a GitHub one
+/// it also holds; then GitHub's, then deps.dev's.
 fn headline_rank(advisory: &SourceAdvisory) -> u8 {
     match advisory.source {
-        SourceName::Osv if advisory.id.starts_with("GHSA-") => 1,
-        SourceName::Osv => 0,
+        SourceName::Osv | SourceName::Offline if advisory.id.starts_with("GHSA-") => 1,
+        SourceName::Osv | SourceName::Offline => 0,
         SourceName::GitHub => 2,
         SourceName::DepsDev => 3,
     }
@@ -140,7 +140,7 @@ fn headline_rank(advisory: &SourceAdvisory) -> u8 {
 fn summary_rank(source: SourceName) -> u8 {
     match source {
         SourceName::GitHub => 0,
-        SourceName::Osv => 1,
+        SourceName::Osv | SourceName::Offline => 1,
         SourceName::DepsDev => 2,
     }
 }

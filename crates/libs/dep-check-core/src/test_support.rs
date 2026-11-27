@@ -265,6 +265,86 @@ pub fn closed_port() -> Url {
     Url::parse("http://127.0.0.1:0/").expect("the closed port's address")
 }
 
+/// Serves connections on a port the OS picked: reads each request, sends `answer` as it is,
+/// and closes. Returns the host-only base to call.
+pub fn raw_answer(answer: &'static [u8]) -> Url {
+    use std::io::{Read, Write};
+
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("a local port");
+    let addr = listener.local_addr().expect("the listener's address");
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else {
+                return;
+            };
+            let mut request = [0u8; 8192];
+            let _request_bytes = stream.read(&mut request);
+            let _answer = stream.write_all(answer);
+        }
+    });
+    Url::parse(&format!("http://{addr}/")).expect("the server's address")
+}
+
+/// A zip of `entries` (name, bytes), deflated, or stored as they are when `stored` is set so a
+/// test can find an entry's bytes in the archive and change them.
+pub fn zip_of(entries: &[(&str, &[u8])], stored: bool) -> Vec<u8> {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::write::SimpleFileOptions;
+
+    let method = if stored {
+        CompressionMethod::Stored
+    } else {
+        CompressionMethod::Deflated
+    };
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for (name, bytes) in entries {
+        writer
+            .start_file(
+                *name,
+                SimpleFileOptions::default().compression_method(method),
+            )
+            .expect("a zip entry");
+        writer.write_all(bytes).expect("the entry's bytes");
+    }
+    writer.finish().expect("a finished zip").into_inner()
+}
+
+/// A zip as OSV.dev publishes a dump: one deflated `<id>.json` entry per record.
+pub fn osv_zip(records: &[serde_json::Value]) -> Vec<u8> {
+    let entries: Vec<(String, Vec<u8>)> = records
+        .iter()
+        .map(|record| {
+            let id = record["id"].as_str().expect("a record id");
+            (format!("{id}.json"), record.to_string().into_bytes())
+        })
+        .collect();
+    let borrowed: Vec<(&str, &[u8])> = entries
+        .iter()
+        .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+        .collect();
+    zip_of(&borrowed, false)
+}
+
+/// An OSV record `id` for the package `name` in the OSV ecosystem `ecosystem`, affected from
+/// `introduced` until `fixed`.
+pub fn osv_record(
+    id: &str,
+    ecosystem: &str,
+    name: &str,
+    introduced: &str,
+    fixed: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "summary": format!("summary of {id}"),
+        "affected": [{
+            "package": {"ecosystem": ecosystem, "name": name},
+            "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": introduced}, {"fixed": fixed}]}]
+        }]
+    })
+}
+
 /// A clock that always reads `at`.
 pub fn fixed_clock(at: DateTime<Utc>) -> Clock {
     Arc::new(move || at)

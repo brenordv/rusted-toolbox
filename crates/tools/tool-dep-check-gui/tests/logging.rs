@@ -6,6 +6,7 @@
 use common_gui_rune::test_harness::runtime_at;
 use dep_check_core::ecosystem::Ecosystem;
 use dep_check_core::engine::{Bases, CheckRequest, Checker};
+use dep_check_core::offline::OfflineUse;
 use dep_check_core::package::parse_specs;
 use dep_check_core::report::Report;
 use dep_check_core::test_support::{MockServer, Reply};
@@ -74,10 +75,11 @@ async fn a_check_logs_its_start_and_end_a_dead_one_its_stop_and_a_close_its_drop
         deps_dev: server.base(),
         github: server.base(),
     };
-    let checker = Arc::new(Checker::with_bases(TOOL, USER_AGENT, bases, None).unwrap());
+    let checker = Arc::new(Checker::with_bases(TOOL, USER_AGENT, bases, None, None).unwrap());
     let request = CheckRequest {
         ecosystem: Ecosystem::Cargo,
         packages: parse_specs(Ecosystem::Cargo, [format!("{PACKAGE}@1.0.0").as_str()]).unwrap(),
+        offline: OfflineUse::Off,
     };
 
     let finished = answer_of(tokio::spawn(run_check(checker, request)).await);

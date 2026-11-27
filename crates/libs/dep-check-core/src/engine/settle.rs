@@ -37,10 +37,7 @@ pub(super) fn unasked(
     now: DateTime<Utc>,
 ) -> Option<Settled> {
     if keys.is_empty() {
-        let run = SourceRun::empty(source);
-        let report = source_report(&run, None);
-        log_source(&report, loaded.strikes(source), 0);
-        return Some(Settled { run, report });
+        return Some(not_asked(source, loaded));
     }
     if let Some(until) = loaded.blocked_until(source, now) {
         let mut run = SourceRun::empty(source);
@@ -58,6 +55,14 @@ pub(super) fn unasked(
         return Some(Settled { run, report });
     }
     None
+}
+
+/// The settled part of a source no package needs. Logs its line.
+pub(super) fn not_asked(source: SourceName, loaded: &RateLimits) -> Settled {
+    let run = SourceRun::empty(source);
+    let report = source_report(&run, None);
+    log_source(&report, loaded.strikes(source), 0);
+    Settled { run, report }
 }
 
 /// Records, saves, and logs one finished source run. The save happens as soon as the source
@@ -120,6 +125,7 @@ pub(crate) fn source_report(run: &SourceRun, saved_block: Option<DateTime<Utc>>)
         requests: run.requests,
         failures,
         details_missing: run.details_missing,
+        data_as_of: run.data_as_of,
     }
 }
 
@@ -192,16 +198,20 @@ fn failure_groups(run: &SourceRun) -> Vec<FailureGroup> {
 }
 
 /// One line for one source: info when it answered every package it was asked with nothing
-/// missing, warn otherwise. Never a package name: the reasons are failure sentences only.
+/// missing, warn otherwise; offline data's line also has `data_as_of`. Never a package name:
+/// the reasons are failure sentences only.
 fn log_source(report: &SourceReport, strikes: u32, elapsed_ms: u64) {
     let source = report.source.name();
     let status = report.status.name();
+    let data_as_of = report.data_as_of.map(|as_of| as_of.to_rfc3339());
+    let data_as_of = data_as_of.as_deref();
     if report.fully_answered() {
         info!(
             source,
             status,
             requests = report.requests,
             details_missing = report.details_missing,
+            data_as_of,
             elapsed_ms,
             "source finished"
         );
@@ -225,6 +235,7 @@ fn log_source(report: &SourceReport, strikes: u32, elapsed_ms: u64) {
         requests = report.requests,
         failed,
         details_missing = report.details_missing,
+        data_as_of,
         elapsed_ms,
         "source finished"
     );
@@ -272,6 +283,7 @@ mod tests {
             requests: 1,
             block,
             details_missing: 0,
+            data_as_of: None,
             answers: BTreeMap::from([(PackageKey(0), answer)]),
         }
     }

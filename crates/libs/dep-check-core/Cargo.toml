@@ -21,14 +21,18 @@ common-utils = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 futures-util = { workspace = true }
+pep440_rs = { workspace = true }
 percent-encoding = { workspace = true }
 reqwest = { workspace = true }
+rusqlite = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 warp = { workspace = true, optional = true }
+zip = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
@@ -41,4 +45,9 @@ warp = { workspace = true }
 [[test]]
 name = "logging"
 path = "tests/logging.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "offline_logging"
+path = "tests/offline_logging.rs"
 required-features = ["test-support"]

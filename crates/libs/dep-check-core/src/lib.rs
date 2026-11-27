@@ -9,6 +9,7 @@ pub mod ecosystem;
 pub mod engine;
 pub mod http;
 pub mod merge;
+pub mod offline;
 pub mod package;
 pub mod rate_limits;
 pub mod render;

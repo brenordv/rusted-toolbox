@@ -208,6 +208,7 @@ impl DepsDevClient {
             requests: gate.requests(),
             block: gate.block(),
             details_missing: u32::try_from(details_missing).unwrap_or(u32::MAX),
+            data_as_of: None,
             answers,
         };
         (run, chains)

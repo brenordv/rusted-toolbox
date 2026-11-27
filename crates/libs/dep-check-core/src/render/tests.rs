@@ -24,6 +24,7 @@ fn answered(source: SourceName) -> SourceReport {
         requests: 1,
         failures: Vec::new(),
         details_missing: 0,
+        data_as_of: None,
     }
 }
 
@@ -119,6 +120,7 @@ fn report_of(packages: Vec<PackageReport>) -> Report {
         tool: "dep-check 1.0.0".to_owned(),
         checked_at: at("2026-11-26T13:05:00Z"),
         ecosystem: Ecosystem::Cargo,
+        offline: crate::offline::OfflineUse::Off,
         outcome: Outcome::Vulnerable,
         summary: Summary::of(&packages),
         sources: vec![answered(SourceName::Osv), answered(SourceName::DepsDev)],

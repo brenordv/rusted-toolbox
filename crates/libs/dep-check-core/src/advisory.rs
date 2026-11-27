@@ -12,24 +12,28 @@ pub enum SourceName {
     // snake_case alone would give "git_hub".
     #[serde(rename = "github")]
     GitHub,
+    /// OSV.dev's data downloaded to this machine.
+    Offline,
 }
 
 impl SourceName {
-    /// The service's name as people write it.
+    /// The source's name as people write it.
     pub fn label(self) -> &'static str {
         match self {
             SourceName::Osv => "OSV.dev",
             SourceName::DepsDev => "deps.dev",
             SourceName::GitHub => "GitHub Advisory Database",
+            SourceName::Offline => "Offline data",
         }
     }
 
-    /// The service's word in the report and in log lines.
+    /// The source's word in the report and in log lines.
     pub fn name(self) -> &'static str {
         match self {
             SourceName::Osv => "osv",
             SourceName::DepsDev => "deps_dev",
             SourceName::GitHub => "github",
+            SourceName::Offline => "offline",
         }
     }
 }

@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
 use dep_check_core::ecosystem::Ecosystem;
 use dep_check_core::engine::{CheckRequest, Checker, Clock};
+use dep_check_core::offline::OfflineUse;
 use dep_check_core::package::{PackageSpec, parse_specs};
 use dep_check_core::render::{source_phrase, text_report};
 use dep_check_core::report::Outcome;
@@ -48,6 +49,7 @@ pub async fn run<R: Read, W: Write>(args: DepCheckArgs, mut deps: Deps<R, W>) ->
     let request = CheckRequest {
         ecosystem: args.ecosystem,
         packages,
+        offline: OfflineUse::Off,
     };
     let report = deps.checker.check(request, deps.clock.clone()).await;
     if report.outcome == Outcome::Failed {

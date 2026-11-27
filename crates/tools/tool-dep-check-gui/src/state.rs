@@ -7,6 +7,7 @@ use common_gui_rune::parts::Tone;
 use common_utils::string_utils::format_thousands;
 use dep_check_core::ecosystem::Ecosystem;
 use dep_check_core::engine::CheckRequest;
+use dep_check_core::offline::OfflineUse;
 use dep_check_core::package::{InputIssue, IssueKind, MAX_PACKAGES, parse_specs};
 use dep_check_core::render::{count_phrase, source_phrase};
 use dep_check_core::report::{Outcome, Report, SourceReport, SourceStatus, display_time};
@@ -197,6 +198,7 @@ impl DepCheckState {
                     effects: vec![Effect::Check(CheckRequest {
                         ecosystem: self.ecosystem,
                         packages,
+                        offline: OfflineUse::Off,
                     })],
                     focus: None,
                 }

@@ -7,6 +7,7 @@ use dep_check_core::advisory::{AdvisoryKind, Severity, SourceName};
 use dep_check_core::ecosystem::Ecosystem;
 use dep_check_core::engine::CheckRequest;
 use dep_check_core::http::SourceFailure;
+use dep_check_core::offline::OfflineUse;
 use dep_check_core::report::{
     Attestations, BlockOrigin, Finding, Outcome, PackageReport, PackageStatus, REPORT_VERSION,
     Report, SourceReport, SourceStatus, Summary, SupplyChain, VersionFrom,
@@ -60,6 +61,7 @@ pub fn source(source: SourceName, status: SourceStatus) -> SourceReport {
         requests: 1,
         failures: Vec::new(),
         details_missing: 0,
+        data_as_of: None,
     }
 }
 
@@ -152,6 +154,7 @@ pub fn report(
         tool: "dep-check-gui 1.0.0".to_owned(),
         checked_at: checked_at(),
         ecosystem,
+        offline: OfflineUse::Off,
         outcome: Outcome::from_statuses(&statuses),
         summary: Summary::of(&packages),
         sources,

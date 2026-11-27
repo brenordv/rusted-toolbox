@@ -5,6 +5,7 @@ use crate::{TOOL, USER_AGENT};
 use common_gui_rune::test_harness::{press, runtime_with_keys};
 use dep_check_core::ecosystem::Ecosystem;
 use dep_check_core::engine::Bases;
+use dep_check_core::offline::OfflineUse;
 use dep_check_core::package::parse_specs;
 use dep_check_core::report::PackageStatus;
 use dep_check_core::test_support::{MockServer, Reply};
@@ -51,10 +52,11 @@ async fn a_real_check_answers_with_its_report() {
         deps_dev: server.base(),
         github: server.base(),
     };
-    let checker = Arc::new(Checker::with_bases(TOOL, USER_AGENT, bases, None).unwrap());
+    let checker = Arc::new(Checker::with_bases(TOOL, USER_AGENT, bases, None, None).unwrap());
     let request = CheckRequest {
         ecosystem: Ecosystem::Cargo,
         packages: parse_specs(Ecosystem::Cargo, ["serde@1.0.215"]).unwrap(),
+        offline: OfflineUse::Off,
     };
 
     let answer = answer_of(tokio::spawn(run_check(checker, request)).await);

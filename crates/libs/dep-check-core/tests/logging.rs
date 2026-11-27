@@ -7,6 +7,7 @@ use chrono::{TimeDelta, Utc};
 use dep_check_core::advisory::SourceName;
 use dep_check_core::ecosystem::Ecosystem;
 use dep_check_core::engine::{Bases, CheckRequest, Checker};
+use dep_check_core::offline::OfflineUse;
 use dep_check_core::package::parse_specs;
 use dep_check_core::rate_limits::{Change, save_changes};
 use dep_check_core::test_support::{MockServer, Reply, fixed_clock};
@@ -47,6 +48,7 @@ fn request() -> CheckRequest {
     CheckRequest {
         ecosystem: Ecosystem::Cargo,
         packages: parse_specs(Ecosystem::Cargo, PACKAGES).unwrap(),
+        offline: OfflineUse::Off,
     }
 }
 
@@ -60,6 +62,7 @@ async fn run(server: &MockServer, limits_path: Option<PathBuf>) {
             github: server.base(),
         },
         limits_path,
+        None,
     )
     .unwrap()
     .check(request(), fixed_clock(Utc::now()))

@@ -4,6 +4,7 @@
 use crate::advisory::{AdvisoryKind, Cvss, Epss, Severity, SourceName};
 use crate::ecosystem::Ecosystem;
 use crate::http::SourceFailure;
+use crate::offline::OfflineUse;
 use crate::render::count_phrase;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -20,6 +21,8 @@ pub struct Report {
     pub tool: String,
     pub checked_at: DateTime<Utc>,
     pub ecosystem: Ecosystem,
+    /// How the check used offline data.
+    pub offline: OfflineUse,
     pub outcome: Outcome,
     pub summary: Summary,
     pub sources: Vec<SourceReport>,
@@ -245,6 +248,8 @@ pub struct SourceReport {
     /// Details that could not be fetched: an advisory known by its id only, or a source
     /// repository whose scorecard request failed.
     pub details_missing: u32,
+    /// For offline data, when it was last confirmed current; `None` for every other source.
+    pub data_as_of: Option<DateTime<Utc>>,
 }
 
 impl SourceReport {
@@ -450,11 +455,16 @@ mod tests {
     fn a_report_serializes_with_the_documented_field_names() {
         let mut not_checked = package(PackageStatus::NotChecked);
         not_checked.reason = Some("OSV.dev did not answer in time".to_owned());
+        not_checked
+            .answers
+            .insert(SourceName::Offline, AnswerWord::Failed);
+        let as_of = Utc::now();
         let report = Report {
             report_version: REPORT_VERSION,
             tool: "dep-check 1.0.0".to_owned(),
             checked_at: Utc::now(),
             ecosystem: Ecosystem::Cargo,
+            offline: OfflineUse::Fallback,
             outcome: Outcome::Incomplete,
             summary: Summary::default(),
             sources: vec![
@@ -469,6 +479,7 @@ mod tests {
                         packages: 1,
                     }],
                     details_missing: 0,
+                    data_as_of: None,
                 },
                 SourceReport {
                     source: SourceName::DepsDev,
@@ -478,6 +489,17 @@ mod tests {
                     requests: 1,
                     failures: Vec::new(),
                     details_missing: 0,
+                    data_as_of: None,
+                },
+                SourceReport {
+                    source: SourceName::Offline,
+                    status: SourceStatus::Failed {
+                        failure: SourceFailure::OfflineStale { as_of },
+                    },
+                    requests: 0,
+                    failures: Vec::new(),
+                    details_missing: 0,
+                    data_as_of: Some(as_of),
                 },
             ],
             packages: vec![package(PackageStatus::Clean), not_checked],
@@ -489,9 +511,17 @@ mod tests {
         assert_eq!(json["sources"][0]["status"], "failed");
         assert_eq!(json["sources"][0]["failure"]["kind"], "timed_out");
         assert_eq!(json["sources"][0]["failures"][0]["packages"], 1);
+        assert!(json["sources"][0]["data_as_of"].is_null());
         assert_eq!(json["sources"][1]["source"], "deps_dev");
         assert!(json["sources"][1]["blocked_until"].is_null());
+        assert_eq!(json["sources"][2]["source"], "offline");
+        assert_eq!(json["sources"][2]["failure"]["kind"], "offline_stale");
+        assert_eq!(
+            json["sources"][2]["data_as_of"],
+            serde_json::to_value(as_of).unwrap()
+        );
         assert_eq!(json["ecosystem"], "cargo");
+        assert_eq!(json["offline"], "fallback");
         assert_eq!(json["outcome"], "incomplete");
         assert!(json["packages"][0].get("reason").is_none());
         assert_eq!(
@@ -499,7 +529,58 @@ mod tests {
             "OSV.dev did not answer in time"
         );
         assert_eq!(json["packages"][0]["answers"]["osv"], "answered");
+        assert_eq!(json["packages"][1]["answers"]["offline"], "failed");
         assert_eq!(json["packages"][0]["version_from"], "input");
+    }
+
+    #[rstest::rstest]
+    #[case::missing(SourceFailure::OfflineMissing, "offline_missing")]
+    #[case::stale(SourceFailure::OfflineStale { as_of: Utc::now() }, "offline_stale")]
+    #[case::unreadable(
+        SourceFailure::OfflineUnreadable { reason: "file is not a database".to_owned() },
+        "offline_unreadable"
+    )]
+    #[case::undecided(SourceFailure::OfflineUndecided, "offline_undecided")]
+    #[case::busy(SourceFailure::OfflineBusy, "offline_busy")]
+    #[case::stopped(SourceFailure::OfflineStopped, "offline_stopped")]
+    fn each_offline_failure_serializes_with_its_kind(
+        #[case] failure: SourceFailure,
+        #[case] kind: &str,
+    ) {
+        let json = serde_json::to_value(&failure).unwrap();
+
+        assert_eq!((json["kind"].as_str(), failure.kind()), (Some(kind), kind));
+    }
+
+    #[rstest::rstest]
+    #[case::missing(
+        SourceFailure::OfflineMissing,
+        "Offline data is not downloaded for this ecosystem"
+    )]
+    #[case::stale(
+        SourceFailure::OfflineStale { as_of: block_end() },
+        "Offline data is from 26 Nov 2026, too old for a clean result"
+    )]
+    #[case::unreadable(
+        SourceFailure::OfflineUnreadable { reason: "file is not\na database".to_owned() },
+        "Offline data could not be read: file is not a database"
+    )]
+    #[case::undecided(
+        SourceFailure::OfflineUndecided,
+        "Offline data has an advisory with a version this tool cannot compare"
+    )]
+    #[case::busy(SourceFailure::OfflineBusy, "Offline data is being removed or rebuilt")]
+    #[case::stopped(
+        SourceFailure::OfflineStopped,
+        "Offline data stopped before it answered"
+    )]
+    fn each_offline_failure_reads_after_the_source_s_label(
+        #[case] failure: SourceFailure,
+        #[case] text: &str,
+    ) {
+        let sentence = format!("{} {}", SourceName::Offline.label(), failure.describe());
+
+        assert_eq!(sentence, text);
     }
 
     /// The block end every describe case shows; its exact text is the behavior under test.
@@ -518,6 +599,7 @@ mod tests {
             requests: 3,
             failures,
             details_missing: 0,
+            data_as_of: None,
         }
     }
 

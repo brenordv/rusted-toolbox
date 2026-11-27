@@ -114,6 +114,7 @@ impl OsvClient {
             requests: gate.requests(),
             block: gate.block(),
             details_missing: u32::try_from(details_missing).unwrap_or(u32::MAX),
+            data_as_of: None,
             answers,
         }
     }
@@ -317,11 +318,15 @@ pub(crate) struct OsvSeverity {
     pub score: String,
 }
 
+/// One `affected` entry: a package, the ranges of its versions an advisory covers, and the
+/// versions it lists one by one.
 #[derive(Debug, Deserialize)]
 pub(crate) struct OsvAffected {
     pub package: Option<OsvPackage>,
     #[serde(default)]
     pub ranges: Vec<OsvRange>,
+    #[serde(default)]
+    pub versions: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -330,15 +335,22 @@ pub(crate) struct OsvPackage {
     pub name: Option<String>,
 }
 
+/// A range of versions: its `type` (`SEMVER`, `ECOSYSTEM`, `GIT`) says how its events order.
 #[derive(Debug, Deserialize)]
 pub(crate) struct OsvRange {
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
     #[serde(default)]
     pub events: Vec<OsvEvent>,
 }
 
+/// One event of a range; the schema gives each event exactly one of these.
 #[derive(Debug, Deserialize)]
 pub(crate) struct OsvEvent {
+    pub introduced: Option<String>,
     pub fixed: Option<String>,
+    pub last_affected: Option<String>,
+    pub limit: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -406,7 +418,8 @@ fn cvss_version(kind: &str) -> Option<&'static str> {
     }
 }
 
-fn is_this_package(affected: &OsvAffected, ecosystem: Ecosystem, name: &str) -> bool {
+/// Whether `affected` names the package `name` of `ecosystem`, by the registry's name rule.
+pub(crate) fn is_this_package(affected: &OsvAffected, ecosystem: Ecosystem, name: &str) -> bool {
     affected.package.as_ref().is_some_and(|package| {
         package.ecosystem.as_deref() == Some(ecosystem.osv_name())
             && package

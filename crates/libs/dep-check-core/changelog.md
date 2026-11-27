@@ -19,3 +19,18 @@
 - Rate-limit blocks are saved in `~/.rusted-toolbox/dep-check/rate-limits.json` and merged on
   save, so two runs at once keep each other's blocks.
 - Feature `test-support`: `test_support::MockServer` and the clocks the tools' tests use.
+- Offline data (`offline`): `update::Updater` downloads OSV.dev's `all.zip` for an ecosystem
+  (whole, with `If-None-Match`, no redirects, size required up front, 8 MiB per record) and
+  installs it into `offline/<ecosystem>.sqlite` in one transaction, with progress and a cancel;
+  an automatic update touches only Ready data that is due. `store::status` and `store::remove`
+  read and delete a store under its lock; `settings` holds `offline.json` (`enabled`, `mode`,
+  `auto_update`, changed under a lock) and `OfflineUse::decide`; `due::due` says which data a
+  daily update refreshes.
+- `CheckRequest` gains `offline` (`Off`, `Fallback`, `Only`). `Fallback` sends the packages
+  OSV.dev did not answer to the offline data; `Only` asks no service. A no-finding offline answer
+  counts only while the data is fresh (`OfflineUse::max_age`). Version ranges are matched by
+  SemVer 2.0, NuGet, PEP 440, and RubyGems rules, and anything that cannot be read with
+  certainty fails the package closed.
+- The report gains `offline`, `sources[].data_as_of`, the `offline` source and its answers, and
+  six `offline_*` failure kinds. `Checker::with_bases` takes the offline folder.
+- `test_support` gains `raw_answer`, `zip_of`, `osv_zip`, and `osv_record`.

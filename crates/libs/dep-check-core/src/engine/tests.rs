@@ -10,6 +10,7 @@ const TOOL: &str = "dep-check 1.0.0";
 const QUERYBATCH: &str = "/v1/querybatch";
 
 mod github;
+mod offline;
 
 /// OSV.dev at `osv_base`, deps.dev on a port nothing listens on.
 fn checker(osv_base: Url, limits_path: Option<PathBuf>) -> Checker {
@@ -29,7 +30,7 @@ fn checker_with(osv_base: Url, deps_dev_base: Url, limits_path: Option<PathBuf>)
 }
 
 fn checker_of(bases: Bases, limits_path: Option<PathBuf>) -> Checker {
-    Checker::with_bases(TOOL, "dep-check-test/1.0", bases, limits_path).unwrap()
+    Checker::with_bases(TOOL, "dep-check-test/1.0", bases, limits_path, None).unwrap()
 }
 
 fn osv_source(report: &Report) -> &SourceReport {
@@ -48,6 +49,7 @@ fn request(texts: &[&str]) -> CheckRequest {
     CheckRequest {
         ecosystem: Ecosystem::Cargo,
         packages: texts.iter().map(|text| spec(text)).collect(),
+        offline: OfflineUse::Off,
     }
 }
 
@@ -493,7 +495,7 @@ async fn a_lookup_answer_alone_clears_the_deps_dev_entry_it_loaded() {
 fn a_package_left_without_a_version_by_any_other_answer_is_not_checked(
     #[case] lookup: Option<PackageAnswer>,
 ) {
-    let verdict = without_version(lookup.as_ref());
+    let verdict = without_version(lookup.as_ref(), OfflineUse::Off);
 
     assert_eq!(
         verdict,
@@ -501,6 +503,16 @@ fn a_package_left_without_a_version_by_any_other_answer_is_not_checked(
             PackageStatus::NotChecked,
             Some("no version was given, and deps.dev did not name the latest one".to_owned())
         )
+    );
+}
+
+#[test]
+fn a_package_left_without_a_version_offline_only_needs_one() {
+    let verdict = without_version(None, OfflineUse::Only);
+
+    assert_eq!(
+        verdict,
+        (PackageStatus::NotChecked, Some(NEEDS_VERSION.to_owned()))
     );
 }
 

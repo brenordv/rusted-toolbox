@@ -77,6 +77,19 @@ pub enum SourceFailure {
     /// An answer that was too large, did not parse, or did not fit what was asked. `detail`
     /// holds fixed words and positions only, never text from the answer.
     BadAnswer { detail: String },
+    /// Offline data: none is downloaded for the ecosystem.
+    OfflineMissing,
+    /// Offline data with no finding, last confirmed current at `as_of`, which is too long ago
+    /// (or later than now) for a clean result.
+    OfflineStale { as_of: DateTime<Utc> },
+    /// Offline data that cannot be read now or at all; `reason` is cleaned and cut.
+    OfflineUnreadable { reason: String },
+    /// Offline data with an advisory the tool cannot place the version in.
+    OfflineUndecided,
+    /// Offline data a removal or a rebuild holds.
+    OfflineBusy,
+    /// The offline read ended before it answered.
+    OfflineStopped,
 }
 
 impl SourceFailure {
@@ -96,6 +109,19 @@ impl SourceFailure {
             SourceFailure::BadAnswer { detail } => {
                 format!("sent an answer the tool could not read: {detail}")
             }
+            SourceFailure::OfflineMissing => "is not downloaded for this ecosystem".to_owned(),
+            SourceFailure::OfflineStale { as_of } => format!(
+                "is from {}, too old for a clean result",
+                as_of.format("%-d %b %Y")
+            ),
+            SourceFailure::OfflineUnreadable { reason } => {
+                format!("could not be read: {}", display_line(reason.chars()))
+            }
+            SourceFailure::OfflineUndecided => {
+                "has an advisory with a version this tool cannot compare".to_owned()
+            }
+            SourceFailure::OfflineBusy => "is being removed or rebuilt".to_owned(),
+            SourceFailure::OfflineStopped => "stopped before it answered".to_owned(),
         }
     }
 
@@ -108,6 +134,12 @@ impl SourceFailure {
             SourceFailure::RateLimited { .. } => "rate_limited",
             SourceFailure::Status { .. } => "status",
             SourceFailure::BadAnswer { .. } => "bad_answer",
+            SourceFailure::OfflineMissing => "offline_missing",
+            SourceFailure::OfflineStale { .. } => "offline_stale",
+            SourceFailure::OfflineUnreadable { .. } => "offline_unreadable",
+            SourceFailure::OfflineUndecided => "offline_undecided",
+            SourceFailure::OfflineBusy => "offline_busy",
+            SourceFailure::OfflineStopped => "offline_stopped",
         }
     }
 
@@ -246,7 +278,7 @@ fn size_words(bytes: usize) -> String {
 }
 
 /// The failure a reqwest error is. Every reqwest error is classified here and nowhere else.
-fn classify(error: reqwest::Error) -> SourceFailure {
+pub(crate) fn classify(error: reqwest::Error) -> SourceFailure {
     if error.is_timeout() {
         SourceFailure::TimedOut
     } else if error.is_connect() {
@@ -425,6 +457,16 @@ impl SourceGate {
             Ok(_) | Err(SourceFailure::Status { .. }) | Err(SourceFailure::BadAnswer { .. }) => {
                 state.failures_in_a_row = 0
             }
+            // Offline data's failures come from no request, so they say nothing about the
+            // connection.
+            Err(
+                SourceFailure::OfflineMissing
+                | SourceFailure::OfflineStale { .. }
+                | SourceFailure::OfflineUnreadable { .. }
+                | SourceFailure::OfflineUndecided
+                | SourceFailure::OfflineBusy
+                | SourceFailure::OfflineStopped,
+            ) => {}
             Err(SourceFailure::RateLimited { until }) => {
                 state.failures_in_a_row = 0;
                 state.block = Some(state.block.map_or(*until, |block| block.max(*until)));

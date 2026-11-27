@@ -127,6 +127,7 @@ impl GitHubClient {
             requests: gate.requests(),
             block: gate.block(),
             details_missing: 0,
+            data_as_of: None,
             answers,
         }
     }

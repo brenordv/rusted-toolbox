@@ -45,6 +45,7 @@ fn checker(osv: url::Url, deps_dev: url::Url, dir: &tempfile::TempDir) -> Checke
             github: closed_port(),
         },
         Some(dir.path().join("rate-limits.json")),
+        None,
     )
     .unwrap()
 }
