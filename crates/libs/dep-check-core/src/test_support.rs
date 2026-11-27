@@ -7,7 +7,7 @@ use std::net::{SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use tokio::sync::{Notify, oneshot};
+use tokio::sync::oneshot;
 use url::Url;
 use warp::Filter;
 use warp::http::{HeaderMap, Method, Response, StatusCode};
@@ -87,12 +87,12 @@ impl Reply {
 type Routes = HashMap<(String, String), VecDeque<Reply>>;
 
 /// A fake server on `127.0.0.1` at a port the OS picked, serving on its own thread with its
-/// own runtime, so a caller that blocks cannot starve it. Dropping it stops the thread.
+/// own runtime, so a caller that blocks cannot starve it. Dropping it stops the thread and
+/// closes every open connection at once, answered or not.
 pub struct MockServer {
     pub addr: SocketAddr,
     routes: Arc<Mutex<Routes>>,
     received: Arc<Mutex<Vec<Received>>>,
-    release: Arc<Notify>,
     shutdown: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -107,14 +107,9 @@ impl MockServer {
         let addr = std_listener.local_addr().expect("the listener's address");
         let routes: Arc<Mutex<Routes>> = Arc::new(Mutex::new(HashMap::new()));
         let received = Arc::new(Mutex::new(Vec::new()));
-        let release = Arc::new(Notify::new());
         let (shutdown, stopped) = oneshot::channel::<()>();
 
-        let (routes_in, record, held) = (
-            Arc::clone(&routes),
-            Arc::clone(&received),
-            Arc::clone(&release),
-        );
+        let (routes_in, record) = (Arc::clone(&routes), Arc::clone(&received));
         let thread = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -132,11 +127,7 @@ impl MockServer {
                               query: String,
                               headers: HeaderMap,
                               body: Bytes| {
-                            let (routes, record, held) = (
-                                Arc::clone(&routes_in),
-                                Arc::clone(&record),
-                                Arc::clone(&held),
-                            );
+                            let (routes, record) = (Arc::clone(&routes_in), Arc::clone(&record));
                             async move {
                                 let request = Received {
                                     method: method.to_string(),
@@ -157,7 +148,7 @@ impl MockServer {
                                 let reply = next_reply(&routes, &request.method, &request.path);
                                 record.lock().expect("the request log").push(request);
                                 if reply.hold {
-                                    held.notified().await;
+                                    std::future::pending::<()>().await;
                                 }
                                 answer(&reply)
                             }
@@ -165,14 +156,11 @@ impl MockServer {
                     );
                 let listener =
                     tokio::net::TcpListener::from_std(std_listener).expect("a tokio listener");
-                warp::serve(filter)
-                    .incoming(listener)
-                    .graceful(async {
-                        // A dropped sender also ends the wait, so either way the server stops.
-                        let _ = stopped.await;
-                    })
-                    .run()
-                    .await;
+                tokio::spawn(warp::serve(filter).incoming(listener).run());
+                // A dropped sender also ends the wait. The runtime goes with the thread and takes
+                // the server and every open connection with it, so an answer a client stopped
+                // reading cannot hold up the stop.
+                let _ = stopped.await;
             });
         });
 
@@ -180,7 +168,6 @@ impl MockServer {
             addr,
             routes,
             received,
-            release,
             shutdown: Some(shutdown),
             thread: Some(thread),
         }
@@ -218,7 +205,6 @@ impl MockServer {
 
 impl Drop for MockServer {
     fn drop(&mut self) {
-        self.release.notify_waiters();
         drop(self.shutdown.take());
         if let Some(thread) = self.thread.take() {
             thread.join().expect("the server thread");
@@ -293,4 +279,33 @@ pub fn stepping_clock(start: DateTime<Utc>, step: TimeDelta) -> Clock {
         let read = reads.fetch_add(1, Ordering::SeqCst);
         start + step * read
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn the_server_stops_while_a_client_holds_an_answer_it_has_not_read() {
+        let server = MockServer::start();
+        server.route(
+            "GET",
+            "/large",
+            Reply::new(200, vec![b' '; 32 * 1024 * 1024]),
+        );
+        let unread = reqwest::get(server.base().join("large").unwrap())
+            .await
+            .unwrap();
+        let (stopped, stop) = mpsc::channel();
+
+        std::thread::spawn(move || {
+            drop(server);
+            stopped.send(()).unwrap();
+        });
+
+        assert_eq!(stop.recv_timeout(Duration::from_secs(10)), Ok(()));
+        drop(unread);
+    }
 }
