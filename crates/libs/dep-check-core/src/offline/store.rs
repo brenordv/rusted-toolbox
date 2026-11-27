@@ -344,15 +344,31 @@ impl Reader {
     }
 }
 
-/// A connection to the store at `db`: read-write, never following a link, never creating the
-/// file ("the database must already exist").
+/// A connection to the store at `db`: read-write, never creating the file ("the database must
+/// already exist"), and refusing a store file that is a link. SQLite's no-follow flag refuses a
+/// link anywhere in the path, so the store is opened under its folder's real path: a home
+/// reached through a link (macOS's `/var`, `/home` on Fedora Silverblue) opens, and a link at the
+/// store file itself is still refused.
 pub(crate) fn connection(db: &Path) -> rusqlite::Result<Connection> {
     Connection::open_with_flags(
-        db,
+        in_real_folder(db),
         OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_NOFOLLOW
             | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
+}
+
+/// `db` under its folder's real path on Unix. Elsewhere, and when the folder cannot be resolved,
+/// `db` as given, so the open answers with SQLite's own error. Windows paths stay as given since
+/// a resolved one carries the `\\?\` prefix into every reason that names the file.
+fn in_real_folder(db: &Path) -> PathBuf {
+    if !cfg!(unix) {
+        return db.to_path_buf();
+    }
+    db.parent()
+        .zip(db.file_name())
+        .and_then(|(folder, name)| folder.canonicalize().ok().map(|real| real.join(name)))
+        .unwrap_or_else(|| db.to_path_buf())
 }
 
 /// Puts `conn`'s store in WAL mode; `false` when SQLite answers with another mode, as it does

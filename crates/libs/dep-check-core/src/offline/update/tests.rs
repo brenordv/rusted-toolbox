@@ -549,6 +549,37 @@ async fn a_store_reached_through_a_link_is_not_opened() {
     assert!(!matches!(status, DataStatus::Ready { .. }), "{status:?}");
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn a_store_whose_folder_is_reached_through_a_link_installs_and_opens() {
+    let real = tempfile::tempdir().unwrap();
+    let links = tempfile::tempdir().unwrap();
+    let linked = links.path().join("home");
+    std::os::unix::fs::symlink(real.path(), &linked).unwrap();
+
+    let outcome = install(&linked, CARGO, &first_records(), now()).await;
+    let status = store::status(&linked, CARGO);
+
+    assert!(
+        matches!(outcome, UpdateOutcome::Installed { .. }),
+        "{outcome:?}"
+    );
+    assert!(matches!(status, DataStatus::Ready { .. }), "{status:?}");
+}
+
+#[test]
+fn a_store_in_a_missing_folder_fails_to_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = StoreFiles::of(&dir.path().join("missing"), CARGO).db;
+
+    let error = store::connection(&db).unwrap_err();
+
+    assert_eq!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::CannotOpen)
+    );
+}
+
 #[test]
 fn each_failure_has_its_kind_and_words() {
     let cases = [
