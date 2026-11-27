@@ -12,6 +12,7 @@ use eh_persistence::export::{DiskWriteMode, ExportOutcome, WritingSink};
 use eh_persistence::store::MessageStore;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Instant;
 
 /// Runs a capture: resolves the target (saving the config first when asked),
 /// opens the archive, runs the engine until it ends or Ctrl-C stops it,
@@ -82,7 +83,7 @@ async fn finish_disk_writes(
                     drawer
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
-                        .draw(outcome);
+                        .draw(outcome, Instant::now());
                 })
                 .await;
             // The line only holds drawing state, so a panic while it was

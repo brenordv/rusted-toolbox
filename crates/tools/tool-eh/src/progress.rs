@@ -439,24 +439,24 @@ impl<W: Write> ExportProgressLine<W> {
         }
     }
 
-    /// Redraws the export counts unless the line was drawn less than 250 ms
-    /// ago.
-    pub(crate) fn draw(&mut self, outcome: &ExportOutcome) {
-        self.draw_with(|elapsed| export_line(outcome, elapsed));
+    /// Redraws the export counts at `now`, unless the line was drawn less
+    /// than 250 ms before.
+    pub(crate) fn draw(&mut self, outcome: &ExportOutcome, now: Instant) {
+        self.draw_with(now, |elapsed| export_line(outcome, elapsed));
     }
 
-    /// Redraws the line with the text `line` builds from the time since the
-    /// line was created, unless it was drawn less than 250 ms ago.
-    pub(crate) fn draw_with(&mut self, line: impl FnOnce(Duration) -> String) {
-        let now = Instant::now();
+    /// Redraws the line at `now` with the text `line` builds from the time
+    /// since the line was created, unless it was drawn less than 250 ms
+    /// before.
+    pub(crate) fn draw_with(&mut self, now: Instant, line: impl FnOnce(Duration) -> String) {
         if self
             .last_draw
-            .is_some_and(|last| now.duration_since(last) < EXPORT_REDRAW_INTERVAL)
+            .is_some_and(|last| now.saturating_duration_since(last) < EXPORT_REDRAW_INTERVAL)
         {
             return;
         }
         self.last_draw = Some(now);
-        self.render(&line(self.started.elapsed()));
+        self.render(&line(now.saturating_duration_since(self.started)));
     }
 
     /// Ends the line. On a terminal, when a summary with the final counts is

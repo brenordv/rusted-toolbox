@@ -252,9 +252,13 @@ const CLEAR_LINE: &str = "\u{1b}[2K";
 #[test]
 fn a_finished_export_on_a_terminal_erases_its_line_for_the_summary() {
     let mut line = ExportProgressLine::new(Vec::new(), true);
+    let first = Instant::now();
 
-    line.draw(&ExportOutcome::default());
-    line.draw(&ExportOutcome::default());
+    line.draw(&ExportOutcome::default(), first);
+    line.draw(
+        &ExportOutcome::default(),
+        first + Duration::from_millis(100),
+    );
     line.finish(true);
 
     let out = text(line.into_inner());
@@ -270,10 +274,13 @@ fn a_finished_export_on_a_terminal_erases_its_line_for_the_summary() {
 fn the_last_counts_stay_on_their_own_line(#[case] terminal: bool, #[case] summary_follows: bool) {
     let mut line = ExportProgressLine::new(Vec::new(), terminal);
 
-    line.draw(&ExportOutcome {
-        exported: 4,
-        ..ExportOutcome::default()
-    });
+    line.draw(
+        &ExportOutcome {
+            exported: 4,
+            ..ExportOutcome::default()
+        },
+        Instant::now(),
+    );
     line.finish(summary_follows);
 
     let out = text(line.into_inner());
@@ -296,7 +303,7 @@ fn a_line_that_never_drew_writes_nothing_when_it_finishes(#[case] summary_follow
 fn a_failing_export_line_never_panics_and_reports_once() {
     let mut line = ExportProgressLine::new(FailingDisk, true);
 
-    line.draw(&ExportOutcome::default());
+    line.draw(&ExportOutcome::default(), Instant::now());
     line.finish(true);
 
     assert!(line.write_failed);

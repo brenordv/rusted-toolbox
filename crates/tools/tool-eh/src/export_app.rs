@@ -9,6 +9,7 @@ use eh_persistence::store::MessageStore;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 
 /// Exports every archived message matching the job's filters. Ctrl-C stops
 /// between messages; every file written stays complete.
@@ -43,7 +44,12 @@ pub async fn run(job: ExportJob, shutdown: &Arc<AtomicBool>) -> anyhow::Result<R
     let cancel = Arc::clone(shutdown);
     let exported = tokio::task::spawn_blocking(move || {
         let mut line = ExportProgressLine::stdout();
-        let exported = worker.export(&query, &options, |outcome| line.draw(outcome), &cancel);
+        let exported = worker.export(
+            &query,
+            &options,
+            |outcome| line.draw(outcome, Instant::now()),
+            &cancel,
+        );
         line.finish(exported.is_ok());
         exported
     })

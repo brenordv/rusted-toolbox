@@ -12,7 +12,7 @@ use eh_core::producer::{
 };
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::time::MissedTickBehavior;
 
 const STOPPING: &str =
@@ -102,7 +102,7 @@ async fn send_with_progress<O: Write, E: Write>(
                 )
             },
             shutdown,
-            |progress| line.draw_with(|_| send_line(progress, requested)),
+            |progress| line.draw_with(Instant::now(), |_| send_line(progress, requested)),
         );
         wait_noting_stop(send, shutdown, renderer).await
     };
