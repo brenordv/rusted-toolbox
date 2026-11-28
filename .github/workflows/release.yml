@@ -38,8 +38,8 @@ jobs:
         run: |
           vcpkg install libxml2:x64-windows-static-md
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-      # Rune (eh-gui, seal-gui, speak, alert) needs these to build on Linux, per its README;
-      # rodio (common-audio) needs the ALSA development files.
+      # Rune (eh-gui, seal-gui, dep-check-gui, speak, alert) needs these to build on Linux,
+      # per its README; rodio (common-audio) needs the ALSA development files.
       - name: Install GUI system libraries (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev libssl-dev libasound2-dev

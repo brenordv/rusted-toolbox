@@ -149,8 +149,8 @@ tempfile = "3.27.0"
 # applies a dependency's [patch] only inside that dependency's own workspace, so an app building
 # Rune repeats it. The Rune fork above changes no vendored crate, so these stay on anomalyco's
 # c4eda05; a fork commit that touches `vendor/` moves them to the fork's rev. [patch] applies
-# to this whole workspace; the windowed tools (eh-gui, seal-gui, speak, alert) all build on
-# Rune. Each fork is the crates.io crate plus Rune's committed vendor/<name>.patch:
+# to this whole workspace; the windowed tools (eh-gui, seal-gui, dep-check-gui, speak, alert)
+# all build on Rune. Each fork is the crates.io crate plus Rune's committed vendor/<name>.patch:
 # - winit: Windows window creation without the TaskbarList call and at the requested position;
 #   a macOS IME reconversion API; Wayland touchpad scroll deltas scaled by 12.
 # - wgpu-hal (30.0.1): DX12 adapter exposure, FXC loaded on first compile, partial presents on
