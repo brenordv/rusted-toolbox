@@ -15,10 +15,10 @@ use crate::test_harness::{
     runtime_at, settle, text_visible,
 };
 use common_cli::app_logger::FileLogging;
+use eh_core::engine::EngineEvent;
+use eh_core::stats::StatsSnapshot;
+use eh_persistence::export::ExportOutcome;
 use rune::{Key, KeyEvent, Mods, Runtime};
-use shared_eventhub_core::engine::EngineEvent;
-use shared_eventhub_core::stats::StatsSnapshot;
-use shared_eventhub_persistence::export::ExportOutcome;
 
 const MARKER: &str = "SharedAccessKey=marker-55219";
 

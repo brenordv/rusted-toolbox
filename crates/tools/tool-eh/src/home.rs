@@ -4,8 +4,8 @@
 use crate::cli_utils::DataArgs;
 use crate::models::ConfigSource;
 use anyhow::{Result, bail};
-use shared_eventhub_persistence::config::{CONFIG_FILE_NAME, ConfigLoad, ToolConfig, load_config};
-use shared_eventhub_persistence::workspace::{ConfigHome, ProfileName, Workspace};
+use eh_persistence::config::{CONFIG_FILE_NAME, ConfigLoad, ToolConfig, load_config};
+use eh_persistence::workspace::{ConfigHome, ProfileName, Workspace};
 use std::path::PathBuf;
 
 /// A run's config home, the `config.json` recalled from it, and what

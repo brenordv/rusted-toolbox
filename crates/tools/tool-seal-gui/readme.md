@@ -29,7 +29,7 @@ Three tabs, switched from the header row or with `mod+1`, `mod+2`, and `mod+3`:
 
 Each tab has one status line at the bottom: what runs, what another tab runs,
 or what your last action found. It stays until your next input on that tab.
-Everything cryptographic runs through the same `shared-crypto` engine as the
+Everything cryptographic runs through the same `seal-crypto` engine as the
 CLI, on one background thread, so the window stays live during large files.
 Files sealed here open with any age-compatible tool and the other way round.
 

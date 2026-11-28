@@ -4,7 +4,7 @@
 use super::notes::Missing;
 use super::recipients::{Book, EntryId, RecipientIssue, RecipientPicker, effective_recipients};
 use crate::worker::{JobRequest, resolve_output_path};
-use shared_crypto::{Direction, output_name_for};
+use seal_crypto::{Direction, output_name_for};
 use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};

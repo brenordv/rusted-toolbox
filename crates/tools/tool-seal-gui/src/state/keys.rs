@@ -4,7 +4,7 @@
 use super::recipients::{Book, EntryId, MSG_BAD_KEY};
 use common_utils::string_utils::display_line;
 use rune::TextEdit;
-use shared_crypto::Recipient;
+use seal_crypto::Recipient;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -190,7 +190,7 @@ pub fn new_entry(book: &Book, label: &str, key: &str) -> Result<(String, String)
 mod tests {
     use super::*;
     use crate::config::RecipientEntry;
-    use shared_crypto::keys::{generate_identity, public_key_of};
+    use seal_crypto::keys::{generate_identity, public_key_of};
 
     fn book_of(labels: &[&str]) -> Book {
         Book::from_entries(

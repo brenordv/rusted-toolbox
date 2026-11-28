@@ -2,7 +2,7 @@
 //! the caps that bound both.
 
 pub use common_utils::string_utils::display_line;
-use shared_eventhub_core::models::{CapturedMessage, MessageKey};
+use eh_core::models::{CapturedMessage, MessageKey};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;

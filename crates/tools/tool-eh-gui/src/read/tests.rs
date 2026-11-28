@@ -3,7 +3,7 @@ use crate::bridge::test_support::detached_session;
 use crate::read::inspector::{ExportPhase, FeedbackKind, InspectorInput};
 use crate::read::search::Matcher;
 use crate::read::test_support::captured;
-use shared_eventhub_core::filters::TextFilter;
+use eh_core::filters::TextFilter;
 use std::path::{Path, PathBuf};
 
 struct Fixture {

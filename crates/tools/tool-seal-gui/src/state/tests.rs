@@ -3,8 +3,8 @@ use crate::config::RecipientEntry;
 use crate::test_support::{Recording, recording_state, state_with_book};
 use rstest::rstest;
 use rune::{FileDialogError, TextEdit};
-use shared_crypto::Direction;
-use shared_crypto::keys::{generate_identity, public_key_of};
+use seal_crypto::Direction;
+use seal_crypto::keys::{generate_identity, public_key_of};
 
 fn fresh_key() -> String {
     public_key_of(&generate_identity())

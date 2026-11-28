@@ -13,11 +13,11 @@ use crate::test_harness::builders::{
     orders_config, profile_home, state, test_workspace, with_profiles,
 };
 use chrono::Utc;
-use shared_eventhub_core::filters::TextFilter;
-use shared_eventhub_core::models::MessageKey;
-use shared_eventhub_core::producer::Pacing;
-use shared_eventhub_persistence::config::ToolConfig;
-use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat, ExportOutcome};
+use eh_core::filters::TextFilter;
+use eh_core::models::MessageKey;
+use eh_core::producer::Pacing;
+use eh_persistence::config::ToolConfig;
+use eh_persistence::export::{DiskWriteMode, ExportFormat, ExportOutcome};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 

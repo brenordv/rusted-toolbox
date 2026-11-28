@@ -26,8 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Rune (eh-gui, seal-gui, speak, alert) needs these to build on Linux, per its README;
-      # rodio (common-audio) needs the ALSA development files.
+      # Rune (eh-gui, seal-gui, dep-check-gui, speak, alert) needs these to build on Linux,
+      # per its README; rodio (common-audio) needs the ALSA development files.
       - run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev libssl-dev libasound2-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -35,6 +35,9 @@ jobs:
       # never build them; the harness feature also runs the secret-hygiene test binary.
       - run: cargo clippy -p eh-gui --features demo,test-harness --all-targets --locked -- -D warnings
       - run: cargo test -p eh-gui --features demo,test-harness --locked
+      # dep-check-core's fake server is behind `test-support`, and so are its log test binaries.
+      - run: cargo clippy -p dep-check-core --features test-support --all-targets --locked -- -D warnings
+      - run: cargo test -p dep-check-core --features test-support --locked
 
   test:
     name: build & test (${{ matrix.os }})
@@ -58,8 +61,8 @@ jobs:
         run: |
           vcpkg install libxml2:x64-windows-static-md
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-      # Rune (eh-gui, seal-gui, speak, alert) needs these to build on Linux, per its README;
-      # rodio (common-audio) needs the ALSA development files.
+      # Rune (eh-gui, seal-gui, dep-check-gui, speak, alert) needs these to build on Linux,
+      # per its README; rodio (common-audio) needs the ALSA development files.
       - name: Install GUI system libraries (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev libssl-dev libasound2-dev

@@ -9,8 +9,8 @@ license.workspace = true
 
 [dependencies]
 # Internal
-cli-signal-monitor = { workspace = true }
 common-cli = { workspace = true }
+common-signal-monitor = { workspace = true }
 common-utils = { workspace = true }
 
 # External

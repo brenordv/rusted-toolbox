@@ -115,9 +115,7 @@ impl Default for ConfirmKits {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::views::BadgeTone;
     use common_gui_rune::contrast::{Contract, NON_TEXT, TEXT, appearance_name, over};
-    use common_gui_rune::drop_fill;
 
     #[test]
     fn checkboxes_and_radios_are_marked_at_3_to_1_on_the_content_surface() {
@@ -195,33 +193,6 @@ mod tests {
                 content,
                 NON_TEXT,
             );
-        }
-
-        contract.assert_met();
-    }
-
-    #[test]
-    fn each_badge_label_meets_the_text_contrast_on_the_list_and_on_the_drop_fill() {
-        let ds = Ds::new();
-        let mut contract = Contract::default();
-
-        for dark in [true, false] {
-            let k = ds.kit(dark);
-            let mode = appearance_name(dark);
-            let content = surface(k, Surface::Content);
-            let hovered = over(drop_fill(k), content);
-            for (under_name, under) in [("list", content), ("drop fill", hovered)] {
-                for tone in BadgeTone::ALL {
-                    let (fill, ink) = tone.colors(k);
-                    let fill = over(fill, under);
-                    contract.check(
-                        &format!("{mode} {} badge on the {under_name}", tone.name()),
-                        over(ink, fill),
-                        fill,
-                        TEXT,
-                    );
-                }
-            }
         }
 
         contract.assert_met();

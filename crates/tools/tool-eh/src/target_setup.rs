@@ -3,14 +3,14 @@
 
 use crate::models::CLIENT_SECRET_ENV;
 use crate::progress::{Renderer, display};
-use shared_eventhub_core::connection::EventHubTarget;
-use shared_eventhub_persistence::config::{
+use eh_core::connection::EventHubTarget;
+use eh_persistence::config::{
     SensitiveValues, ToolConfig, needs_stored_secret, resolve_target_with, save_config,
     with_typed_names,
 };
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::secrets::SecretsStore;
-use shared_eventhub_persistence::workspace::ConfigHome;
+use eh_persistence::paths::DataPaths;
+use eh_persistence::secrets::SecretsStore;
+use eh_persistence::workspace::ConfigHome;
 use std::borrow::Cow;
 use std::io::Write;
 

@@ -158,7 +158,7 @@ reading another hub into it fails at start and names both. Use another folder pe
 A new data folder gets a `.gitignore` of `*`. A folder that already holds files is used only
 when its `.gitignore` is that same `*`, so the archive and secrets never land in a folder git
 tracks (a repository root, a source folder). The archive never shrinks yet (no purge); see
-the [persistence readme](../../libs/shared-eventhub-persistence/readme.md) for its layout,
+the [persistence readme](../../libs/eh-persistence/readme.md) for its layout,
 the CSV-injection caveat, and how storing behaves.
 
 Data captured by `eh-read` 1.1.0 (sled, in `.eh-read-data`) is not read or touched by `eh`;
@@ -449,7 +449,7 @@ network that blocks 5671 blocks `eh send` (and `eh read`). A connection string w
 `SharedAccessSignature` cannot be renewed and stops working when its token expires.
 
 Troubleshooting throttling or slow sends:
-`RUST_LOG=warn,azure_messaging_eventhubs=debug,shared_eventhub_core=debug eh send ...`.
+`RUST_LOG=warn,azure_messaging_eventhubs=debug,eh_core=debug eh send ...`.
 
 ### Templates (`--template`) and dry runs (`--dry-run`)
 

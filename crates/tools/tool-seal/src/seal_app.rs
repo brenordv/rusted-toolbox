@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use common_cli::broken_pipe::{BrokenPipe, flush_out, write_out};
 use common_file_utils::atomic_write::write_via_temp;
 use common_utils::string_utils::format_bytes_to_string;
-use shared_crypto::{Direction, engine, keys, output_name_for};
+use seal_crypto::{Direction, engine, keys, output_name_for};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
@@ -145,7 +145,7 @@ enum OutputTarget {
 }
 
 /// Resolves the output spec against the input: an explicit path or `-` wins;
-/// otherwise a file input derives its name through `shared-crypto`'s naming
+/// otherwise a file input derives its name through `seal-crypto`'s naming
 /// rule and a stdin input streams to stdout.
 fn resolve_output(
     spec: &OutputSpec,
@@ -164,7 +164,7 @@ fn resolve_output(
 
 /// One overwrite rule for every output path, the derived `.age` default
 /// included. Keygen's identity file is guarded separately (and atomically)
-/// inside `shared-crypto`.
+/// inside `seal-crypto`.
 fn refuse_existing_output(path: &Path, force: bool) -> Result<()> {
     if !force && path.exists() {
         bail!(

@@ -19,12 +19,12 @@ use crate::views::{
     NEW_PROFILE_SAVE_KEY, PICKER_KEY, PROFILE_GROUP_KEY,
 };
 use common_cli::app_logger::FileLogging;
+use eh_core::connection::target_names;
+use eh_core::engine::{EngineCommand, EngineEvent};
+use eh_core::producer::{Pacing, SendEnd, SendSummary};
+use eh_core::stats::StatsSnapshot;
+use eh_persistence::config::{ConfigLoad, resolve_target_with};
 use rune::Key;
-use shared_eventhub_core::connection::target_names;
-use shared_eventhub_core::engine::{EngineCommand, EngineEvent};
-use shared_eventhub_core::producer::{Pacing, SendEnd, SendSummary};
-use shared_eventhub_core::stats::StatsSnapshot;
-use shared_eventhub_persistence::config::{ConfigLoad, resolve_target_with};
 use std::time::Duration;
 use tokio::sync::mpsc;
 

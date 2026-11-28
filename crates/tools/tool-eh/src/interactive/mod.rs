@@ -12,9 +12,9 @@ use anyhow::Context;
 use clap::Parser;
 use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::tool_log_level::ToolLogLevel;
+use eh_persistence::workspace::{ProfileState, ProfilesAdoption, Workspace};
 use menu::{MenuContext, MenuOutcome};
 use prompter::{Prompter, TerminalPrompter};
-use shared_eventhub_persistence::workspace::{ProfileState, ProfilesAdoption, Workspace};
 use std::ffi::OsString;
 use std::io::{self, IsTerminal, Write};
 

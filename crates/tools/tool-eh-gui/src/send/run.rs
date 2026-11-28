@@ -5,7 +5,7 @@ use crate::archive::bulk::CancelReason;
 use crate::read::rows::display_line;
 use chrono::{DateTime, Utc};
 use common_utils::string_utils::format_thousands;
-use shared_eventhub_core::producer::{Pacing, SendEnd, SendSummary};
+use eh_core::producer::{Pacing, SendEnd, SendSummary};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::info;

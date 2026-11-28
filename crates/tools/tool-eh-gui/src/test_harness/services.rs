@@ -7,8 +7,8 @@ use crate::read::ExportOneRequest;
 use crate::read::search::RebuildRequest;
 use crate::send::SendRequest;
 use crate::services::{ConnectRequest, CreateRequest, SaveRequest, Services};
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::workspace::Workspace;
+use eh_persistence::paths::DataPaths;
+use eh_persistence::workspace::Workspace;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 

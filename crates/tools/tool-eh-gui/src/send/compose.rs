@@ -3,13 +3,13 @@
 
 use super::template::TemplateState;
 use crate::read::rows::display_line;
+use common_mock_data::template::Template;
 use common_utils::string_utils::{format_thousands, non_blank};
-use mock_data_utils::template::Template;
-use rune::TextEdit;
-use shared_eventhub_core::producer::{
+use eh_core::producer::{
     MAX_SEND_COUNT, MAX_SEND_INTERVAL_MS, OutgoingEvent, Pacing, Routing, SendPlan,
     insert_property, parse_property,
 };
+use rune::TextEdit;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

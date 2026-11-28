@@ -29,11 +29,11 @@ use crate::state::{AppState, Input, Section, SheetPurpose, ToastInput, ToastKind
 use crate::tasks::StoreSlot;
 use anyhow::Context;
 use common_cli::app_logger::FileLogging;
+use eh_persistence::config::save_config;
+use eh_persistence::export::{DiskWriteConfig, ExportOptions, WritingSink};
+use eh_persistence::paths::DataPaths;
+use eh_persistence::workspace::Workspace;
 use rune::AppHandle;
-use shared_eventhub_persistence::config::save_config;
-use shared_eventhub_persistence::export::{DiskWriteConfig, ExportOptions, WritingSink};
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::workspace::Workspace;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;

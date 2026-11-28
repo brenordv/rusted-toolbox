@@ -1,0 +1,32 @@
+[package]
+name = "dep-check-gui"
+version = "1.0.0"
+description = "Desktop GUI for dep-check: checks packages of one ecosystem against OSV.dev, deps.dev, and the GitHub Advisory Database"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-gui-rune = { workspace = true }
+common-utils = { workspace = true }
+dep-check-core = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+rune = { workspace = true }
+rune-kit = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+common-gui-rune = { workspace = true, features = ["test-harness"] }
+dep-check-core = { workspace = true, features = ["test-support"] }
+
+rstest = { workspace = true }
+serde_json = { workspace = true }
+tracing-subscriber = { workspace = true }

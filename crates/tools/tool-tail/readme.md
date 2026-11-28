@@ -3,7 +3,7 @@
 A port of the GNU coreutils `tail` command to Rust, useful on Windows where it does not exist
 as a native command. Prints the last part of files (the last 10 lines of each FILE by default)
 and can follow files as they grow. Its sibling [head](../tool-head/readme.md) covers the other
-end of the file; both are built on the shared `shared-head-tail` engine crate.
+end of the file; both are built on the shared `head-tail-core` engine crate.
 
 ## Examples
 ### Last lines of a file

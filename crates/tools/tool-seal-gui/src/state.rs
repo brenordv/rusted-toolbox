@@ -21,7 +21,7 @@ use keys::{KeygenStep, KeysInput, KeysTab};
 use notes::{Copied, Missing, Note, Notes, RunningJob};
 use recipients::{Book, EntryId, Picker, RecipientPicker};
 use rune::FileDialogResult;
-use shared_crypto::Direction;
+use seal_crypto::Direction;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

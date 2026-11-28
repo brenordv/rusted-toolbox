@@ -6,14 +6,14 @@
 use super::Scenario;
 use anyhow::Context;
 use chrono::{DateTime, TimeDelta, Utc};
-use shared_eventhub_core::connection::EventHubIdentity;
-use shared_eventhub_core::engine::{
+use eh_core::connection::EventHubIdentity;
+use eh_core::engine::{
     Checkpoint, EVENT_CHANNEL_CAPACITY, EngineChannels, EngineCommand, EngineEvent, MessageSink,
     PartitionEnd, RunEnd, RunSummary,
 };
-use shared_eventhub_core::filters::CaptureFilters;
-use shared_eventhub_core::models::{BodyKind, CapturedMessage, MessageKey};
-use shared_eventhub_core::stats::{StatsSnapshot, StatsTracker};
+use eh_core::filters::CaptureFilters;
+use eh_core::models::{BodyKind, CapturedMessage, MessageKey};
+use eh_core::stats::{StatsSnapshot, StatsTracker};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;

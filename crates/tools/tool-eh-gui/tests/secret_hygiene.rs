@@ -21,10 +21,10 @@ use eh_gui::test_harness::journeys::{
 use eh_gui::test_harness::services::ServiceCall;
 use eh_gui::views::details::{COPY_KEY, FAILURE_KEY};
 use eh_gui::views::{NEW_PROFILE_KEY, NEW_PROFILE_NAME_KEY, NEW_PROFILE_SAVE_KEY};
-use shared_eventhub_persistence::config::SensitiveValues;
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::secrets::CONNECTION_STRING_SECRET;
-use shared_eventhub_persistence::workspace::Workspace;
+use eh_persistence::config::SensitiveValues;
+use eh_persistence::paths::DataPaths;
+use eh_persistence::secrets::CONNECTION_STRING_SECRET;
+use eh_persistence::workspace::Workspace;
 use std::io::Write;
 use std::path::Path;
 use std::sync::mpsc;

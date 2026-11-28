@@ -2,9 +2,9 @@ use super::test_support::{cursor, messages, page};
 use super::*;
 use crate::read::inspector::{ExportPhase, FeedbackKind};
 use crate::read::rules::{TextMode, TimeMode};
+use eh_core::models::MessageKey;
+use eh_persistence::export::ExportFormat;
 use rune::TextEdit;
-use shared_eventhub_core::models::MessageKey;
-use shared_eventhub_persistence::export::ExportFormat;
 
 fn paths() -> DataPaths {
     DataPaths::new(".eh-data")

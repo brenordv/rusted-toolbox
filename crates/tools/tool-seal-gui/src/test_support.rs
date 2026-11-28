@@ -6,7 +6,7 @@ use crate::state::AppState;
 use crate::state::files::PathKind;
 use crate::worker::{JobRequest, WORKER_GONE};
 use common_cli::app_logger::FileLogging;
-use shared_crypto::keys::{generate_identity, public_key_of};
+use seal_crypto::keys::{generate_identity, public_key_of};
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

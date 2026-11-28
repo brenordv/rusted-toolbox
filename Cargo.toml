@@ -13,22 +13,24 @@ repository = "https://github.com/brenordv/rusted-toolbox"
 license = "GPL-3.0-only"
 
 [workspace.dependencies]
-# Internal
-cli-signal-monitor = { path = "crates/libs/cli-signal-monitor" }
+# Internal, general: any tool may depend on these (naming rule in crates/libs/README.md)
 common-audio = { path = "crates/libs/common-audio" }
+common-azure = { path = "crates/libs/common-azure" }
 common-cli = { path = "crates/libs/common-cli" }
 common-file-utils = { path = "crates/libs/common-file-utils" }
 common-gui-rune = { path = "crates/libs/common-gui-rune" }
+common-logging-otel = { path = "crates/libs/common-logging-otel" }
+common-mock-data = { path = "crates/libs/common-mock-data" }
 common-serialization-utils = { path = "crates/libs/common-serialization-utils" }
+common-signal-monitor = { path = "crates/libs/common-signal-monitor" }
 common-utils = { path = "crates/libs/common-utils" }
 common-utils-ext = { path = "crates/libs/common-utils-ext" }
-logging-otel = { path = "crates/libs/logging-otel" }
-mock-data-utils = { path = "crates/libs/mock-data-utils" }
-shared-azure = { path = "crates/libs/shared-azure" }
-shared-crypto = { path = "crates/libs/shared-crypto" }
-shared-eventhub-core = { path = "crates/libs/shared-eventhub-core" }
-shared-eventhub-persistence = { path = "crates/libs/shared-eventhub-persistence" }
-shared-head-tail = { path = "crates/libs/shared-head-tail" }
+# Internal, tool-owned: only the tool (or tool pair) in the name depends on these
+dep-check-core = { path = "crates/libs/dep-check-core" }
+eh-core = { path = "crates/libs/eh-core" }
+eh-persistence = { path = "crates/libs/eh-persistence" }
+head-tail-core = { path = "crates/libs/head-tail-core" }
+seal-crypto = { path = "crates/libs/seal-crypto" }
 
 # External
 age = { version = "0.12.1", features = ["armor"] }
@@ -69,6 +71,8 @@ notify = "9.0.0"
 notify-debouncer-full = "0.8.0"
 num_cpus = "1.17.0"
 once_cell = "1.21.4"
+# PEP 440 version ordering for dep-check's offline PyPI matching.
+pep440_rs = "0.7.3"
 percent-encoding = "2.3.2"
 qrcodegen = "1.8.0"
 raccoon-otel = "1.1.0"
@@ -85,7 +89,7 @@ reqwest = { version = "0.13.5", features = ["json"] }
 rodio = { version = "0.23.0", default-features = false, features = ["playback", "wav", "mp3", "flac", "vorbis"] }
 rsa = { version = "0.10.0", features = ["pkcs1v15"] }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
-# Only for setting the process crypto provider (shared-eventhub-core's `tls`); default
+# Only for setting the process crypto provider (eh-core's `tls`); default
 # features, the same set the Azure crates enable.
 rustls = "0.23.46"
 # Rune is pre-release and not on crates.io (the crates.io `rune` is an unrelated scripting
@@ -106,6 +110,8 @@ rusqlite = { version = "0.43.0", features = ["bundled"] }
 # File identity (device and inode, or volume serial and file index) for moving a tool's data
 # from its old place (`common-file-utils`'s `adoption`); already in the tree through walkdir.
 same-file = "1.0.6"
+# SemVer 2.0 precedence for dep-check's offline Cargo and npm matching.
+semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 # The decoder behind warp's query filter; https parses the raw query string
@@ -143,8 +149,8 @@ tempfile = "3.27.0"
 # applies a dependency's [patch] only inside that dependency's own workspace, so an app building
 # Rune repeats it. The Rune fork above changes no vendored crate, so these stay on anomalyco's
 # c4eda05; a fork commit that touches `vendor/` moves them to the fork's rev. [patch] applies
-# to this whole workspace; the windowed tools (eh-gui, seal-gui, speak, alert) all build on
-# Rune. Each fork is the crates.io crate plus Rune's committed vendor/<name>.patch:
+# to this whole workspace; the windowed tools (eh-gui, seal-gui, dep-check-gui, speak, alert)
+# all build on Rune. Each fork is the crates.io crate plus Rune's committed vendor/<name>.patch:
 # - winit: Windows window creation without the TaskbarList call and at the requested position;
 #   a macOS IME reconversion API; Wayland touchpad scroll deltas scaled by 12.
 # - wgpu-hal (30.0.1): DX12 adapter exposure, FXC loaded on first compile, partial presents on

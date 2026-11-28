@@ -10,12 +10,12 @@ use crossterm::cursor::MoveToColumn;
 use crossterm::queue;
 use crossterm::style::{Print, Stylize};
 use crossterm::terminal::{Clear, ClearType};
-use shared_eventhub_core::engine::{EngineEvent, PartitionEnd, RunEnd, RunSummary};
-use shared_eventhub_core::filters::{TextFilter, TimeFilter};
-use shared_eventhub_core::models::CapturedMessage;
-use shared_eventhub_core::stats::StatsSnapshot;
-use shared_eventhub_persistence::config::{AuthMethodConfig, CredentialKindConfig, TargetConfig};
-use shared_eventhub_persistence::export::ExportOutcome;
+use eh_core::engine::{EngineEvent, PartitionEnd, RunEnd, RunSummary};
+use eh_core::filters::{TextFilter, TimeFilter};
+use eh_core::models::CapturedMessage;
+use eh_core::stats::StatsSnapshot;
+use eh_persistence::config::{AuthMethodConfig, CredentialKindConfig, TargetConfig};
+use eh_persistence::export::ExportOutcome;
 use std::io::{self, IsTerminal, Stderr, Stdout, Write};
 use std::time::{Duration, Instant};
 use tracing::warn;
@@ -439,24 +439,24 @@ impl<W: Write> ExportProgressLine<W> {
         }
     }
 
-    /// Redraws the export counts unless the line was drawn less than 250 ms
-    /// ago.
-    pub(crate) fn draw(&mut self, outcome: &ExportOutcome) {
-        self.draw_with(|elapsed| export_line(outcome, elapsed));
+    /// Redraws the export counts at `now`, unless the line was drawn less
+    /// than 250 ms before.
+    pub(crate) fn draw(&mut self, outcome: &ExportOutcome, now: Instant) {
+        self.draw_with(now, |elapsed| export_line(outcome, elapsed));
     }
 
-    /// Redraws the line with the text `line` builds from the time since the
-    /// line was created, unless it was drawn less than 250 ms ago.
-    pub(crate) fn draw_with(&mut self, line: impl FnOnce(Duration) -> String) {
-        let now = Instant::now();
+    /// Redraws the line at `now` with the text `line` builds from the time
+    /// since the line was created, unless it was drawn less than 250 ms
+    /// before.
+    pub(crate) fn draw_with(&mut self, now: Instant, line: impl FnOnce(Duration) -> String) {
         if self
             .last_draw
-            .is_some_and(|last| now.duration_since(last) < EXPORT_REDRAW_INTERVAL)
+            .is_some_and(|last| now.saturating_duration_since(last) < EXPORT_REDRAW_INTERVAL)
         {
             return;
         }
         self.last_draw = Some(now);
-        self.render(&line(self.started.elapsed()));
+        self.render(&line(now.saturating_duration_since(self.started)));
     }
 
     /// Ends the line. On a terminal, when a summary with the final counts is

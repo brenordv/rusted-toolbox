@@ -2,8 +2,8 @@ use crate::cli_utils::initialize;
 
 use crate::models::FromArgs;
 use common_cli::tool_exit_helpers::{exit_error, exit_success};
-use mock_data_utils::generate_mock_data;
-use mock_data_utils::models::MockOptions;
+use common_mock_data::generate_mock_data;
+use common_mock_data::models::MockOptions;
 use tracing::error;
 
 mod cli_utils;

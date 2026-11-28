@@ -3,8 +3,8 @@ use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser};
 use common_cli::common_tool_args::CommonToolArgsNoVerbose;
 use common_cli::tool_log_level::ToolLogLevel;
-use shared_head_tail::count_parser::parse_head_count;
-use shared_head_tail::models::{Count, CountPrefix, HeaderPolicy, resolve_count};
+use head_tail_core::count_parser::parse_head_count;
+use head_tail_core::models::{Count, CountPrefix, HeaderPolicy, resolve_count};
 use std::ffi::OsString;
 
 /// Print the first part of files.
@@ -169,8 +169,8 @@ pub fn initialize() -> HeadConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use head_tail_core::models::CountUnit;
     use rstest::rstest;
-    use shared_head_tail::models::CountUnit;
 
     fn config(argv: &[&str]) -> HeadConfig {
         let cli = CliArgs::try_parse_from(argv).unwrap();

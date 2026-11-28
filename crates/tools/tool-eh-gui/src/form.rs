@@ -4,14 +4,12 @@
 //! required fields follow the config model (which fields each auth method reads).
 
 use common_utils::string_utils::{SecretString, non_blank};
-use rune::TextEdit;
-use shared_eventhub_core::connection::{
-    DEFAULT_CONSUMER_GROUP, validated_event_hub_name, validated_namespace,
-};
-use shared_eventhub_persistence::config::{
+use eh_core::connection::{DEFAULT_CONSUMER_GROUP, validated_event_hub_name, validated_namespace};
+use eh_persistence::config::{
     AuthMethodConfig, CredentialKindConfig, SensitiveValues, StoredSecret, TargetConfig, ToolConfig,
 };
-use shared_eventhub_persistence::export::DiskWriteMode;
+use eh_persistence::export::DiskWriteMode;
+use rune::TextEdit;
 
 /// How the app authenticates to the event hub.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

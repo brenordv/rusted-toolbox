@@ -3,8 +3,8 @@ use crate::archive::results::Results;
 use crate::archive::test_support::{messages, page};
 use crate::archive::{ArchiveInput, PageRequest};
 use crate::read::rules::TextMode;
+use eh_core::filters::TextFilter;
 use rune::TextEdit;
-use shared_eventhub_core::filters::TextFilter;
 
 fn paths() -> DataPaths {
     DataPaths::new(".eh-data")

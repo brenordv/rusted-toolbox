@@ -1,11 +1,11 @@
 use crate::models::HeadConfig;
 use anyhow::{Context, Result};
 use common_utils::constants::SIZE_128KB;
-use shared_head_tail::io_shared::{
+use head_tail_core::io_shared::{
     HeaderState, Input, backward_scan_start, check_shutdown, copy_limited, finish_run,
     process_input_source, read_chunk, run_inputs, split_items, write_out,
 };
-use shared_head_tail::models::{CountUnit, RunResult};
+use head_tail_core::models::{CountUnit, RunResult};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -206,8 +206,8 @@ fn elide_last_bytes<R: Read, W: Write>(
 mod tests {
     use super::*;
     use common_cli::test_writers::FailAfter;
+    use head_tail_core::models::{HeaderPolicy, RunOutcome};
     use rstest::rstest;
-    use shared_head_tail::models::{HeaderPolicy, RunOutcome};
     use std::sync::atomic::AtomicBool;
     use tempfile::tempdir;
 

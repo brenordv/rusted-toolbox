@@ -1,0 +1,53 @@
+[package]
+name = "dep-check-core"
+version = "1.0.0"
+description = "Asks vulnerability and package-metadata services about a list of packages and merges their answers into one report."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+# A local fake of the services and test clocks (`test_support`). Off in every release build.
+test-support = ["dep:warp"]
+
+[dependencies]
+# Internal
+common-file-utils = { workspace = true }
+common-serialization-utils = { workspace = true }
+common-utils = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+chrono = { workspace = true }
+futures-util = { workspace = true }
+pep440_rs = { workspace = true }
+percent-encoding = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+warp = { workspace = true, optional = true }
+zip = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
+warp = { workspace = true }
+
+# An integration test links the library without cfg(test), so it needs the feature for
+# MockServer; eh-gui gates its own log tests the same way (crates/tools/tool-eh-gui/Cargo.toml).
+[[test]]
+name = "logging"
+path = "tests/logging.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "offline_logging"
+path = "tests/offline_logging.rs"
+required-features = ["test-support"]

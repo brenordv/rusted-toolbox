@@ -1,8 +1,8 @@
 //! The archive search's results: where loading them is, and the rows loaded so far.
 
 use crate::read::rows::{ROW_BODY_BYTES_CAP, ROW_CAP, RowSummary};
-use shared_eventhub_core::models::{CapturedMessage, MessageKey};
-use shared_eventhub_persistence::search::SearchCursor;
+use eh_core::models::{CapturedMessage, MessageKey};
+use eh_persistence::search::SearchCursor;
 use std::collections::HashSet;
 use std::sync::Arc;
 

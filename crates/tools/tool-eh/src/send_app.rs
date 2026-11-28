@@ -6,13 +6,13 @@ use crate::send_cli::{RENDER_CAP, template_notices};
 use crate::target_setup::{TargetSetup, prepare_target};
 use anyhow::anyhow;
 use chrono::Utc;
-use shared_eventhub_core::cancel::{CANCEL_POLL, flag_set};
-use shared_eventhub_core::producer::{
+use eh_core::cancel::{CANCEL_POLL, flag_set};
+use eh_core::producer::{
     EventHubProducer, SendEnd, SendPlan, SendProgress, SendSummary, next_event, open_producer,
 };
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::time::MissedTickBehavior;
 
 const STOPPING: &str =
@@ -102,7 +102,7 @@ async fn send_with_progress<O: Write, E: Write>(
                 )
             },
             shutdown,
-            |progress| line.draw_with(|_| send_line(progress, requested)),
+            |progress| line.draw_with(Instant::now(), |_| send_line(progress, requested)),
         );
         wait_noting_stop(send, shutdown, renderer).await
     };

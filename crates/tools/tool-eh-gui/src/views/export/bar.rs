@@ -11,9 +11,9 @@ use crate::state::{AppState, Input, error_preview};
 use crate::views::details;
 use crate::views::inspector::{CSV_CAPTION, FORMAT_LABELS, FORMATS};
 use common_cli::app_logger::FileLogging;
+use eh_persistence::export::ExportFormat;
 use rune::{El, FileDialogOptions, Tx, col, row};
 use rune_kit::{Button, ButtonVariant, Kit, Placement, SegmentedControl, Spinner, popover};
-use shared_eventhub_persistence::export::ExportFormat;
 
 /// The bar, when it shows: while an export runs or after it ended, and with results to export.
 pub fn bar(s: &AppState, k: &Kit, layer: &mut Vec<El>) -> Option<El> {

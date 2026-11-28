@@ -1,6 +1,6 @@
 use super::*;
 use rstest::rstest;
-use shared_crypto::Identity;
+use seal_crypto::Identity;
 use std::fs;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;

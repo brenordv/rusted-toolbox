@@ -8,8 +8,8 @@ use super::inspector::{
 use super::rows::key_string;
 use crate::state::{ListSection, ToastKind};
 use chrono::{DateTime, Utc};
-use shared_eventhub_core::models::MessageKey;
-use shared_eventhub_persistence::paths::DataPaths;
+use eh_core::models::MessageKey;
+use eh_persistence::paths::DataPaths;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
 

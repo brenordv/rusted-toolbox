@@ -4,7 +4,7 @@
 use super::*;
 use crate::test_support::state_with_book;
 use rune::TextEdit;
-use shared_crypto::keys::{generate_identity, public_key_of};
+use seal_crypto::keys::{generate_identity, public_key_of};
 
 pub fn fresh_key() -> String {
     public_key_of(&generate_identity())

@@ -150,7 +150,8 @@ helpers. The library tests every pair built from shared tokens:
 
 - Text, 4.5:1: `fg`, muted, and accent text on the three surfaces; danger and warning
   captions on the three surfaces; the `Submit` label at rest, under the sheen, on hover, and
-  pressed; each badge label on its fill; text on the drop fill.
+  pressed; each badge label on its fill, for the five `BadgeTone`s (waiting, running, finished,
+  attention, failed) on the list and on the drop fill; text on the drop fill.
 - Non-text, 3:1 on the three surfaces: the focus rings (`border_focus`, and the kit
   checkbox's `border_active`, which `Ds` sets to the accent); the accent edge of a drop target.
   A tool tests the non-text pairs its own parts add: a border that is a control's only visual
@@ -365,6 +366,8 @@ Confirms. An action that cannot be undone asks once, in place.
 | `action_row(k, key, status, buttons)` | a hairline over the fixed row under an area: the status leading at the width the buttons leave, buttons trailing | |
 | `choice_switch` | a `SegmentedControl` with its accessible name, picking by index; every segment disabled when the choice is | the kit has no control-wide disabled state |
 | `reveal` | the field-reveal transition (`motion::CONTROL_PAIR`, `REVEAL_OFFSET`) | |
+| `list_box`, `ListRows`, `ListHeight`, `list_height` | a list in a form: the box, its empty text, built or virtual rows, a row count or `Fill` height | |
+| `badge`, `BadgeTone` | a status badge in a fixed-width column, with its five tones | |
 
 Beside them, at the crate root and in other modules: `Ds`, `Theme`, `Surface`, `surface`,
 `drop_fill`; `keys::is_chord`, `keys::is_newline`, `keys::area_chord`, `keys::type_newline`;
@@ -380,8 +383,6 @@ same change; it never copies it. Each one was kept in its app because one app us
 |---|---|---|
 | `ChoiceKits` | seal-gui `src/design.rs` | the kits that draw an empty checkbox edge, an empty radio ring, and a selected radio's dot at 3:1 |
 | `ConfirmKits` | seal-gui `src/design.rs` | the kits that draw an in-place "Confirm delete" in danger text at 4.5:1 in every state |
-| `list_box`, `ListRows`, `ListHeight`, `list_height` | seal-gui `src/views/parts.rs` | a list in a form: the box, its empty text, built or virtual rows, a row count or `Fill` height |
-| `badge`, `BadgeTone` | seal-gui `src/views/parts.rs` | a status badge in a fixed-width column, with its five tones |
 | `drop_hovered` | seal-gui `src/views/parts.rs` | a list box's look while a file drag hovers it |
 | `output_box` | seal-gui `src/views/parts.rs` | a read-only, selectable `mono` result box |
 | `breakable` | seal-gui `src/views/files_tab.rs` | text with a zero-width space between graphemes, for a tooltip that must wrap a path |

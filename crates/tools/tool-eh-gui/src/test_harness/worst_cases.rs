@@ -16,9 +16,9 @@ use crate::design::tokens::{INSPECTOR_MAX, SIDEBAR_MAX};
 use crate::send::compose::BODY_CAP;
 use crate::state::{Input, ToastInput};
 use crate::views::{EXPORT_METADATA_KEY, NEW_PROFILE_KEY, READ_METADATA_KEY, SEND_BUTTON_KEY};
-use shared_eventhub_core::engine::EngineEvent;
-use shared_eventhub_core::producer::SendEnd;
-use shared_eventhub_persistence::export::ExportOutcome;
+use eh_core::engine::EngineEvent;
+use eh_core::producer::SendEnd;
+use eh_persistence::export::ExportOutcome;
 use std::path::PathBuf;
 
 /// Words that wrap: about 2,000 characters.

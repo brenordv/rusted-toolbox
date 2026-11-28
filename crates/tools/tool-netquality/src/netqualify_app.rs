@@ -7,7 +7,7 @@ use crate::notifiers::Notifier;
 use crate::persistence::db;
 use crate::runtime_state;
 use anyhow::{Context, Result};
-use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
+use common_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tracing::{info, trace};

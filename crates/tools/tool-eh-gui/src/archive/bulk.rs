@@ -3,10 +3,10 @@
 use super::{ArchiveEffect, ArchiveOutcome, ArchiveState, text_mode};
 use crate::read::rules::rule_count;
 use common_utils::string_utils::format_thousands;
-use shared_eventhub_persistence::config::ExportSettings;
-use shared_eventhub_persistence::export::{ExportFormat, ExportOptions, ExportOutcome};
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::search::SearchQuery;
+use eh_persistence::config::ExportSettings;
+use eh_persistence::export::{ExportFormat, ExportOptions, ExportOutcome};
+use eh_persistence::paths::DataPaths;
+use eh_persistence::search::SearchQuery;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

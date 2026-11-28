@@ -6,7 +6,7 @@ use crate::design::tokens::{SPACE_MD, SPACE_SM, SPACE_XS, TYPE_CAPTION, TYPE_MON
 use crate::read::rows::{display_line, sentence};
 use crate::send::template::{TemplateState, shown_sample};
 use crate::state::AppState;
-use mock_data_utils::template::{OPTIONS_HELP, placeholder_groups};
+use common_mock_data::template::{OPTIONS_HELP, placeholder_groups};
 use rune::{El, col, row, text};
 use rune_kit::{Button, ButtonVariant, ControlSize, Kit, Placement, Popover, ScrollBar, popover};
 

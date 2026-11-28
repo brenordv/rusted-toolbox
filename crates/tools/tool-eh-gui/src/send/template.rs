@@ -3,7 +3,7 @@
 use super::compose::BODY_CAP;
 use crate::read::rows::{cut_at_char_boundary, sentence};
 use chrono::Utc;
-use mock_data_utils::template::Template;
+use common_mock_data::template::Template;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

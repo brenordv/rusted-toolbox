@@ -1,6 +1,6 @@
 [package]
 name = "seal-gui"
-version = "2.0.0"
+version = "2.0.1"
 description = "Desktop GUI for seal: key-based file encryption over the age format"
 edition.workspace = true
 authors.workspace = true
@@ -13,7 +13,7 @@ common-cli = { workspace = true }
 common-file-utils = { workspace = true }
 common-gui-rune = { workspace = true }
 common-utils = { workspace = true }
-shared-crypto = { workspace = true }
+seal-crypto = { workspace = true }
 
 # External
 anyhow = { workspace = true }

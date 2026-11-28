@@ -34,10 +34,10 @@ required-features = ["test-harness"]
 # Internal
 common-cli = { workspace = true }
 common-gui-rune = { workspace = true }
+common-mock-data = { workspace = true }
 common-utils = { workspace = true }
-mock-data-utils = { workspace = true }
-shared-eventhub-core = { workspace = true }
-shared-eventhub-persistence = { workspace = true }
+eh-core = { workspace = true }
+eh-persistence = { workspace = true }
 
 # External
 anyhow = { workspace = true }
@@ -52,9 +52,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+common-azure = { workspace = true }
 common-gui-rune = { workspace = true, features = ["test-harness"] }
-shared-azure = { workspace = true }
-shared-eventhub-persistence = { workspace = true, features = ["test-support"] }
+eh-persistence = { workspace = true, features = ["test-support"] }
 
 rand = { workspace = true }
 rstest = { workspace = true }

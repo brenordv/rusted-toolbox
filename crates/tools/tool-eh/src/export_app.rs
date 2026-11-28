@@ -3,12 +3,13 @@
 use crate::models::{ExportJob, RunOutcome};
 use crate::progress::{ExportProgressLine, display, export_summary_block};
 use anyhow::{Context, anyhow};
-use shared_eventhub_persistence::export::{ExportOptions, ExportOutcome};
-use shared_eventhub_persistence::search::SearchQuery;
-use shared_eventhub_persistence::store::MessageStore;
+use eh_persistence::export::{ExportOptions, ExportOutcome};
+use eh_persistence::search::SearchQuery;
+use eh_persistence::store::MessageStore;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 
 /// Exports every archived message matching the job's filters. Ctrl-C stops
 /// between messages; every file written stays complete.
@@ -43,7 +44,12 @@ pub async fn run(job: ExportJob, shutdown: &Arc<AtomicBool>) -> anyhow::Result<R
     let cancel = Arc::clone(shutdown);
     let exported = tokio::task::spawn_blocking(move || {
         let mut line = ExportProgressLine::stdout();
-        let exported = worker.export(&query, &options, |outcome| line.draw(outcome), &cancel);
+        let exported = worker.export(
+            &query,
+            &options,
+            |outcome| line.draw(outcome, Instant::now()),
+            &cancel,
+        );
         line.finish(exported.is_ok());
         exported
     })

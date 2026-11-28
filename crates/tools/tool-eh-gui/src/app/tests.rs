@@ -1,8 +1,8 @@
 use super::*;
 use crate::form::AuthChoice;
 use crate::state::NO_WORKSPACE;
-use shared_eventhub_persistence::config::CONFIG_FILE_NAME;
-use shared_eventhub_persistence::export::ExportFormat;
+use eh_persistence::config::CONFIG_FILE_NAME;
+use eh_persistence::export::ExportFormat;
 
 async fn preload(dir: &Path) -> Preload {
     preload_config(dir, Err(NO_WORKSPACE.to_owned()), FileLogging::Off).await

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0
+- `parts::list_box` with `ListRows` (built or virtual rows) and `ListHeight` (a row count or
+  `Fill` with a minimum), and `parts::list_height`: a list in a form, with its empty text
+  centred in a box that keeps its height. Moved from seal-gui, with headless tests for the
+  empty box, the minimum, and the named group.
+- `parts::badge` and `parts::BadgeTone` (waiting, running, finished, attention, failed): a
+  status badge in a fixed-width column. Moved from seal-gui with its contrast test, which
+  covers all five tones on the list and on the drop fill; the focus-ring test no longer repeats
+  the neutral and accent badge pairs.
+- `DESIGN.md` section 7 lists both among the shared parts.
+
 ## 1.3.0
 - `drop_fill(k)`: a drop target's fill while a file drag hovers it, the accent at
   `tokens::DROP_FILL_ALPHA` (0.12). The kit's selection fill (alpha 0.3) drops muted, danger,

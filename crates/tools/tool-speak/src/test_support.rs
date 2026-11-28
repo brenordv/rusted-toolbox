@@ -5,7 +5,7 @@ use crate::config::SpeakConfig;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use tokio::sync::{Notify, oneshot};
+use tokio::sync::oneshot;
 use warp::Filter;
 use warp::http::{Method, Response, StatusCode};
 use warp::hyper::body::Bytes;
@@ -64,11 +64,11 @@ impl Reply {
 }
 
 /// A listener on `127.0.0.1` at a port the OS picked, serving on its own thread so a caller
-/// that blocks cannot starve it. Dropping it stops the thread.
+/// that blocks cannot starve it. Dropping it stops the thread and closes every open connection
+/// at once, answered or not.
 pub struct Listener {
     pub addr: SocketAddr,
     received: Arc<Mutex<Vec<Received>>>,
-    release: Arc<Notify>,
     shutdown: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -91,11 +91,9 @@ impl Listener {
             .expect("a non-blocking listener");
         let addr = std_listener.local_addr().expect("the listener's address");
         let received = Arc::new(Mutex::new(Vec::new()));
-        let release = Arc::new(Notify::new());
         let (shutdown, stopped) = oneshot::channel::<()>();
 
         let record = Arc::clone(&received);
-        let held = Arc::clone(&release);
         let thread = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -108,8 +106,7 @@ impl Listener {
                     .and(warp::body::bytes())
                     .then(
                         move |method: Method, content_type: Option<String>, body: Bytes| {
-                            let (record, held, reply) =
-                                (Arc::clone(&record), Arc::clone(&held), reply.clone());
+                            let (record, reply) = (Arc::clone(&record), reply.clone());
                             async move {
                                 record.lock().expect("the request log").push(Received {
                                     method: method.to_string(),
@@ -117,7 +114,7 @@ impl Listener {
                                     body: body.to_vec(),
                                 });
                                 if hold {
-                                    held.notified().await;
+                                    std::future::pending::<()>().await;
                                 }
                                 answer(&reply)
                             }
@@ -125,21 +122,17 @@ impl Listener {
                     );
                 let listener =
                     tokio::net::TcpListener::from_std(std_listener).expect("a tokio listener");
-                warp::serve(routes)
-                    .incoming(listener)
-                    .graceful(async {
-                        // A dropped sender also ends the wait, so either way the server stops.
-                        let _ = stopped.await;
-                    })
-                    .run()
-                    .await;
+                tokio::spawn(warp::serve(routes).incoming(listener).run());
+                // A dropped sender also ends the wait. The runtime goes with the thread and takes
+                // the server and every open connection with it, so an answer a client stopped
+                // reading cannot hold up the stop.
+                let _ = stopped.await;
             });
         });
 
         Self {
             addr,
             received,
-            release,
             shutdown: Some(shutdown),
             thread: Some(thread),
         }
@@ -166,8 +159,6 @@ impl Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        self.release.notify_waiters();
-        self.release.notify_one();
         drop(self.shutdown.take());
         if let Some(thread) = self.thread.take() {
             thread.join().expect("the listener thread");
@@ -209,4 +200,30 @@ pub fn cut_short_server(promised: usize, sent: &'static [u8]) -> String {
 pub fn closed_port() -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).expect("a local port");
     listener.local_addr().expect("the port's address").port()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn the_listener_stops_while_a_client_holds_an_answer_it_has_not_read() {
+        let listener = Listener::start(Reply::audio(vec![0; 32 * 1024 * 1024]));
+        let unread = reqwest::Client::new()
+            .post(listener.url(""))
+            .send()
+            .await
+            .unwrap();
+        let (stopped, stop) = mpsc::channel();
+
+        std::thread::spawn(move || {
+            drop(listener);
+            stopped.send(()).unwrap();
+        });
+
+        assert_eq!(stop.recv_timeout(Duration::from_secs(10)), Ok(()));
+        drop(unread);
+    }
 }

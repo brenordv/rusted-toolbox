@@ -6,9 +6,9 @@ use crate::read::ShownStats;
 use crate::state::AppState;
 use chrono::{DateTime, TimeDelta, Utc};
 use common_utils::string_utils::format_thousands;
+use eh_core::stats::StatsSnapshot;
 use rune::{El, row};
 use rune_kit::{Kit, Placement, Popover};
-use shared_eventhub_core::stats::StatsSnapshot;
 
 /// The partitions popover's scroll viewport.
 pub const PARTITIONS_SCROLL_KEY: &str = "partitions-popover-scroll";

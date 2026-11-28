@@ -1,12 +1,12 @@
 use super::*;
 use crate::models::ConfigSource;
-use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
-use shared_eventhub_core::producer::{OutgoingEvent, Pacing, Routing, SendPlan};
-use shared_eventhub_persistence::config::{
+use eh_core::connection::DEFAULT_CONSUMER_GROUP;
+use eh_core::producer::{OutgoingEvent, Pacing, Routing, SendPlan};
+use eh_persistence::config::{
     AuthMethodConfig, CredentialKindConfig, SensitiveValues, TargetConfig, ToolConfig,
 };
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::workspace::ConfigHome;
+use eh_persistence::paths::DataPaths;
+use eh_persistence::workspace::ConfigHome;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;

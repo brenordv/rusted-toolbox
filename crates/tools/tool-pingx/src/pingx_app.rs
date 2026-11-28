@@ -2,7 +2,7 @@ use crate::cli_utils::print_supplemental_header;
 use crate::models::{IpMode, OutputMode, PacketResult, PingxArgs, ResolvedTargetInfo};
 use anyhow::Result;
 use chrono::Timelike;
-use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
+use common_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_utils::string_utils::escape_for_terminal_display;
 use dns_lookup::lookup_addr;
 use serde::Serialize;

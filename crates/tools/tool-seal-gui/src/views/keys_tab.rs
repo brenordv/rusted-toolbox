@@ -1,7 +1,6 @@
 //! The Keys tab: the recipient book with its add form, the key pair the user generates, what
 //! the log file is doing, and the action row with the status line.
 
-use super::parts::{ListHeight, ListRows, list_box};
 use super::{standing_captions, tab_status, window_key};
 use crate::design::{BOOK_MIN_ROWS, FORM_MAX_WIDTH, LABEL_FIELD_WIDTH};
 use crate::services::dispatch;
@@ -11,8 +10,8 @@ use crate::state::{AppState, Input, Tab};
 use common_cli::app_logger::FileLogging;
 use common_gui_rune::keys::is_chord;
 use common_gui_rune::parts::{
-    LineFieldSpec, StatusLines, Tone, action_row, caption, detail_row, line_field, reveal,
-    section_header, status_line, warning,
+    LineFieldSpec, ListHeight, ListRows, StatusLines, Tone, action_row, caption, detail_row,
+    line_field, list_box, reveal, section_header, status_line, warning,
 };
 use common_gui_rune::tokens::{
     CONTROL_HEIGHT, HAIRLINE, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS, TYPE_BODY, TYPE_LABEL,

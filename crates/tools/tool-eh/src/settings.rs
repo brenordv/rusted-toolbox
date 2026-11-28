@@ -9,19 +9,19 @@ use crate::models::{
 use crate::progress::{display, target_label};
 use crate::send_cli::{ArgText, SendArgs};
 use anyhow::{Context, Result, bail};
+use common_azure::auth::AuthMethod;
+use common_mock_data::template::Template;
 use common_utils::string_utils::{SecretString, non_blank};
-use mock_data_utils::template::Template;
-use shared_azure::auth::AuthMethod;
-use shared_eventhub_core::connection::{DEFAULT_CONSUMER_GROUP, EventHubTarget, target_names};
-use shared_eventhub_core::filters::{CaptureFilters, TextFilter, TimeFilter};
-use shared_eventhub_core::producer::{
+use eh_core::connection::{DEFAULT_CONSUMER_GROUP, EventHubTarget, target_names};
+use eh_core::filters::{CaptureFilters, TextFilter, TimeFilter};
+use eh_core::producer::{
     OutgoingEvent, Pacing, Routing, SendPlan, insert_property, parse_property,
 };
-use shared_eventhub_persistence::config::{
+use eh_persistence::config::{
     AuthMethodConfig, CaptureConfig, CredentialKindConfig, DiskWriteSettings, ExportSettings,
     SensitiveValues, StorageConfig, StoredSecret, TargetConfig, ToolConfig,
 };
-use shared_eventhub_persistence::workspace::ConfigHome;
+use eh_persistence::workspace::ConfigHome;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;

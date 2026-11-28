@@ -1368,16 +1368,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
-name = "cli-signal-monitor"
-version = "1.0.2"
-dependencies = [
- "anyhow",
- "common-cli",
- "ctrlc",
- "tracing",
-]
-
-[[package]]
 name = "clipboard-win"
 version = "5.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1453,6 +1443,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-azure"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "azure_core",
+ "azure_identity",
+ "azure_security_keyvault_secrets",
+ "common-utils",
+ "rstest",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "common-cli"
 version = "1.9.0"
 dependencies = [
@@ -1480,7 +1485,7 @@ dependencies = [
 
 [[package]]
 name = "common-gui-rune"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "anyhow",
  "common-utils",
@@ -1493,6 +1498,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-logging-otel"
+version = "1.2.0"
+dependencies = [
+ "common-cli",
+ "raccoon-otel",
+]
+
+[[package]]
+name = "common-mock-data"
+version = "4.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "fake",
+ "rand 0.10.4",
+ "rstest",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "common-serialization-utils"
 version = "1.2.0"
 dependencies = [
@@ -1502,6 +1528,16 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "common-signal-monitor"
+version = "1.0.2"
+dependencies = [
+ "anyhow",
+ "common-cli",
+ "ctrlc",
+ "tracing",
 ]
 
 [[package]]
@@ -1965,8 +2001,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "cli-signal-monitor",
  "common-cli",
+ "common-signal-monitor",
  "common-utils",
  "tempfile",
  "tracing",
@@ -1979,8 +2015,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "cli-signal-monitor",
  "common-cli",
+ "common-signal-monitor",
  "common-utils",
  "common-utils-ext",
  "csv",
@@ -2173,6 +2209,71 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5729f5117e208430e437df2f4843f5e5952997175992d1414f94c57d61e270b4"
 
 [[package]]
+name = "dep-check"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "common-cli",
+ "common-utils",
+ "dep-check-core",
+ "rstest",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "dep-check-core"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "common-file-utils",
+ "common-serialization-utils",
+ "common-utils",
+ "futures-util",
+ "pep440_rs",
+ "percent-encoding",
+ "reqwest 0.13.5",
+ "rstest",
+ "rusqlite",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "warp",
+ "zip",
+]
+
+[[package]]
+name = "dep-check-gui"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "common-cli",
+ "common-gui-rune",
+ "common-utils",
+ "dep-check-core",
+ "rstest",
+ "rune",
+ "rune-kit",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2356,17 +2457,39 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "cli-signal-monitor",
+ "common-azure",
  "common-cli",
+ "common-mock-data",
+ "common-signal-monitor",
  "common-utils",
  "crossterm",
+ "eh-core",
+ "eh-persistence",
  "inquire",
- "mock-data-utils",
  "rstest",
- "shared-azure",
- "shared-eventhub-core",
- "shared-eventhub-persistence",
  "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "eh-core"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "azure_core",
+ "azure_core_amqp",
+ "azure_messaging_eventhubs",
+ "chrono",
+ "common-azure",
+ "common-mock-data",
+ "common-utils",
+ "futures-util",
+ "regex",
+ "rstest",
+ "rustls",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]
@@ -2378,19 +2501,40 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "common-azure",
  "common-cli",
  "common-gui-rune",
+ "common-mock-data",
  "common-utils",
- "mock-data-utils",
+ "eh-core",
+ "eh-persistence",
  "rand 0.10.4",
  "regex",
  "rstest",
  "rune",
  "rune-kit",
  "serde_json",
- "shared-azure",
- "shared-eventhub-core",
- "shared-eventhub-persistence",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "eh-persistence"
+version = "2.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "common-azure",
+ "common-file-utils",
+ "common-utils",
+ "csv",
+ "eh-core",
+ "redb",
+ "rstest",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",
@@ -3097,8 +3241,8 @@ dependencies = [
  "aho-corasick",
  "anyhow",
  "clap",
- "cli-signal-monitor",
  "common-cli",
+ "common-signal-monitor",
  "common-utils",
  "tempfile",
  "tracing",
@@ -3334,12 +3478,24 @@ version = "1.3.0"
 dependencies = [
  "anyhow",
  "clap",
- "cli-signal-monitor",
+ "common-cli",
+ "common-signal-monitor",
+ "common-utils",
+ "head-tail-core",
+ "rstest",
+ "tempfile",
+]
+
+[[package]]
+name = "head-tail-core"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
  "common-cli",
  "common-utils",
  "rstest",
- "shared-head-tail",
  "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -4526,14 +4682,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
-name = "logging-otel"
-version = "1.2.0"
-dependencies = [
- "common-cli",
- "raccoon-otel",
-]
-
-[[package]]
 name = "lookup"
 version = "3.3.0"
 dependencies = [
@@ -4716,21 +4864,8 @@ dependencies = [
  "anyhow",
  "clap",
  "common-cli",
- "mock-data-utils",
+ "common-mock-data",
  "tracing",
-]
-
-[[package]]
-name = "mock-data-utils"
-version = "4.0.0"
-dependencies = [
- "anyhow",
- "chrono",
- "fake",
- "rand 0.10.4",
- "rstest",
- "serde_json",
- "uuid",
 ]
 
 [[package]]
@@ -4749,8 +4884,8 @@ version = "2.4.0"
 dependencies = [
  "anyhow",
  "clap",
- "cli-signal-monitor",
  "common-cli",
+ "common-signal-monitor",
  "common-utils",
  "common-utils-ext",
  "rumqttc",
@@ -4879,12 +5014,12 @@ dependencies = [
  "cfspeedtest",
  "chrono",
  "clap",
- "cli-signal-monitor",
  "common-cli",
  "common-file-utils",
+ "common-logging-otel",
  "common-serialization-utils",
+ "common-signal-monitor",
  "common-utils",
- "logging-otel",
  "reqwest 0.12.28",
  "rstest",
  "rusqlite",
@@ -5925,6 +6060,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pep440_rs"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31095ca1f396e3de32745f42b20deef7bc09077f918b085307e8eab6ddd8fb9c"
+dependencies = [
+ "once_cell",
+ "serde",
+ "unicode-width",
+ "unscanny",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6128,8 +6275,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "cli-signal-monitor",
  "common-cli",
+ "common-signal-monitor",
  "common-utils",
  "dns-lookup",
  "serde",
@@ -7579,8 +7726,8 @@ version = "1.2.0"
 dependencies = [
  "anyhow",
  "clap",
- "cli-signal-monitor",
  "common-cli",
+ "common-signal-monitor",
  "common-utils",
  "globset",
  "regex",
@@ -7663,21 +7810,33 @@ version = "1.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "cli-signal-monitor",
  "common-cli",
  "common-file-utils",
+ "common-signal-monitor",
  "common-utils",
  "notify",
  "notify-debouncer-full",
  "rstest",
- "shared-crypto",
+ "seal-crypto",
  "tempfile",
  "tracing",
 ]
 
 [[package]]
+name = "seal-crypto"
+version = "1.1.0"
+dependencies = [
+ "age",
+ "anyhow",
+ "chrono",
+ "common-file-utils",
+ "rstest",
+ "tempfile",
+]
+
+[[package]]
 name = "seal-gui"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -7688,9 +7847,9 @@ dependencies = [
  "rstest",
  "rune",
  "rune-kit",
+ "seal-crypto",
  "serde",
  "serde_json",
- "shared-crypto",
  "tempfile",
  "tracing",
  "tracing-subscriber",
@@ -7934,88 +8093,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
-]
-
-[[package]]
-name = "shared-azure"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "azure_core",
- "azure_identity",
- "azure_security_keyvault_secrets",
- "common-utils",
- "rstest",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "shared-crypto"
-version = "1.1.0"
-dependencies = [
- "age",
- "anyhow",
- "chrono",
- "common-file-utils",
- "rstest",
- "tempfile",
-]
-
-[[package]]
-name = "shared-eventhub-core"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "azure_core",
- "azure_core_amqp",
- "azure_messaging_eventhubs",
- "chrono",
- "common-utils",
- "futures-util",
- "mock-data-utils",
- "regex",
- "rstest",
- "rustls",
- "serde",
- "serde_json",
- "shared-azure",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "shared-eventhub-persistence"
-version = "2.0.0"
-dependencies = [
- "anyhow",
- "chrono",
- "common-file-utils",
- "common-utils",
- "csv",
- "redb",
- "rstest",
- "serde",
- "serde_json",
- "shared-azure",
- "shared-eventhub-core",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "shared-head-tail"
-version = "1.1.0"
-dependencies = [
- "anyhow",
- "common-cli",
- "common-utils",
- "rstest",
- "tempfile",
- "tracing",
 ]
 
 [[package]]
@@ -8596,11 +8673,11 @@ version = "1.4.0"
 dependencies = [
  "anyhow",
  "clap",
- "cli-signal-monitor",
  "common-cli",
+ "common-signal-monitor",
  "common-utils",
+ "head-tail-core",
  "rstest",
- "shared-head-tail",
  "tempfile",
  "tracing",
 ]
@@ -9317,6 +9394,12 @@ dependencies = [
  "crypto-common 0.1.7",
  "subtle",
 ]
+
+[[package]]
+name = "unscanny"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9df2af067a7953e9c3831320f35c1cc0600c30d44d9f7a12b01db1cd88d6b47"
 
 [[package]]
 name = "untrusted"

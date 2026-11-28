@@ -1,12 +1,12 @@
 use super::*;
-use shared_azure::auth::AuthMethod;
-use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
-use shared_eventhub_persistence::config::{
+use common_azure::auth::AuthMethod;
+use eh_core::connection::DEFAULT_CONSUMER_GROUP;
+use eh_persistence::config::{
     AuthMethodConfig, CONFIG_FILE_NAME, ConfigLoad, CredentialKindConfig, StoredSecret,
     TargetConfig, load_config,
 };
-use shared_eventhub_persistence::secrets::CONNECTION_STRING_SECRET;
-use shared_eventhub_persistence::workspace::{ProfileName, Workspace};
+use eh_persistence::secrets::CONNECTION_STRING_SECRET;
+use eh_persistence::workspace::{ProfileName, Workspace};
 use std::path::PathBuf;
 
 const CONNECTION_STRING: &str = "Endpoint=sb://orders.servicebus.windows.net/;SharedAccessKeyName=listen;SharedAccessKey=c2VjcmV0";

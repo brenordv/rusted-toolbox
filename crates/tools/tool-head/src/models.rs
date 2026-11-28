@@ -1,4 +1,4 @@
-use shared_head_tail::models::{CountUnit, HeaderPolicy, delimiter_for};
+use head_tail_core::models::{CountUnit, HeaderPolicy, delimiter_for};
 
 /// Runtime configuration for the head engine.
 #[derive(Debug, Clone)]

@@ -2,8 +2,8 @@ use super::compose::{BODY_CAP, PacingChoice, RoutingChoice};
 use super::template::TemplateState;
 use super::*;
 use chrono::TimeDelta;
+use eh_core::producer::{Pacing, Routing};
 use rstest::rstest;
-use shared_eventhub_core::producer::{Pacing, Routing};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 

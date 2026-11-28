@@ -9,10 +9,10 @@ use crate::services::Services;
 use crate::state::{AppState, Effect, Input, Motion, Outcome, Recalled, ToastKind, recalled};
 use crate::views;
 use common_cli::app_logger::FileLogging;
+use eh_persistence::config::load_config;
+use eh_persistence::paths::DataPaths;
+use eh_persistence::workspace::{ConfigHome, Workspace};
 use rune::{App, AppHandle, AppSpec, Tx};
-use shared_eventhub_persistence::config::load_config;
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::workspace::{ConfigHome, Workspace};
 use std::path::{Path, PathBuf};
 use tracing::{debug, error};
 

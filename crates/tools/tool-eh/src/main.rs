@@ -16,11 +16,11 @@ mod target_setup;
 use crate::cli_utils::initialize;
 use crate::interactive::Start;
 use crate::models::{EhCommand, RunOutcome};
-use cli_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_cli::tool_exit_helpers::{exit_error, exit_success, exit_with_code};
+use common_signal_monitor::setup_graceful_shutdown::setup_graceful_shutdown;
 use common_utils::constants::EXIT_CODE_INTERRUPTED_BY_USER;
 use common_utils::string_utils::escape_for_terminal_display;
-use shared_eventhub_core::tls::install_crypto_provider;
+use eh_core::tls::install_crypto_provider;
 use tracing::error;
 
 /// Azure Event Hubs CLI.

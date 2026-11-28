@@ -1,7 +1,7 @@
 use super::*;
 use chrono::Utc;
-use shared_eventhub_core::engine::{RunEnd, SkipReason};
-use shared_eventhub_core::stats::StatsTracker;
+use eh_core::engine::{RunEnd, SkipReason};
+use eh_core::stats::StatsTracker;
 use std::collections::BTreeMap;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -495,7 +495,7 @@ async fn stop_on_a_full_command_channel_is_handed_to_the_runtime() {
 fn contains(word: &str) -> CaptureFilters {
     CaptureFilters {
         time: None,
-        text: Some(shared_eventhub_core::filters::TextFilter::Contains(vec![
+        text: Some(eh_core::filters::TextFilter::Contains(vec![
             word.to_owned(),
         ])),
     }

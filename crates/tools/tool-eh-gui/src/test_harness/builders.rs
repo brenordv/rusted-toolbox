@@ -14,14 +14,14 @@ use crate::send::run::Names;
 use crate::send::{SendEffect, SendInput};
 use crate::state::{AppState, Effect, Input, Section, SheetPurpose};
 use common_cli::app_logger::FileLogging;
-use shared_eventhub_core::engine::{EngineEvent, RunEnd, RunSummary};
-use shared_eventhub_core::filters::{CaptureFilters, TextFilter};
-use shared_eventhub_core::stats::StatsTracker;
-use shared_eventhub_persistence::config::{
+use eh_core::engine::{EngineEvent, RunEnd, RunSummary};
+use eh_core::filters::{CaptureFilters, TextFilter};
+use eh_core::stats::StatsTracker;
+use eh_persistence::config::{
     AuthMethodConfig, CredentialKindConfig, StoredSecret, TargetConfig, ToolConfig,
 };
-use shared_eventhub_persistence::export::ExportFormat;
-use shared_eventhub_persistence::workspace::{
+use eh_persistence::export::ExportFormat;
+use eh_persistence::workspace::{
     ConfigHome, Profile, ProfileEntry, ProfileName, ProfileState, Workspace,
 };
 use std::collections::BTreeMap;

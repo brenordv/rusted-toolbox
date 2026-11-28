@@ -1,5 +1,35 @@
 # Workspace Changelog
 
+## v10
+- Library crates follow one naming rule, written up in `crates/libs/README.md`: `common-*` for
+  libs any tool may use, and `<tool>-*` for libs that hold one tool's own logic. Eight libs are
+  renamed and keep their versions: `cli-signal-monitor` is now `common-signal-monitor`,
+  `logging-otel` is `common-logging-otel`, `mock-data-utils` is `common-mock-data`,
+  `shared-azure` is `common-azure`, `shared-crypto` is `seal-crypto`, `shared-eventhub-core` is
+  `eh-core`, `shared-eventhub-persistence` is `eh-persistence`, and `shared-head-tail` is
+  `head-tail-core`. Log targets follow the crate names, so a `RUST_LOG` filter written for
+  `shared_eventhub_core` needs `eh_core` now.
+- New library `dep-check-core` 1.0.0, the engine of `dep-check` and `dep-check-gui`: it asks
+  OSV.dev, deps.dev, and the GitHub Advisory Database (unauthenticated, under its 60-an-hour
+  limit) about one ecosystem's packages (Cargo, NuGet, PyPI, npm, RubyGems), checks a package
+  given without a version at its latest one, merges the advisories and supply-chain facts into
+  one report, and saves rate-limit blocks in `~/.rusted-toolbox/dep-check/rate-limits.json`.
+- New tool `dep-check` 1.0.0: checks one ecosystem's packages (arguments or stdin) against
+  OSV.dev, deps.dev, and the GitHub Advisory Database and prints the report as text or JSON;
+  exit 0 nothing found, 1 vulnerable, 2 usage error, 3 some packages unknown or not checked, 4
+  no service answered.
+- New tool `dep-check-gui` 1.0.0: the same check in a Rune window (pick the ecosystem, paste
+  the packages, press Check, read one row per package), sharing the CLI's rate-limit file.
+- `common-gui-rune` 1.4.0 gains `parts::list_box` (with `ListRows`, `ListHeight`, and
+  `list_height`) and `parts::badge` with `BadgeTone`, moved from seal-gui with their tests;
+  `seal-gui` 2.0.1 uses them, with nothing changed on screen.
+- `dep-check-core` can check offline against OSV.dev's per-ecosystem dumps: it downloads one on
+  request into an SQLite store under `~/.rusted-toolbox/dep-check/offline/`, with progress, and
+  uses it for the packages OSV.dev did not answer or instead of every service, with a clean
+  result only while the data was confirmed current in the last 7 days (48 hours offline only).
+  The workspace table gains `semver` and `pep440_rs` for its version ordering. The CLI and the
+  window keep checking online until their own phases add the controls.
+
 ## v9
 - `eh-gui`'s connection sheet has a muted hint under each sign-in field saying what goes in it,
   with an example value where one helps, and a line under Sign-in method and Azure credential

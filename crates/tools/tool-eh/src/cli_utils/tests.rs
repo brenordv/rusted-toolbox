@@ -2,12 +2,12 @@ use super::*;
 use crate::models::ConfigSource;
 use clap::CommandFactory;
 use clap::error::ErrorKind;
-use shared_eventhub_core::connection::DEFAULT_CONSUMER_GROUP;
-use shared_eventhub_persistence::config::{
+use eh_core::connection::DEFAULT_CONSUMER_GROUP;
+use eh_persistence::config::{
     AuthMethodConfig, CredentialKindConfig, SensitiveValues, StoredSecret, TargetConfig,
 };
-use shared_eventhub_persistence::paths::DataPaths;
-use shared_eventhub_persistence::workspace::{ProfileName, Workspace};
+use eh_persistence::paths::DataPaths;
+use eh_persistence::workspace::{ProfileName, Workspace};
 use std::path::{Path, PathBuf};
 
 fn parse(argv: &[&str]) -> CliArgs {

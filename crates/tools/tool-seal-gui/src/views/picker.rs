@@ -1,7 +1,6 @@
 //! The Recipients and Identity groups the Text and Files tabs share; each tab has its own keys
 //! and its own recipient choice in state.
 
-use super::parts::{ListHeight, ListRows, list_box};
 use super::window_key;
 use super::{files_tab, text_tab};
 use crate::services::dispatch;
@@ -10,7 +9,9 @@ use crate::state::notes::Missing;
 use crate::state::recipients::{BookEntry, EntryId, MSG_BAD_KEY, Picker, truncated_key};
 use crate::state::text::TextInput;
 use crate::state::{AppState, DialogPurpose, Input};
-use common_gui_rune::parts::{LineFieldSpec, detail_row, line_field, section_header};
+use common_gui_rune::parts::{
+    LineFieldSpec, ListHeight, ListRows, detail_row, line_field, list_box, section_header,
+};
 use common_gui_rune::tokens::{CONTROL_HEIGHT, SPACE_MD, SPACE_SM, TYPE_BODY, TYPE_MONO};
 use common_utils::string_utils::display_line;
 use rune::{El, TextEdit, Tx, col, row, spacer, text};

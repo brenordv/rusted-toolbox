@@ -11,8 +11,8 @@ use common_gui_rune::test_harness::{
 };
 use common_gui_rune::tokens::TYPE_MONO;
 use rune::{FileDialogKind, Key, KeyEvent, Runtime};
+use seal_crypto::Direction;
 use serde_json::Value;
-use shared_crypto::Direction;
 use std::path::PathBuf;
 use std::rc::Rc;
 

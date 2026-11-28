@@ -1,0 +1,29 @@
+[package]
+name = "dep-check"
+version = "1.0.0"
+description = "Checks packages of one ecosystem for known vulnerabilities and supply-chain facts through OSV.dev, deps.dev, and the GitHub Advisory Database."
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+common-cli = { workspace = true }
+common-utils = { workspace = true }
+dep-check-core = { workspace = true }
+
+# External
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+dep-check-core = { workspace = true, features = ["test-support"] }
+
+chrono = { workspace = true }
+rstest = { workspace = true }
+tempfile = { workspace = true }
+url = { workspace = true }

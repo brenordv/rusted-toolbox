@@ -15,7 +15,7 @@ use common_file_utils::atomic_write::write_via_temp;
 use common_utils::string_utils::format_bytes_to_string;
 use notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, DebouncedEvent, new_debouncer};
-use shared_crypto::{Recipient, engine, keys};
+use seal_crypto::{Recipient, engine, keys};
 use std::collections::BTreeSet;
 use std::fs::{DirEntry, File};
 use std::io::{self, BufReader, BufWriter, Write};
@@ -452,8 +452,8 @@ fn print_summary(totals: &RunTotals) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared_crypto::Identity;
-    use shared_crypto::keys::{generate_identity, public_key_of};
+    use seal_crypto::Identity;
+    use seal_crypto::keys::{generate_identity, public_key_of};
     use std::path::PathBuf;
 
     fn fixture_dirs(base: &Path) -> (PathBuf, PathBuf) {

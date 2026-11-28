@@ -16,12 +16,12 @@ use common_cli::common_tool_args::CommonToolArgs;
 use common_cli::header_format::format_config_item;
 use common_utils::file_system::get_current_dir;
 use common_utils::string_utils::{SecretString, escape_for_terminal_display};
-use shared_eventhub_core::filters::{
+use eh_core::filters::{
     TextFilter, TimeWindow, parse_time, parse_time_with_granularity, parse_window,
 };
-use shared_eventhub_persistence::config::ToolConfig;
-use shared_eventhub_persistence::export::{DiskWriteMode, ExportFormat};
-use shared_eventhub_persistence::workspace::{ConfigHome, ProfilesAdoption, Workspace};
+use eh_persistence::config::ToolConfig;
+use eh_persistence::export::{DiskWriteMode, ExportFormat};
+use eh_persistence::workspace::{ConfigHome, ProfilesAdoption, Workspace};
 use std::fmt::Display;
 use std::sync::Arc;
 use tracing::info;

@@ -280,10 +280,10 @@ Example output:
 
 
 # OpenTelemetry export
-NetQuality can export its traces and logs to an OpenTelemetry collector via `logging-otel`.
+NetQuality can export its traces and logs to an OpenTelemetry collector via `common-logging-otel`.
 The OTLP endpoint is resolved in this order:
 1. `--otel-endpoint <URL>` (CLI mode) or the top-level `otel_endpoint` key (config-file mode).
-2. The `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable (resolved by `logging-otel`).
+2. The `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable (resolved by `common-logging-otel`).
 
 Things worth knowing:
 - The endpoint value is never logged or printed anywhere, because OTLP endpoints can carry

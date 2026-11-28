@@ -1,8 +1,8 @@
 use super::*;
 use crate::read::test_support::captured;
-use shared_eventhub_core::connection::EventHubIdentity;
-use shared_eventhub_core::engine::{Checkpoint, MessageSink};
-use shared_eventhub_persistence::store::test_support::{failing_store, store_with_dead_writer};
+use eh_core::connection::EventHubIdentity;
+use eh_core::engine::{Checkpoint, MessageSink};
+use eh_persistence::store::test_support::{failing_store, store_with_dead_writer};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use tempfile::TempDir;

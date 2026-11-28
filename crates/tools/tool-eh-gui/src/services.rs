@@ -20,19 +20,19 @@ use crate::views::move_profile_focus;
 use crate::views::shell::{keep_toast_focus, return_toast_focus};
 use anyhow::Context;
 use common_gui_rune::window::{GPU_BACKENDS, window_failure};
-use rune::{AppHandle, Tx};
-use shared_eventhub_core::connection::EventHubTarget;
-use shared_eventhub_core::engine::CaptureEngine;
-use shared_eventhub_core::models::MessageKey;
-use shared_eventhub_persistence::config::{
+use eh_core::connection::EventHubTarget;
+use eh_core::engine::CaptureEngine;
+use eh_core::models::MessageKey;
+use eh_persistence::config::{
     AuthMethodConfig, SensitiveValues, ToolConfig, load_config, needs_stored_secret,
     resolve_target_with, save_config, with_stored_secrets,
 };
-use shared_eventhub_persistence::export::{ExportOptions, ExportOutcome, WritingSink};
-use shared_eventhub_persistence::paths::{DataPaths, plain_relative};
-use shared_eventhub_persistence::search::{SearchPage, SearchQuery};
-use shared_eventhub_persistence::secrets::SecretsStore;
-use shared_eventhub_persistence::workspace::{ConfigHome, Profile, ProfileName, Workspace};
+use eh_persistence::export::{ExportOptions, ExportOutcome, WritingSink};
+use eh_persistence::paths::{DataPaths, plain_relative};
+use eh_persistence::search::{SearchPage, SearchQuery};
+use eh_persistence::secrets::SecretsStore;
+use eh_persistence::workspace::{ConfigHome, Profile, ProfileName, Workspace};
+use rune::{AppHandle, Tx};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};

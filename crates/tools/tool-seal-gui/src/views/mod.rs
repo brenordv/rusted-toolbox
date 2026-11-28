@@ -20,7 +20,6 @@ pub use keys_tab::{
     LABEL_KEY, LOG_FOLDER_KEY, PUBLIC_KEY_KEY, REPLACE_KEY, book_row_key, copy_entry_key,
     delete_key,
 };
-pub use parts::BadgeTone;
 pub use picker::{picker_keys, recipient_key};
 pub use text_tab::{
     CHOOSE_IDENTITY_KEY, COPY_OUTPUT_KEY, DIRECTION_KEY, IDENTITY_KEY, INPUT_KEY, OTHER_KEY_KEY,

@@ -1,7 +1,7 @@
 //! How a session ends: whether it failed, why, and when.
 
-use shared_eventhub_core::engine::{RunEnd, RunSummary};
-use shared_eventhub_persistence::export::ExportOutcome;
+use eh_core::engine::{RunEnd, RunSummary};
+use eh_persistence::export::ExportOutcome;
 use tracing::info;
 
 /// When a session failed, which decides what the window tells the user.
